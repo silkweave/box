@@ -29,7 +29,8 @@ notifications, engagement, and reminders. A consumer may have only a subset.
 Use `$adapt` for one feature, `$upgrade` for core, and `$verify` for the whole Box. Compare the
 recorded previous upstream commit, local code and target upstream commit. Keep full commit SHAs and
 path mappings in `docs/UPSTREAM.md`; a date or release label alone does not identify the ancestor.
-Write the intended steps and completed results as work proceeds in `docs/INTEGRATION.md`. On resume,
+Write current scope, completed results and rollback instructions in `_docs/INTEGRATION.md`; keep
+durable source ancestry and path decisions in `docs/UPSTREAM.md`. On resume,
 inspect actual files and migration ledgers before replaying a step. Advance completed SHAs only
 after verification, and record deliberately skipped upstream changes.
 

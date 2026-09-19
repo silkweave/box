@@ -26,4 +26,4 @@ The four maintained feature registration/export files stay empty for this core-o
 
 ## Documentation
 
-Start with docs/SETUP.md, then read docs/CONFIGURATION.md, docs/AUTH.md, docs/SERVER.md and docs/WAREHOUSE.md. Validation results belong in docs/VALIDATION.md.
+Start with docs/SETUP.md, then read docs/CONFIGURATION.md, docs/AUTH.md, docs/SERVER.md and docs/WAREHOUSE.md. Keep validation results for the current work session in the gitignored `_docs/VALIDATION.md`.

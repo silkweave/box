@@ -66,9 +66,8 @@ export class OpsController {
   core's `authenticatePrincipal`.
 - **CLI:** `bun run cli` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
   a running server's `/mcp` - one subcommand per tool. Configure its URL and bearer token in the
-  client config. It duplicates the default port number because its import graph
-  is deliberately thin - no `@silkweave/box-core`, so no DuckDB - and cannot reach `DEFAULT_PORT`;
-  keep the two in step.
+  client config. It reads the resolved Box configuration through core's `readBoxConfig`, so its
+  default follows `server.port` and its explicit `mcp.url` override.
 - Incidental REST routes sit behind a global `/api` prefix (`setGlobalPrefix('api')`) so they do not
   shadow the SPA's client routes. `/trpc` and `/mcp` are registered by the adapters and are **not**
   prefixed.
@@ -338,9 +337,10 @@ credentialed writes on a positive identification, and "I could not tell" is not 
 a loud warning at boot when the verdict is negative; a caller that is about to spend credentials
 calls `verifyLoopback()` itself.
 
-**Draining on shutdown.** `SIGTERM`/`SIGINT` call `shutdownWorkerdeck()` before exiting, once. The
-sessions are in *this* process now, so a bare exit would cut live turns mid-flight, and a codex
-session cannot be rebuilt from a park.
+**Draining on shutdown.** `SIGTERM`/`SIGINT` call `shutdownWorkerdeck()` before exiting, once.
+Sessions are in this process, so a bare exit can cut live turns mid-flight. Recovery is
+engine-specific: test idle-session recovery separately from preservation of an active turn, and do
+not infer either from the other.
 
 ## 7. Running and serving
 

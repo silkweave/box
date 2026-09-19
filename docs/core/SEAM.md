@@ -522,8 +522,9 @@ features/<id>/skills/<name>/SKILL.md           optional feature skills
 ```
 
 An agent adapts the source and updates maintained registration, root workspace package imports, and
-exports as needed. It records completed upstream SHA, path mapping, skipped changes, validation, and
-unresolved work in docs/UPSTREAM.md and docs/INTEGRATION.md. Runtime contracts and package manifests
+exports as needed. It records completed upstream SHA, path mapping and durable skipped changes in
+docs/UPSTREAM.md; current integration notes, validation and unresolved work stay in `_docs/`.
+Runtime contracts and package manifests
 remain source contracts; no feature package or release catalogue is created.
 
 ### 6.2 `box verify`
@@ -531,8 +532,9 @@ remain source contracts; no feature package or release catalogue is created.
 Run the receiving Box's normal build, typecheck, tests, lint, and schema check, then boot a
 disposable instance and exercise the feature's documented surface. Type generation checks tRPC and
 MCP namespace collisions. Migration work additionally requires a backup rehearsal, ledger inspection,
-and boot verification before unrelated changes continue. Record actual commands and results in the
-integration log; a passing lockfile build is not evidence of latest dependency testing.
+and boot verification before unrelated changes continue. Keep current command results in the
+gitignored `_docs/VALIDATION.md`; current integration scope and rollback information belongs in
+`_docs/INTEGRATION.md`. A passing lockfile build is not evidence of latest dependency testing.
 
 ### 6.3 What the checks cannot see
 

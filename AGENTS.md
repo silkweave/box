@@ -22,8 +22,10 @@ box dev
 ```
 
 Read `docs/SETUP.md`, `docs/CONFIGURATION.md`, `docs/AUTH.md` and `docs/WAREHOUSE.md`
-before changing runtime invariants. Run `box verify` before calling a change complete. Record
-the exact commands and results in `docs/VALIDATION.md`.
+before changing runtime invariants. Run `box verify` before calling a change complete. Keep
+all transient plans, spikes, validation results, local setup notes and handoffs in the gitignored
+`_docs/` directory, including `_docs/VALIDATION.md` and `_docs/INTEGRATION.md`. Committed `docs/`
+contains supported behavior, reusable procedures and durable integration records only.
 
 Keep this checkout's Git metadata intact while preparing changes. Do not commit or publish from an
 agent task unless explicitly asked.

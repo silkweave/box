@@ -43,16 +43,18 @@ includes child output. `bun run verify` remains a package-script entry point. Us
 
 When moving an existing checkout, a clean dependency install can remove obsolete pnpm links
 and stores under `node_modules`; never remove `data/` or local configuration as part of a
-package-manager migration. Historical validation records retain the commands actually run.
+package-manager migration. Keep command transcripts and run-specific results in the gitignored
+`_docs/VALIDATION.md`.
 
 ## Validation boundary
 
-See [VALIDATION.md](VALIDATION.md) for the actual migration checks. Browser/runtime rehearsals
-use independent checkouts and data, with background work disabled.
+Browser/runtime rehearsals use independent checkouts and data, with background work disabled. Keep
+the current check results in `_docs/VALIDATION.md`.
 
-WorkerDeck's upstream Bun improvements are being implemented by its maintainer. This migration
-assumes that work will land, but does not claim it has landed or silently update WorkerDeck.
-The earlier compatibility spike found test-loader and WebSocket shutdown differences and a
-Node-specific development reload hook. Authenticated provider turns and active-turn recovery
-must still be validated against the fixed release. Provider executables may retain their own
-Node or native runtime requirements even though Box itself runs on Bun.
+WorkerDeck is an optional in-process agent host. When upgrading it, update its workspace packages
+together and inspect peer ranges before changing the lockfile. Run `box verify`, then boot an
+independent Box with background work disabled and exercise gateway startup/shutdown, profile and
+user ownership, WebSocket close behavior, authenticated provider turns and parked-session recovery.
+Record the command, package state, backup and observed limits in `_docs/INTEGRATION.md` and
+`_docs/VALIDATION.md`. Provider executables may retain their own Node or native runtime
+requirements even though Box itself runs on Bun.

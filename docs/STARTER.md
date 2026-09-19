@@ -1,7 +1,7 @@
 # Core-only starter checklist
 
 Produce a core-only consumer checkout from a recorded Stack commit using this checklist.
-No released consumer baseline is established yet. Feature integration is agent-driven.
+Feature integration is agent-driven.
 
 ## Prepare the source
 
@@ -43,7 +43,7 @@ No released consumer baseline is established yet. Feature integration is agent-d
 10. Run `bun install`, then `box verify`. The chain must include build, CLI tests, type generation,
     typecheck, lint, core tests, server tests, and `schema:check`.
 11. Record the actual command, source state, dependency update date, test counts, warnings, and any
-    limitations in `docs/VALIDATION.md`. A passing lockfile build does not prove latest dependency
+    limitations in `_docs/VALIDATION.md`. A passing lockfile build does not prove latest dependency
     freshness unless the update date and command are recorded.
 12. Configure identity, brand, ports, and secrets in local `box.json` and gitignored `box.local.json`.
     Never commit credentials. Keep background automation, chat agents, relay, and workerdeck off for
@@ -63,11 +63,12 @@ No released consumer baseline is established yet. Feature integration is agent-d
     maintained registration files by hand.
 16. Stage migration code and the minimum runner and registration required to execute it. Before
     applying a migration, take a named backup and record its path and restore command in
-    `docs/INTEGRATION.md`. Apply migrations first, confirm completion and boot, then continue with
+    `_docs/INTEGRATION.md`. Apply migrations first, confirm completion and boot, then continue with
     unrelated feature changes.
 17. Preserve migration identities, evaluated statements, callback bodies, and order byte-for-byte.
     A checksum mismatch against live data is a refusal to boot. Restore the backup or record an
     explicit historical reconciliation. New behavior gets a new migration.
 18. Run the full validation chain again, then boot against disposable data and test the feature's
     route, server surface, schema, migrations, and disabled-agent behavior. Record adapted files,
-    local decisions, backup locations, unresolved work, and rollback instructions in the Box docs.
+    local decisions, backup locations, unresolved work, and rollback instructions in `_docs/INTEGRATION.md`.
+    Promote durable source ancestry and product constraints into the Box docs.

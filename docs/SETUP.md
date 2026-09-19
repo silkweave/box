@@ -15,8 +15,8 @@ Read [AUTH.md](AUTH.md) for identity and access rules. For shim installation,
 This checkout is a core-only consumer. Integrate reference features using their source and
 documentation; [FEATURES.md](FEATURES.md) describes the process.
 
-Run `box verify` and record the result in [VALIDATION.md](VALIDATION.md). Test changed routes using
-Chrome DevTools MCP in an independent checkout with background work disabled.
+Run `box verify` and record the result in the gitignored `_docs/VALIDATION.md`. Test changed routes
+using Chrome DevTools MCP in an independent checkout with background work disabled.
 
 See [CLI.md](CLI.md) for verify progress, output detail, retained logs and CI output options.
 
@@ -26,4 +26,5 @@ lockfile and workspace YAML are removed. `bunfig.toml` disables dotenv loading a
 tool shebangs through Bun. Native engine executables keep their own requirements.
 
 Before the shim is on PATH, use `packages/cli/bin/box verify` or `bun run verify`.
-See [BUN.md](BUN.md) for migration details and the WorkerDeck validation boundary.
+See [BUN.md](BUN.md) for the runtime and package-manager contract, including the current WorkerDeck
+compatibility boundary.

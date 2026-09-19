@@ -55,6 +55,5 @@ database operations, target selection and MCP tools. These explicit verbs take p
 MCP tool names. `box verify` preserves flags and exit status from the selected checkout's runner.
 Use `bun run verify` or `packages/cli/bin/box verify` before installing the shim.
 
-The broader browser Build workspace remains a proposal; see [BUILD-EXPLORATION.md](BUILD-EXPLORATION.md).
-See [BUN.md](BUN.md) for the runtime migration. Subprocess cancellation and live rendering are
+See [BUN.md](BUN.md) for the runtime contract. Subprocess cancellation and live rendering are
 exercised on macOS/POSIX. Windows uses `taskkill`; Windows behavior has not been field-tested.

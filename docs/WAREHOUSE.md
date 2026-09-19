@@ -571,9 +571,9 @@ duckdb data/data.db -box -c "SELECT name, applied_at FROM schema_migrations ORDE
 duckdb data/data.db -box -c "SELECT kind, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC;"
 ```
 
-`.mcp.json` registers a read-only `warehouse` MCP server (`mcp-server-motherduck`, pointed at
-`DUCKDB_PATH`, `--ephemeral-connections`) so an agent can run the same queries in chat without
-holding the lock.
+[`docs/examples/mcp.json`](examples/mcp.json) registers a read-only `warehouse` MCP server
+(`mcp-server-motherduck`, pointed at the Box database with `--db-path` and
+`--ephemeral-connections`) so an agent can run the same queries in chat without holding the lock.
 
 ## Where the signal writers live
 

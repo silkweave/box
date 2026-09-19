@@ -206,7 +206,7 @@ which is what makes it safe to send in a message or mint on someone's behalf ins
 transcript. Mint with `box auth link <id>`, Settings -> Users -> Send sign-in link, or the
 admin-only `user-link` tool.
 
-**Its key is derived, not separately configured:** HKDF-SHA256 from `AUTH_SESSION_SECRET` with the
+**Its key is derived, not separately configured:** HKDF-SHA256 from `auth.sessionSecret` with the
 `info` string `silkweave-box/signin-link/v1`. Rotating the session secret invalidates outstanding
 links.
 
@@ -242,15 +242,15 @@ an MCP tool, so Settings -> Users, `bun run cli` and an admin's own agent sessio
 
 ## Secrets
 
-`AUTH_SESSION_SECRET` signs the cookie; `AUTH_TOKEN_SECRET` encrypts stored access tokens. Keep both
-in the gitignored `box.local.json` under `auth`; the Box creates them when absent. No warehouse copy may ever include that file (`box db backup` and
+`auth.sessionSecret` signs the cookie; `auth.tokenSecret` encrypts stored access tokens. Keep both
+in gitignored `box.local.json`; the Box creates them when absent. No warehouse copy may ever include that file (`box db backup` and
 `box db snapshot` copy `data.db` and nothing else): a backup carrying
 the key that decrypts the tokens inside it is not a backup, it is a second copy of the credential.
 
 Secrets must be at least 32 characters and must not use placeholder values. Invalid secrets are
 refused before the Box signs a cookie or token.
 
-Rotating `AUTH_SESSION_SECRET` signs everyone out. Rotating `AUTH_TOKEN_SECRET` makes every stored
+Rotating `auth.sessionSecret` signs everyone out. Rotating `auth.tokenSecret` makes every stored
 access token unreadable - it is the key they are encrypted with - so keep it stable.
 
 ## Identity guards that are not authorization
