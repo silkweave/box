@@ -1,5 +1,17 @@
 # Integration record
 
+## Bun migration, 2026-09-19
+
+Scope: integrate the Stack's Bun 1.4.2 runtime, package manager and CLI command changes while
+preserving core-only registration and dependency ownership. Stack source base: `48146e2d5143d47053db9443147e9d46506e3a12`
+plus the explicitly uncommitted migration; consumer base:
+`003b14ea49e0dcc197e0a97d5f02befc7a1ba9ee`. The previous completed core SHA is unchanged.
+Backup: `/tmp/silkweave-bun-migration-20260919/box-before.tar.gz`.
+No migration bodies, identities, instance data, or credentials are in scope. Preserve the
+unrelated `.codex/config.toml` deletion. Validation passed under Bun 1.4.2 (docs/VALIDATION.md); WorkerDeck upstream fixes
+are assumed forthcoming and not claimed as installed. Rollback by restoring the changed
+source/manifests and pnpm lock/workspace files, removing Bun lock/config and reinstalling.
+
 ## Current scope
 
 This checkout is a fresh core-only consumer. No reference feature is integrated.
@@ -42,3 +54,10 @@ plain-output checks passed. See VALIDATION.md for results. No source baseline SH
 
 Wrapup source: Stack commit `f368209804c3907e19f7cc7b09f1f0ade5e76aff`. CLI source/tests match;
 full verification and gatekeeper audits passed. No runtime migration or core baseline advance.
+
+Bun migration completion: manifests, isolated Bun lockfile, CLI source/shim, CI, setup skills and
+runtime guides are updated. Full verification and independent dev/production browser rehearsals
+passed. The migration is finalized by the commit containing this record; the consumer records the exact Stack source commit in docs/UPSTREAM.md.
+
+Final Stack migration source: `2291e2d1562b81b4a2f433469fc47d4f61d9f5b9`. Both repositories passed their
+full Bun verification chains before this consumer commit.

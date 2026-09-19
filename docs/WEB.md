@@ -18,20 +18,20 @@ Related reading: [`../packages/ui/README.md`](../packages/ui/README.md) (the com
 ## Run
 
 ```bash
-pnpm install                              # from the repo root (the pnpm workspace)
-pnpm dev                                  # turbo run dev: Nest on :8190 + Vite on :5190
-pnpm -F @silkweave/box-ui storybook       # the component library on its own, :6006
+bun install                              # from the repo root (the bun run workspace)
+box dev                                  # turbo run dev: Nest on :8190 + Vite on :5190
+bun run --filter @silkweave/box-ui storybook       # the component library on its own, :6006
 ```
 
 **Point the browser at :8190, never at :5190.** Nest is the single origin. Both ports come from
 `box.json` (`server.port` 8190, `server.vitePort` 5190). Per-Box overrides belong in the
-gitignored `box.local.json`. In dev `pnpm dev` starts the server with `--dev`, so it builds the Vite URL
+gitignored `box.local.json`. In dev `box dev` starts the server with `--dev`, so it builds the Vite URL
 from that port itself, and `apps/server/src/main.ts` registers a reverse proxy ahead of Nest's
 router that forwards every path NOT matching
 `/^\/(api|trpc|mcp|agent)(\/|$)/` to Vite, HMR websockets included. So the SPA is same-origin with
 the API in dev and in prod alike: the tRPC client uses relative URLs, there is no `VITE_API_URL` and
 no CORS anywhere. In prod there is no `--dev` flag, so Nest's `ServeStaticModule` serves the built
-bundle (`pnpm build` -> `apps/web/dist`) beside `/trpc` and `/mcp` on the one port.
+bundle (`box build` -> `apps/web/dist`) beside `/trpc` and `/mcp` on the one port.
 
 Hitting the bare Vite port still works - `apps/web/vite.config.ts` carries a reciprocal proxy for
 `/trpc`, `/mcp` and `/api` back to the server - but it is a fallback, not the supported path.
@@ -52,7 +52,7 @@ the check exists to close.
 |---|---|---|
 | Holds | tokens, stylesheets, primitives, the app shell, users, the markdown editor | routes, the feature registry, tRPC, auth, data stores, the agent panel |
 | May import | React and its own stylesheet. Nothing else | anything |
-| Proven by | Storybook - a component without a story is not in the library | `pnpm verify` + loading the app |
+| Proven by | Storybook - a component without a story is not in the library | `box verify` + loading the app |
 
 **There is no build step for the library.** Both consumers (this app and Storybook) resolve the
 `@silkweave/box-source` export condition straight to `src/`, so an edit in `packages/ui` is live
@@ -167,7 +167,7 @@ Two consequences worth holding on to:
    `/login` (where sign-in links point, and where a retired magic link lands) to `/` KEEPING the
    query, which carries the grant - it is not a client
    route (the auth gate renders `LoginView` on any path), so the router would 404 on it the moment
-   the gate mounted. `pnpm auth:token` and `pnpm auth:reveal` print the root for the same reason.
+   the gate mounted. `box auth token` and `box auth reveal` print the root for the same reason.
 
 An `<a href='/'>` is now a full document reload, not a route change - the sidebar wordmark links
 through the shell seam's `homeLink`, which this app fills with TanStack's `<Link to='/'>` in
@@ -220,7 +220,7 @@ doc is not there.
 `onSession` runs once a session exists and returns its own teardown - the auth gate collects them
 and calls them when the session goes away.
 
-Adding or removing a feature: update its maintained registration and routes, then run `pnpm verify`.
+Adding or removing a feature: update its maintained registration and routes, then run `box verify`.
 
 ---
 
@@ -233,7 +233,7 @@ Adding or removing a feature: update its maintained registration and routes, the
 > `Cannot access 'WEB_FEATURE_LIST' before initialization` at load. Not a broken view: a **white
 > screen, the whole app**.
 
-**`pnpm verify` cannot detect a module-scope registry read at runtime.** Load the app in a browser.
+**`box verify` cannot detect a module-scope registry read at runtime.** Load the app in a browser.
 
 The rule: **read a registry lazily, inside a function, and cache the result.** Four core modules do
 this, and they are the pattern to copy:
@@ -287,10 +287,10 @@ no mutation can be missed. Bearer clients are exempt.
 
 ### The generated router type
 
-`src/generated/appRouter.d.ts` is written by **`pnpm typegen`**, which boots the Nest app far enough
+`src/generated/appRouter.d.ts` is written by **`bun run typegen`**, which boots the Nest app far enough
 to register the adapters (`NestFactory.create` + `app.init()`, no `listen()`, no port) and dumps the
-router type. It is a generated file - never hand-edit it. `pnpm typegen --check` fails instead of
-writing and restores the file; it runs inside `pnpm verify`, so **a controller change no longer
+router type. It is a generated file - never hand-edit it. `bun run typegen --check` fails instead of
+writing and restores the file; it runs inside `box verify`, so **a controller change no longer
 needs a running server** for the SPA's types to catch up.
 
 ### Data stores
@@ -413,12 +413,12 @@ feature views behind `lazy()` wrappers and inspect the entry chunk when reviewin
 
 ## Checks
 
-`pnpm verify` from the root covers this package's typecheck and lint (see the root `AGENTS.md` for
+`box verify` from the root covers this package's typecheck and lint (see the root `AGENTS.md` for
 the whole chain). Two things it does not cover:
 
 1. **Anything that only fails at runtime** - above all a module-scope registry read. Load the app.
 2. **The component library's rendering** - that is Storybook's job
-   (`pnpm -F @silkweave/box-ui storybook`), and `pnpm -F @silkweave/box-ui typecheck` type-checks
+   (`bun run --filter @silkweave/box-ui storybook`), and `bun run --filter @silkweave/box-ui typecheck` type-checks
    every story.
 
 `apps/web/dist/` and `node_modules/` are build output and gitignored.

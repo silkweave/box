@@ -1,40 +1,6 @@
-// `box` - the one command for a running Box. `../bin/box` is the shim that gets you here.
-//
-//   box auth token <id> [--name "Full Name"] [--create] [--rotate] [--admin] [--quiet]
-//   box auth link <id>                        short-lived, single-use sign-in link
-//   box auth reveal <id>                      re-print an existing access token, breaking nothing
-//   box db backup | restore [name] | list | snapshot [name]
-// //   box tools                                 browse and invoke the MCP tools interactively
-//   box where                                 which Box am I pointed at, and why
-//   box <tool-name> [...]                     anything else: the MCP proxy (./mcp-proxy.ts)
-//
-// TWO TIERS, AND ONLY ONE OF THEM IS HERE. `box` is the team's command: `auth`, `db`, `tools`,
-// `where`, and the tool fall-through. Repository maintenance commands are separate package
-// scripts, deliberately NOT reachable as a `box` verb. `box` is what a team types, and every verb
-// added here widens the collision surface with the unrecognised-verb fall-through below.
-//
-// WHY THE PROXY IS STILL A CHILD PROCESS. `mcp-proxy.ts` is next door now, so an import would be
-// legal - but the proxy must run with the TARGET Box's cwd and node_modules, which is the whole
-// point of resolving a target at all. A process boundary gives that for free, keeps DuckDB out of
-// the proxy's import graph (`mcp-proxy.test.ts` asserts it), and keeps every `AGENT.md` that says
-// `pnpm cli <Tool>` working.
-//
-// THE FALL-THROUGH IS THE POINT. An unknown verb is an MCP tool name, so `box IngestGithub` works
-// the day a feature adds that tool, with no change here. The cost is that a typo becomes a tool
-// call; the proxy answers "unknown tool" and that is a fine place to land.
-//
-// WHICH BOX. Walk up from where you were standing (BOX_INVOKED_FROM, set by the shim) for a
-// checkout, and only if there is none fall back to the checkout that registered the shim - saying
-// so, out loud, because that is the surprising case. A second Box on server.port=8191 is a first-class
-// situation here (read the incident note at the top of apps/server/src/agent/loopback-guard.ts),
-// and a CLI that silently meant "the one I was installed from" would be the same mistake wearing a
-// different hat.
-//
-// NO BUILD. Node strips the types itself, so this file and its siblings run as they are. The
-// server's scripts still need `--import @swc-node/register/esm-register`: they reach into
-// packages/core, whose Nest decorators are not erasable syntax. Those children run with the target
-// Box as their cwd, so the loader and the code both come out of THAT Box's node_modules.
-
+// The public Box command. Resolve the target checkout before launching its own source.
+// Explicit lifecycle verbs take precedence; other names retain the MCP tool fallback.
+// Bun executes TypeScript and Nest decorators directly, without a runtime loader.
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -57,40 +23,30 @@ function target(): { root: string; why: string } {
   return { root: selfRoot, why: 'the checkout that registered the `box` shim' }
 }
 
-/**
- * Run one of the target Box's scripts, through ITS loader.
- *
- * The `--import` specifier stays BARE and the child's cwd is the target root, because node resolves
- * a bare `--import` against the process cwd - so a `box` run inside a second Box loads that Box's
- * @swc-node and runs that Box's code, which is the whole point of resolving a target at all. The
- * obvious-looking alternative, resolving the specifier here with `createRequire`, does not work:
- * `@swc-node/register`'s exports map exposes `./esm-register` under the `import` condition only, so
- * CJS resolution cannot see it at all (checked, 2026-09-15). Hence the existence check below rather
- * than a resolve in a try/catch - it is there to turn a missing install into a sentence instead of
- * a node stack trace.
- */
+/** Run the selected checkout's source, preserving its configuration and dependencies. */
 function runScript(root: string, script: string, args: string[], conditions = false): never {
-  if (!existsSync(join(root, 'node_modules', '@swc-node', 'register')))
-    die(`${root} is not installed - run \`pnpm install\` there first`)
   const file = join(root, script)
   if (!existsSync(file)) die(`${root} has no ${script} (is it an older Box?)`)
   const flags = conditions ? ['--conditions=@silkweave/box-source'] : []
-  const res = spawnSync(
-    process.execPath,
-    [...flags, '--import', '@swc-node/register/esm-register', file, ...args],
-    { cwd: root, stdio: 'inherit' },
-  )
-  process.exit(res.status ?? 1)
+  const result = spawnSync(process.execPath, ['--no-env-file', '--no-orphans', ...flags, file, ...args], { cwd: root, stdio: 'inherit' })
+  if (result.error) die(result.error.message)
+  process.exit(result.status ?? (result.signal === 'SIGINT' ? 130 : 1))
 }
 
-/** This package's own tooling: plain node, no loader, no conditions, nothing to resolve. */
-function runNode(root: string, script: string, args: string[]): never {
-  const res = spawnSync(process.execPath, [join(root, script), ...args], { cwd: root, stdio: 'inherit' })
-  process.exit(res.status ?? 1)
+/** Invoke a package script explicitly: `bun build` would select Bun's bundler. */
+function runPackage(root: string, script: string, args: string[]): never {
+  const result = spawnSync(process.execPath, ['--bun', '--no-env-file', '--no-orphans', 'run', script, ...args], { cwd: root, stdio: 'inherit' })
+  if (result.error) die(result.error.message)
+  process.exit(result.status ?? (result.signal === 'SIGINT' ? 130 : 1))
 }
 
 const HELP = `box - the Silkweave Box command line
 
+  box dev                                    start server and web development
+  box build                                  build workspace packages and the application
+  box start                                  start the Box from source with built web assets
+  box start --prod                           start the production build
+  box verify [--plain|--verbose]              run the complete visual validation chain
   box auth token <id> [--name "Full Name"] [--create] [--rotate] [--admin] [--quiet]
   box auth link <id>                          short-lived, single-use sign-in link
   box auth reveal <id>                        re-print an access token, breaking nothing
@@ -132,6 +88,10 @@ function main(argv: string[]): void {
     note(`no Box above ${process.env.BOX_INVOKED_FROM ?? process.cwd()} - acting on ${root}`)
   }
 
+  if (verb === 'verify') runScript(root, 'packages/cli/src/verify.ts', rest)
+  if (verb === 'dev' || verb === 'build') runPackage(root, verb, rest)
+  if (verb === 'start') runPackage(root, rest.includes('--prod') ? 'start:prod' : 'start', rest.filter(arg => arg !== '--prod'))
+
   if (verb === 'auth') {
     const [sub, ...args] = rest
     const script = AUTH[sub as keyof typeof AUTH]
@@ -149,11 +109,11 @@ function main(argv: string[]): void {
   // `tools` is the proxy with NO arguments, which is its interactive browser. It needs its own verb
   // because bare `box` prints help: the proxy's list is the thing you want when you do not yet know
   // a tool's name, and "run the CLI with no arguments" is not discoverable from a help screen.
-  if (verb === 'tools') runNode(root, 'packages/cli/src/mcp-proxy.ts', rest)
+  if (verb === 'tools') runScript(root, 'packages/cli/src/mcp-proxy.ts', rest)
 
   // Everything else is an MCP tool. The proxy is the target Box's, so it talks to the port that
   // Box serves and authenticates with the token in that Box's box.local.json.
-  runNode(root, 'packages/cli/src/mcp-proxy.ts', [verb, ...rest])
+  runScript(root, 'packages/cli/src/mcp-proxy.ts', [verb, ...rest])
 }
 
 // Guarded so the target resolution above is importable by its test; the shim runs this file

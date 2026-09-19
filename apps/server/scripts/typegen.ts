@@ -1,8 +1,8 @@
 // Regenerate apps/web/src/generated/appRouter.d.ts WITHOUT booting a server (docs/core/SEAM.md § 6.2).
 //
 // Until this existed, `appRouter.d.ts` only changed when someone ran the server: a controller edit
-// plus `pnpm typecheck` type-checked the web app against a STALE router, so a renamed or deleted
-// procedure passed verify and broke in the browser. `pnpm typegen` is now part of `pnpm verify`,
+// plus `bun run typecheck` type-checked the web app against a STALE router, so a renamed or deleted
+// procedure passed verify and broke in the browser. `bun run typegen` is now part of `box verify`,
 // ahead of `typecheck`, so the web project always type-checks against the router it will get.
 //
 // How it works, and the two facts it rests on:
@@ -19,16 +19,16 @@
 // Everything that could arm is disabled and the process is pointed at a throwaway instance dir
 // (`setInstanceDir`, the in-process seam that replaced the BOX_DATA_DIR variable on 2026-09-18), so
 // a run never touches the real warehouse, never starts the scheduler, the chat agent, the relay or
-// workerdeck. It runs inside `prepare`, on every `pnpm install`: this is the guarantee that makes
+// workerdeck. It runs inside `prepare`, on every `bun install`: this is the guarantee that makes
 // that safe.
 //
-//   pnpm typegen           regenerate in place
-//   pnpm typegen --check   fail if the generated file is not already up to date (CI / pre-commit);
+//   bun run typegen           regenerate in place
+//   bun run typegen --check   fail if the generated file is not already up to date (CI / pre-commit);
 //                          the file is restored, so a --check run never dirties the tree.
-//   pnpm typegen --quiet   drop Nest's WARN level. The silkweave adapter warns once per procedure
+//   bun run typegen --quiet   drop Nest's WARN level. The silkweave adapter warns once per procedure
 //                          whose output it could only reflect one level deep (~50 lines, constant,
-//                          nothing to act on today). That is tolerable in `pnpm verify` and NOT in
-//                          the root `prepare`, which runs on every `pnpm install`: a fresh clone
+//                          nothing to act on today). That is tolerable in `box verify` and NOT in
+//                          the root `prepare`, which runs on every `bun install`: a fresh clone
 //                          greeting a new user with fifty yellow WARNs teaches them to stop reading
 //                          the output, and this repo already made that argument once about a 404
 //                          favicon (apps/web/index.html).
@@ -101,7 +101,7 @@ async function main(): Promise<number> {
   if (check && before !== after) {
     if (before === undefined) rmSync(target, { force: true })
     else writeFileSync(target, before, 'utf-8')
-    console.error(`typegen --check: ${target} is stale. Run \`pnpm typegen\` and commit the result.`)
+    console.error(`typegen --check: ${target} is stale. Run \`bun run typegen\` and commit the result.`)
     return 1
   }
   console.info(`typegen: ${actions.length} actions, ${before === after ? 'unchanged' : 'rewrote'} ${target}`)

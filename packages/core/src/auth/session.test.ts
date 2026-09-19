@@ -3,7 +3,7 @@
 //
 // Why this file exists: the old behaviour was `Secure` unless `AUTH_COOKIE_INSECURE=1`, and it was
 // wrong in the one direction nobody tests. Chromium treats `localhost` as a secure context and
-// stores a `Secure` cookie set over plain http anyway; Safari does not. So `pnpm dev` worked for
+// stores a `Secure` cookie set over plain http anyway; Safari does not. So `box dev` worked for
 // every developer using Chrome while a Safari user could not sign in to a local Box at all, and the
 // failure is silent - the browser drops the cookie and the app falls back to the login screen with
 // nothing in the console. A default that only misbehaves in a browser the authors do not use is

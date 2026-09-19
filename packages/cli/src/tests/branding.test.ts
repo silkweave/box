@@ -9,12 +9,12 @@ import { initBoxJson } from '../box-json.ts'
 
 // Exercise the real Vite hooks without opening the Box or requiring a browser.
 test('branding safely renders HTML, bakes the brand into a virtual module, serves the same manifest in dev/build, and rejects missing artwork', () => {
-  execFileSync(process.execPath, ['--import', '@swc-node/register/esm-register', '--input-type=module', '-e', `
+  execFileSync(process.execPath, ['--no-env-file', '--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { brandingPlugin, readBrand } from './apps/web/branding.ts';
     const name = 'North <Studio> & "Friends"';
     const plugin = brandingPlugin({ ...readBrand(), name, shortName: 'North', icon512: '/custom.png' });
-    const html = plugin.transformIndexHtml('<title>__BOX_BRAND_NAME__</title><link href="__BOX_BRAND_ICON__">');
+    const html = plugin.transformIndexHtml.handler('<title>__BOX_BRAND_NAME__</title><link href="__BOX_BRAND_ICON__">');
     assert.equal(html, '<title>North &lt;Studio&gt; &amp; &quot;Friends&quot;</title><link href="/custom.png">');
     // The React tree's copy: a module the bundle imports, resolved and loaded by this plugin alone.
     assert.equal(plugin.resolveId('virtual:box-brand'), '\\0virtual:box-brand');

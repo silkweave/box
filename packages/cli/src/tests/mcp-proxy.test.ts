@@ -1,6 +1,6 @@
 // The MCP proxy's import graph must never reach the warehouse.
 //
-// `pnpm cli <Tool>` and `box <tool-name>` are the fastest commands this repo has, and they are
+// `bun run cli <Tool>` and `box <tool-name>` are the fastest commands this repo has, and they are
 // fast because `mcp-proxy.ts` imports four published packages and nothing from this workspace.
 // Pull in `@silkweave/box-core` - directly, or through a barrel that re-exports it, or by adding a
 // workspace dependency to `packages/cli` - and every tool invocation starts loading DuckDB.

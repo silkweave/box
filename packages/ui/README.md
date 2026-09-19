@@ -31,8 +31,8 @@ directory: the planning app's `StatusPill.tsx` is that pattern at feature scope.
 **A component without a story is not in the library.**
 
 ```
-pnpm -F @silkweave/box-ui storybook        # http://localhost:6006
-pnpm -F @silkweave/box-ui typecheck        # also type-checks every story
+bun run --filter @silkweave/box-ui storybook        # http://localhost:6006
+bun run --filter @silkweave/box-ui typecheck        # also type-checks every story
 ```
 
 ## Storybook

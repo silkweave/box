@@ -97,7 +97,7 @@ export function parseCookies(header: string | undefined): Record<string, string>
  * silently fails back to the login screen with no error anywhere.
  *
  * That cost is not hypothetical. Chromium treats `localhost` as a secure context and stores the
- * cookie anyway, so `pnpm dev` worked for everyone who tested in Chrome; Safari does not, so
+ * cookie anyway, so `box dev` worked for everyone who tested in Chrome; Safari does not, so
  * Safari could not sign in to a local Box at all. The flag defaulted the wrong way for the one
  * case a first-time user is guaranteed to hit.
  */

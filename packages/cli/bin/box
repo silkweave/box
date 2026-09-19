@@ -1,0 +1,21 @@
+#!/bin/sh
+# Registered by bun run box:install. Resolve the source symlink and retain the caller's
+# directory so the CLI selects the enclosing Box, not merely the registered default.
+set -e
+
+src=$0
+while [ -L "$src" ]; do
+  dir=$(cd -P "$(dirname "$src")" && pwd)
+  src=$(readlink "$src")
+  case $src in
+    /*) ;;
+    *) src=$dir/$src ;;
+  esac
+done
+root=$(cd -P "$(dirname "$src")/../../.." && pwd)   # packages/cli/bin -> checkout
+
+BOX_INVOKED_FROM=${BOX_INVOKED_FROM:-$PWD}
+export BOX_INVOKED_FROM
+
+cd "$root"
+exec bun --no-env-file --no-orphans packages/cli/src/index.ts "$@"

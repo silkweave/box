@@ -35,19 +35,17 @@ version, which you may paraphrase:
 ## 1. Prerequisites
 
 ```bash
-node --version      # must be 24 or newer
-corepack enable     # gets the exact pnpm the workspace pins
+bun --version       # must be 1.4.2 or newer; CI pins 1.4.2
 ```
 
-- **Node 24+** is a hard floor (`engines` in the root `package.json`).
-- **pnpm** is pinned via `packageManager`. `corepack enable` is the least surprising way to get it.
+- **Bun 1.4.2+** is the runtime and package manager (`engines` and `packageManager` in root `package.json`).
 - **Nothing else is required.** DuckDB is in-process (`@duckdb/node-api`) - no database to install,
   no connection string.
 
 Optional, only if they later want the feature that needs it: the `gh` CLI (GitHub signal pulls),
 `uv`/`uvx` (the warehouse MCP server).
 
-If Node is older than 24, stop and get that fixed first. Everything downstream fails confusingly.
+If Bun is older than 1.4.2, update it first. Everything downstream fails confusingly.
 
 ---
 
@@ -60,25 +58,21 @@ and ask before integrating more.
 
 ```bash
 git switch -c box       # on a fresh clone only
-pnpm install
-pnpm build
-pnpm box:install
+bun install
+bun run box:install
+box build
 ```
 
-**`pnpm build` is not optional and not a performance tweak.** `packages/provider-kit` and
-`packages/core` resolve to `./build/` for anything that is not running under the
-`@silkweave/box-source` condition, and vitest is exactly that. On a fresh clone those directories do
-not exist yet, so `pnpm verify` in the next step fails with `Failed to resolve entry for package
-"@silkweave/box-provider-kit"` and eleven red test files that have nothing to do with anything you
-did. Rehearsed on a clean clone 2026-09-15; every tester would have hit it at step 3.
+`box verify` includes the workspace build before the tests, so it also works on a fresh checkout.
+Build output is needed when a package resolves outside the source export condition.
 
-**`pnpm box:install`** puts the `box` command on their PATH, by symlinking `~/.local/bin/box` at
+**`bun run box:install`** puts the `box` command on their PATH, by symlinking `~/.local/bin/box` at
 this checkout's `packages/cli/bin/box`. From here on, every command in this skill can be typed as `box ...`
-instead of `pnpm ...` - and more to the point, so can every command they will ever run against
+for the supported public verbs - and more to the point, so can every command they will ever run against
 their Box from outside the repo. Two things to watch and both are printed:
 
 - If `~/.local/bin` is not on their PATH the script says so and gives them the export line. Until
-  they add it and reopen the terminal, `box` is not a command and they should keep using `pnpm`.
+  they add it and reopen the terminal, `box` is not a command and they should use `packages/cli/bin/box` from the checkout.
 - If they already have a Box, this REPOINTS the default. It is only a default: `box` acts on the
   checkout you are standing in and falls back to the registered one, so the first Box keeps working
   from inside itself. `box where` answers the question at any time.
@@ -96,9 +90,9 @@ The short version is:
 read features/<id>/ documentation        # inspect selected source and gotchas
 integrate core, server and web source     # adapt paths and runtime wiring
 update maintained registration and exports
-pnpm install
-pnpm build
-pnpm verify
+bun install
+box build
+box verify
 ```
 
 Offer core alone too - it is a supported answer. A blank Box shows Settings and still has auth,
@@ -120,21 +114,21 @@ If verification fails, fix it before booting or committing a claimed working set
 ## 4. Boot it
 
 Before the first boot or auth command, choose the machine identity with the owner. Defaults are
-Nova (`nova`), admin. `pnpm install` has already written `box.json`; edit its `agent` block,
+Nova (`nova`), admin. `bun install` has already written `box.json`; edit its `agent` block,
 `{"agent":{"id":"nova","name":"Nova","role":"admin"}}`. The ID cannot be renamed after
 initialization. Explain that admin grants the agent credential/configuration and service controls;
 member retains the previous restriction. Read `docs/AUTH.md`'s identity-and-role section. Do not
 rewrite an existing identity or silently promote an existing Box when its config is missing.
 
 ```bash
-pnpm dev
+box dev
 ```
 
 Nest comes up on **:8190** and reverse-proxies the Vite dev server, so the browser only ever uses
 :8190. Both ports come from `box.json` (`server.port`, `server.vitePort`) if 8190 is taken;
 Use `box.local.json` for machine-specific port overrides.
 
-`pnpm install` writes `box.json` on a fresh checkout. The first boot creates runtime stores and
+`bun install` writes `box.json` on a fresh checkout. The first boot creates runtime stores and
 the identity lock; missing signing keys are generated in gitignored `box.local.json`.
 
 Leave this running and work in a second terminal.
@@ -144,7 +138,7 @@ Leave this running and work in a second terminal.
 ## 5. Create the first admin
 
 ```bash
-box auth token <their-id> --name "Their Full Name"    # or: pnpm auth:token <their-id> ...
+box auth token <their-id> --name "Their Full Name"    # or: box auth token <their-id> ...
 ```
 
 On a Box with **no human users yet**, this creates that id as an **admin** and mints its token.
@@ -171,10 +165,10 @@ they need it for MCP.
 
 ## 6. Sign in
 
-Open the sign-in link it printed. (It works once; if it expired, `pnpm auth:link <id>` mints
+Open the sign-in link it printed. (It works once; if it expired, `box auth link <id>` mints
 another.) Confirm in a browser that the shell renders.
 
-**Check the browser console.** `pnpm verify` has no runtime step - it cannot see a white screen. If
+**Check the browser console.** `box verify` has no runtime step - it cannot see a white screen. If
 the page is blank, that is the failure mode to look for, not a server error.
 
 ---
@@ -255,10 +249,10 @@ actually work, using its `AGENT.md`.
 
 | Symptom | Cause |
 |---|---|
-| Confusing module resolution errors after a rename | Stale `packages/core/build/`. Run `pnpm build`. |
-| Blank page, empty `#root` | A module-scope registry read. Check the console - `pnpm verify` cannot see this. |
-| Port collision with another Box | Set `server.port` and `server.vitePort` in `box.local.json`, then run `pnpm dev`. **Never put a second Box on a port the first may hold.** |
-| The UI shows old behaviour after a pull | The server serves a prebuilt `apps/web/dist`. Run `pnpm -F @silkweave/box-web build`, or use `pnpm dev`. |
+| Confusing module resolution errors after a rename | Stale `packages/core/build/`. Run `box build`. |
+| Blank page, empty `#root` | A module-scope registry read. Check the console - `box verify` cannot see this. |
+| Port collision with another Box | Set `server.port` and `server.vitePort` in `box.local.json`, then run `box dev`. **Never put a second Box on a port the first may hold.** |
+| The UI shows old behaviour after a pull | The server serves a prebuilt `apps/web/dist`. Run `bun run --filter @silkweave/box-web build`, or use `box dev`. |
 
 ## Optional product branding
 

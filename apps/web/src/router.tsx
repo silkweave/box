@@ -74,7 +74,7 @@ if (typeof window !== 'undefined') {
 //   - what Vite owns in dev: /src, /node_modules, /@vite, /@fs, /@id.
 // Checked by hand on 2026-09-14 against every feature's routes.tsx (alerts, automation, chat,
 // content, crm, signals, boards, engagement, initiatives, sprints, sink) plus core's /settings:
-// no collision. A feature that adds a top-level route must re-check; nothing in `pnpm verify` does.
+// no collision. A feature that adds a top-level route must re-check; nothing in `box verify` does.
 export const router = createRouter({ routeTree, history: createBrowserHistory() })
 
 declare module '@tanstack/react-router' {

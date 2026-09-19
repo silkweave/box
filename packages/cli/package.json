@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The `box` command: the MCP proxy, the public verbs, and the repository tooling `pnpm verify` runs. No build step - Node strips the types.",
+  "description": "The box command, MCP proxy and visual verification runner. Bun runs the TypeScript source directly.",
   "scripts": {
     "typecheck": "tsgo -p tsconfig.json"
   },

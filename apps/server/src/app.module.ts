@@ -58,7 +58,7 @@ import { ChangesModule } from './changes/changes.module.js'
         // @Trpc()-decorated controller methods → tRPC procedures under /trpc …
         trpc({ basePath: '/trpc' }),
         // … @Mcp()-decorated methods → MCP tools (Streamable HTTP) under /mcp, so the same
-        // action is callable by agents and the `cli` proxy (pnpm cli). The TRANSPORT itself demands
+        // action is callable by agents and the `cli` proxy (bun run cli). The TRANSPORT itself demands
         // a valid bearer, because the per-tool @UseGuards on the @Mcp methods cannot gate
         // tools/list - that is the transport route, not a controller method - so without this an
         // anonymous client could enumerate every tool the app has.

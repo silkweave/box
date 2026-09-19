@@ -1,6 +1,6 @@
 # Command-line tooling
 
-`pnpm verify` runs the checkout's complete validation chain with a four-phase progress view:
+`box verify` runs the checkout's complete validation chain with a four-phase progress view:
 
 | Phase | Checks, in order |
 |---|---|
@@ -23,9 +23,9 @@ transport prefixes and clip to the terminal width; the full warning text remains
 Failures also show diagnostics, recent output, the failed command and a rerun hint.
 
 ```sh
-pnpm verify
-pnpm verify --plain
-pnpm verify --verbose
+box verify
+box verify --plain
+box verify --verbose
 ```
 
 `--plain` writes append-only progress without terminal controls. `--verbose` also streams all child
@@ -46,11 +46,15 @@ caller; startup failures return 1, cancellation returns 130, and invalid options
 The renderer, task engine and verify command live in `packages/cli/src/`. `ui.ts` supplies terminal
 styling, text clipping and safe redraw; `tasks.ts` owns ordered child execution and logs;
 `task-view.ts` supplies the verify layout; `verify.ts` connects terminal controls to the nine checks.
-They use Node built-ins, with no React, Ink or additional dependencies. The Node process runs the
-package-manager entry point inherited from pnpm, or finds pnpm on PATH for direct invocation.
-The commands always run from the checkout containing the CLI file, even when called elsewhere.
+They use Node-compatible built-ins under Bun, with no React, Ink or additional dependencies.
+Verification executes explicit `bun run` commands using the current Bun executable. It does not
+inherit a package-manager executable from npm or pnpm. Each check runs in the selected checkout.
 
-Repository maintenance remains a package script. The `box` command continues to provide auth,
-database operations, target selection and MCP tools; `box verify` is not a new public verb.
-Subprocess cancellation and live rendering are exercised on macOS/POSIX. Windows process-tree
-termination uses `taskkill`; Windows terminal behavior has not been field-tested.
+The `box` shim exposes `dev`, `build`, `start`, `start --prod`, and `verify`, alongside auth,
+database operations, target selection and MCP tools. These explicit verbs take precedence over
+MCP tool names. `box verify` preserves flags and exit status from the selected checkout's runner.
+Use `bun run verify` or `packages/cli/bin/box verify` before installing the shim.
+
+The broader browser Build workspace remains a proposal; see [BUILD-EXPLORATION.md](BUILD-EXPLORATION.md).
+See [BUN.md](BUN.md) for the runtime migration. Subprocess cancellation and live rendering are
+exercised on macOS/POSIX. Windows uses `taskkill`; Windows behavior has not been field-tested.

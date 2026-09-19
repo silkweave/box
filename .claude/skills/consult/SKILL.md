@@ -25,7 +25,7 @@ skill (which has its own guardrails) rather than doing the work inline.
 
 Decide where you are running before anything else. **Local** = the CWD is the Box checkout
 (`data/docs/` exists on disk): follow the steps as written. **Remote** = this skill was installed on
-a machine with no checkout: the repo, `pnpm cli`, and the read-only `warehouse` MCP do not exist
+a machine with no checkout: the repo, `bun run cli`, and the read-only `warehouse` MCP do not exist
 here. Work over the `mcp__box__*` tools (`https://box.example.ts.net` over the tailnet, authed by
 your `mcp.token` from `box.local.json`): ground state via `content-list` / `content-get` / `initiatives-get` instead of
 SQL, docs via `doc-read`, voice styles via `voice-read`. Dashboard links are ALWAYS
@@ -34,7 +34,7 @@ hash routes on 2026-09-14, and an old `/#/<path>` link still lands right but do 
 ones. Works from anywhere on the tailnet - Tailscale must be connected;
 never hand out a `127.0.0.1` URL, that address is the Box host's own loopback and resolves nowhere
 else. If an answer requires something with no remote path (anything that reads or writes repo files,
-or any `pnpm` script), say so and route that step to a session on the Box host - never fake it.
+or any `bun run` script), say so and route that step to a session on the Box host - never fake it.
 
 ## Input
 
@@ -89,8 +89,8 @@ non-trivial.
 | "support a teammate's post" | `engagement` | Pods / engagement | engage queue → `/engage <pod-content-id>` | `features/engagement/SPEC.md` |
 | "how are my posts / numbers doing" | `data` | Signals | dashboard Signals; "update signals" = fresh snapshot | `docs/WAREHOUSE.md` |
 | "track this work / what are we working on" | `planning` | Planning | dashboard Initiatives; `/ingest-sink` (work route) | `features/planning/SPEC.md` |
-| "I can't log in / need access / a link" | - | Users/auth | Send a sign-in link: Settings → Users → **Send sign-in link**, `pnpm cli user-link`, or `pnpm auth:link <id>`. Short-lived, single-use, safe to send | `docs/AUTH.md` § 1.7 |
-| "lost my token / my MCP config needs it" | - | Users/auth | an admin reveals it (Settings → Users → **View access token**, or `pnpm auth:reveal <id>` on the host). NEVER `user-invite` - that rotates. Read Step 2a first | `docs/AUTH.md` § First run |
+| "I can't log in / need access / a link" | - | Users/auth | Send a sign-in link: Settings → Users → **Send sign-in link**, `bun run cli user-link`, or `box auth link <id>`. Short-lived, single-use, safe to send | `docs/AUTH.md` § 1.7 |
+| "lost my token / my MCP config needs it" | - | Users/auth | an admin reveals it (Settings → Users → **View access token**, or `box auth reveal <id>` on the host). NEVER `user-invite` - that rotates. Read Step 2a first | `docs/AUTH.md` § First run |
 | "my MCP won't connect / no `box` tools / everything 401s" | - | Access | diagnose with Step 2b before anything else | `docs/SERVER.md` § 7 (running and serving) |
 | "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `features/automation/SPEC.md` + `features/alerts/SPEC.md` |
 | "add / install a feature this Box lacks" | - | Integration | Read the feature source and gotchas, integrate its core/server/web code, update registration, then run the validation chain | `../../../docs/FEATURES.md` |
@@ -107,14 +107,14 @@ down. The facts (`docs/AUTH.md` § First run):
 - **One token per person, forever.** A user has exactly ONE access token. It is the single credential
   for BOTH the dashboard login and every MCP/CLI connection they have configured.
 - **It never expires.** There is no TTL on the token. Keep it and you never need another.
-- **Minting is a password reset, not "add a device".** `user-invite` / `pnpm auth:token` OVERWRITES
+- **Minting is a password reset, not "add a device".** `user-invite` / `box auth token` OVERWRITES
   the token; the previous one dies instantly and every place it was pasted (each machine's MCP
   config, saved magic links, scripts) breaks. Browser sessions already signed in are unaffected
   (they hold a cookie, not the token) - which is why the damage shows up as a dead MCP, never as a
   logout. Sessions no longer expire either (2026-07-29), so a signed-in browser stays signed in.
 - **A lost token is recoverable - reveal it, do not reset it.** The token is encrypted at rest,
   reversibly, exactly so an admin can re-read it. Settings → Users → **…** → **View access token** (the
-  dashboard route, and what a non-dev should be told) or `pnpm auth:reveal <id>` on the Box host.
+  dashboard route, and what a non-dev should be told) or `box auth reveal <id>` on the Box host.
   Both re-print the SAME token and break nothing. There is deliberately NO MCP tool for this since
   2026-09-15: an agent must not be able to read anyone's permanent credential. If the person only
   needs to GET IN, send a sign-in link instead - that IS available to an agent (`user-link`).
@@ -142,20 +142,20 @@ machine - does `<checkout>/data/docs/` exist?
   answers `Marketplace '<box>' not found. Available marketplaces:` - that is **correct output where
   the checkout is, not a fault**. Never "fix" it by installing the plugin: that shadows the
   unprefixed skills with duplicate `/<box>:*` copies of the same thing.
-- **Data access is `pnpm cli <tool>`** plus the read-only `warehouse` MCP from the repo's
+- **Data access is `bun run cli <tool>`** plus the read-only `warehouse` MCP from the repo's
   `.mcp.json`. **`mcp__box__*` is OPTIONAL here** - some teammates carry a personal entry in
   `~/<user>/.claude.json`, some do not. Its absence on a machine with the checkout is **not** a
-  fault to fix, because every skill's Local mode runs on `pnpm cli`.
-- A failing `pnpm cli` here has **three** causes, and only one is the service:
+  fault to fix, because every skill's Local mode runs on `bun run cli`.
+- A failing `bun run cli` here has **three** causes, and only one is the service:
   1. **The harness permission fence** (most confusing, found 2026-07-29). A Claude session whose CWD
      is a *different* repo has **Bash** against the checkout path denied by the auto-mode
-     classifier, so `pnpm cli` and direct DuckDB reads all refuse. The fence is **tool-shaped, not
+     classifier, so `bun run cli` and direct DuckDB reads all refuse. The fence is **tool-shaped, not
      path-shaped**: `Read` and `Edit` work fine on those same paths, which makes it look arbitrary
      from inside. **Match on the denial text - it names the classifier, not a connection error.**
      Fix: start the session inside the checkout.
      Do NOT touch the service or anyone's token.
   2. **The server is down** - only after the denial text has been ruled out. Check the service.
-  3. **Access** - almost never an issue here, since `pnpm cli` reads the local warehouse.
+  3. **Access** - almost never an issue here, since `bun run cli` reads the local warehouse.
   Ask which one before acting: restarting a healthy service because a session was started in the
   wrong directory is the exact wrong move (it happened, and blocked an `/ingest-sink` run).
 

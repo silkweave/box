@@ -60,14 +60,14 @@ export class OutputLines {
 
 export function isWarning(line: string): boolean {
   // Test titles can mention warnings without emitting one.
-  if (/^(?:[✓✔]|ok\s+\d+\b|# Subtest:|PASS\b)/.test(line)) return false
+  if (/^(?:[✓✔]|\(pass\)|ok\s+\d+\b|# Subtest:|PASS\b)/.test(line)) return false
   return (/\bwarn(?:ing|ings)?\b/i.test(line) || /(?:^|\s)\(!\)|⚠/.test(line)) && !/\b(?:no|0)\s+(?:\w+\s+)?warnings?\b/i.test(line)
 }
 
 function terminate(child: ChildProcess, force: boolean): void {
   if (!child.pid) return
   if (process.platform === 'win32') {
-    // taskkill includes descendants; SIGTERM alone would leave pnpm grandchildren running.
+    // taskkill includes descendants; SIGTERM alone would leave bun run grandchildren running.
     const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', ...(force ? ['/F'] : [])], { stdio: 'ignore' })
     killer.on('error', () => { child.kill(force ? 'SIGKILL' : 'SIGTERM') })
   } else {

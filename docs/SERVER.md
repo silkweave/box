@@ -9,15 +9,15 @@ This file describes **core's server**: what a blank Box (no features installed) 
 feature's own controllers, tables and tools are described in its `features/<id>/SPEC.md`; how to
 install and customise one is its `AGENT.md`.
 
-- **Stack:** NestJS 11 + `@silkweave/nestjs` v4 (the `trpc()`, `mcp()` and `typegen()` adapters).
-  Dev and `pnpm start` run the TypeScript directly through `@swc-node/register` (decorator metadata,
-  no build step); `pnpm build` emits a plain SWC `dist/` for `pnpm start:prod`.
+- **Stack:** NestJS 12 + `@silkweave/nestjs` v5 (the `trpc()`, `mcp()` and `typegen()` adapters).
+  Dev and `box start` run the TypeScript directly through Bun (including decorator metadata,
+  no runtime loader); `box build` emits a plain SWC `dist/` for `box start --prod`.
 - **ESM-native** (`"type": "module"`), so relative imports carry **`.js` specifiers** - NodeNext
   resolves them to the `.ts` source, SWC leaves them alone.
 - **`packages/core` is source-linked** through the `@silkweave/box-source` export condition:
-  `node --conditions=@silkweave/box-source` resolves `@silkweave/box-core` to `packages/core/src/`,
-  a plain `node` resolves it to the tsdown-built `packages/core/build/`. A stale `build/` after a
-  rename fails the server tests with a confusing resolution error; `pnpm build` fixes it.
+  `bun --conditions=@silkweave/box-source` resolves `@silkweave/box-core` to `packages/core/src/`,
+  Bun without that condition resolves it to the tsdown-built `packages/core/build/`. A stale `build/` after a
+  rename fails the server tests with a confusing resolution error; `box build` fixes it.
 - **Warehouse access** goes through core's ephemeral-connection layer
   (`packages/core/src/warehouse/db.ts`): reads open `read_only`, writes open `read_write`
   serialized in-process and retried on a file-lock conflict, and both close immediately. The server
@@ -64,7 +64,7 @@ export class OpsController {
   gate `tools/list`, which is a transport route rather than a controller method, so without
   transport auth an anonymous client could enumerate every tool the Box has. `verifyToken` calls
   core's `authenticatePrincipal`.
-- **CLI:** `pnpm cli` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
+- **CLI:** `bun run cli` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
   a running server's `/mcp` - one subcommand per tool. Configure its URL and bearer token in the
   client config. It duplicates the default port number because its import graph
   is deliberately thin - no `@silkweave/box-core`, so no DuckDB - and cannot reach `DEFAULT_PORT`;
@@ -80,11 +80,11 @@ The `typegen()` adapter writes the `AppRouter` type to `apps/web/src/generated/a
 app's `skipLibCheck` then ignores typegen's always-on import list, which would otherwise trip
 `noUnusedLocals` on `TRPCMutation`/`TRPCSubscription` in a query-only router.
 
-**`pnpm typegen` regenerates it without starting a server** (`apps/server/scripts/typegen.ts`). That
+**`bun run typegen` regenerates it without starting a server** (`apps/server/scripts/typegen.ts`). That
 matters more than it sounds: until it existed, `appRouter.d.ts` only changed when somebody ran the
-server, so a controller edit plus `pnpm typecheck` type-checked the SPA against a **stale** router -
-a renamed or deleted procedure passed every check and broke in the browser. `pnpm typegen` now runs
-inside `pnpm verify`, ahead of `typecheck`. **A controller change no longer needs a boot.**
+server, so a controller edit plus `bun run typecheck` type-checked the SPA against a **stale** router -
+a renamed or deleted procedure passed every check and broke in the browser. `bun run typegen` now runs
+inside `box verify`, ahead of `typecheck`. **A controller change no longer needs a boot.**
 
 It rests on two facts:
 
@@ -105,7 +105,7 @@ extra jobs it does while it has the controller graph in hand:
   and `@Mcp` yields two actions that share a name, one per adapter, so a clash only matters inside
   one transport's list - and there it silently shadows an action and drops a key from the router;
 
-`pnpm typegen --check` fails instead of writing and restores the file, so a `--check` run never
+`bun run typegen --check` fails instead of writing and restores the file, so a `--check` run never
 dirties the tree.
 
 ## 3. Auth, at the server level
@@ -345,15 +345,15 @@ session cannot be rebuilt from a park.
 ## 7. Running and serving
 
 ```bash
-pnpm dev          # turbo run dev: Nest (:8190, started with --dev) + Vite (:5190) together
-pnpm build        # core (tsdown → build/) + web (vite → dist/) + server (swc → dist/)
-pnpm start        # no build: swc-node register runs apps/server/src/main.ts
-pnpm start:prod   # from the compiled output: node apps/server/dist/main.js
-pnpm verify       # the full check chain - see the root AGENTS.md
+box dev          # turbo run dev: Nest (:8190, started with --dev) + Vite (:5190) together
+box build        # core (tsdown → build/) + web (vite → dist/) + server (swc → dist/)
+box start        # Bun runs apps/server/src/main.ts directly
+box start --prod # Bun runs the compiled apps/server/dist/apps/server/src/main.js
+box verify       # the full check chain - see the root AGENTS.md
 ```
 
 **No build step type-checks.** swc (server), tsdown (core) and vite (web) all strip types without
-checking them. **tsgo** is the sole type-checker and runs in `pnpm typecheck`, inside `pnpm verify`.
+checking them. **tsgo** is the sole type-checker and runs in `bun run typecheck`, inside `box verify`.
 
 **Ports are Nest `8190` and Vite `5190`**, from `box.json` (`server.port`, `server.vitePort`).
 Set different values in the gitignored `box.local.json` when running another instance. The listener
@@ -361,7 +361,7 @@ and loopback probe use the same configured value.
 
 **Nest is the single origin.**
 
-- **dev:** `pnpm dev` starts the server with `--dev`, which builds the Vite URL from
+- **dev:** `box dev` starts the server with `--dev`, which builds the Vite URL from
   `server.vitePort` in `box.json`. `main.ts` registers an
   `http-proxy-middleware` handler **before** Nest's router that reverse-proxies every **non-reserved**
   route to Vite; `RESERVED = /^\/(api|trpc|mcp|agent)(\/|$)/` falls through to Nest and the agent
@@ -399,14 +399,14 @@ give `server.port` and `server.vitePort` in its own `box.json` unused numbers, l
 `background` switch false, then:
 
 ```bash
-pnpm install && pnpm -F @silkweave/box-web build
-node --conditions=@silkweave/box-source --import @swc-node/register/esm-register \
+bun install && bun run --filter @silkweave/box-web build
+bun --no-env-file --conditions=@silkweave/box-source \
   apps/server/src/main.ts
 ```
 
-`pnpm install` writes that checkout's `box.json`; put local auth secrets in its gitignored
+`bun install` writes that checkout's `box.json`; put local auth secrets in its gitignored
 `box.local.json`. The first user on a fresh Box comes from
-`pnpm auth:token <id> --name "Full Name"`, which mints an **admin** and only ever on a Box with no
+`box auth token <id> --name "Full Name"`, which mints an **admin** and only ever on a Box with no
 users yet.
 
 ## 8. How a feature plugs into the server
@@ -450,14 +450,14 @@ export default defineServerFeature({ id: 'sink', module: SinkModule })
   this one. A feature with no schema of its own ships `migrations: []` - the ledger is append-only
   and starts empty. See [`core/SEAM.md`](./core/SEAM.md) § 3 and [`WAREHOUSE.md`](./WAREHOUSE.md).
 
-After adding or removing a feature, update the maintained registration imports, then run `pnpm verify`.
+After adding or removing a feature, update the maintained registration imports, then run `box verify`.
 
-## 9. What `pnpm verify` does not cover
+## 9. What `box verify` does not cover
 
 It has **no runtime step**. It cannot see a module-scope read of a generated registry, which throws
 at load because the registry is on an import cycle with every view. Type-checking, linting and both
 test suites pass; the SPA white-screens. Read a registry lazily, inside a function, and load the app
 in a browser after touching the app's root files. The server half of that rule: a controller change
-is covered by `pnpm typegen` inside `verify` and needs no boot, but anything that only runs at boot -
+is covered by `bun run typegen` inside `verify` and needs no boot, but anything that only runs at boot -
 a module's `onModuleInit`, a registered port, the agent host - is proven by booting a throwaway Box
 (§ 7) and nothing else.

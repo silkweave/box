@@ -6,13 +6,13 @@
 //
 // Every copy here is taken under the warehouse write lock after a CHECKPOINT, so a running server
 // cannot interleave a write into the copy. Connections are ephemeral (packages/core warehouse/db.ts),
-// so a running `pnpm dev` reads a restored file on its next query - but restart it if the restore
+// so a running `box dev` reads a restored file on its next query - but restart it if the restore
 // point's schema is older than the running code, because ensureSchema() is memoized per process.
 //
-//   pnpm db:snapshot [name]   copy data.db -> seeds/<name>.db (default name: baseline)
-//   pnpm db:backup            copy data.db -> backups/manual-<stamp>.db (+ GCS when configured)
-//   pnpm db:seeds             list every restore point with its time and size
-//   pnpm db:restore [name]    restore a seed or a backup over data.db (previous state is parked)
+//   box db snapshot [name]   copy data.db -> seeds/<name>.db (default name: baseline)
+//   box db backup            copy data.db -> backups/manual-<stamp>.db (+ GCS when configured)
+//   box db list             list every restore point with its time and size
+//   box db restore [name]    restore a seed or a backup over data.db (previous state is parked)
 
 import { copyFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -39,14 +39,14 @@ async function main(): Promise<void> {
   if (cmd === 'list') {
     const points = listRestorePoints()
     if (points.length === 0) {
-      console.log('no restore points yet - create one with: pnpm db:backup (or pnpm db:snapshot [name])')
+      console.log('no restore points yet - create one with: box db backup (or box db snapshot [name])')
       return
     }
     for (const p of points) {
       const when = p.takenAt.toISOString().slice(0, 16).replace('T', ' ')
       console.log(`${p.name.padEnd(40)} ${p.label.padEnd(12)} ${mb(p.bytes).padStart(7)} MB  ${when}`)
     }
-    console.log(`\nrestore one with: pnpm db:restore <name>`)
+    console.log(`\nrestore one with: box db restore <name>`)
     return
   }
 
@@ -84,11 +84,11 @@ async function main(): Promise<void> {
       copyFileSync(db, seed)
       if (existsSync(`${db}.wal`)) copyFileSync(`${db}.wal`, `${seed}.wal`)
     })
-    console.log(`seed '${name}' saved to ${instanceRelative(seed)} (${mb(statSync(seed).size)} MB) - restore with: pnpm db:restore ${name}`)
+    console.log(`seed '${name}' saved to ${instanceRelative(seed)} (${mb(statSync(seed).size)} MB) - restore with: box db restore ${name}`)
     return
   }
 
-  console.error('usage: pnpm db:snapshot [name] | pnpm db:backup | pnpm db:seeds | pnpm db:restore [name]')
+  console.error('usage: box db snapshot [name] | box db backup | box db list | box db restore [name]')
   process.exit(1)
 }
 

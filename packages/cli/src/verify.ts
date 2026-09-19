@@ -7,9 +7,7 @@ import { taskReceipt, taskRows } from './task-view.ts'
 import { cleanText, elapsedText, screenFrame } from './ui.ts'
 
 // The same ordered contract as the original package script, including skill linking.
-export function verifyTasks(pnpm = process.env.npm_execpath): Task[] {
-  // pnpm ships both JavaScript entry points and standalone native executables.
-  const script = pnpm !== undefined && /\.[cm]?js$/i.test(pnpm)
+export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun'): Task[] {
   const definitions: [string, string, string, string[]][] = [
     ['build', 'Build workspace', 'Build', ['build']],
     ['skills', 'Link skills', 'Prepare', ['skills']],
@@ -17,13 +15,13 @@ export function verifyTasks(pnpm = process.env.npm_execpath): Task[] {
     ['typegen', 'Generate types', 'Prepare', ['typegen']],
     ['typecheck', 'Typecheck', 'Check', ['typecheck']],
     ['lint', 'Lint', 'Check', ['lint']],
-    ['core-tests', 'Core tests', 'Validate', ['-F', '@silkweave/box-core', 'test']],
-    ['server-tests', 'Server tests', 'Validate', ['-F', '@silkweave/box-server', 'test']],
+    ['core-tests', 'Core tests', 'Validate', ['--filter', '@silkweave/box-core', 'test']],
+    ['server-tests', 'Server tests', 'Validate', ['--filter', '@silkweave/box-server', 'test']],
     ['schema', 'Schema matrix', 'Validate', ['schema:check']],
   ]
   return definitions.map(([id, name, phase, args]) => ({
-    id, name, phase, command: `pnpm ${args.join(' ')}`,
-    executable: script ? process.execPath : pnpm ?? 'pnpm', args: script ? [pnpm!, ...args] : args,
+    id, name, phase, command: `bun run ${args.join(' ')}`,
+    executable: bun, args: ['--bun', '--no-env-file', 'run', ...args],
   }))
 }
 
@@ -33,9 +31,9 @@ export async function main(argv: string[]): Promise<number> {
     ({ values } = parseArgs({ args: argv, options: {
       plain: { type: 'boolean' }, verbose: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     } }))
-  } catch (error) { process.stderr.write(`${(error as Error).message}\nUse pnpm verify --help for usage.\n`); return 2 }
+  } catch (error) { process.stderr.write(`${(error as Error).message}\nUse box verify --help for usage.\n`); return 2 }
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, generated types, types, lint, core tests, server tests and schema.\n\n  pnpm verify             Live progress in a terminal; concise output in CI\n  pnpm verify --plain     Append-only progress without ANSI\n  pnpm verify --verbose   Append-only progress and full child output\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, generated types, types, lint, core tests, server tests and schema.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --verbose   Append-only progress and full child output\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   const out = process.stdout, input = process.stdin

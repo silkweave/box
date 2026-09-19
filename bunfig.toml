@@ -1,0 +1,12 @@
+# Box settings come only from box.json and box.local.json.
+env = false
+
+[run]
+# Run JavaScript tool shebangs with Bun, including workspace scripts launched by Turbo.
+bun = true
+# Stop descendants when a launcher is interrupted or disappears.
+noOrphans = true
+
+[install]
+# Preserve the workspace dependency boundaries with a reproducible isolated layout.
+linker = "isolated"

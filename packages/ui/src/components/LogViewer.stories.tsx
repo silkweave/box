@@ -65,7 +65,7 @@ export const NotARun: Story = {
     title: 'Deploy to production',
     status: { tone: 'neutral', label: 'skipped' },
     lines: [
-      { text: '$ pnpm build', tone: 'muted' },
+      { text: '$ box build', tone: 'muted' },
       { text: 'built in 7.02s' },
       { text: 'no changes to deploy - skipping', tone: 'muted' },
     ],

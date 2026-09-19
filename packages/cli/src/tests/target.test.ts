@@ -20,7 +20,7 @@ function tree(files: Record<string, string>): string {
 }
 
 const BOX = {
-  'pnpm-workspace.yaml': "packages:\n  - 'apps/*'\n  - 'packages/*'\n",
+  'package.json': '{"workspaces":["apps/*","packages/*"]}',
   'apps/server/package.json': '{ "name": "@silkweave/box-server" }',
   'packages/core/package.json': '{ "name": "@silkweave/box-core", "version": "1.0.0" }',
 }
@@ -39,10 +39,9 @@ test('a Box checkout is a server package and a core package', () => {
   assert.equal(isBoxRoot(make(BOX)), true)
 })
 
-test('a Box with no pnpm-workspace.yaml is still a Box', () => {
-  // box-apps hides `box/pnpm-workspace.yaml` with sparse-checkout so pnpm cannot find a second
-  // workspace root. That tree builds, boots and holds the node_modules - it is the Box.
-  const { 'pnpm-workspace.yaml': _hidden, ...rest } = BOX
+test('a Box without a workspace manifest is still a Box', () => {
+  // Checkout selection depends on the runtime packages, not the package manager's manifest.
+  const { 'package.json': _hidden, ...rest } = BOX
   assert.equal(isBoxRoot(make(rest)), true)
 })
 
@@ -50,7 +49,6 @@ test('a repo that only holds app SOURCE is not a Box', () => {
   // silkweave/box-apps: a workspace root whose apps/server and packages/core hold the published
   // apps' truth and no package of their own. It used to match, and `box` then targeted it.
   const root = make({
-    'pnpm-workspace.yaml': "packages:\n  - 'apps/*'\n",
     'package.json': '{ "name": "silkweave-box-apps" }',
     'features/crm/server/index.ts': 'export default {}\n',
     'features/crm/core/manifest.ts': 'export default {}\n',
@@ -59,8 +57,8 @@ test('a repo that only holds app SOURCE is not a Box', () => {
   assert.equal(isBoxRoot(root), false)
 })
 
-test('a random pnpm monorepo is not a Box', () => {
-  assert.equal(isBoxRoot(make({ 'pnpm-workspace.yaml': 'packages:\n', 'packages/thing/package.json': '{}' })), false)
+test('a random Bun monorepo is not a Box', () => {
+  assert.equal(isBoxRoot(make({ 'bun.lock': '{}', 'packages/thing/package.json': '{}' })), false)
 })
 
 test('half a Box is not a Box', () => {
@@ -79,7 +77,7 @@ test('findBoxRoot walks PAST a feature source repo to the Box nested in it', () 
   // A source repository can contain feature reference code and a nested Box checkout. Standing
   // in the nested checkout must resolve it, not the repo above it.
   const pair = make({
-    'pnpm-workspace.yaml': 'packages:\n',
+    'bun.lock': '{}',
     'features/crm/server/index.ts': 'export default {}\n',
     'box/apps/server/package.json': '{ "name": "@silkweave/box-server" }',
     'box/packages/core/package.json': '{ "name": "@silkweave/box-core", "version": "1.0.0" }',

@@ -3,11 +3,11 @@
 // tools, so an "action" defined once in the backend is callable over the dashboard (tRPC), agents
 // (MCP), and here (CLI) - no per-action script needed.
 //
-//   pnpm cli                                        # interactive: list + invoke tools
-//   pnpm cli run-now                                # invoke one tool
+//   bun run cli                                        # interactive: list + invoke tools
+//   bun run cli run-now                                # invoke one tool
 //   Configure mcp.url and mcp.token in box.local.json.
 //
-// Requires the server running: pnpm dev
+// Requires the server running: box dev
 
 import { silkweave } from '@silkweave/core'
 import { cliProxy } from '@silkweave/mcp/cli-proxy'

@@ -3,7 +3,7 @@
 # This is the Codex equivalent of docs/examples/mcp.json, which is Claude Code's format. The two
 # files exist because the two tools read different formats, NOT because there are two sets of
 # facts: the same Box, the same /mcp endpoint, the same access token. Everything else an agent
-# needs to know about this repo lives once, in AGENTS.md and in the skills, which `pnpm skills`
+# needs to know about this repo lives once, in AGENTS.md and in the skills, which `bun run skills`
 # links into BOTH .claude/skills/ and .agents/skills/.
 #
 # The token is the access token from `box auth token <id>`. It is a password: keep it in your

@@ -297,7 +297,7 @@ export function parseBoxJsonText(text: string, where: string): unknown {
 
 /**
  * Read and validate `file`, or return the defaults when it does not exist yet. Absence is normal:
- * a fresh clone has no `data/` until `pnpm install` writes this file, and typegen runs against an
+ * a fresh clone has no `data/` until `bun install` writes this file, and typegen runs against an
  * empty throwaway directory. A file that exists and is wrong is never papered over.
  */
 export function readBoxJsonFile(file: string, where = 'box.json'): BoxJson {

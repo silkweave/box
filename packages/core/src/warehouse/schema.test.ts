@@ -1,5 +1,5 @@
 // orderFeatures + assertOwnership: the two guards that run before a single statement is executed.
-// Deliberately no database - `pnpm schema:check` covers the DDL on real DuckDB files (SEAM § 3.5);
+// Deliberately no database - `bun run schema:check` covers the DDL on real DuckDB files (SEAM § 3.5);
 // this covers the graph rules, which are pure and worth failing fast on.
 
 import { describe, expect, it } from 'vitest'

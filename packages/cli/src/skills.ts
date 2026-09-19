@@ -1,9 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Install the present features' skills into `.claude/skills/`, where Claude Code looks for them.
 //
-//   pnpm skills          symlink every installed feature's skills into .claude/skills/
+//   bun run skills          symlink every installed feature's skills into .claude/skills/
 //                        and .agents/skills/
-//   pnpm skills --check  fail (exit 1) if the links are stale, naming what is wrong
+//   bun run skills --check  fail (exit 1) if the links are stale, naming what is wrong
 //
 // WHY THIS EXISTS. A feature's skills live with the feature, at `features/<id>/skills/<name>/`,
 // because they belong to the feature: delete the feature and its recipes go with it,
@@ -125,7 +125,7 @@ function discover(): FeatureSkill[] {
       // An id nobody here has heard of is NOT fatal, and used to be. That check assumed a checkout
       // holding the whole catalogue, where an unrecognised id could only be a typo. A Box adopts
       // apps one at a time, so `content/ingest-sink` legitimately requires `sink` on a Box that
-      // has never installed it; failing there broke `pnpm install` immediately after a feature
+      // has never installed it; failing there broke `bun install` immediately after a feature
       // integration, because prepare runs this script. Found by the first integration against the
       // public source tree
       // on 2026-09-17. An unsatisfiable requirement is now just unsatisfied, and the skip is
@@ -231,7 +231,7 @@ if (!check) for (const apply of operations) apply()
 
 if (check) {
   if (stale.length) {
-    console.error(`skills:check FAILED - run \`pnpm skills\`:\n  ${stale.join('\n  ')}`)
+    console.error(`skills:check FAILED - run \`bun run skills\`:\n  ${stale.join('\n  ')}`)
     process.exit(1)
   }
   console.log(`skills:check: ${wanted.length} feature skill(s) + ${codexWanted.length} Codex skill(s) installed and current`)

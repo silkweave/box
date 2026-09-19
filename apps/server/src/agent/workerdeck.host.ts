@@ -193,7 +193,7 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
   if (deployment.profiles.some((p) => p.engine === 'codex') && !codexBinaryResolves()) {
     throw new Error(
       '@openai/codex does not resolve from @workerdeck/core - every codex session would fail at create. ' +
-        'It is an OPTIONAL PEER of core, so apps/server must declare it for pnpm to link it.',
+        'It is an OPTIONAL PEER of core, so apps/server must declare it for Bun to link it.',
     )
   }
 

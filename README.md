@@ -4,10 +4,11 @@ This is a core-only Silkweave Box consumer. It contains the server, web app, CLI
 
 ## Start
 
-    corepack enable
-    pnpm install
-    pnpm verify
-    pnpm dev
+    bun --version    # 1.4.2 or newer
+    bun install
+    bun run box:install
+    box verify
+    box dev
 
 The browser uses the server port configured in box.json. Put machine-specific ports, local credentials and secrets in the gitignored box.local.json. Runtime data lives under data/. Do not use .env files.
 

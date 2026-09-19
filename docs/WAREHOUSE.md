@@ -222,13 +222,13 @@ produce stable statements across machines and boots.
 Each feature documents its own migrations. Chat's SQLite migrations are separate and are not
 covered by the DuckDB backups or pre-migration snapshots.
 
-## `pnpm schema:check`
+## `bun run schema:check`
 
-Run `pnpm schema:check` after changing a model, baseline or migration. It uses throwaway databases
+Run `bun run schema:check` after changing a model, baseline or migration. It uses throwaway databases
 under a temp directory and writes nothing to the tree.
 
 ```bash
-pnpm schema:check
+bun run schema:check
 ```
 
 It proves three things:
@@ -245,7 +245,7 @@ It proves three things:
    warning as something to fix. It is a conservative heuristic, not a SQL parser.
 
 It cannot prove a data migration against real rows; every table it creates starts empty. That is
-what `pnpm db:backup` plus a rehearsal on a restored copy is for (see below), plus tests with rows
+what `box db backup` plus a rehearsal on a restored copy is for (see below), plus tests with rows
 that match the migration's WHERE clause. See
 [`roles.test.ts`](../packages/core/src/auth/roles.test.ts) and
 [`schema-upgrade.test.ts`](../packages/core/src/warehouse/schema-upgrade.test.ts).
@@ -264,9 +264,9 @@ If you genuinely meant to rewrite history - squashing a Box's migrations into a 
 the honest move is to say so to the database rather than to argue with the guard:
 
 ```bash
-pnpm db:backup                      # first, always
+box db backup                      # first, always
 # then either start the warehouse over:
-rm data/data.db && pnpm dev
+rm data/data.db && box dev
 # or drop the ledger rows you deliberately un-shipped, in a duckdb session, and reboot
 ```
 
@@ -279,25 +279,25 @@ that keep a change recoverable rather than the rules that keep it approved.
 
 **Before you touch a migration, a model or a baseline:**
 
-1. `pnpm db:backup`. It takes seconds, it is generationally retained, and it is the difference
+1. `box db backup`. It takes seconds, it is generationally retained, and it is the difference
    between a bad migration being an inconvenience and being an incident. The automatic
    pre-migration snapshot covers the moment the migration runs; it does not cover the half hour of
    experimenting before it.
-2. `pnpm db:seeds` to see that the backup is actually there, with a plausible size.
+2. `box db list` to see that the backup is actually there, with a plausible size.
 3. Know whether the warehouse holds real data. On a Box with `crm` or `content` installed and in
    use, assume it does.
 
 **Rehearsing a data migration.** The only rehearsal worth the name uses real rows:
 
 ```bash
-pnpm db:backup                                   # on the Box with the real data
+box db backup                                   # on the Box with the real data
 box db list                                      # copy the name
 
 # in a SECOND CHECKOUT of the repo - its own data/, its own ports in its own box.json
-git clone git@github.com:silkweave/box.git box-scratch && cd box-scratch && pnpm install
+git clone git@github.com:silkweave/box.git box-scratch && cd box-scratch && bun install
 cp /path/to/real/box/data/backups/<name> data/backups/   # or fetch it from the GCS copy
-pnpm db:restore <name>
-pnpm dev                                         # watch the migration apply for real
+box db restore <name>
+box dev                                         # watch the migration apply for real
 ```
 
 A throwaway Box is a second checkout, because the instance directory is always `<checkout>/data`
@@ -413,10 +413,10 @@ Two directories sit beside the warehouse, and the difference between them is who
 ### The commands
 
 ```bash
-pnpm db:backup            # data.db -> backups/manual-<stamp>.db  (+ GCS when configured)
-pnpm db:seeds             # every restore point: name, label, size, time
-pnpm db:restore <name>    # restore one over data.db; the previous state is parked first
-pnpm db:snapshot [name]   # data.db -> seeds/<name>.db, a fixture you own (default: baseline)
+box db backup            # data.db -> backups/manual-<stamp>.db  (+ GCS when configured)
+box db list             # every restore point: name, label, size, time
+box db restore <name>    # restore one over data.db; the previous state is parked first
+box db snapshot [name]   # data.db -> seeds/<name>.db, a fixture you own (default: baseline)
 ```
 
 `box db backup | list | restore [name] | snapshot [name]` are the same four from anywhere on the
@@ -440,7 +440,7 @@ until a human removes the sidecar.
 
 ### Restore
 
-`pnpm db:restore <name>` takes a name from either directory and does four things in order:
+`box db restore <name>` takes a name from either directory and does four things in order:
 
 1. **Stage.** Copy the restore point (and its WAL) to `data.db.restoring-<id>` beside the live file,
    open it read-write, `CHECKPOINT`, close. This proves the restore point is a database this DuckDB
@@ -526,7 +526,7 @@ privacy surface and a downloaded `.duckdb` is a copy of it. Keep the bucket priv
 
 **Ad-hoc `data.db.pre-<whatever>` files beside the warehouse are not a mechanism and nothing sweeps
 them.** They accumulate one per migration somebody was nervous about, each a full copy of a database
-that may hold personal data, and none is ever read again. Use `pnpm db:backup`.
+that may hold personal data, and none is ever read again. Use `box db backup`.
 
 ## How a feature adds a table
 
@@ -561,7 +561,7 @@ Three edits inside the feature's own directory, then one command.
    the enabled-later pass of `schema:check` will say so.
 3. **Append a migration** if existing Boxes need the change - a new table does not need one (the
    baseline creates it), a new column on an existing table does.
-4. **`pnpm verify`** includes **`pnpm schema:check`**. After adding or removing a feature,
+4. **`box verify`** includes **`bun run schema:check`**. After adding or removing a feature,
    first update the maintained feature registration and exports.
 
 ## Querying it directly

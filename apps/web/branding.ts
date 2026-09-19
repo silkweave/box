@@ -57,7 +57,7 @@ export function brandingPlugin(brand: BoxBrand = readBrand()): Plugin {
     load(id) {
       return id === RESOLVED_ID ? `export default ${JSON.stringify(brand)}\n` : undefined
     },
-    transformIndexHtml(html) {
+    transformIndexHtml: { order: 'pre', handler(html) {
       const values: Record<string, string> = {
         NAME: brand.name, SHORT_NAME: brand.shortName, ICON: brand.icon512,
         APPLE_ICON: brand.appleTouchIcon, THEME_COLOR: brand.themeColor,
@@ -66,7 +66,7 @@ export function brandingPlugin(brand: BoxBrand = readBrand()): Plugin {
         if (!(key in values)) throw new Error(`Unknown brand placeholder: ${key}`)
         return escapeHtml(values[key]!)
       })
-    },
+    } },
     configureServer(server) {
       server.middlewares.use('/manifest.webmanifest', (_req, res) => {
         res.setHeader('Content-Type', 'application/manifest+json')

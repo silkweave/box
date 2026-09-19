@@ -1,10 +1,5 @@
 {
-  // No build step and no loader: `bin/box` here and every `pnpm` script run these files through Node,
-  // which strips the types itself (stable since Node 22.18, and `engines` floors this repo at 24).
-  // That is why `erasableSyntaxOnly` is on - an enum, a namespace or a parameter property would
-  // type-check happily here and then fail at runtime on the one command that has to work before
-  // anything else does. `allowImportingTsExtensions` is the other half: Node resolves what is
-  // written, so a relative import inside this package names the `.ts` file.
+  // Bun runs the CLI TypeScript directly; keep explicit relative .ts imports and simple syntax.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",

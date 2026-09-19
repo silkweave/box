@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Write this Box's `box.json` from core's defaults when the checkout has none. Runs first in
-// the root `prepare`, so the file exists before `pnpm build` (the SPA bakes the brand in) and is
+// the root `prepare`, so the file exists before `box build` (the SPA bakes the brand in) and is
 // there to edit before the first boot - the ports, the brand, and the system principal, which is
 // meant to be chosen BEFORE the warehouse exists.
 //
 // Writes shared defaults on fresh checkouts. Existing stores require an explicit identity.
-// Usage: pnpm box:json
+// Usage: bun run box:json
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeBoxJsonIfAbsent } from '@silkweave/box-core/box-json'

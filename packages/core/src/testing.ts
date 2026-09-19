@@ -7,7 +7,7 @@
 //   resetInstanceDir()    back to <checkout>/data
 //
 // This is how typegen (apps/server/scripts/typegen.ts) boots the real AppModule against an empty
-// temp dir on every `pnpm install`, and how every test that touches disk stays off the live
+// temp dir on every `bun install`, and how every test that touches disk stays off the live
 // warehouse. There is no environment variable for it (`BOX_DATA_DIR` was removed 2026-09-18): a
 // setter cannot leak in from a shell, and it holds the same ordering guarantee, because every
 // instance read in this codebase happens inside a function, never at import.

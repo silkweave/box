@@ -1,17 +1,17 @@
 // Mint a SHORT-LIVED, single-use sign-in link for an existing user.
 //
-//   pnpm auth:link <user-id> [--ttl 15]      # minutes, default 15, max 1440
+//   box auth link <user-id> [--ttl 15]      # minutes, default 15, max 1440
 //
 // This is the normal way to get a person into a Box, and the only credential here that is safe to
 // paste into a chat message or an agent transcript: it expires in minutes, it works exactly once,
 // and it cannot be turned into an API token. Compare:
 //
-//   pnpm auth:link   <id>   short-lived sign-in link      -> send it to them
-//   pnpm auth:reveal <id>   their PERMANENT access token  -> for their MCP config, password manager
-//   pnpm auth:token  <id>   MINT/ROTATE that token        -> breaks every place the old one is set
+//   box auth link   <id>   short-lived sign-in link      -> send it to them
+//   box auth reveal <id>   their PERMANENT access token  -> for their MCP config, password manager
+//   box auth token  <id>   MINT/ROTATE that token        -> breaks every place the old one is set
 //
 // Works with no server running: it talks to the warehouse directly, like the other auth scripts.
-// It never CREATES a user - that is `pnpm auth:token`, and only on a Box that has none yet.
+// It never CREATES a user - that is `box auth token`, and only on a Box that has none yet.
 
 import { ensureSchema, ensureSystemPrincipal, issueSigninLink, resolvePrincipalById } from '@silkweave/box-core'
 import { signinLinkUrl } from '../src/auth/app-url.js'
@@ -34,8 +34,8 @@ async function main(): Promise<void> {
   const ttlAt = argv.indexOf('--ttl')
   const [id] = argv.filter((a, i) => !a.startsWith('--') && (ttlAt < 0 || i !== ttlAt + 1))
   if (!id) {
-    console.error('usage: pnpm auth:link <user-id> [--ttl <minutes>]')
-    console.error('       pnpm auth:reveal <user-id>    # their permanent token, for MCP setup')
+    console.error('usage: box auth link <user-id> [--ttl <minutes>]')
+    console.error('       box auth reveal <user-id>    # their permanent token, for MCP setup')
     process.exit(1)
   }
 
@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   const principal = await resolvePrincipalById(id)
   if (!principal) {
     console.error(`no user "${id}" (or they are revoked) - check Settings -> Users.`)
-    console.error(`On a Box with no users yet, create the first one with:  pnpm auth:token ${id} --name "Full Name"`)
+    console.error(`On a Box with no users yet, create the first one with:  box auth token ${id} --name "Full Name"`)
     process.exit(1)
   }
 

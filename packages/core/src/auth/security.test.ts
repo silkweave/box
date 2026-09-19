@@ -91,7 +91,7 @@ describe('clientIp - a loopback peer', () => {
   })
 
   it('keeps a direct loopback caller on its own bucket', () => {
-    // `pnpm dev`, the chat agent's loopback client and `verifyLoopback` all land here.
+    // `box dev`, the chat agent's loopback client and `verifyLoopback` all land here.
     expect(clientIp(req('::ffff:127.0.0.1'))).toBe('::ffff:127.0.0.1')
   })
 })

@@ -15,10 +15,10 @@
 // A user has exactly ONE access token. Minting a new one OVERWRITES the old one, which stops working
 // instantly - everywhere it was pasted (MCP configs, scripts, un-used magic links). So this is a
 // password RESET, not an "add a device". If the user already has a live token and just needs to see
-// it again, use `pnpm auth:reveal <id>` - that re-prints the SAME token and breaks nothing. This
+// it again, use `box auth reveal <id>` - that re-prints the SAME token and breaks nothing. This
 // script therefore refuses to rotate a live token unless you pass --rotate.
 //
-//   pnpm auth:token <user-id> [actor] [--create] [--rotate] [--admin] [--quiet] [--name "Full Name"]
+//   box auth token <user-id> [actor] [--create] [--rotate] [--admin] [--quiet] [--name "Full Name"]
 //
 //   --create  create a missing user even when humans already exist. Refuses existing IDs, including
 //             revoked users, without changing their profile, role or credential.
@@ -26,7 +26,7 @@
 //             a Box whose admins are gone (the last one cannot be demoted, revoked or deleted
 //             through the app, so this is for a genuinely broken row). Implied on an empty Box.
 //   --quiet   create and mint, print NO token. For an agent running the bootstrap on someone's
-//             behalf: the person then runs `pnpm auth:reveal <id>` in their own terminal. A token
+//             behalf: the person then runs `box auth reveal <id>` in their own terminal. A token
 //             in an agent transcript is how the 2026-08-20 exposure happened.
 //   --name    the display name for a user this script creates. Defaults to the id.
 
@@ -57,8 +57,8 @@ async function main(): Promise<void> {
   const positional = argv.filter((a, i) => !a.startsWith('--') && (nameAt < 0 || i !== nameAt + 1))
   const [id, actor] = positional
   if (!id) {
-    console.error('usage: pnpm auth:token <user-id> [actor] [--create] [--rotate] [--admin] [--quiet] [--name "Full Name"]')
-    console.error('       pnpm auth:reveal <user-id>     # show the CURRENT token without rotating')
+    console.error('usage: box auth token <user-id> [actor] [--create] [--rotate] [--admin] [--quiet] [--name "Full Name"]')
+    console.error('       box auth reveal <user-id>     # show the CURRENT token without rotating')
     process.exit(1)
   }
   if (nameAt >= 0 && (!name?.trim() || name.startsWith('--'))) {
@@ -99,8 +99,8 @@ async function main(): Promise<void> {
   if (!rotate && (await revealPrincipalToken(id))) {
     console.error(`"${id}" already has an active access token, and each user has only ONE.`)
     console.error('')
-    console.error('  To SEE the existing token (nothing breaks):   pnpm auth:reveal ' + id)
-    console.error('  To REPLACE it (the old one dies instantly):   pnpm auth:token ' + id + ' --rotate')
+    console.error('  To SEE the existing token (nothing breaks):   box auth reveal ' + id)
+    console.error('  To REPLACE it (the old one dies instantly):   box auth token ' + id + ' --rotate')
     console.error('')
     console.error('Only rotate if the token leaked or is genuinely lost. Rotating breaks every place')
     console.error('it was pasted: MCP server configs, saved magic links, scripts, other machines.')
@@ -121,14 +121,14 @@ async function main(): Promise<void> {
     console.log(`sign in (expires ${new Date(claims.exp).toISOString()}, works once):`)
     console.log(`  ${signinLinkUrl(grant)}`)
     console.log('')
-    console.log(`For their MCP config they run:  pnpm auth:reveal ${id}`)
+    console.log(`For their MCP config they run:  box auth reveal ${id}`)
     return
   }
   console.log(`access token ${verb} for "${id}" (${principal.display}):\n`)
   console.log(`  ${token}\n`)
   console.log('SAVE IT NOW - permanently, in a password manager (1Password/Keychain), not a chat message.')
   console.log('  - It does NOT expire. Keep it and you never need another one.')
-  console.log('  - It is shown once here. Later you can re-read it with `pnpm auth:reveal ' + id + '`')
+  console.log('  - It is shown once here. Later you can re-read it with `box auth reveal ' + id + '`')
   console.log('    (admin-only) or Settings -> Users -> ... -> View access token.')
   console.log('  - It is the ONE token for this user: browser login AND every MCP connection.')
   console.log('    Minting another one revokes this one instantly and breaks all of them.')
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
   console.log(`sign in now (expires ${new Date(claims.exp).toISOString()}, works once):`)
   console.log(`  ${signinLinkUrl(grant)}`)
   console.log('')
-  console.log(`Or paste the token at ${appUrl()}/. Later links: pnpm auth:link ${id}`)
+  console.log(`Or paste the token at ${appUrl()}/. Later links: box auth link ${id}`)
 }
 
 main()

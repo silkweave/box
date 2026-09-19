@@ -254,7 +254,7 @@ export async function activeAdminCount(): Promise<number> {
 
 /**
  * Change a user's tier, with the three refusals that are about the SHAPE of the admin set rather
- * than about one call - so they hold wherever the change comes from (Settings, `pnpm cli`, an
+ * than about one call - so they hold wherever the change comes from (Settings, `bun run cli`, an
  * admin's own agent session):
  *
  *  1. **Host config owns the machine role.** Admin is the default; changing config to member
@@ -262,7 +262,7 @@ export async function activeAdminCount(): Promise<number> {
  *  2. **Nobody changes their own role.** Demoting yourself is a lockout by accident; promoting
  *     yourself is precisely the thing the tier exists to prevent.
  *  3. **The last active human admin cannot be demoted.** A Box with no admin can only be recovered from
- *     the host (`pnpm auth:token <id> --admin`), which is not a state to reach by a UI click.
+ *     the host (`box auth token <id> --admin`), which is not a state to reach by a UI click.
  *
  * `revokePrincipalToken` and `deleteUser` carry the same last-admin rule at their own call sites -
  * the three doors into "this Box has no admins" are demote, revoke and delete.

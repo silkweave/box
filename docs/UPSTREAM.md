@@ -23,3 +23,15 @@ record, not a completed core upgrade. See INTEGRATION.md for backup and validati
 CLI snapshot finalized in Stack commit `f368209804c3907e19f7cc7b09f1f0ade5e76aff` on 2026-09-19.
 The copied CLI implementation and tests match that commit; the earlier core baseline remains
 unchanged because this was a scoped CLI update, not a complete core refresh.
+
+## Bun runtime integration, 2026-09-19
+
+Source: Stack base `48146e2d5143d47053db9443147e9d46506e3a12` plus its uncommitted Bun
+migration. This is a selective integration, not an advancement of the previous completed
+full-core baseline. Adopted CLI/shim, branding HTML hook, runtime entry points, workspace/lockfile
+policy, CI, command guidance and setup skills; retained consumer package ownership and empty
+feature registration. Consumer validation passed with Bun 1.4.2. See INTEGRATION.md and
+VALIDATION.md for backup, rollback and exact evidence.
+
+Bun migration source finalized in Stack commit `2291e2d1562b81b4a2f433469fc47d4f61d9f5b9`. The consumer retains
+its previous full-core baseline; this commit identifies the scoped runtime/CLI integration.

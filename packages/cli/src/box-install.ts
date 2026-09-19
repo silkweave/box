@@ -1,13 +1,13 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Put `box` on PATH.
 //
-//   pnpm box:install            symlink ~/.local/bin/box -> <this checkout>/packages/cli/bin/box
-//   pnpm box:install --check    report what is installed, change nothing
-//   pnpm box:install --remove   take the link away again
+//   bun run box:install            symlink ~/.local/bin/box -> <this checkout>/packages/cli/bin/box
+//   bun run box:install --check    report what is installed, change nothing
+//   bun run box:install --remove   take the link away again
 //
-// A SYMLINK, not a copy and not a `bin` in package.json. The same argument as `pnpm skills`: a copy
+// A SYMLINK, not a copy and not a `bin` in package.json. The same argument as `bun run skills`: a copy
 // is a second source of truth that rots the moment someone edits the real one. And a `bin` would
-// mean `pnpm link --global`, whose target directory moves between pnpm versions and setups - this
+// mean `bun link --global`, whose target directory depends on the installation - this
 // is one predictable path a person can see, delete, or point somewhere else.
 //
 // It only ever REPLACES a link that already points into a Box checkout. A `box` that is a real file,
@@ -21,7 +21,7 @@ import type { Stats } from 'node:fs'
 import { existsSync, lstatSync, mkdirSync, readlinkSync, rmSync, symlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { repoRoot } from './repo.ts'
+import { repoRoot, isBoxRoot } from './repo.ts'
 
 const root = repoRoot
 const source = join(root, 'packages', 'cli', 'bin', 'box')
@@ -42,7 +42,7 @@ function checkoutAbove(shim: string): string | null {
   let dir = dirname(shim)
   for (let i = 0; i < 4; i++) {
     dir = dirname(dir)
-    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) return dir
+    if (isBoxRoot(dir)) return dir
   }
   return null
 }

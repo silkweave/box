@@ -55,7 +55,7 @@ export default defineConfig({
     // the tailnet suffix rather than `true`: this binds to loopback anyway, and a dev server that
     // trusts every Host is the DNS-rebinding hole the check is there to close.
     allowedHosts: ['.ts.net', 'localhost'],
-    // fs.allow up to the workspace root grants @fs access to the pnpm store where @fontsource ships
+    // fs.allow up to the workspace root grants @fs access to the Bun dependency store where @fontsource ships
     // its .woff2/.woff files (outside the apps/web Vite root).
     fs: { allow: ['../..'] },
     // Reciprocal proxy so hitting the bare Vite port still reaches the backend. Normal flow is

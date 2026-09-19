@@ -19,7 +19,7 @@ import { AppUserMenu } from './userMenu.tsx'
  * import cycle with every view that renders the shell, so a module-scope read of WEB_FEATURE_LIST
  * runs while the binding is still in its temporal dead zone and throws `Cannot access
  * 'WEB_FEATURE_LIST' before initialization` at load - which is exactly what AppShell.tsx did from
- * bf5a3f2 until this seam, and what `pnpm verify` cannot see because it has no runtime step.
+ * bf5a3f2 until this seam, and what `box verify` cannot see because it has no runtime step.
  * `lib/nav.ts` and `lib/slots.ts` dodge the same hazard the same way.
  */
 let cachedTopbar: ComponentType[] | undefined

@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, test } from 'vitest'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
-const flags = ['--conditions=@silkweave/box-source', '--import', '@swc-node/register/esm-register']
+const flags = ['--no-env-file', '--conditions=@silkweave/box-source']
 
 function fixture(run: (box: ReturnType<typeof commands>) => void): void {
   const cache = join(root, 'node_modules', '.cache')

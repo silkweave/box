@@ -2,7 +2,7 @@
 //
 // Two directories under the instance dir, with different owners:
 //   <instance>/backups/   machine-written: `<label>-<stamp>-<id>.db`. Retention prunes ONLY here.
-//   <instance>/seeds/     human-named dev fixtures (`pnpm db:snapshot baseline`). Never pruned.
+//   <instance>/seeds/     human-named dev fixtures (`box db snapshot baseline`). Never pruned.
 //
 // This module deliberately does not import warehouse/db.ts: schema.ts -> migration-snapshot.ts
 // reaches it from inside the migration write lock, and db.ts already sits in a cycle with schema.ts.

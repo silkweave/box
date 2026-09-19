@@ -30,7 +30,7 @@ import collisions, required pins and local exceptions here after further integra
 ## Latest dependency peer ranges, 2026-09-19
 
 The full chain and disabled-agent production/browser checks pass with latest direct dependencies,
-but `pnpm peers check` reports upstream range mismatches. `@silkweave/nestjs@5.2.1` declares Nest
+but `bun run peers check` reports upstream range mismatches. `@silkweave/nestjs@5.2.1` declares Nest
 common/core 10 or 11 and Swagger 7, 8 or 11; this workspace now uses Nest 12.0.3 and Swagger 12.0.1.
 `@workerdeck/core@2.7.2` declares Codex `~0.149.0`, while latest is 0.155.0. No older version was
 pinned just to silence those declarations. The tested application paths work; an armed worker and

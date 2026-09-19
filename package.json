@@ -3,38 +3,41 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.8.0",
+  "packageManager": "bun@1.4.2",
   "description": "A Silkweave Box consumer with the core server, web app and CLI.",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "bun": ">=1.4.2"
+  },
   "scripts": {
-    "prepare": "pnpm box:json && pnpm skills && pnpm typegen --quiet",
-    "box:json": "node packages/cli/src/box-json.ts",
+    "prepare": "bun run box:json && bun run skills && bun run typegen --quiet",
+    "box:json": "bun --no-env-file packages/cli/src/box-json.ts",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint",
-    "start": "pnpm --filter @silkweave/box-server run start",
-    "start:prod": "pnpm --filter @silkweave/box-server run start:prod",
-    "cli": "node packages/cli/src/mcp-proxy.ts",
-    "skills": "node packages/cli/src/skills.ts",
-    "skills:check": "node packages/cli/src/skills.ts --check",
-    "schema:check": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register packages/core/scripts/schema-check.ts",
-    "typegen": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/typegen.ts",
-    "verify": "node packages/cli/src/verify.ts",
-    "auth:token": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/auth-token.ts",
-    "auth:link": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/auth-link.ts",
-    "auth:reveal": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/auth-reveal.ts",
-    "db:snapshot": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/db-snapshot.ts snapshot",
-    "db:restore": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/db-snapshot.ts restore",
-    "db:seeds": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/db-snapshot.ts list",
-    "db:backup": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/db-snapshot.ts backup",
-    "box": "node packages/cli/src/index.ts",
-    "box:install": "node packages/cli/src/box-install.ts",
-    "test:cli": "node --test packages/cli/src/tests/*.test.ts"
+    "start": "bun --bun --no-env-file run --filter @silkweave/box-server start",
+    "start:prod": "bun --bun --no-env-file run --filter @silkweave/box-server start:prod",
+    "cli": "bun --no-env-file packages/cli/src/mcp-proxy.ts",
+    "skills": "bun --no-env-file packages/cli/src/skills.ts",
+    "skills:check": "bun --no-env-file packages/cli/src/skills.ts --check",
+    "schema:check": "bun --no-env-file --conditions=@silkweave/box-source packages/core/scripts/schema-check.ts",
+    "typegen": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/typegen.ts",
+    "verify": "bun --no-env-file packages/cli/src/verify.ts",
+    "auth:token": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/auth-token.ts",
+    "auth:link": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/auth-link.ts",
+    "auth:reveal": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/auth-reveal.ts",
+    "db:snapshot": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts snapshot",
+    "db:restore": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts restore",
+    "db:seeds": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts list",
+    "db:backup": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts backup",
+    "box": "bun --no-env-file packages/cli/src/index.ts",
+    "box:install": "bun --no-env-file packages/cli/src/box-install.ts",
+    "test:cli": "bun --no-env-file test ./packages/cli/src/tests/*.test.ts"
   },
-  "dependencies": { "@silkweave/box-core": "workspace:*" },
+  "dependencies": {
+    "@silkweave/box-core": "workspace:*"
+  },
   "devDependencies": {
-    "@swc-node/register": "^1.12.1",
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.16.2",
     "@types/node": "^26.6.1",
@@ -44,5 +47,14 @@
     "tsdown": "^0.23.0",
     "turbo": "^2.10.13",
     "vitest": "^5.0.1"
-  }
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "trustedDependencies": [
+    "@swc/core",
+    "esbuild",
+    "better-sqlite3"
+  ]
 }

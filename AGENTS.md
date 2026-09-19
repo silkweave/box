@@ -12,16 +12,17 @@ The maintained registration files are the four `src/generated` files in `apps/se
 `apps/web` and `packages/core`. Keep them empty until a feature is integrated. Workspace package
 manifests own their actual dependencies; the root package owns only core and tooling.
 
-Use Node 24 or newer and pnpm 11:
+Use Bun 1.4.2 (the version pinned in package.json):
 
 ```bash
-pnpm install
-pnpm verify
-pnpm dev
+bun install
+bun run box:install
+box verify
+box dev
 ```
 
 Read `docs/SETUP.md`, `docs/CONFIGURATION.md`, `docs/AUTH.md` and `docs/WAREHOUSE.md`
-before changing runtime invariants. Run `pnpm verify` before calling a change complete. Record
+before changing runtime invariants. Run `box verify` before calling a change complete. Record
 the exact commands and results in `docs/VALIDATION.md`.
 
 Keep this checkout's Git metadata intact while preparing changes. Do not commit or publish from an

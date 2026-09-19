@@ -1,4 +1,4 @@
-// `pnpm schema:check` runs the schema matrix as part of `pnpm verify`.
+// `bun run schema:check` runs the schema matrix as part of `box verify`.
 // It exercises the installed feature set against isolated files, without schema lockfiles or
 // byte-equality checks on adaptable source. Runtime migration identity and checksum refusals
 // remain in applySchema because those protect the database rather than enforce authoring style.
@@ -18,7 +18,7 @@
 //      a WARNING (migration-ownership.ts explains why it is advice now).
 //
 // Run it after changing a model, a baseline or a migration. What it cannot prove: a data migration
-// against real rows. Back the warehouse up (`pnpm db:backup`) and rehearse against a restored copy
+// against real rows. Back the warehouse up (`box db backup`) and rehearse against a restored copy
 // whose rows match the migration's WHERE clause. The `run(conn)` hook is opaque to the lint;
 // complex SQL and transitive code changes need review, not a regex.
 

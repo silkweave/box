@@ -18,7 +18,7 @@ A request is resolved to a principal by the first of these that yields one
 
 | # | Source | Credential kind | Who uses it |
 |---|---|---|---|
-| 1 | `Authorization: Bearer <access token>` | `bearer` | MCP clients, `pnpm cli`, scripts, the agent |
+| 1 | `Authorization: Bearer <access token>` | `bearer` | MCP clients, `bun run cli`, scripts, the agent |
 | 2 | the `box_session` cookie | `session` | the SPA |
 | 3 | *(none)* | - | the five `@Public()` routes on `AuthController` only |
 
@@ -117,7 +117,7 @@ Three refusals live in core (`packages/core/src/auth/principal.ts`), because the
 *shape* of the admin set rather than one call:
 
 - **The last human admin cannot be demoted, revoked or deleted.** `activeAdminCount()` is checked first.
-  Recovery for a Box that somehow has none is `pnpm auth:token <id> --admin` on the host.
+  Recovery for a Box that somehow has none is `box auth token <id> --admin` on the host.
 - **Nobody changes their own role.** Demoting yourself is a lockout by accident; promoting yourself
   is the thing the tier exists to prevent.
 - **Host config owns the system principal role.** User-management calls cannot override it.
@@ -125,7 +125,7 @@ Three refusals live in core (`packages/core/src/auth/principal.ts`), because the
 ### Agent identity and role
 
 The system principal is the `agent` block of `box.json`, the one file a Box is configured in
-([SETUP](SETUP.md#configuration)). `pnpm install` writes the file
+([SETUP](SETUP.md#configuration)). `bun install` writes the file
 on a fresh checkout; edit it before the first boot or auth command:
 
 ```json
@@ -155,9 +155,9 @@ replaces the one removed. `user-invite-reveal` remains off MCP; destructive chat
 their human approval cards. These do not protect every admin action. Choose `member` when that
 restriction is wanted. A teammate's sidebar session still uses that teammate's own token and role.
 
-The system principal starts without a token. Mint deliberately with `pnpm auth:token nova --quiet`
+The system principal starts without a token. Mint deliberately with `box auth token nova --quiet`
 (or your configured ID). It prints no permanent token and no browser link for the machine account;
-reveal the credential privately with `pnpm auth:reveal nova` when wiring its profile.
+reveal the credential privately with `box auth reveal nova` when wiring its profile.
 
 ## First run and the commands that exist
 
@@ -165,13 +165,13 @@ A fresh Box has no users and every way to create one sits behind the login, so t
 process on the host (`apps/server/scripts/auth-token.ts`):
 
 ```bash
-pnpm auth:token <id> --name "Full Name"   # on a Box with NO human users: creates <id> as an ADMIN
-pnpm auth:token <id> --quiet              # ...and does not print the token
-pnpm auth:reveal <id>                     # re-print the CURRENT token, non-destructive
-pnpm auth:token <id> --rotate             # replace a live token (a password reset)
-pnpm auth:token <id> --admin              # promote an existing user - the break-glass
-pnpm auth:token <id> --create --quiet     # add a MEMBER on a populated Box, without printing a token
-pnpm auth:token <id> --create --admin --quiet # explicitly add an admin
+box auth token <id> --name "Full Name"   # on a Box with NO human users: creates <id> as an ADMIN
+box auth token <id> --quiet              # ...and does not print the token
+box auth reveal <id>                     # re-print the CURRENT token, non-destructive
+box auth token <id> --rotate             # replace a live token (a password reset)
+box auth token <id> --admin              # promote an existing user - the break-glass
+box auth token <id> --create --quiet     # add a MEMBER on a populated Box, without printing a token
+box auth token <id> --create --admin --quiet # explicitly add an admin
 ```
 
 "No human users" excludes the configured system principal from the users count, so a Box whose only row is the system
@@ -187,8 +187,8 @@ any point; the host was always the trust boundary, and nothing here changes that
 **Access tokens, the contract:** one per user (`users.token_ciphertext` is a single column), no
 expiry (nothing sets or checks one; a token dies only when rotated or revoked), AES-256-GCM
 encrypted at rest **reversibly** precisely so a lost one can be re-read rather than reset. Two
-equivalent non-destructive reveals: Settings -> Users -> View access token, and `pnpm auth:reveal`.
-Minting is a password reset, so `pnpm auth:token` refuses to rotate a live token without `--rotate`.
+equivalent non-destructive reveals: Settings -> Users -> View access token, and `box auth reveal`.
+Minting is a password reset, so `box auth token` refuses to rotate a live token without `--rotate`.
 Rotate only on a leak, and name what breaks first: every MCP config and script holding the old value.
 
 A token is **never** put in a URL. It is the MCP/CLI bearer and what the dashboard login box
@@ -203,7 +203,7 @@ A **grant** (`packages/core/src/auth/link.ts`) is a signed assertion that its be
 user, once, before an expiry. `bl1.<b64url{sub,iat,exp}>.<HMAC-SHA256>`, 15 minutes by default and
 24 hours at most. It carries no secret of the user's and cannot be exchanged for an access token,
 which is what makes it safe to send in a message or mint on someone's behalf inside an agent
-transcript. Mint with `pnpm auth:link <id>`, Settings -> Users -> Send sign-in link, or the
+transcript. Mint with `box auth link <id>`, Settings -> Users -> Send sign-in link, or the
 admin-only `user-link` tool.
 
 **Its key is derived, not separately configured:** HKDF-SHA256 from `AUTH_SESSION_SECRET` with the
@@ -227,7 +227,7 @@ link.
 ### User management, from the app or an agent
 
 `apps/server/src/users/users.controller.ts` exposes each of these as **both** a tRPC procedure and
-an MCP tool, so Settings -> Users, `pnpm cli` and an admin's own agent session are the same surface:
+an MCP tool, so Settings -> Users, `bun run cli` and an admin's own agent session are the same surface:
 
 | MCP tool | tRPC | Tier |
 |---|---|---|
@@ -243,8 +243,8 @@ an MCP tool, so Settings -> Users, `pnpm cli` and an admin's own agent session a
 ## Secrets
 
 `AUTH_SESSION_SECRET` signs the cookie; `AUTH_TOKEN_SECRET` encrypts stored access tokens. Keep both
-in the gitignored `box.local.json` under `auth`; the Box creates them when absent. No warehouse copy may ever include that file (`pnpm db:backup` and
-`pnpm db:snapshot` copy `data.db` and nothing else): a backup carrying
+in the gitignored `box.local.json` under `auth`; the Box creates them when absent. No warehouse copy may ever include that file (`box db backup` and
+`box db snapshot` copy `data.db` and nothing else): a backup carrying
 the key that decrypts the tokens inside it is not a backup, it is a second copy of the credential.
 
 Secrets must be at least 32 characters and must not use placeholder values. Invalid secrets are

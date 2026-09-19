@@ -177,7 +177,7 @@ export class UsersController {
    * chat and ingested content that nobody has vetted. Removing this one door is the single biggest
    * cut to what a prompt injection can reach, and it costs nothing now that `user-link` exists:
    * an agent that needs to get someone in mints a link instead. A person wiring up their own MCP
-   * client runs `pnpm auth:reveal` themselves, on the host.
+   * client runs `box auth reveal` themselves, on the host.
    */
   @Post('invite-reveal')
   @ApiOkResponse({ type: UserInviteDto })
@@ -216,7 +216,7 @@ export class UsersController {
    * The three refusals live in core (`setPrincipalRole`), not here, so they hold wherever the call
    * comes from: host config owns the system role, nobody changes their own role, and the last human
    * active admin cannot be demoted. A Box that somehow has no admin is recovered from the host with
-   * `pnpm auth:token <id> --admin`.
+   * `box auth token <id> --admin`.
    */
   @Post('set-role')
   @ApiOkResponse({ type: UserDto })

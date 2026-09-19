@@ -265,7 +265,7 @@ shaped in March runs in July against rows shaped by planning's April and June mi
 why cross-feature writes are forbidden and cross-feature reads must be written as "seed from
 whatever the dependency holds NOW", never as "convert what it held on the day I shipped" (§ 3.4).
 The one case no rule closes is a read-only cross-feature migration that depends on a column the
-dependency later dropped; `pnpm schema:check` cannot see it, because it runs on empty tables. The
+dependency later dropped; `bun run schema:check` cannot see it, because it runs on empty tables. The
 mitigation is that a migration reads a dependency's tables only through the dependency's exported
 readers, via `await import()` inside `run`, which the compiler checks against the dependency's
 current code, never through hand-written SQL against the dependency's columns.
@@ -279,7 +279,7 @@ current code, never through hand-written SQL against the dependency's columns.
   not own. Feature A owns its tables' history; if B needs a column on A's table, that is a change
   to A: A gets the ModelSpec column and the migration, and B's `dependsOn` already covers the order.
 - Enforcement is layered, and only the first layer is proof. `assertOwnership` proves declarations.
-  `pnpm schema:check` runs a conservative regex over each migration's static SQL against the tables
+  `bun run schema:check` runs a conservative regex over each migration's static SQL against the tables
   the feature owns (`warehouse/migration-ownership.ts`) and reports a hit as a **warning**: on the
   maintainer checkout, where apps stay separable, a warning is something to fix; on a team's Box
   that merged two integrated features into one vocabulary, it is the product working. `run` hooks are
@@ -291,9 +291,9 @@ current code, never through hand-written SQL against the dependency's columns.
 - **Feature ids and migration names are immutable, and so is a shipped migration's body.** Renaming
   either re-runs every migration on every deployed Box; editing one trips the checksum guard.
 
-### 3.5 What `pnpm schema:check` proves, and what it cannot
+### 3.5 What `bun run schema:check` proves, and what it cannot
 
-`packages/core/scripts/schema-check.ts` runs as **part of `pnpm verify`**. On
+`packages/core/scripts/schema-check.ts` runs as **part of `box verify`**. On
 throwaway DuckDB files it proves the fresh and reboot paths (apply twice on one file; every declared
 table exists) and, for each feature F, the enabled-later path of § 3.3 (apply without F and its
 dependents, then apply everything). That second pass is the one that catches an undeclared
@@ -302,7 +302,7 @@ on a full Box and fails on the Box without that neighbour, and unit tests cannot
 (§ 3.4) is reported as a warning.
 
 It cannot prove a data migration against real rows; every table it creates starts empty. That is
-what `pnpm db:backup` and a rehearsal on a restored copy are for
+what `box db backup` and a rehearsal on a restored copy are for
 ([working rules](../WAREHOUSE.md#working-rules-for-an-agent-changing-schema)). Run it after
 changing a model, a baseline or a migration; the full verification chain also runs it.
 
@@ -353,7 +353,7 @@ Core-owned, filled from the manifest:
 | Port | Filled by | Consumer |
 |---|---|---|
 | `CoreFeature.models` / `baseline` / `migrations` | every feature with tables | `warehouse/schema.ts` |
-| `CoreFeature.actions` | any feature with runnable ops | `ops/registry.ts`; from there the `OpsController`, the `run-now` MCP tool, `pnpm cli`, and automation's scheduler |
+| `CoreFeature.actions` | any feature with runnable ops | `ops/registry.ts`; from there the `OpsController`, the `run-now` MCP tool, `bun run cli`, and automation's scheduler |
 | `ServerFeature.module` | every feature | `app.module.ts` |
 | `WebFeature.routes` / `nav` / `settings` / `shell.topbar` / `onSession` / `slots` / `docs` | every feature with UI | `router.tsx`, `lib/nav.ts`, `SettingsView.tsx`, `lib/shell.tsx`, `App.tsx`, `lib/slots.ts`, `lib/useDoc.ts` (§ 5) |
 
@@ -526,7 +526,7 @@ exports as needed. It records completed upstream SHA, path mapping, skipped chan
 unresolved work in docs/UPSTREAM.md and docs/INTEGRATION.md. Runtime contracts and package manifests
 remain source contracts; no feature package or release catalogue is created.
 
-### 6.2 `pnpm verify`
+### 6.2 `box verify`
 
 Run the receiving Box's normal build, typecheck, tests, lint, and schema check, then boot a
 disposable instance and exercise the feature's documented surface. Type generation checks tRPC and
@@ -544,5 +544,5 @@ integration log; a passing lockfile build is not evidence of latest dependency t
   throwaway Box.
 - **A top-level route colliding with a server prefix or a shipped file** (§ 5.1).
 - **A core web module naming a feature's tRPC procedure** (§ 1): only a featureless typecheck sees
-  it, which on `master` is the ordinary `pnpm typecheck`.
-- **A migration against real rows** (§ 3.5): `pnpm db:backup`, a throwaway Box, a restored copy.
+  it, which on `master` is the ordinary `bun run typecheck`.
+- **A migration against real rows** (§ 3.5): `box db backup`, a throwaway Box, a restored copy.

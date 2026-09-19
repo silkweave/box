@@ -1,6 +1,5 @@
 # Local dependencies, caches and build output.
 node_modules/
-.pnpm-store/
 .turbo/
 .roam/
 build/
@@ -28,7 +27,7 @@ config/credentials.json
 /box/
 /spike/
 
-# Runtime feature skills are linked from features/<id>/skills by pnpm skills.
+# Runtime feature skills are linked from features/<id>/skills by bun run skills.
 .claude/skills/*
 !.claude/skills/setup-box/
 !.claude/skills/consult/

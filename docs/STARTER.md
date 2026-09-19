@@ -40,7 +40,7 @@ No released consumer baseline is established yet. Feature integration is agent-d
 
 ## Verify before first use
 
-10. Run `pnpm install`, then `pnpm verify`. The chain must include build, CLI tests, type generation,
+10. Run `bun install`, then `box verify`. The chain must include build, CLI tests, type generation,
     typecheck, lint, core tests, server tests, and `schema:check`.
 11. Record the actual command, source state, dependency update date, test counts, warnings, and any
     limitations in `docs/VALIDATION.md`. A passing lockfile build does not prove latest dependency

@@ -13,7 +13,7 @@ import { appEntries, useGroupNav } from '../lib/nav.ts'
  * `appEntries()` reads the generated registry, which sits on an import cycle with every view
  * (`view -> nav.ts -> generated/features -> feature index -> view`). It is called INSIDE the
  * component for that reason. A module-scope read here throws `Cannot access 'WEB_FEATURE_LIST'
- * before initialization` at load and white-screens the whole SPA, `pnpm verify` has no runtime
+ * before initialization` at load and white-screens the whole SPA, `box verify` has no runtime
  * step and cannot see it, and that is exactly how the app was broken from bf5a3f2 to 2026-09-13.
  *
  * A Box with no apps never reaches this view: the index route redirects to `homePath()` instead,

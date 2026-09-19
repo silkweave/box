@@ -17,15 +17,13 @@ const task = (id: string, code: string, phase = 'Build'): Task => ({
 function cleanup(state: RunState): void { rmSync(state.logDirectory, { recursive: true, force: true }) }
 
 test('verify keeps the nine-command order and package-manager entry point', () => {
-  const tasks = verifyTasks('/example/pnpm.cjs')
+  const tasks = verifyTasks('/example/bun')
   assert.deepEqual(tasks.map(t => t.command), [
-    'pnpm build', 'pnpm skills', 'pnpm test:cli', 'pnpm typegen', 'pnpm typecheck', 'pnpm lint',
-    'pnpm -F @silkweave/box-core test', 'pnpm -F @silkweave/box-server test', 'pnpm schema:check',
+    'bun run build', 'bun run skills', 'bun run test:cli', 'bun run typegen', 'bun run typecheck', 'bun run lint',
+    'bun run --filter @silkweave/box-core test', 'bun run --filter @silkweave/box-server test', 'bun run schema:check',
   ])
-  assert.ok(tasks.every(t => t.executable === process.execPath && t.args[0] === '/example/pnpm.cjs'))
-  const standalone = verifyTasks('/example/@pnpm/exe/pnpm')
-  assert.ok(standalone.every(t => t.executable === '/example/@pnpm/exe/pnpm'))
-  assert.deepEqual(standalone[0].args, ['build'])
+  assert.ok(tasks.every(t => t.executable === '/example/bun'))
+  assert.deepEqual(tasks[0].args, ['--bun', '--no-env-file', 'run', 'build'])
 })
 
 test('runs in the requested checkout, retains complete output, and stops at a failing check', async () => {
@@ -69,6 +67,7 @@ test('a spawn error fails the task and skips following tasks', async () => {
 
 test('warning output survives successful checks without counting a no-warnings summary', async () => {
   assert.equal(isWarning('✔ warning output survives successful checks (10ms)'), false)
+  assert.equal(isWarning('(pass) warning output survives successful checks [7.87ms]'), false)
   assert.equal(isWarning('(!) Some chunks are larger than 500 kB'), true)
   const state = await runTasks([task('warn', 'console.log("WARN advisory"); console.log("WARN advisory"); console.log("0 warnings"); console.log("no ownership warnings")')], { cwd: tmpdir() })
   try {
@@ -92,15 +91,20 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'verify-cli-')))
   const source = join(root, 'packages/cli/src')
   mkdirSync(source, { recursive: true })
-  writeFileSync(join(root, 'package.json'), '{"type":"module"}')
+  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'typegen', 'typecheck', 'lint', 'schema:check'].map(name => [name, `bun fixture.cjs ${name}`]))
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module', workspaces: ['packages/*'], scripts }))
+  for (const name of ['core', 'server']) {
+    mkdirSync(join(root, 'packages', name), { recursive: true })
+    writeFileSync(join(root, 'packages', name, 'package.json'), JSON.stringify({ name: `@silkweave/box-${name}`, scripts: { test: 'bun ../../fixture.cjs test' } }))
+  }
   for (const file of ['verify.ts', 'repo.ts', 'tasks.ts', 'ui.ts', 'task-view.ts']) copyFileSync(new URL(`../${file}`, import.meta.url), join(source, file))
-  const pnpm = join(root, 'pnpm.cjs')
+  const fixture = join(root, 'fixture.cjs')
   const exec = (...args: string[]) => spawnSync(process.execPath, [join(source, 'verify.ts'), ...args], {
-    cwd: tmpdir(), encoding: 'utf8', env: { ...process.env, npm_execpath: pnpm }, timeout: 10000,
+    cwd: tmpdir(), encoding: 'utf8', timeout: 10000,
   })
   const logs: string[] = []
   try {
-    writeFileSync(pnpm, `if (process.cwd() !== ${JSON.stringify(root)}) process.exit(8); console.log('child-detail');`)
+    writeFileSync(fixture, `if (!process.cwd().startsWith(${JSON.stringify(root)})) process.exit(8); console.log('child-detail');`)
     const plain = exec('--plain')
     logs.push(plain.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
     assert.equal(plain.status, 0, plain.stdout + plain.stderr)
@@ -110,7 +114,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
     logs.push(verbose.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
     assert.equal(verbose.status, 0)
     assert.match(verbose.stdout, /\[Build workspace\] child-detail/)
-    writeFileSync(pnpm, 'if (process.argv[2] === "typecheck") { console.error("SyntaxError: regression fixture"); process.exit(7) }')
+    writeFileSync(fixture, 'if (process.argv[2] === "typecheck") { console.error("SyntaxError: regression fixture"); process.exit(7) }')
     const failure = exec('--plain')
     logs.push(failure.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
     assert.equal(failure.status, 7)

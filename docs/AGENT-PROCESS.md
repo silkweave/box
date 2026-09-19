@@ -8,7 +8,7 @@ State the intended scope and actual source revision in INTEGRATION.md. Keep dura
 choices and limitations in GOTCHAS.md and source ancestry in UPSTREAM.md. Do not invent completed
 commits or test results.
 
-Run focused checks during development and the full `pnpm verify` chain before completion. Test
+Run focused checks during development and the full `box verify` chain before completion. Test
 changed routes through Chrome DevTools MCP using a separate checkout with background work disabled.
 Review the final diff for unrelated changes, credentials and accidental instance data.
 

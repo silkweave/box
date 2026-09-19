@@ -98,7 +98,7 @@ export function taskReceipt(state: RunState, { depth = 1, columns = 100 } = {}):
     rows.push([], [span(`  $ ${stopped.command}`, 'accent')], [span(`  ${stopped.signal ? `Signal: ${stopped.signal}` : `Exit: ${stopped.exitCode ?? 'could not start'}`}`, 'muted')])
     const diagnostics = [...new Set([...stopped.diagnostics, ...stopped.tail.slice(-8)])]
     for (const line of diagnostics) rows.push([span(`  ${line}`, 'text')])
-    rows.push([span(`  Inspect: ${stopped.command}`, 'accent')], [span('  Then rerun: pnpm verify', 'muted')])
+    rows.push([span(`  Inspect: ${stopped.command}`, 'accent')], [span('  Then rerun: box verify', 'muted')])
   }
   if (state.cancelled || failed) {
     const skipped = state.tasks.filter(t => t.status === 'skipped')
