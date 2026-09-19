@@ -1,0 +1,28 @@
+# Silkweave Box
+
+This repository is a core-only Silkweave Box consumer. Runtime source is under `apps/` and
+`packages/`; reference feature source is added from the upstream Stack into `features/<id>/`
+when a team chooses to integrate it.
+
+Configuration is in root `box.json`. The gitignored `box.local.json` carries local overrides,
+credentials and secrets. Do not add `.env` files or environment-variable configuration. Runtime
+state is under `data/`, and a fresh Box starts with root `box.json` and an empty data directory.
+
+The maintained registration files are the four `src/generated` files in `apps/server`,
+`apps/web` and `packages/core`. Keep them empty until a feature is integrated. Workspace package
+manifests own their actual dependencies; the root package owns only core and tooling.
+
+Use Node 24 or newer and pnpm 11:
+
+```bash
+pnpm install
+pnpm verify
+pnpm dev
+```
+
+Read `docs/SETUP.md`, `docs/CONFIGURATION.md`, `docs/AUTH.md` and `docs/WAREHOUSE.md`
+before changing runtime invariants. Run `pnpm verify` before calling a change complete. Record
+the exact commands and results in `docs/VALIDATION.md`.
+
+Keep this checkout's Git metadata intact while preparing changes. Do not commit or publish from an
+agent task unless explicitly asked.

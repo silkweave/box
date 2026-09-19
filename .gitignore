@@ -1,0 +1,50 @@
+# Local dependencies, caches and build output.
+node_modules/
+.pnpm-store/
+.turbo/
+.roam/
+build/
+dist/
+storybook-static/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# A Box owns its instance data; none of it belongs in reference source.
+/data/
+.env
+.env.*
+.auth/
+input/
+config/credentials.json
+.workerdeck/
+.workerdeck.json
+.claude/settings.local.json
+.mcp.json
+
+# Local design notes and the independent consumer checkout.
+/_docs/
+/box/
+/spike/
+
+# Runtime feature skills are linked from features/<id>/skills by pnpm skills.
+.claude/skills/*
+!.claude/skills/setup-box/
+!.claude/skills/consult/
+!.claude/skills/adapt/
+!.claude/skills/upgrade/
+!.claude/skills/verify/
+.agents/skills/*
+!.agents/skills/setup-box
+!.agents/skills/consult
+!.agents/skills/adapt
+!.agents/skills/upgrade
+!.agents/skills/verify
+.codex/prompts/
+
+# Router types are generated. Feature registration and exports are maintained source.
+apps/web/src/generated/appRouter.d.ts
+
+# Machine-specific configuration and secrets.
+box.local.json

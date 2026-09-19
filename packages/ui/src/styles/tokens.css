@@ -1,0 +1,253 @@
+/*
+ * Silkweave design tokens - the SINGLE source of color truth.
+ * Dark, legible, technical: a near-black indigo canvas with a single indigo
+ * accent and a five-stop "silk" gradient reserved for the mark / brand flourishes.
+ * Light is the default; dark is a token swap on `[data-theme='dark']`.
+ *
+ * Two vocabularies live here on purpose:
+ *  - Silkweave-native tokens (--fg-1..4, --bg-surface, --bg-code, --border-light,
+ *    --silk-*, --accent-bg/ring, semantic -bg, --tok-*) consumed by the ui/ kit.
+ *  - claudepad-compatible aliases (--surface, --sidebar, --text, --text-muted,
+ *    --accent-tint, --warn, --ring color, --shadow-sm/md) so the globals.css
+ *    @theme bridge + Tailwind utilities keep resolving with zero component edits.
+ *
+ * Components consume the semantic names via Tailwind utilities (see globals.css
+ * @theme) or `var(--token)`, never raw hex.
+ */
+
+:root,
+[data-theme='light'] {
+  /* ---------- Backgrounds ---------- */
+  --bg: #ffffff; /* app canvas */
+  --bg-surface: #fafafa; /* cards / panels */
+  --bg-surface-hover: #f3f3f5; /* hover state */
+  --bg-code: #f7f7f9; /* code blocks, kbd */
+  --bg-elevated: #ffffffcc; /* glassy overlays (blur over this) */
+
+  /* ---------- Borders ---------- */
+  --border: #e8e8ec; /* 1px hairline */
+  --border-light: #d8d8de; /* hover lift */
+  --border-strong: #b8b8c0;
+  --shine: #e0e0e6; /* the inset frame's edge (Linear-style "shine") - a touch stronger than --border */
+
+  /* ---------- Foreground / Text ---------- */
+  --fg-1: #0e0e16; /* primary text */
+  --fg-2: #41414f; /* prose / secondary */
+  --fg-3: #6b6b7a; /* muted */
+  --fg-4: #8c8c98; /* dim / placeholder */
+  --fg-disabled: #c4c4cc;
+
+  /* ---------- Accent (silk indigo) ---------- */
+  --accent: #5558e6;
+  --accent-hover: #4346d4;
+  --accent-dim: #7b7ef5;
+  --accent-bg: #eef0fe; /* tinted surface (active rows, soft fills) */
+  --accent-ring: #5558e633;
+
+  /* ---------- Semantic ---------- */
+  --success: #16a34a;
+  --success-bg: #ecfdf3;
+  --warning: #b45309;
+  --warning-bg: #fff7ed;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --info: #0284c7;
+  --info-bg: #eff8ff;
+
+  /* ---------- Chart series (data-viz categorical palette) ----------
+   * Eight slots, ASSIGNED IN FIXED ORDER and never cycled: a ninth series folds into "Other",
+   * facets into small multiples, or picks up a second encoding. The ORDER is the colour-vision
+   * safety mechanism, not decoration - this one was validated with the dataviz skill's checker
+   * against this Box's own chart surface (--bg-surface), in both modes:
+   *   light  worst adjacent CVD dE 9.1, normal-vision dE 19.6, surface #fafafa
+   *   dark   worst adjacent CVD dE 8.4, normal-vision dE 19.3, surface #12121a
+   * and the first THREE slots additionally clear the all-pairs floors, which is the cap for forms
+   * where every series touches every other (scatter, bubble, small multiples).
+   * Slot 1 is the Box accent, so a single-series chart is accent-coloured, as the app already drew
+   * it; the other seven are the skill's validated hues, re-ordered around it and re-checked.
+   * Re-run the checker after ANY change here - do not eyeball it.
+   * Light slots 3, 4 and 5 sit below 3:1 against the light surface: a chart using them owes the
+   * reader a visible label, a legend or the table view. It never leans on hue alone. */
+  --chart-1: #5558e6; /* indigo - the accent */
+  --chart-2: #eb6834; /* orange */
+  --chart-3: #1baf7a; /* aqua */
+  --chart-4: #eda100; /* yellow */
+  --chart-5: #e87ba4; /* magenta */
+  --chart-6: #008300; /* green */
+  --chart-7: #2a78d6; /* blue */
+  --chart-8: #e34948; /* red */
+
+  /* Chart chrome. The grid is a hairline and SOLID (a dashed grid competes with a dashed series);
+   * the surface role is what the 2px gaps and mark rings are painted in, so it has to be the colour
+   * the chart actually sits on. */
+  --chart-surface: var(--bg-surface);
+  --chart-grid: var(--border);
+  --chart-axis: var(--border-light);
+  --chart-ink: var(--fg-3);
+
+  /* ---------- Syntax tokens (Light Plus-ish) ---------- */
+  --tok-keyword: #8b5cf6;
+  --tok-string: #15803d;
+  --tok-comment: #6b6b7a;
+  --tok-function: #2563eb;
+  --tok-type: #b45309;
+  --tok-property: #be185d;
+  --tok-number: #c2410c;
+  --tok-punctuation: #6b6b7a;
+  --tok-operator: #0891b2;
+
+  /* ---------- Elevation (softer in light) ---------- */
+  --shadow-xs: 0 1px 2px rgba(15, 15, 30, 0.06);
+  --shadow-sm: 0 1px 3px rgba(15, 15, 30, 0.08), 0 1px 2px rgba(15, 15, 30, 0.04);
+  --shadow: 0 4px 12px rgba(15, 15, 30, 0.08), 0 1px 3px rgba(15, 15, 30, 0.05);
+  --shadow-md: 0 4px 12px rgba(15, 15, 30, 0.08), 0 1px 3px rgba(15, 15, 30, 0.05);
+  --shadow-lg: 0 12px 32px rgba(15, 15, 30, 0.12), 0 4px 8px rgba(15, 15, 30, 0.06);
+  --shadow-glow: 0 0 0 1px var(--accent-ring), 0 4px 16px rgba(85, 88, 230, 0.15);
+  --frame-shadow: var(--shadow-xs); /* the inset frame's drop - the default xs reads well on the light canvas */
+
+  /* ---------- claudepad-compatible aliases ---------- */
+  --surface: var(--bg-surface);
+  --sidebar: #f5f5f8;
+  --text: var(--fg-1);
+  --text-muted: var(--fg-3);
+  --accent-tint: var(--accent-bg);
+  --accent-fg: #ffffff;
+  --warn: var(--warning);
+  --ring: var(--accent);
+}
+
+[data-theme='dark'] {
+  /* ---------- Backgrounds ---------- */
+  --bg: #0a0a0f;
+  --bg-surface: #12121a;
+  --bg-surface-hover: #1a1a26;
+  --bg-code: #0d0d16;
+  --bg-elevated: #16162046;
+
+  /* ---------- Borders ---------- */
+  --border: #1e1e2e;
+  --border-light: #2a2a3e;
+  --border-strong: #3a3a52;
+  --shine: #32333e; /* the inset frame's edge - brighter than --border so the panel glints against the canvas */
+
+  /* ---------- Foreground / Text ---------- */
+  --fg-1: #e4e4ef;
+  --fg-2: #b8b8cc;
+  --fg-3: #8888a0;
+  --fg-4: #7e7e94;
+  --fg-disabled: #4a4a5e;
+
+  /* ---------- Accent ---------- */
+  --accent: #7b7ef5;
+  --accent-hover: #9ba0f8;
+  --accent-dim: #5558e6;
+  --accent-bg: #1e1b4b;
+  --accent-ring: #7b7ef540;
+
+  /* ---------- Semantic ---------- */
+  --success: #22c55e;
+  --success-bg: #022c1a;
+  --warning: #f59e0b;
+  --warning-bg: #2a1f04;
+  --danger: #ef4444;
+  --danger-bg: #2a0d10;
+  --info: #38bdf8;
+  --info-bg: #082f3f;
+
+  /* ---------- Chart series ---------- */
+  /* The same eight hues stepped for the dark surface - a selected palette, not an automatic flip.
+   * See the light block for the validation record and the rules. */
+  --chart-1: #7b7ef5; /* indigo - the accent */
+  --chart-2: #d95926; /* orange */
+  --chart-3: #199e70; /* aqua */
+  --chart-4: #c98500; /* yellow */
+  --chart-5: #d55181; /* magenta */
+  --chart-6: #008300; /* green */
+  --chart-7: #3987e5; /* blue */
+  --chart-8: #e66767; /* red */
+
+  --chart-surface: var(--bg-surface);
+  --chart-grid: var(--border);
+  --chart-axis: var(--border-light);
+  --chart-ink: var(--fg-3);
+
+  /* ---------- Syntax tokens ---------- */
+  --tok-keyword: #c084fc;
+  --tok-string: #86efac;
+  --tok-comment: #7e7e94;
+  --tok-function: #60a5fa;
+  --tok-type: #fbbf24;
+  --tok-property: #f0abfc;
+  --tok-number: #fb923c;
+  --tok-punctuation: #8888a0;
+  --tok-operator: #67e8f9;
+
+  /* ---------- Elevation (dark: for separation, not faux-light) ---------- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.55), 0 8px 16px rgba(0, 0, 0, 0.35);
+  --shadow-glow: 0 0 0 1px var(--accent-ring), 0 8px 32px rgba(123, 126, 245, 0.18);
+  /* The inset frame's drop: xs disappears on the dark canvas, so spread wider and darker for a
+     visible lift without faux-light. */
+  --frame-shadow: 0 4px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.45);
+
+  /* ---------- claudepad-compatible aliases ---------- */
+  --surface: var(--bg-surface);
+  /* App canvas behind the inset frame (and the sidebar on it): clearly lighter than --bg so the
+     framed content panel reads as its own darker surface in dark mode. */
+  --sidebar: #16161f;
+  --text: var(--fg-1);
+  --text-muted: var(--fg-3);
+  --accent-tint: var(--accent-bg);
+  --accent-fg: #ffffff;
+  --warn: var(--warning);
+  --ring: var(--accent);
+}
+
+/*
+ * Theme-independent tokens - the silk gradient, type tracking, spacing, radii,
+ * motion. (Color-bearing tokens live in the per-theme blocks above.)
+ */
+:root {
+  /* ---------- Silk gradient (mark, brand flourishes - used sparingly) ---------- */
+  --silk-magenta: #c550c7;
+  --silk-purple: #7932b7;
+  --silk-violet: #3f2eb7;
+  --silk-indigo: #134fb4;
+  --silk-cyan: #37c9d9;
+
+  --silk-magenta-soft: #e8a9e9;
+  --silk-purple-soft: #c5a3e8;
+  --silk-violet-soft: #a3a4e8;
+  --silk-indigo-soft: #8aaeea;
+  --silk-cyan-soft: #a8e5ed;
+
+  --silk-gradient: linear-gradient(
+    135deg,
+    #c550c7 0%,
+    #7932b7 25%,
+    #3f2eb7 50%,
+    #134fb4 75%,
+    #37c9d9 100%
+  );
+  --silk-gradient-soft: linear-gradient(
+    135deg,
+    #e8a9e9 0%,
+    #c5a3e8 30%,
+    #a3a4e8 55%,
+    #8aaeea 80%,
+    #a8e5ed 100%
+  );
+
+  /* ---------- Type tracking ---------- */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-caps: 0.1em;
+
+  /* ---------- Easing (Silkweave-native; --ease-standard/-emphasized live in @theme) ---------- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}

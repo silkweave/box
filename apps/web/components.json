@@ -1,0 +1,35 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "base-vega",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "gray",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "fileCase": "pascalCase",
+  "transform": {
+    "enforceNamedImports": true,
+    "enforceDirectExports": true,
+    "enforceFunctionComponent": true,
+    "enforceFormat": true,
+    "enforceEslint": true,
+    "enforcePrettier": true,
+    "enforceLineSeparation": true,
+    "eslint": {
+      "@typescript-eslint/consistent-type-imports": "error"
+    }
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "registries": {}
+}

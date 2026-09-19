@@ -1,0 +1,20 @@
+{
+  // Resolver-support config for root-run swc-node ops scripts (pnpm idea:apply / content:migrate /
+  // seed:planning / ...). Those run from the repo root, and @swc-node/register resolves the
+  // `@silkweave/box-core` -> src mapping through the `@silkweave/box-source` export condition declared here. It is NOT
+  // the typecheck config - each app/package owns its own tsconfig (pnpm typecheck = turbo run
+  // typecheck fans out per project). `files: []` keeps it out of any build graph.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "customConditions": ["@silkweave/box-source"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["node"]
+  },
+  "include": ["apps/server/scripts/**/*.ts"]
+}

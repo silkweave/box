@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>__BOX_BRAND_NAME__</title>
+    <meta name="theme-color" content="__BOX_BRAND_THEME_COLOR__" />
+    <!-- PWA manifest (2026-08-30): installing the dashboard (Chrome > Install app) makes
+         push notifications attribute to the configured product name + icon instead of Chrome + the origin
+         line. On iOS, Web Push exists ONLY for home-screen web apps (Safari > Share > Add to
+         Home Screen) - Apple exposes no PushManager in any browser tab, Safari or Chrome alike.
+         The apple-touch-icon is what iOS uses for that home-screen tile (it ignores manifest
+         icons); it is pre-flattened because iOS renders PNG alpha as black. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="__BOX_BRAND_APPLE_ICON__" />
+    <!-- Without this the browser asks for /favicon.ico on every first load and the SPA answers 404,
+         so a clean boot still showed a red console error (found in a fresh-clone rehearsal
+         2026-09-15). That matters more than a missing icon: FIELD-TEST.md asks testers to report
+         anything in the console, and a permanent error there teaches them to stop looking. -->
+    <link rel="icon" href="__BOX_BRAND_ICON__" />
+    <meta name="apple-mobile-web-app-title" content="__BOX_BRAND_SHORT_NAME__" />
+    <!-- No-flash appearance: resolve the persisted light/dark mode before first paint.
+         `__BOX_THEME_KEY__` IS NOT A LITERAL - vite.config.ts's `box-theme-key` plugin substitutes
+         `${APP_STORAGE_PREFIX}.theme` into it (dev and build alike), so this script and
+         `appKey('theme')` come off the one constant in src/lib/storagePrefix.ts and cannot drift.
+         They did drift, from 2026-09-14 to 2026-09-15: this script read `silkweave.theme` while
+         theme.ts had been de-branded to `ui.theme`, it never found anything, and every dark-mode
+         user got a light flash on every load - invisible to tsgo, oxlint and every test here.
+         It also spoke a third value, `system`, that is not a valid `Theme` - theme.ts is
+         light|dark only and seeds from the OS on first launch, which is what the `null` branch
+         below reproduces. -->
+    <script>
+      (function () {
+        var el = document.documentElement
+        try {
+          var t = localStorage.getItem('__BOX_THEME_KEY__')
+          var dark =
+            t === 'dark' ||
+            (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          el.setAttribute('data-theme', dark ? 'dark' : 'light')
+        } catch (e) {
+          el.setAttribute('data-theme', 'light')
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

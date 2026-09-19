@@ -1,0 +1,8 @@
+/*
+ * Storybook's stylesheet. The library's own sheet only declares `@source '../'` for src/, so the
+ * classes used by the preview decorator itself (and by any story wrapper) would go unbuilt without
+ * this second scan of .storybook/.
+ */
+@import '../src/styles/globals.css';
+
+@source './';

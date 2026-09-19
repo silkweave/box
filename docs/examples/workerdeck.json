@@ -1,0 +1,55 @@
+{
+  "_readme": [
+    "Put this object in the workerdeck field of box.json or box.local.json. The field IS the switch:",
+    "a non-null value with at least one profile boots the agent surface, null disables it.",
+    "Keys beginning with _ are ignored. See docs/SERVER.md for the full reference.",
+    "",
+    "One profile per person PER ENGINE. `home` is the engine's CONFIG DIR (CLAUDE_CONFIG_DIR for",
+    "claude, CODEX_HOME for codex), never the home directory above it - pointing it one level up",
+    "is silent and every session then runs with the wrong settings, memory, skills and credentials.",
+    "A declared profile whose `home` does not exist yet is named at boot and skipped, so one",
+    "teammate who has not logged in is never an outage for the others.",
+    "",
+    "`person` is usually a users.id, and is what the agentProfiles map in box.json maps a user onto.",
+    "It is deliberately not the same field as `name`: alice:claude and alice:codex are one human,",
+    "and the per-person lookups (CLAUDE_TOKEN_<PERSON>, mcpTokensPath) key on it."
+  ],
+
+  "profiles": [
+    {
+      "name": "alice:claude",
+      "engine": "claude",
+      "person": "alice",
+      "home": "/Users/alice/.claude",
+      "description": "Alice"
+    },
+    {
+      "name": "alice:codex",
+      "engine": "codex",
+      "person": "alice",
+      "home": "/Users/alice/.codex",
+      "description": "Alice - Codex",
+      "defaults": { "permissionMode": "acceptEdits" }
+    },
+
+    {
+      "_comment": [
+        "A SERVICE ACCOUNT, deliberately not a teammate: the identity the chat agent runs under,",
+        "on its own subscription, with its own CODEX_HOME. Add this when you install the `chat`",
+        "feature. Pinned read-only where teammates get acceptEdits, because nobody is watching it."
+      ],
+      "name": "assistant:codex",
+      "engine": "codex",
+      "person": "assistant",
+      "home": "/Users/alice/assistant/.codex",
+      "description": "Box assistant",
+      "defaults": { "permissionMode": "default" },
+      "mcpTokensPath": "/Users/alice/assistant/.codex/mcp-tokens.env"
+    }
+  ],
+
+  "_cwdRoots": "Directories a session may be rooted at. Defaults to the checkout this server runs from.",
+  "_stateDir": "Where parked session records live. Defaults to data/agent.",
+  "_claudeTokens": "Set true if box.local.json workerdeckTokens carries CLAUDE_TOKEN_<PERSON>; the boot log then says who is missing one.",
+  "claudeTokens": false
+}

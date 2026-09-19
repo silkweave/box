@@ -1,0 +1,125 @@
+/*
+ * Agent sidebar styling (docs/prd-agent-sidebar.md §2, "bridge, don't import the worker theme").
+ * The @workerdeck/ui SessionPanel renders in the Box's OWN palette: both token systems descend from
+ * chromatrix and collide on @theme names, so importing the worker's theme.css would fight
+ * tokens.css. Instead Tailwind scans the package for its utility classes (the @source lines) and
+ * the few vocabulary gaps are bridged onto the Box's vars here. streamdown (the ui kit's markdown
+ * renderer) is a direct devDependency of @silkweave/box-web solely so its dist chunks have a stable physical
+ * path under pnpm's nested-store layout.
+ */
+/* The terminal theme's geometry and palette (workerdeck 0.17: SessionPanel mounts three
+ * TerminalSurfaces - transcript, pending prompts, composer - and they are plain `.term-*`
+ * classes, not Tailwind utilities, so @source scanning does NOT produce them). Imported
+ * directly rather than via the package's theme.css, which pulls the worker's whole @theme
+ * block and is exactly the token collision the note above describes. terminal.css is
+ * standalone by design: its tokens scope under [data-terminal] and are deliberately
+ * independent of the app palette - "a terminal looks like a terminal wherever it is
+ * embedded". Must stay ahead of the @source lines: @import has to precede other rules.
+ *
+ * Without this the panel renders with no grid at all - typecheck and build both pass. */
+@import '../../node_modules/@workerdeck/ui/src/styles/terminal.css';
+
+@source '../../node_modules/@workerdeck/ui/src';
+@source '../../node_modules/streamdown/dist';
+
+@theme inline {
+  /* The one color utility the ui kit uses that the Box's bridge lacks. Named code-bg (not code) so it
+     can't shadow the --text-code type step - see the worker theme for the full rationale. */
+  --color-code-bg: var(--bg-code);
+}
+
+:root {
+  /* The ui kit's font-role vars ride the Box's font stacks. */
+  --cw-font-sans: var(--cp-font-sans);
+  --cw-font-mono: var(--cp-font-mono);
+}
+
+/* ── prompt-area (the Composer's contentEditable input, vendored inside @workerdeck/ui) ──────
+   Hand-authored styles its chips/markers depend on - copied from the worker theme.css we don't
+   import. Colors ride the shadcn bridge vars (--secondary/--foreground) the Box already defines. */
+.prompt-area-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  vertical-align: baseline;
+  margin: 0 1px;
+  background-color: var(--secondary);
+  color: var(--foreground);
+  transition:
+    background-color 0.2s ease,
+    transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.prompt-area-chip:hover {
+  background-color: color-mix(in srgb, var(--secondary) 80%, var(--foreground) 20%);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.prompt-area-chip:active {
+  transform: scale(0.93);
+  background-color: color-mix(in srgb, var(--secondary) 70%, var(--foreground) 30%);
+  box-shadow: 0 0 0 transparent;
+  transition:
+    background-color 0.05s ease,
+    transform 0.08s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.05s ease;
+}
+@keyframes prompt-area-chip-ripple {
+  0% {
+    transform: scale(0);
+    opacity: 0.4;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+.prompt-area-chip-ripple {
+  position: absolute;
+  border-radius: 50%;
+  width: 100%;
+  aspect-ratio: 1;
+  background: color-mix(in srgb, var(--foreground) 15%, transparent);
+  pointer-events: none;
+  animation: prompt-area-chip-ripple 0.45s ease-out forwards;
+}
+.prompt-area-md-marker {
+  font-size: 0;
+  display: inline;
+}
+.prompt-area-list-bullet {
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  transform: translateY(-1.5px);
+  margin-right: 4px;
+}
+.prompt-area-list-bullet::before {
+  content: '';
+  width: var(--prompt-area-bullet-size, 6px);
+  height: var(--prompt-area-bullet-size, 6px);
+  border-radius: 50%;
+  background: currentColor;
+}
+.prompt-area-list-indent {
+  display: inline-block;
+  white-space: pre;
+}
+.prompt-area-chip--inline {
+  padding: 0;
+  border-radius: 0;
+  margin: 0;
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  .prompt-area-editor {
+    transition: none !important;
+  }
+}

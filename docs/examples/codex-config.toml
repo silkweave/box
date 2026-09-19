@@ -1,0 +1,30 @@
+# Codex MCP config for a Box - the `[mcp_servers]` block of ~/.codex/config.toml.
+#
+# This is the Codex equivalent of docs/examples/mcp.json, which is Claude Code's format. The two
+# files exist because the two tools read different formats, NOT because there are two sets of
+# facts: the same Box, the same /mcp endpoint, the same access token. Everything else an agent
+# needs to know about this repo lives once, in AGENTS.md and in the skills, which `pnpm skills`
+# links into BOTH .claude/skills/ and .agents/skills/.
+#
+# The token is the access token from `box auth token <id>`. It is a password: keep it in your
+# environment or Codex's own secret handling, never in a file you commit. This example is a
+# template and names no token.
+#
+# CHECK THE KEY NAMES against your Codex version before trusting this file - `codex mcp add --help`
+# is the authority, and the easier path is to let that command write the config for you. Codex's
+# remote/HTTP MCP support has moved more than once; if your version only speaks stdio, run the
+# Box's tools through `box <tool-name>` in the terminal instead, which needs no MCP at all.
+
+[mcp_servers.box]
+url = "http://localhost:8190/mcp"
+bearer_token_env_var = "BOX_API_KEY"
+
+# A second Box uses the alternate server.port in that Box's box.local.json.
+# [mcp_servers.box2]
+# url = "http://localhost:8191/mcp"
+# bearer_token_env_var = "BOX2_API_KEY"
+
+# The warehouse server is read-only DuckDB over the Box's data file. Optional; needs `uv`.
+[mcp_servers.warehouse]
+command = "uvx"
+args = ["mcp-server-motherduck", "--db-path", "/path/to/your/box/data/data.db", "--ephemeral-connections"]

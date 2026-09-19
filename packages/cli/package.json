@@ -1,0 +1,19 @@
+{
+  "name": "@silkweave/box-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The `box` command: the MCP proxy, the public verbs, and the repository tooling `pnpm verify` runs. No build step - Node strips the types.",
+  "scripts": {
+    "typecheck": "tsgo -p tsconfig.json"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "@silkweave/core": "^5.2.1",
+    "@silkweave/mcp": "^5.2.1",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.1"
+  }
+}

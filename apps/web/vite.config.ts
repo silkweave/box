@@ -1,0 +1,72 @@
+import { boxJsonPath, brandingPlugin } from './branding.ts'
+import { defineConfig, defaultClientConditions } from 'vite'
+import react from '@vitejs/plugin-react-swc'
+import tailwindcss from '@tailwindcss/vite'
+import { dirname } from 'node:path'
+import { fileURLToPath, URL } from 'node:url'
+import { APP_STORAGE_PREFIX } from './src/lib/storagePrefix.ts'
+import { readBoxConfig } from '@silkweave/box-core/box-json'
+
+// The Box dashboard SPA (@silkweave/box-web). Nest is the single origin: in dev it reverse-proxies
+// non-API routes here to Vite for HMR, so the browser hits ONE port and the client uses relative
+// URLs (identical in dev and prod - no CORS, no VITE_API_URL). The reciprocal proxy below keeps the
+// bare Vite port working standalone too. `root` is this dir (apps/web). `@/*` -> src;
+// plugin-react-swc avoids a Babel/browserslist transform bug.
+//
+// Both ports use the merged root configuration. Vite's own dotenv loading is disabled.
+// The config reader imports only Node builtins and is safe to load before workspace builds.
+const root = fileURLToPath(new URL('.', import.meta.url))
+const box = readBoxConfig(dirname(boxJsonPath))
+
+// index.html's no-flash script has to resolve the persisted theme BEFORE any module loads, so it
+// cannot import the key - it has to spell it out. From 2026-09-14 to 2026-09-15 it spelled out the
+// WRONG one (`silkweave.theme` against an `applyTheme()` that had been de-branded to `ui.theme`),
+// and every dark-mode user got a light flash on every load that no check in this repo could see.
+// Substituting it here is what makes that literal impossible to drift: the placeholder and
+// `appKey('theme')` now come off the same constant. `storagePrefix.ts` imports nothing on purpose -
+// Node loads this config without the workspace's @silkweave/box-source condition.
+const themeKey = {
+  name: 'box-theme-key',
+  transformIndexHtml: (html: string) => html.replaceAll('__BOX_THEME_KEY__', `${APP_STORAGE_PREFIX}.theme`),
+}
+
+const vitePort = box.server.vitePort
+const serverPort = box.server.port
+const serverUrl = `http://localhost:${serverPort}`
+
+export default defineConfig({
+  root,
+  envDir: false,
+  base: '/',
+  plugins: [react(), tailwindcss(), themeKey, brandingPlugin(box.brand)],
+  resolve: {
+    // Prepend the @silkweave/box-source condition so any future workspace-package import resolves to its TS
+    // source in dev (no build step); harmless today since the SPA imports no workspace package.
+    conditions: ['@silkweave/box-source', ...defaultClientConditions],
+    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
+  server: {
+    port: vitePort,
+    // Nest is the canonical origin - don't auto-open the bare Vite port.
+    open: false,
+    // Nest proxies to us with changeOrigin:false, so the browser's Host arrives intact. Over
+    // tailscale that Host is the tailnet name, which Vite's host check rejects by default (a blank
+    // page with "Blocked request" in the console, from a server that logged nothing wrong). Allow
+    // the tailnet suffix rather than `true`: this binds to loopback anyway, and a dev server that
+    // trusts every Host is the DNS-rebinding hole the check is there to close.
+    allowedHosts: ['.ts.net', 'localhost'],
+    // fs.allow up to the workspace root grants @fs access to the pnpm store where @fontsource ships
+    // its .woff2/.woff files (outside the apps/web Vite root).
+    fs: { allow: ['../..'] },
+    // Reciprocal proxy so hitting the bare Vite port still reaches the backend. Normal flow is
+    // Nest -> Vite. tRPC subscriptions are SSE and /mcp is Streamable HTTP - http-proxy streams
+    // both (no compression on these paths, so nothing buffers).
+    proxy: {
+      '/trpc': { target: serverUrl, changeOrigin: true },
+      '/mcp': { target: serverUrl, changeOrigin: true },
+      // Incidental REST routes the SPA calls directly (e.g. /api/content/asset images).
+      '/api': { target: serverUrl, changeOrigin: true },
+    },
+  },
+  build: { target: 'es2022' },
+})

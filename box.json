@@ -1,0 +1,53 @@
+{
+  "$schema": "./packages/core/box.schema.json",
+  "agent": {
+    "id": "nova",
+    "name": "Nova",
+    "role": "admin"
+  },
+  "brand": {
+    "name": "Silkweave Box",
+    "shortName": "Box",
+    "description": "Silkweave Box - your office in a box",
+    "wordmark": "silkweave",
+    "suffix": "box",
+    "logoUrl": "/brand-logo.svg",
+    "icon192": "/push-icon.png",
+    "icon512": "/app-icon-512.png",
+    "appleTouchIcon": "/apple-touch-icon.png",
+    "backgroundColor": "#ffffff",
+    "themeColor": "#7b7ef5"
+  },
+  "server": {
+    "port": 8190,
+    "vitePort": 5190,
+    "viteDevUrl": null,
+    "dashboardUrl": null,
+    "vscodeRemoteHost": null
+  },
+  "backup": {
+    "gcsBucket": null
+  },
+  "background": {
+    "automation": false,
+    "chatAgent": false,
+    "relay": false
+  },
+  "auth": {
+    "sessionSecret": null,
+    "tokenSecret": null
+  },
+  "mcp": {
+    "url": null,
+    "token": null
+  },
+  "http": {
+    "userAgent": "Silkweave Box"
+  },
+  "features": {},
+  "workerdeck": null,
+  "workerdeckTokens": {},
+  "accounts": {},
+  "credentials": {},
+  "agentProfiles": {}
+}

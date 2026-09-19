@@ -1,0 +1,84 @@
+{
+  "_readme": [
+    "Put this object in the accounts field of box.json or box.local.json and describe YOUR accounts, then delete every",
+    "channel you do not use. This file is vocabulary, not secrets - the tokens and passwords live",
+    "Credentials belong in the gitignored credentials field of box.local.json, keyed by channel and account id.",
+    "",
+    "Shape: channel -> list of accounts. The DEFAULT account of a channel keeps the bare channel",
+    "name ('github'); every other account gets an @-suffixed one ('github@bob'), which is also how",
+    "its signals namespace themselves ('github@bob.stars.<repo>'). Give each channel at most one",
+    "\"default\": true.",
+    "",
+    "Fields: id (the channel suffix), user (a users.id from Settings -> Users, which is what makes",
+    "a signal owned by a person), login (the platform handle; empty means placeholder and pulls",
+    "skip it), and then the per-channel extras below.",
+    "",
+    "NO FILE AT ALL IS A SUPPORTED STATE. A Box with no accounts.json simply has no channel pulls,",
+    "and core never reads it at all. Only an adopted app that pulls from outside looks here; the",
+    "channels below are examples of that, not a set this repo ships.",
+    "",
+    "Nothing reads a key starting with _ , because every reader looks a channel up by name - which",
+    "is what lets this example carry its own notes."
+  ],
+
+  "github": [
+    {
+      "_note": "repos: owner/name to track stars and traffic for. org: an org to snapshot alongside the user. ossPrQuery: a GitHub search query counting external PRs you authored.",
+      "id": "alice",
+      "user": "alice",
+      "default": true,
+      "login": "alice",
+      "org": "acme",
+      "repos": ["acme/acme", "acme/acme-cli"],
+      "ossPrQuery": "is:pr author:alice -org:acme"
+    }
+  ],
+
+  "blog": [
+    {
+      "_note": "feed: the RSS/Atom URL of YOUR blog. There is no default - without it the blog pull logs that no feed is configured and does nothing. Point at the canonical host: a feed URL that redirects costs a round trip on every pull. GA4 is optional and configured in credentials.json.",
+      "id": "acme",
+      "user": "alice",
+      "default": true,
+      "login": "acme",
+      "feed": "https://www.acme.dev/rss.xml"
+    }
+  ],
+
+  "x": [{ "id": "alice", "user": "alice", "default": true, "login": "alice" }],
+
+  "linkedin": [{ "id": "alice", "user": "alice", "default": true, "login": "alice", "org": "1234567" }],
+
+  "substack": [
+    {
+      "_note": "publication: the ORIGIN this account publishes to. Not derivable from the login - the subdomain is independent of the handle, and a custom domain answers the API on that domain instead.",
+      "id": "alice",
+      "user": "alice",
+      "default": true,
+      "login": "alice",
+      "publication": "https://acme.substack.com"
+    }
+  ],
+
+  "hackernews": [
+    {
+      "_note": "mentionTerms: what a stranger would type when talking about you - product and company names. Separate from login, which is only who you POST as. Empty is fine and means you only get your own submissions back.",
+      "id": "alice",
+      "user": "alice",
+      "default": true,
+      "login": "alice",
+      "mentionTerms": ["acme", "acme cloud"]
+    }
+  ],
+
+  "reddit": [
+    {
+      "_note": "Needs the external stealth-browser gateway this repo does not ship (docs/FIELD-TEST.md). The topic radar's subs and keywords are NOT here - they are config/reddit-radar.json.",
+      "id": "alice",
+      "user": "alice",
+      "default": true,
+      "login": "alice",
+      "mentionTerms": ["acme"]
+    }
+  ]
+}

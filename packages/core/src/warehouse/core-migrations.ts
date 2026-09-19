@@ -1,0 +1,48 @@
+// Core's own migration ledger. Features own theirs (`<feature>:<name>`); these are keyed
+// `core:<name>` and run before every feature's, because core's tables are the ones features
+// reference. Append-only: never edit or reorder an entry that has shipped.
+//
+// The 28 migrations this inherited were deleted at the split (each feature's ledger restarts at its own 001),
+// so this list started empty. The first entries arrived with docs/core/AUTH.md on 2026-09-13.
+
+import type { Migration } from './schema.js'
+
+export const CORE_MIGRATIONS: readonly Migration[] = [
+  {
+    // One ALTER per migration: DuckDB is happiest with a single table-altering statement per
+    // transaction (see the note at the top of schema.ts).
+    name: '001-users-role',
+    statements: [
+      // NOT NULL is deliberately absent: DuckDB answers "Adding columns with constraints not yet
+      // supported" to an ALTER that carries one, so an upgraded Box gets a NULLABLE role column
+      // where a fresh one (built by CREATE TABLE from the ModelSpec) gets NOT NULL. The two agree
+      // in behaviour because every read narrows through `roleOf()`, which maps anything that is
+      // not exactly 'admin' - NULL included - to 'member'. Found 2026-09-13 by the populated-table
+      // test in auth/roles.test.ts; `schema:check` cannot see it, because it only ever applies
+      // migrations to tables that already have the column from CREATE.
+      `ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT 'member'`,
+      // Everyone who exists on an upgrading Box could already do everything - that WAS the
+      // documented contract, since roles were removed on 2026-09-10 - so keep it true for the
+      // humans and false for the machine account. Zero rows on a fresh Box, where the column
+      // comes from CREATE TABLE instead.
+      //
+      // Why everyone rather than nobody: a Box that upgrades and finds nobody can open Settings ->
+      // Users is a lockout (recoverable only with `pnpm auth:token <id> --admin` on the host),
+      // while a Box where everyone keeps yesterday's powers is no worse than yesterday and
+      // strictly better on the axis that matters - the agent stops being an admin.
+      // Frozen shipped SQL: the old agent ID must not follow config or its checksum would change.
+      `UPDATE users SET role = 'admin' WHERE id <> 'abi'`,
+    ],
+  },
+  {
+    name: '002-users-tailscale-login',
+    statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS tailscale_login VARCHAR`],
+  },
+  {
+    // The single-use watermark for sign-in links (2026-09-15). NULL means "this user has never
+    // consumed one", which is the correct state for every existing row: it makes their first link
+    // usable rather than locking them out on upgrade.
+    name: '003-users-link-watermark',
+    statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS link_watermark BIGINT`],
+  },
+]

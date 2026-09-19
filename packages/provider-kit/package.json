@@ -1,0 +1,26 @@
+{
+  "name": "@silkweave/box-provider-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The provider contract: the Provider interface a data-source module implements, the signal vocabulary its measures declare defaults in, and the fetch helpers. Deliberately free of the warehouse and the tenant io layer so a provider package never depends on @silkweave/box-core.",
+  "main": "./build/index.mjs",
+  "types": "./build/index.d.mts",
+  "exports": {
+    ".": {
+      "@silkweave/box-source": "./src/index.ts",
+      "types": "./build/index.d.mts",
+      "default": "./build/index.mjs"
+    }
+  },
+  "scripts": {
+    "clean": "rimraf build",
+    "build": "tsdown",
+    "typecheck": "tsgo -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.1",
+    "rimraf": "^6.1.3",
+    "tsdown": "^0.23.0"
+  }
+}

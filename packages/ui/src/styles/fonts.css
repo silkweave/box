@@ -1,0 +1,34 @@
+/*
+ * Self-hosted fonts: bundled via @fontsource - NO third-party / Google Fonts CDN
+ * at runtime (no-phone-home posture). Vite bundles the woff2 + @font-face.
+ *
+ * Silkweave is sans + mono only ("No serif" - design guide). Inter is UI/body +
+ * display (tight tracking on large sizes); JetBrains Mono is code, kbd, and the
+ * occasional spec-y label. The legacy `--cp-font-serif` role is retained as an
+ * alias onto Inter so existing `font-serif` display headings keep rendering
+ * on-brand without a sweep - there is no serif face loaded.
+ */
+
+/* Inter - UI / body / display sans. */
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+
+/* JetBrains Mono - code + labels. */
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
+
+:root {
+  --cp-font-sans:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --cp-font-mono:
+    'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  /* No serif in the brand - alias the display role onto Inter. */
+  --cp-font-serif: var(--cp-font-sans);
+
+  /* Silkweave-native font tokens (the ui/ kit references these directly). */
+  --font-sans: var(--cp-font-sans);
+  --font-mono: var(--cp-font-mono);
+}

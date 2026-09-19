@@ -1,0 +1,69 @@
+// People domain - the small user directory the dashboard's Settings → Users page manages. Users are
+// referenced by initiatives.owner and tasks.assignee (both store a user `id`). The structured state
+// lives in the warehouse `users` table. See docs/AUTH.md.
+
+/** Access lifecycle. `invited` = a token was minted and never used; first use flips it to `active`.
+ *  Lived in pods/types.ts as CollaboratorStatus until 2026-09-10 - it was always a users column. */
+export type UserStatus = 'invited' | 'active' | 'revoked'
+export const USER_STATUSES: UserStatus[] = ['invited', 'active', 'revoked']
+
+/**
+ * The two trust tiers (docs/core/AUTH.md § 3). The line between them is one sentence, and every feature
+ * applies it: **an operation is admin-only when its blast radius is another person's identity or
+ * credential, the service itself, or configuration wired to credentials.** Everything else is a
+ * member's, which is the whole working surface - signals, boards, tasks, content, chat, records,
+ * running an action, reading anything.
+ */
+export type UserRole = 'admin' | 'member'
+export const USER_ROLES: UserRole[] = ['admin', 'member']
+
+export interface User {
+  /** Stable slug id (derived from the nickname on create, then fixed). */
+  id: string
+  first_name: string
+  last_name: string
+  nickname: string
+  /** Reference-only contact - no mail is ever sent. */
+  email: string | null
+  /** Avatar image URL; null falls back to a nickname-initials chip in the UI. */
+  image: string | null
+  /** Swatch name from the web's fixed palette ('indigo', 'cyan', …); tints the user's signal
+   *  cards. null = the UI picks deterministically from the palette. */
+  color: string | null
+  status: UserStatus
+  role: UserRole
+  /** The tailscale login this user signs in as (`tailscale whois` prints it, e.g. `alice@github`),
+   *  when the Box runs behind `tailscale serve` with AUTH_TAILSCALE_SERVE=1. null = token only.
+   *  Unique across users; `upsertUser` enforces it (DuckDB cannot ALTER in a UNIQUE constraint). */
+  tailscale_login: string | null
+  /** channel → handle map, the source of truth for per-person presence (engagement verify,
+   *  self-content links, the engagement matrix). */
+  channels: Record<string, string>
+  /** Whether an access token has been issued (the token itself is never listed). */
+  has_token: boolean
+  /** Display ordering in the Users page (lower first). */
+  sort: number
+  created_at: string
+  updated_at: string
+}
+
+/** Partial upsert input - `id` identifies the row; any provided field overwrites, the rest persist. */
+export interface UserInput {
+  id: string
+  first_name?: string
+  last_name?: string
+  nickname?: string
+  /** Reference-only contact ('' clears). */
+  email?: string | null
+  image?: string | null
+  color?: string | null
+  /** channel → handle map. The users table is the SOURCE OF TRUTH for a person's per-channel
+   *  presence (the engagement matrix keys off it); empty-string handles are dropped. */
+  channels?: Record<string, string>
+  sort?: number
+  /** Admin-only; the system principal must match host config. Set it through `setPrincipalRole`
+   *  rather than here when the caller is a request - that is where the last-admin rule lives. */
+  role?: UserRole
+  /** Admin-only ('' clears). */
+  tailscale_login?: string | null
+}

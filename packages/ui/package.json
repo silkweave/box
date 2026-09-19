@@ -1,0 +1,125 @@
+{
+  "name": "@silkweave/box-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Box component library: design tokens, primitives and the app shell, free of tRPC, auth, the feature registry and the agent stack. Apps inject their data through the seams this package exports; a component without a story is not in the library.",
+  "//": "No build. Both consumers (apps/web and Storybook) resolve the @silkweave/box-source condition to src/, and this package is private and never published - so a tsdown artifact would be untested by construction, and wrong: Wordmark's new URL('../assets/...', import.meta.url) has no assets/ under build/, and the stylesheets are not JS. `default` points at source too, so a consumer that does not set the condition still gets something that works.",
+  "exports": {
+    ".": {
+      "@silkweave/box-source": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./charts": {
+      "@silkweave/box-source": "./src/charts/index.ts",
+      "default": "./src/charts/index.ts"
+    },
+    "./board": {
+      "@silkweave/box-source": "./src/board/index.ts",
+      "default": "./src/board/index.ts"
+    },
+    "./editor": {
+      "@silkweave/box-source": "./src/editor/index.ts",
+      "default": "./src/editor/index.ts"
+    },
+    "./lib": {
+      "@silkweave/box-source": "./src/lib/index.ts",
+      "default": "./src/lib/index.ts"
+    },
+    "./styles/*.css": "./src/styles/*.css"
+  },
+  "scripts": {
+    "typecheck": "tsgo -p tsconfig.json",
+    "storybook": "storybook dev -p 6006 --no-open",
+    "build-storybook": "storybook build"
+  },
+  "peerDependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@tiptap/core": "^3.27.1",
+    "@tiptap/extension-list": "^3.27.1",
+    "@tiptap/extension-table": "^3.27.1",
+    "@tiptap/extensions": "^3.27.1",
+    "@tiptap/markdown": "^3.27.1",
+    "@tiptap/pm": "^3.27.1",
+    "@tiptap/react": "^3.27.1",
+    "@tiptap/starter-kit": "^3.27.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.1.0"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@tabler/icons-react": "^3.46.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.47.0",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@storybook/addon-a11y": "^10.6.0",
+    "@storybook/react-vite": "^10.6.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/extension-list": "^3.31.3",
+    "@tiptap/extension-table": "^3.31.3",
+    "@tiptap/extensions": "^3.31.3",
+    "@tiptap/markdown": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react-swc": "^4.3.3",
+    "recharts": "^3.10.1",
+    "storybook": "^10.6.0",
+    "vite": "^8.3.0"
+  },
+  "//exports": "Entry points are cut by DEPENDENCY FOOTPRINT, not taxonomy. '.' needs only React, base-ui, lucide and cva; anything heavier gets its own subpath and an OPTIONAL peer dependency (./board needs @dnd-kit, ./charts needs recharts, ./editor needs TipTap). This is forced by the no-build decision above: with src/ resolved directly, whatever '.' re-exports is walked by tsgo and Vite's scanner on every import, so re-exporting the editor would make a Box that never opens one fail to resolve TipTap. Tree-shaking never gets a say - resolution fails first.",
+  "//peerDependencies": "The optional peers are the subpath entry points' dependencies: import @silkweave/box-ui/editor and you supply TipTap; import /board and you supply @dnd-kit; import /charts and you supply recharts. NOT `optionalDependencies`, which means 'install this but tolerate a failed build' and is installed for everyone. They are ALSO devDependencies so this package's own typecheck and Storybook can see them - harmless, since it is private and never published.",
+  "peerDependenciesMeta": {
+    "recharts": {
+      "optional": true
+    },
+    "@dnd-kit/core": {
+      "optional": true
+    },
+    "@dnd-kit/sortable": {
+      "optional": true
+    },
+    "@dnd-kit/utilities": {
+      "optional": true
+    },
+    "@tiptap/core": {
+      "optional": true
+    },
+    "@tiptap/extension-list": {
+      "optional": true
+    },
+    "@tiptap/extension-table": {
+      "optional": true
+    },
+    "@tiptap/extensions": {
+      "optional": true
+    },
+    "@tiptap/markdown": {
+      "optional": true
+    },
+    "@tiptap/pm": {
+      "optional": true
+    },
+    "@tiptap/react": {
+      "optional": true
+    },
+    "@tiptap/starter-kit": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,110 @@
+/*
+ * Storybook manager (the chrome) - the parts `theme.ts` cannot reach.
+ *
+ * Plain CSS: no build step and no Tailwind, since the manager is outside Vite's
+ * graph. It lives in public/ and is <link>ed from main.ts's `managerHead` rather
+ * than inlined as a <style>, because Storybook CACHES the generated manager
+ * index.html - an inlined copy would go stale and only a cache wipe would clear
+ * it. Linked, a plain refresh picks up every edit.
+ *
+ * The `!important`s are not laziness: Storybook's chrome is styled with Emotion,
+ * which injects its <style> tags at runtime and therefore AFTER this block. On
+ * equal specificity the later rule wins, so anything that overrides a stock
+ * Storybook style has to out-rank it rather than out-order it. The values mirror src/styles/tokens.css for the
+ * same reason theme.ts does: the manager is a separate document from the
+ * preview iframe and never loads the library's stylesheet. `manager.ts` writes
+ * <html data-sb-theme> so the two themes swap here the same way the app's
+ * `data-theme` swaps tokens.
+ */
+
+:root,
+html[data-sb-theme='light'] {
+  --sb-bg: #ffffff; /* --bg */
+  --sb-surface: #fafafa; /* --bg-surface */
+  --sb-border: #e8e8ec; /* --border */
+  --sb-fg: #0e0e16; /* --fg-1 */
+  --sb-fg-muted: #6b6b7a; /* --fg-3 */
+  color-scheme: light;
+}
+
+html[data-sb-theme='dark'] {
+  --sb-bg: #0a0a0f; /* --bg */
+  --sb-surface: #12121a; /* --bg-surface */
+  --sb-border: #1e1e2e; /* --border */
+  --sb-fg: #e4e4ef; /* --fg-1 */
+  --sb-fg-muted: #8888a0; /* --fg-3 */
+  color-scheme: dark;
+}
+
+body {
+  background: var(--sb-bg) !important;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif !important;
+}
+
+/* ---------- Brand lockup ----------
+   `brandImage: null` makes Storybook render `brandTitle` as raw HTML into the
+   sidebar heading link (see theme.ts). These rules turn that markup into the
+   same mark + wordmark lockup the app's own Sidebar shows. */
+.sidebar-header > a,
+.sidebar-header > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sb-fg) !important;
+  text-decoration: none;
+}
+
+.sidebar-header img {
+  border-radius: 6px;
+  flex: none;
+}
+
+.sw-wordmark {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em; /* --tracking-tight */
+  line-height: 1;
+}
+
+.sw-wordmark b {
+  font-weight: 400;
+  color: var(--sb-fg-muted);
+  margin-left: 5px;
+}
+
+/* The Settings button carries a green notification dot for Storybook's own release feed. We have
+   turned that feed off (`disableWhatsNewNotifications` in main.ts), so the dot only ever points at
+   an upgrade notice the team does not act on from in here. */
+.sidebar-header button[aria-label='Settings']::after {
+  display: none !important;
+}
+
+/* ---------- Bars ---------- */
+.sb-bar {
+  background: var(--sb-bg) !important;
+  border-color: var(--sb-border) !important;
+}
+
+.sidebar-container {
+  background: var(--sb-bg) !important;
+}
+
+/* Tooltips and menus sit on the surface token, not Storybook's stock white. */
+[data-testid='tooltip'] {
+  background: var(--sb-surface) !important;
+  border: 1px solid var(--sb-border) !important;
+}
+
+/* ---------- Scrollbars (matches .storybook/preview.css) ---------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--sb-border);
+  border: 2px solid var(--sb-bg);
+  border-radius: 8px;
+}

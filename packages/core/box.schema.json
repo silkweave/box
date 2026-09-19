@@ -1,0 +1,276 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/silkweave/box/packages/core/box.schema.json",
+  "title": "Silkweave Box configuration (box.json)",
+  "description": "Shared Box settings in box.json, recursively overlaid by gitignored box.local.json. Keep secrets in the local file. Arrays replace; nullable values can be cleared with null. Keys starting with _ are notes.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^_": {}
+  },
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "agent": {
+      "type": "object",
+      "description": "The system principal: the machine account every Box has. Choose it BEFORE the first boot; the id is locked once the warehouse exists and cannot be renamed. name and role may change at any time and apply on the next request.",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "required": [
+        "id",
+        "name",
+        "role"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "description": "Lowercase slug. Locked after the first boot."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name, without surrounding whitespace."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "admin",
+            "member"
+          ],
+          "description": "admin lets the agent manage users, credentials and service config; docs/AUTH.md weighs the tradeoff."
+        }
+      }
+    },
+    "brand": {
+      "type": "object",
+      "description": "Product name and artwork. Baked into the SPA at build time (rebuild after editing) and read by the server at call time. Artwork paths are origin-relative files under apps/web/public.",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full product name: the browser title, the PWA name, the name in invites."
+        },
+        "shortName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The PWA's short name, shown under a home-screen icon."
+        },
+        "description": {
+          "type": "string",
+          "description": "The PWA manifest description. May be blank."
+        },
+        "wordmark": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The text beside the mark in the shell and on the login page."
+        },
+        "suffix": {
+          "type": "string",
+          "description": "A lighter word after the wordmark. Blank for none."
+        },
+        "logoUrl": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "The mark, an SVG or PNG under apps/web/public."
+        },
+        "icon192": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "192x192 PNG: the PWA icon and push notification icon."
+        },
+        "icon512": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "512x512 PNG: the PWA icon and the favicon."
+        },
+        "appleTouchIcon": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "The iOS home-screen tile, pre-flattened (iOS renders PNG alpha as black)."
+        },
+        "backgroundColor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "PWA splash background, a CSS colour."
+        },
+        "themeColor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The browser chrome colour, a CSS colour."
+        }
+      }
+    },
+    "server": {
+      "type": "object",
+      "description": "Where this Box serves. A second Box on one machine must never be one default away from the first: give it its own numbers (apps/server/src/agent/loopback-guard.ts tells the story).",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "The port Nest serves on (the single browser origin)."
+        },
+        "vitePort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "The Vite dev-server port Nest proxies in dev."
+        },
+        "viteDevUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dashboardUrl": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "This Box's browser-facing origin, for links in invites and notifications, e.g. https://box.your-tailnet.ts.net:8190. Null: localhost on the port above."
+        },
+        "vscodeRemoteHost": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ssh host for Open-in-VS-Code links over Remote-SSH (box, or you@box). Null: local file links."
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "properties": {
+        "gcsBucket": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A private GCS bucket (no gs:// prefix) every warehouse backup is also uploaded to, with your ambient gcloud credentials. Null: local backups only."
+        }
+      }
+    },
+    "background": {
+      "type": "object",
+      "description": "Background work is OFF unless armed here. A dev checkout holding production credentials would otherwise run real schedules and real agent turns off test data. Core never reads these; the automation, chat and relay apps do, and typegen forces all three off.",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "properties": {
+        "automation": {
+          "type": "boolean",
+          "description": "Arms the cron scheduler on the PRODUCTION Box only."
+        },
+        "chatAgent": {
+          "type": "boolean",
+          "description": "Arms the in-chat agent. Its own switch, deliberately: tying it to the scheduler would mean testing the chat agent also arms every cron."
+        },
+        "relay": {
+          "type": "boolean",
+          "description": "Arms the webhook relay."
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionSecret": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokenSecret": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "http": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "userAgent": {
+          "type": "string"
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "workerdeck": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "workerdeckTokens": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "accounts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array"
+      }
+    },
+    "credentials": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "agentProfiles": {
+      "type": "object"
+    }
+  }
+}

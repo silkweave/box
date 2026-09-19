@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "customConditions": [
+      "@silkweave/box-source"
+    ],
+    "lib": [
+      "ES2023"
+    ],
+    "outDir": "build",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "noEmit": true,
+    "types": [
+      "node"
+    ],
+    "rootDir": "../.."
+  },
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "tsdown.config.ts",
+    "../../features/*/core/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "build"
+  ]
+}

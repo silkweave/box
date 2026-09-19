@@ -1,0 +1,26 @@
+{
+  // No build step and no loader: `bin/box` here and every `pnpm` script run these files through Node,
+  // which strips the types itself (stable since Node 22.18, and `engines` floors this repo at 24).
+  // That is why `erasableSyntaxOnly` is on - an enum, a namespace or a parameter property would
+  // type-check happily here and then fail at runtime on the one command that has to work before
+  // anything else does. `allowImportingTsExtensions` is the other half: Node resolves what is
+  // written, so a relative import inside this package names the `.ts` file.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

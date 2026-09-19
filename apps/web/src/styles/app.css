@@ -1,0 +1,13 @@
+/*
+ * The SPA's entry stylesheet. The design system itself - Tailwind, the tokens, the fonts and the
+ * token-to-utility @theme bridge - lives in @silkweave/box-ui and is imported first. What stays
+ * here is what is genuinely this app's: the agent sidebar bridge (a workerdeck integration, not a
+ * Box primitive), and the @source line that points Tailwind's content scan at apps/web/src.
+ */
+@import '@silkweave/box-ui/styles/globals.css';
+@import './agent.css';
+
+@source '../';
+
+/* Consolidated feature UI lives outside apps/web/src. */
+@source '../../../../features/*/web';
