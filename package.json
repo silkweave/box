@@ -20,7 +20,7 @@
     "skills:check": "node packages/cli/src/skills.ts --check",
     "schema:check": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register packages/core/scripts/schema-check.ts",
     "typegen": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/typegen.ts",
-    "verify": "pnpm build && pnpm skills && pnpm test:cli && pnpm typegen && pnpm typecheck && pnpm lint && pnpm -F @silkweave/box-core test && pnpm -F @silkweave/box-server test && pnpm schema:check",
+    "verify": "node packages/cli/src/verify.ts",
     "auth:token": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/auth-token.ts",
     "auth:link": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/auth-link.ts",
     "auth:reveal": "node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/scripts/auth-reveal.ts",

@@ -18,3 +18,5 @@ source and documentation; [FEATURES.md](FEATURES.md) describes the process.
 
 Run `pnpm verify` and record the result in [VALIDATION.md](VALIDATION.md). Test changed routes using
 Chrome DevTools MCP in an independent checkout with background work disabled.
+
+See [CLI.md](CLI.md) for verify progress, output detail, retained logs and CI output options.
