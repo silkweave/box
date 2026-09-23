@@ -1,0 +1,18 @@
+@import '@silkweave/box-ui/styles/globals.css';
+@import './agent.css';
+@source '../views/BuilderView.tsx';
+@source '../components/builder';
+
+/* Let the Builder conversation sit directly on the shell instead of layering
+   opaque app and prompt surfaces over it. */
+.builder-transcript .term-user {
+  background: transparent;
+}
+
+[data-slot='builder-session-status'] {
+  scrollbar-width: none;
+}
+
+[data-slot='builder-session-status']::-webkit-scrollbar {
+  display: none;
+}

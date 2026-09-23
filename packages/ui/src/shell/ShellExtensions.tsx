@@ -1,9 +1,10 @@
-import { createContext, useContext, type ComponentType, type ReactNode } from 'react'
+import { createContext, useContext, type ComponentType, type MouseEventHandler, type ReactNode } from 'react'
 
 /** What the shell hands the link that wraps the wordmark - the anchor's own props, nothing more. */
 export interface HomeLinkProps {
   className?: string
   'aria-label': string
+  onClick?: MouseEventHandler
   children: ReactNode
 }
 
@@ -34,10 +35,15 @@ export function PlainHomeLink({ children, ...rest }: HomeLinkProps) {
  * Storybook with no setup at all.
  */
 export interface ShellExtensions {
+  /** App-owned settings control, rendered in the sidebar footer. */
+  settingsControl?: ComponentType
+
   /** The top bar's right cluster, after the view's own actions: feature bells, a user menu, an agent toggle. */
   trailing?: ReactNode
-  /** Rendered beside <main> inside the framed canvas (an agent panel). Absent = no aside. */
+  /** Rendered beside the shell's main frame (for example, an app utility panel). */
   aside?: ReactNode
+  /** Whether the aside is claiming space beside the whole shell. Keeps layout state app-owned. */
+  asideOpen?: boolean
   /** <main> goes inert: the aside has claimed the canvas. */
   mainInert?: boolean
   /**
@@ -53,11 +59,9 @@ export interface ShellExtensions {
    * localStorage namespace for the shell's own preferences (sidebar collapsed, group expanded,
    * theme). Defaults to `DEFAULT_STORAGE_PREFIX` (`ui`).
    *
-   * It lives HERE rather than only on `<AppShell storagePrefix>` because an app mounts the shell
-   * once per view - apps/web has thirteen - and a namespace that thirteen call sites have to
-   * remember is a namespace that splits the first time somebody adds a fourteenth. Set it once at
-   * the app root and no view can forget it. The prop still wins where it is passed, which is what
-   * a story needs.
+   * Set it once at the app root so the persistent shell shares the application's preference
+   * namespace. The explicit AppShell prop still wins where it is passed, which lets a story
+   * override the namespace without changing app-wide extensions.
    */
   storagePrefix?: string
 }

@@ -1,12 +1,12 @@
 // Mint a SHORT-LIVED, single-use sign-in link for an existing user.
 //
-//   box auth link <user-id> [--ttl 15]      # minutes, default 15, max 1440
+//   box auth login <user-id> [--ttl 15]      # minutes, default 15, max 1440
 //
 // This is the normal way to get a person into a Box, and the only credential here that is safe to
 // paste into a chat message or an agent transcript: it expires in minutes, it works exactly once,
 // and it cannot be turned into an API token. Compare:
 //
-//   box auth link   <id>   short-lived sign-in link      -> send it to them
+//   box auth login  <id>   short-lived sign-in link      -> send it to them
 //   box auth reveal <id>   their PERMANENT access token  -> for their MCP config, password manager
 //   box auth token  <id>   MINT/ROTATE that token        -> breaks every place the old one is set
 //
@@ -15,6 +15,7 @@
 
 import { ensureSchema, ensureSystemPrincipal, issueSigninLink, resolvePrincipalById } from '@silkweave/box-core'
 import { signinLinkUrl } from '../src/auth/app-url.js'
+import { commandError, commandHeader, commandLine, commandValue, offerBrowserOpen } from '../../../packages/cli/src/command-ui.js'
 
 function parseTtlMinutes(argv: string[]): number | undefined {
   const at = argv.indexOf('--ttl')
@@ -22,7 +23,7 @@ function parseTtlMinutes(argv: string[]): number | undefined {
   const raw = argv[at + 1]
   const n = Number(raw)
   if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > 1440) {
-    console.error(`--ttl must be a whole number of minutes between 1 and 1440 (got "${raw ?? ''}")`)
+    commandError(`--ttl must be a whole number of minutes between 1 and 1440 (got "${raw ?? ''}")`)
     process.exit(1)
   }
   return n
@@ -34,8 +35,8 @@ async function main(): Promise<void> {
   const ttlAt = argv.indexOf('--ttl')
   const [id] = argv.filter((a, i) => !a.startsWith('--') && (ttlAt < 0 || i !== ttlAt + 1))
   if (!id) {
-    console.error('usage: box auth link <user-id> [--ttl <minutes>]')
-    console.error('       box auth reveal <user-id>    # their permanent token, for MCP setup')
+    commandError('Usage: box auth login <user-id> [--ttl <minutes>]')
+    commandLine('Permanent token: box auth reveal <user-id>', 'muted')
     process.exit(1)
   }
 
@@ -43,27 +44,26 @@ async function main(): Promise<void> {
   await ensureSystemPrincipal()
   const principal = await resolvePrincipalById(id)
   if (!principal) {
-    console.error(`no user "${id}" (or they are revoked) - check Settings -> Users.`)
-    console.error(`On a Box with no users yet, create the first one with:  box auth token ${id} --name "Full Name"`)
+    commandError(`No active user "${id}". Check Settings -> Users.`)
+    commandLine(`First user: box auth token ${id} --name "Full Name"`, 'muted')
     process.exit(1)
   }
 
   const { grant, claims } = await issueSigninLink(id, {
     ...(ttlMinutes !== undefined && { ttlMs: ttlMinutes * 60_000 }),
   })
-  const minutes = Math.round((claims.exp - claims.iat) / 60_000)
-
-  console.log(`sign-in link for "${id}" (${principal.display}):\n`)
-  console.log(`  ${signinLinkUrl(grant)}\n`)
-  console.log(`Expires in ${minutes} minutes (${new Date(claims.exp).toISOString()}), and works ONCE.`)
-  console.log('Safe to send - it carries no permanent credential. Need another? Just run this again.')
-  console.log('')
-  console.log('Note: signing in with a link invalidates any OLDER unused links for this person.')
+  const url = signinLinkUrl(grant)
+  commandHeader('auth login')
+  commandLine(`Sign into your Box as ${principal.display}:`)
+  commandValue(url)
+  commandLine(`Single use · expires in ${Math.round((claims.exp - claims.iat) / 60_000)} minutes`, 'muted')
+  commandLine('')
+  await offerBrowserOpen(url)
 }
 
 main()
-  .then(() => process.exit(0))
+  .then(() => process.exit(process.exitCode ?? 0))
   .catch((err) => {
-    console.error(err instanceof Error ? err.message : err)
+    commandError(err instanceof Error ? err.message : String(err))
     process.exit(1)
   })

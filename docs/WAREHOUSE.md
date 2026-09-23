@@ -240,7 +240,7 @@ It proves three things:
    on a full Box and fails on the Box that left that neighbour out. Unit tests cannot see this; it
    takes a real DuckDB file.
 3. **Ownership,** as a **warning**. Static SQL that names a table the feature does not own is
-   reported, not rejected. A team merging two adopted apps into one vocabulary is doing exactly what
+   reported, not rejected. A team merging two integrated features into one vocabulary is doing exactly what
    the model invites. On the maintainer checkout, where apps are meant to stay separable, treat a
    warning as something to fix. It is a conservative heuristic, not a SQL parser.
 
@@ -571,9 +571,10 @@ duckdb data/data.db -box -c "SELECT name, applied_at FROM schema_migrations ORDE
 duckdb data/data.db -box -c "SELECT kind, count(*) FROM events GROUP BY 1 ORDER BY 2 DESC;"
 ```
 
-[`docs/examples/mcp.json`](examples/mcp.json) registers a read-only `warehouse` MCP server
-(`mcp-server-motherduck`, pointed at the Box database with `--db-path` and
-`--ephemeral-connections`) so an agent can run the same queries in chat without holding the lock.
+The optional read-only `warehouse` MCP server uses `mcp-server-motherduck` with
+`--db-path /path/to/box/data/data.db` and `--ephemeral-connections`, so an agent can query without
+holding the lock. Configure it in the MCP client's own configuration; examples are in
+[examples/mcp.json](examples/mcp.json) and [examples/codex-config.toml](examples/codex-config.toml).
 
 ## Where the signal writers live
 

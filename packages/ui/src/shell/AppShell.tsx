@@ -8,6 +8,7 @@ import { Sidebar, SidebarRail, type GroupNav, type NavItem } from './Sidebar.tsx
 import { TopBar, type TopBarContent } from './TopBar.tsx'
 import { TopBarSlotProvider, useTopBarSlot } from './TopBarActions.tsx'
 import { useShellExtensions } from './ShellExtensions.tsx'
+import { cn } from '../lib/utils.ts'
 
 export interface AppShellProps {
   /** Top-level view switcher rendered as the sidebar's group accordion. */
@@ -18,6 +19,10 @@ export interface AppShellProps {
   topbar?: TopBarContent
   /** Small control rendered at the right of the active group's sidebar header. */
   groupAction?: React.ReactNode
+  /** Changes when navigation commits. Closes an open mobile drawer without remounting the shell. */
+  navigationKey?: unknown
+  /** Changes when the owning section changes. Resets only the shell-owned main scroller. */
+  scrollResetKey?: unknown
   /**
    * localStorage namespace for the shell's own preferences (sidebar collapsed / group expanded /
    * theme). Defaults to the `storagePrefix` on `ShellExtensions`, and to `ui` if that is unset too;
@@ -37,14 +42,18 @@ export function AppShell({
   onSelect,
   topbar,
   groupAction,
+  navigationKey,
+  scrollResetKey,
   storagePrefix: storagePrefixProp,
   children,
 }: AppShellProps) {
-  const { trailing, aside, mainInert = false, storagePrefix: shellPrefix } = useShellExtensions()
+  const { trailing, aside, asideOpen = false, mainInert = false, storagePrefix: shellPrefix } = useShellExtensions()
+  const framed = asideOpen && aside != null
   const storagePrefix = storagePrefixProp ?? shellPrefix
   const topBarSlot = useTopBarSlot()
   const topBarCenter = useTopBarSlot()
   const [drawerOpen, setDrawerOpen] = React.useState(false)
+  const mainRef = React.useRef<HTMLElement>(null)
   const [collapsed, setCollapsed] = usePersistedState(
     storageKey(storagePrefix, 'sidebar', 'collapsed'),
     false,
@@ -57,58 +66,74 @@ export function AppShell({
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  React.useLayoutEffect(() => setDrawerOpen(false), [navigationKey])
+  React.useLayoutEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = 0
+  }, [scrollResetKey])
+
   const select = (id: string) => {
     onSelect(id)
     setDrawerOpen(false)
   }
 
-  // Inset ("framed") layout: the sidebar sits directly on the app background; the top bar +
-  // canvas live in a rounded, bordered surface inset with a margin all around (Linear-style).
-  return (
-    <div className='flex h-dvh w-full overflow-hidden bg-sidebar text-text'>
-      {/* Desktop sidebar: full nav, or an icon-only group rail while collapsed */}
-      <aside className='hidden shrink-0 md:block'>
-        {collapsed ? (
-          <SidebarRail {...groupNav} onExpand={() => setCollapsed(false)} storagePrefix={storagePrefix} />
-        ) : (
-          <Sidebar
-            {...groupNav}
-            items={items}
-            activeId={activeId}
-            onSelect={select}
-            onCollapse={() => setCollapsed(true)}
-            groupAction={groupAction}
-            storagePrefix={storagePrefix}
-          />
-        )}
-      </aside>
+  const selectGroup = (id: string) => {
+    groupNav.onSelectGroup(id)
+    setDrawerOpen(false)
+  }
 
-      {/* Mobile off-canvas drawer */}
-      {drawerOpen && (
-        <div className='md:hidden fixed inset-0 z-40'>
-          <button
-            type='button'
-            aria-label='Close menu'
-            className='absolute inset-0 bg-text/30'
-            onClick={() => setDrawerOpen(false)}
-          />
-          <div className='absolute inset-y-0 left-0 shadow-(--shadow-md)'>
+  const closeDrawer = () => setDrawerOpen(false)
+
+  const shellGroupNav = { ...groupNav, onSelectGroup: selectGroup }
+
+  return (
+    <div className='relative flex h-dvh w-full overflow-hidden bg-sidebar text-text'>
+      <div className={cn('flex min-w-0 flex-1 overflow-hidden', framed && 'm-2 rounded-xl frame-shine shadow-(--frame-shadow)')}>
+        {/* Desktop sidebar: full nav, or an icon-only group rail while collapsed */}
+        <aside className='hidden shrink-0 md:block'>
+          {collapsed ? (
+            <SidebarRail {...shellGroupNav} onHomeClick={closeDrawer} onExpand={() => setCollapsed(false)} storagePrefix={storagePrefix} framed={framed} />
+          ) : (
             <Sidebar
-              className='border-r border-border'
-              {...groupNav}
+              {...shellGroupNav}
               items={items}
               activeId={activeId}
               onSelect={select}
+              onCollapse={() => setCollapsed(true)}
               groupAction={groupAction}
               storagePrefix={storagePrefix}
-              />
-          </div>
-        </div>
-      )}
+              framed={framed}
+              onHomeClick={closeDrawer}
+            />
+          )}
+        </aside>
 
-      {/* Main canvas - the inset frame (the sidebar/rail occupies the left on desktop) */}
-      <div className='flex min-w-0 flex-1 flex-col p-2 md:pl-0'>
-        <div className='frame-shine flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl shadow-(--frame-shadow)'>
+        {/* Mobile off-canvas drawer */}
+        {drawerOpen && (
+          <div className='fixed inset-0 z-40 md:hidden'>
+            <button
+              type='button'
+              aria-label='Close menu'
+              className='absolute inset-0 bg-text/30'
+              onClick={() => setDrawerOpen(false)}
+            />
+            <div className='absolute inset-y-0 left-0 shadow-(--shadow-md)'>
+              <Sidebar
+                className='border-r border-border'
+                {...shellGroupNav}
+                items={items}
+                activeId={activeId}
+                onSelect={select}
+                groupAction={groupAction}
+                storagePrefix={storagePrefix}
+                framed={framed}
+                onHomeClick={closeDrawer}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Main canvas. The ordinary shell stays flat; the frame appears when the aside is open. */}
+        <div className='flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden'>
         <TopBar
           content={topbar}
           slotRef={topBarSlot.ref}
@@ -131,19 +156,17 @@ export function AppShell({
           trailing={trailing}
         />
 
-        {/* The app's aside (an agent panel) rides inside the framed canvas as a sibling of <main> -
-            one mount, visible app-wide. `relative` is its fullscreen containing block: the panel
-            then covers this row and <main> goes inert but keeps its scroll position. */}
-        <div className='relative flex min-h-0 flex-1 overflow-hidden'>
-          <main inert={mainInert} className='min-h-0 min-w-0 flex-1 overflow-y-auto'>
+        <div className='relative flex min-h-0 flex-1 overflow-hidden bg-bg'>
+          <main ref={mainRef} inert={mainInert} className='min-h-0 min-w-0 flex-1 overflow-y-auto'>
             <TopBarSlotProvider node={topBarSlot.node} centerNode={topBarCenter.node}>
               {children}
             </TopBarSlotProvider>
           </main>
-          {aside}
         </div>
         </div>
       </div>
+      {/* App extensions such as Assistant live outside the frame, like a workspace utility pane. */}
+      {aside}
     </div>
   )
 }

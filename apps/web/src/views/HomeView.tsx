@@ -1,57 +1,188 @@
-import { Link } from '@tanstack/react-router'
-import { AppShell, PageContainer, PageHeader } from '@silkweave/box-ui'
-import { appEntries, useGroupNav } from '../lib/nav.ts'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  ArrowRight,
+  Bot,
+  Check,
+  Circle,
+  Copy,
+  Hammer,
+  Layers3,
+  ShieldCheck,
+  Sparkles,
+  UserRoundCheck,
+} from 'lucide-react'
+import { Badge, Button, PageContainer, PageHeader } from '@silkweave/box-ui'
+import { RouteChrome } from '../lib/routeShell.tsx'
+import { WEB_FEATURE_LIST } from '../generated/features.ts'
+import { builderReadiness, loadBuilderControlState, type BuilderControlState } from '../lib/builderStore.ts'
+import { useAuth } from '../lib/useAuth.tsx'
 
-/**
- * The app dashboard at `/` - one card per app this Box has, from the present features' `nav`.
- *
- * It replaced a `/` that redirected into whichever feature sorted first (2026-09-15). That made
- * every sign-in land inside ONE team's tool - a Box that kept `data` greeted everybody with an
- * empty Signals chart about downloads and stars - and it made "what does this Box even do?"
- * a question you answered by reading the sidebar. The dashboard answers it.
- *
- * `appEntries()` reads the generated registry, which sits on an import cycle with every view
- * (`view -> nav.ts -> generated/features -> feature index -> view`). It is called INSIDE the
- * component for that reason. A module-scope read here throws `Cannot access 'WEB_FEATURE_LIST'
- * before initialization` at load and white-screens the whole SPA, `box verify` has no runtime
- * step and cannot see it, and that is exactly how the app was broken from bf5a3f2 to 2026-09-13.
- *
- * A Box with no apps never reaches this view: the index route redirects to `homePath()` instead,
- * so a blank Box still lands on Settings rather than on an empty grid.
- */
+const FEATURE_PROMPT = `Integrate a useful first reference feature from Silkweave Stack into this Box. Start by recommending Reminders unless another small, dependency-free feature better fits my needs. Preserve this Box's local decisions, record the source SHA and intended scope, back up before migrations, adapt registration and dependencies, run the complete validation chain, and let me review the result before finishing.`
+
+const DASHBOARD_PROMPT = `Help me replace the onboarding dashboard with a dashboard for how I actually use this Box. First ask what I open the Box to decide, which installed areas matter every day, what needs attention, and whether the dashboard is personal or team-wide. Then implement it, preview it, run the complete validation chain, and let me review the result before finishing.`
+
+const STARTER_PATHS = [
+  { title: 'Remember things', features: 'Reminders', description: 'A focused list and a small, complete first integration.', recommended: true },
+  { title: 'Capture ideas', features: 'Sink', description: 'An inbox for notes, source material, and things to work up.', recommended: false },
+  { title: 'Plan work', features: 'Data + Planning', description: 'Signals, initiatives, tasks, and sprints.', recommended: false },
+  { title: 'Publish ideas', features: 'Sink + Data + Planning + Content', description: 'A human-gated path from an idea to published pieces.', recommended: false },
+] as const
+
+/** Temporary first-run workspace. Its final quest is to replace this view with the owner's dashboard. */
 export function HomeView() {
-  const groupNav = useGroupNav('home')
-  const apps = appEntries()
+  const { principal } = useAuth()
+  const isAdmin = principal?.role === 'admin'
+  const installed = useMemo(() => WEB_FEATURE_LIST.filter(feature => feature.id !== 'artifacts'), [])
+  const [builder, setBuilder] = useState<BuilderControlState>()
+  const [builderError, setBuilderError] = useState<string>()
+  const [copied, setCopied] = useState<'feature' | 'dashboard'>()
+
+  useEffect(() => {
+    if (!isAdmin) return
+    let alive = true
+    const load = async (): Promise<void> => {
+      try {
+        const state = await loadBuilderControlState()
+        if (alive) { setBuilder(state); setBuilderError(undefined) }
+      } catch (cause) {
+        if (alive) setBuilderError(cause instanceof Error ? cause.message : 'Builder state is unavailable.')
+      }
+    }
+    void load()
+    window.addEventListener('focus', load)
+    return () => { alive = false; window.removeEventListener('focus', load) }
+  }, [isAdmin])
+
+  const readiness = builder ? builderReadiness(builder) : null
+  const providerReady = readiness?.provider === 'ready'
+  const featureReady = installed.length > 0
+  const completeCount = 1 + Number(providerReady) + Number(featureReady)
+  const next = !isAdmin
+    ? { title: 'Explore what is installed', detail: 'An administrator owns setup and Builder changes.', action: null, prompt: null }
+    : !providerReady
+      ? { title: 'Connect Codex or Claude', detail: 'Builder needs one signed-in provider profile before it can change this Box.', action: null, prompt: null }
+      : !featureReady
+        ? { title: 'Add your first capability', detail: 'Use Builder to integrate a small feature from the Stack.', action: 'Open Builder', prompt: FEATURE_PROMPT }
+        : { title: 'Make the dashboard yours', detail: 'Ask Builder to replace this onboarding surface with the decisions and work that matter to you.', action: 'Open Builder', prompt: DASHBOARD_PROMPT }
+
+  const copyPrompt = async (kind: 'feature' | 'dashboard', prompt: string): Promise<void> => {
+    await navigator.clipboard.writeText(prompt)
+    setCopied(kind)
+    window.setTimeout(() => setCopied(undefined), 1600)
+  }
 
   return (
-    <AppShell
-      items={[]}
-      activeId=''
-      onSelect={() => {}}
-      groupNav={groupNav}
-      topbar={{ crumbs: [{ label: 'Home' }] }}>
+    <RouteChrome items={[]} activeId='' onSelect={() => {}} topbar={{ crumbs: [{ label: 'Dashboard' }] }}>
       <PageContainer width='wide'>
-        <PageHeader title='Apps' description='What this Box does. Open one to get started.' />
-        <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-          {apps.map((app) => {
-            const Icon = app.icon
-            return (
-              <Link
-                key={app.id}
-                to={app.to as never}
-                className='group flex h-full flex-col gap-2 rounded-lg border border-border bg-surface p-4 shadow-(--shadow-sm) transition-colors hover:border-accent/40'>
-                <div className='flex items-center gap-2'>
-                  <Icon className='size-4 shrink-0 text-accent' />
-                  <span className='line-clamp-1 flex-1 text-body-sm font-medium text-text'>{app.label}</span>
+        <PageHeader
+          title={<>Welcome{principal?.display ? `, ${principal.display}` : ''}.</>}
+          description='Your Box is running. Now make it useful.'
+          actions={<Badge variant='silk'>First run</Badge>}
+        />
+
+        <section className='overflow-hidden rounded-2xl border border-border bg-surface shadow-(--shadow-sm)'>
+          <div className='grid gap-8 p-6 md:grid-cols-[1fr_auto] md:p-8'>
+            <div>
+              <p className='text-label font-medium uppercase tracking-wider text-accent'>Recommended next</p>
+              <h2 className='mt-2 font-serif text-display-sm text-text'>{next.title}</h2>
+              <p className='mt-2 max-w-2xl text-body text-muted-foreground'>{next.detail}</p>
+              {next.prompt && <div className='mt-5 max-w-2xl rounded-lg border border-border bg-bg p-3'>
+                <div className='flex items-center justify-between gap-3'>
+                  <p className='text-label font-medium text-text'>Builder brief</p>
+                  <Button variant='ghost' size='xs' onClick={() => void copyPrompt(featureReady ? 'dashboard' : 'feature', next.prompt!)}><Copy />{copied === (featureReady ? 'dashboard' : 'feature') ? 'Copied' : 'Copy'}</Button>
                 </div>
-                {app.description && (
-                  <p className='line-clamp-3 text-label leading-relaxed text-muted-foreground'>{app.description}</p>
-                )}
-              </Link>
-            )
-          })}
+                <p className='mt-2 line-clamp-3 text-label leading-relaxed text-muted-foreground'>{next.prompt}</p>
+              </div>}
+              {next.action && <Button className='mt-5' onClick={() => location.assign('/builder?preview=/')}><Hammer />{next.action}<ArrowRight /></Button>}
+            </div>
+            <div className='flex min-w-40 flex-col justify-center rounded-xl bg-accent-bg px-6 py-5 text-center'>
+              <span className='text-4xl font-semibold tracking-tight text-accent'>{completeCount}/4</span>
+              <span className='mt-1 text-label font-medium text-muted-foreground'>quests complete</span>
+              <div className='mt-3 h-1.5 overflow-hidden rounded-full bg-border-light'><div className='h-full rounded-full bg-accent transition-all' style={{ width: `${completeCount * 25}%` }} /></div>
+            </div>
+          </div>
+        </section>
+
+        <div className='mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.75fr)]'>
+          <section>
+            <div className='mb-3 flex items-center justify-between'><h2 className='text-heading-2 font-semibold text-text'>Onboarding quests</h2><span className='text-label text-muted-foreground'>The last quest removes this dashboard.</span></div>
+            <div className='space-y-3'>
+              <Quest complete icon={<UserRoundCheck />} title='Meet your Box' description='You are signed in and this Box is ready for its human owner.' />
+              <Quest complete={providerReady} active={isAdmin && !providerReady} icon={<Bot />} title='Connect a Builder provider' description={providerDescription(readiness, builderError)}>
+                {isAdmin && !providerReady && <ProviderSetup />}
+              </Quest>
+              <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Add and use a capability' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'capability is' : 'capabilities are'} installed: ${installed.map(feature => feature.id).join(', ')}.` : 'Choose an outcome, then let Builder integrate and verify its source.'}>
+                {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => location.assign('/builder?preview=/')}><Hammer />Open Builder</Button>}
+              </Quest>
+              <Quest active={isAdmin && providerReady && featureReady} icon={<Sparkles />} title='Make the dashboard yours' description='Replace onboarding with a dashboard shaped around your installed capabilities and daily decisions.'>
+                {isAdmin && providerReady && featureReady && <Button className='mt-4' size='sm' onClick={() => location.assign('/builder?preview=/')}><Hammer />Design with Builder</Button>}
+              </Quest>
+            </div>
+          </section>
+
+          <aside className='space-y-6'>
+            <section className='rounded-xl border border-border bg-surface p-5'>
+              <h2 className='text-heading-sm font-semibold text-text'>Your Box now</h2>
+              <dl className='mt-4 space-y-3 text-body-sm'>
+                <StatusRow label='Owner' value={principal?.display ?? 'Signed in'} tone='success' />
+                <StatusRow label='Builder' value={!isAdmin ? 'Admin only' : builderError ? 'Unavailable' : providerReady ? 'Ready' : builder ? 'Needs setup' : 'Checking'} tone={providerReady ? 'success' : builderError ? 'danger' : 'warning'} />
+                <StatusRow label='Capabilities' value={installed.length ? `${installed.length} installed` : 'Core only'} tone={installed.length ? 'success' : 'neutral'} />
+                <StatusRow label='Safety backup' value={builder?.backups[0] ? new Date(builder.backups[0].createdAt).toLocaleDateString() : 'Created when Builder starts'} tone='neutral' />
+              </dl>
+            </section>
+            <section className='rounded-xl border border-border bg-surface p-5'>
+              <div className='flex items-center gap-2'><ShieldCheck className='size-5 text-accent' /><h2 className='text-heading-sm font-semibold text-text'>How changes work</h2></div>
+              <p className='mt-3 text-body-sm leading-relaxed text-muted-foreground'>Builder creates a safety backup and a dedicated branch. You preview the result, verify it, review the diff, and choose when to finish.</p>
+              <p className='mt-3 font-mono text-label text-fg-3'>BACKUP → BUILD → PREVIEW → VERIFY → REVIEW → FINISH</p>
+            </section>
+          </aside>
         </div>
+
+        {!featureReady && <section className='mt-10'>
+          <div><h2 className='text-heading-2 font-semibold text-text'>Choose an outcome</h2><p className='mt-1 text-body-sm text-muted-foreground'>These are starting points from the Stack, not one-click packages. Builder adapts the source to this Box.</p></div>
+          <div className='mt-4 grid gap-3 sm:grid-cols-2'>
+            {STARTER_PATHS.map(path => <article key={path.title} className='rounded-xl border border-border bg-surface p-5'>
+              <div className='flex items-start justify-between gap-3'><h3 className='font-medium text-text'>{path.title}</h3>{path.recommended && <Badge variant='accent'>Recommended first</Badge>}</div>
+              <p className='mt-2 text-body-sm text-muted-foreground'>{path.description}</p>
+              <p className='mt-3 text-label font-medium text-fg-3'>{path.features}</p>
+            </article>)}
+          </div>
+        </section>}
       </PageContainer>
-    </AppShell>
+    </RouteChrome>
   )
+}
+
+function providerDescription(readiness: ReturnType<typeof builderReadiness> | null, error?: string): string {
+  if (error) return error
+  if (!readiness) return 'Checking the Box host for Codex or Claude profiles.'
+  if (readiness.provider === 'ready') return readiness.message
+  if (readiness.provider === 'sign-in-required') return `A profile exists, but its provider still needs sign-in. ${readiness.message}`
+  return 'Builder needs a Codex or Claude profile mapped to your account on this host.'
+}
+
+function ProviderSetup() {
+  return <div className='mt-4 rounded-lg border border-border bg-bg p-4 text-body-sm'>
+    <p className='font-medium text-text'>On the Box host:</p>
+    <ol className='mt-2 list-decimal space-y-1.5 pl-5 text-muted-foreground'>
+      <li>Sign in with <code>codex login</code> or start <code>claude</code> and complete its login.</li>
+      <li>Add that provider profile under <code>workerdeck</code> in <code>box.local.json</code>, and map your user ID under <code>agentProfiles</code>.</li>
+      <li>Restart <code>box dev</code>, then return here. The status is read from Builder itself.</li>
+    </ol>
+    <p className='mt-3 text-label text-fg-3'>Use <code>docs/examples/workerdeck.json</code> as the configuration template. Profile homes must be absolute paths to <code>.codex</code> or <code>.claude</code>.</p>
+  </div>
+}
+
+function Quest({ complete = false, active = false, icon, title, description, children }: { complete?: boolean; active?: boolean; icon: ReactNode; title: string; description: string; children?: ReactNode }) {
+  return <article className={`rounded-xl border bg-surface p-5 transition-colors ${active ? 'border-accent/40 shadow-(--shadow-sm)' : 'border-border'}`}>
+    <div className='flex gap-4'>
+      <div className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${complete ? 'bg-success-bg text-success' : active ? 'bg-accent-bg text-accent' : 'bg-bg text-fg-4'}`}>{complete ? <Check className='size-5' /> : icon}</div>
+      <div className='min-w-0 flex-1'><div className='flex flex-wrap items-center gap-2'><h3 className='font-medium text-text'>{title}</h3>{complete ? <Badge variant='success'>Complete</Badge> : active ? <Badge variant='accent'>Next</Badge> : <Badge variant='neutral'>Later</Badge>}</div><p className='mt-1 text-body-sm text-muted-foreground'>{description}</p>{children}</div>
+    </div>
+  </article>
+}
+
+function StatusRow({ label, value, tone }: { label: string; value: string; tone: 'success' | 'warning' | 'danger' | 'neutral' }) {
+  const dot = tone === 'success' ? 'bg-success' : tone === 'warning' ? 'bg-warning' : tone === 'danger' ? 'bg-danger' : 'bg-fg-4'
+  return <div className='flex items-center justify-between gap-4'><dt className='flex items-center gap-2 text-muted-foreground'><Circle className={`size-2 fill-current ${dot}`} />{label}</dt><dd className='truncate text-right font-medium text-text'>{value}</dd></div>
 }

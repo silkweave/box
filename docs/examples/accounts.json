@@ -36,7 +36,7 @@
 
   "blog": [
     {
-      "_note": "feed: the RSS/Atom URL of YOUR blog. There is no default - without it the blog pull logs that no feed is configured and does nothing. Point at the canonical host: a feed URL that redirects costs a round trip on every pull. GA4 is optional and configured in the credentials field of box.local.json.",
+      "_note": "feed: the RSS/Atom URL of YOUR blog. There is no default - without it the blog pull logs that no feed is configured and does nothing. Point at the canonical host: a feed URL that redirects costs a round trip on every pull. GA4 is optional and configured under credentials in box.local.json.",
       "id": "acme",
       "user": "alice",
       "default": true,
@@ -73,7 +73,7 @@
 
   "reddit": [
     {
-      "_note": "Needs an external stealth-browser gateway; this core-only Box does not ship one. The topic radar's subs and keywords are NOT here - configure them under features.data.redditRadar in box.local.json.",
+      "_note": "Needs an external stealth-browser gateway. The topic radar's subreddits and keywords belong under features.data.redditRadar in box.json or box.local.json; see the data feature documentation.",
       "id": "alice",
       "user": "alice",
       "default": true,

@@ -2,10 +2,33 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpExc
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsIn, IsInt, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
+import { z } from 'zod/v4'
 import { boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, issuePrincipalToken, issueSigninLink, readUser, readUsers, revealPrincipalToken, revokePrincipalToken, setPrincipalRole, upsertUser, type User, type UserRole } from '@silkweave/box-core'
+import { revokeBuilderControl } from '../agent/builder-control.js'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { Admin } from '../auth/auth.decorators.js'
 import { appUrl, signinLinkUrl } from '../auth/app-url.js'
+
+const userOutput = z.object({
+  id: z.string(),
+  first_name: z.string(),
+  last_name: z.string(),
+  nickname: z.string(),
+  email: z.string().nullable(),
+  image: z.string().nullable(),
+  color: z.string().nullable(),
+  status: z.enum(['invited', 'active', 'revoked']),
+  role: z.enum(['admin', 'member']),
+  tailscale_login: z.string().nullable(),
+  channels: z.record(z.string(), z.string()),
+  has_token: z.boolean(),
+  sort: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+const usersOutput = z.object({ generatedAt: z.string(), users: z.array(userOutput) })
+const inviteOutput = z.object({ token: z.string(), url: z.string(), message: z.string(), user: userOutput })
+const linkOutput = z.object({ url: z.string(), expiresAt: z.string(), message: z.string(), user: userOutput })
 
 // DTOs document the REST/Swagger surface and drive the generated tRPC input/output types, exactly
 // like the sink/planning controllers. @Mcp() input fields are scalar-only so the cli proxy can build
@@ -112,7 +135,7 @@ export class UsersController {
   /** tRPC query `usersList` - every principal, ordered for display. */
   @Get('list')
   @ApiOkResponse({ type: UsersDto })
-  @Trpc()
+  @Trpc({ output: usersOutput })
   async list(): Promise<UsersDto> {
     return { generatedAt: new Date().toISOString(), users: (await readUsers()) as UserDto[] }
   }
@@ -127,7 +150,7 @@ export class UsersController {
    */
   @Post('upsert')
   @ApiOkResponse({ type: UserDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: userOutput })
   @Mcp({ name: 'user-upsert' })
   async upsert(@Body() body: UpsertUserDto, @Req() req: PrincipalRequest): Promise<UserDto> {
     const isAdmin = req.principal?.role === 'admin'
@@ -154,7 +177,7 @@ export class UsersController {
   @Post('invite')
   @ApiOkResponse({ type: UserInviteDto })
   @Admin()
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: inviteOutput })
   @Mcp({ name: 'user-invite' })
   async invite(@Body() body: IdDto, @Req() req: PrincipalRequest): Promise<UserInviteDto> {
     try {
@@ -182,7 +205,7 @@ export class UsersController {
   @Post('invite-reveal')
   @ApiOkResponse({ type: UserInviteDto })
   @Admin()
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: inviteOutput })
   async inviteReveal(@Body() body: IdDto): Promise<UserInviteDto> {
     const user = await readUser(body.id)
     if (!user) throw new BadRequestException(`no user "${body.id}"`)
@@ -197,7 +220,7 @@ export class UsersController {
   @Post('access-revoke')
   @ApiOkResponse({ type: UserDto })
   @Admin()
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: userOutput })
   @Mcp({ name: 'user-access-revoke' })
   async accessRevoke(@Body() body: IdDto, @Req() req: PrincipalRequest): Promise<UserDto> {
     if (req.principal && req.principal.id === body.id) throw new ForbiddenException('you cannot disable yourself')
@@ -207,6 +230,7 @@ export class UsersController {
     if (!(await readUser(body.id))) throw new BadRequestException(`no user "${body.id}"`)
     await assertNotLastAdmin(body.id, 'disabling them')
     await revokePrincipalToken(body.id, req.principal?.id)
+    revokeBuilderControl(body.id)
     return (await readUser(body.id)) as User as UserDto
   }
 
@@ -221,11 +245,12 @@ export class UsersController {
   @Post('set-role')
   @ApiOkResponse({ type: UserDto })
   @Admin()
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: userOutput })
   @Mcp({ name: 'user-set-role' })
   async setRole(@Body() body: SetRoleDto, @Req() req: PrincipalRequest): Promise<UserDto> {
     try {
       await setPrincipalRole(body.id, body.role, req.principal?.id)
+      if (body.role !== 'admin') revokeBuilderControl(body.id)
     } catch (e) {
       if (e instanceof HttpException) throw e
       throw new BadRequestException(e instanceof Error ? e.message : String(e))
@@ -246,7 +271,7 @@ export class UsersController {
   @Post('link')
   @ApiOkResponse({ type: UserLinkDto })
   @Admin()
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: linkOutput })
   @Mcp({ name: 'user-link' })
   async link(@Body() body: LinkRequestDto, @Req() req: PrincipalRequest): Promise<UserLinkDto> {
     const user = await readUser(body.id)
@@ -302,13 +327,14 @@ export class UsersController {
   @Post('delete')
   @ApiOkResponse({ type: UsersDto })
   @Admin()
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: usersOutput })
   @Mcp({ name: 'user-delete' })
   async delete(@Body() body: IdDto, @Req() req: PrincipalRequest): Promise<UsersDto> {
     if (req.principal && req.principal.id === body.id) throw new ForbiddenException('you cannot delete yourself')
     await assertNotLastAdmin(body.id, 'deleting them')
     try {
       await deleteUser(body.id)
+      revokeBuilderControl(body.id)
     } catch (e) {
       if (e instanceof HttpException) throw e
       throw new BadRequestException(e instanceof Error ? e.message : String(e))

@@ -36,7 +36,7 @@ const signGrant = (claims: Record<string, unknown>): string => {
     hkdfSync('sha256', authSecret('AUTH_SESSION_SECRET'), '', 'silkweave-box/signin-link/v1', 32),
   )
   const payload = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url')
-  const signed = `${SIGNIN_GRANT_PREFIX}.${payload}`
+  const signed = `bl1.${payload}`
   return `${signed}.${createHmac('sha256', key).update(signed).digest('base64url')}`
 }
 
@@ -65,7 +65,7 @@ describe('mint and verify', () => {
     if (res.ok) expect(res.claims).toEqual(claims)
   })
 
-  it('is shaped `bl1.<payload>.<sig>`', () => {
+  it('is shaped `bl2.<compact-payload>.<truncated-sig>`', () => {
     const { grant } = mintSigninGrant('alice')
     const parts = grant.split('.')
     expect(parts).toHaveLength(3)
@@ -78,8 +78,12 @@ describe('mint and verify', () => {
   })
 
   it('stays a sane length for a URL', () => {
-    // It goes in a query string someone may paste into a chat message; keep an eye on the size.
-    expect(mintSigninGrant('alice').grant.length).toBeLessThan(200)
+    expect(mintSigninGrant('alice').grant.length).toBeLessThan(80)
+  })
+
+  it('continues to verify unexpired bl1 grants', () => {
+    const now = Date.now()
+    expect(verifySigninGrant(signGrant({ sub: 'alice', iat: now, exp: now + 60_000 }), now).ok).toBe(true)
   })
 })
 
@@ -104,12 +108,12 @@ describe('tampering', () => {
     const { grant } = mintSigninGrant('alice')
     const [, payload, sig] = grant.split('.')
     expect(verifySigninGrant(`${payload}.${sig}`)).toEqual({ ok: false, reason: 'invalid' })
-    expect(verifySigninGrant(`bl2.${payload}.${sig}`)).toEqual({ ok: false, reason: 'invalid' })
+    expect(verifySigninGrant(`bl3.${payload}.${sig}`)).toEqual({ ok: false, reason: 'invalid' })
     expect(verifySigninGrant(`.${payload}.${sig}`)).toEqual({ ok: false, reason: 'invalid' })
   })
 
   it('rejects junk without throwing', () => {
-    for (const junk of ['', '   ', 'x', 'a.b', 'a.b.c', 'bl1..', 'bl1.@@@.@@@', 'bl1.a.b.c']) {
+    for (const junk of ['', '   ', 'x', 'a.b', 'a.b.c', 'bl2..', 'bl2.@@@.@@@', 'bl2.a.b.c']) {
       expect(verifySigninGrant(junk).ok).toBe(false)
     }
   })

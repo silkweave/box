@@ -40,7 +40,6 @@ config/credentials.json
 !.agents/skills/adapt
 !.agents/skills/upgrade
 !.agents/skills/verify
-.codex/prompts/
 
 # Router types are generated. Feature registration and exports are maintained source.
 apps/web/src/generated/appRouter.d.ts

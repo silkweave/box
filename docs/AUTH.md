@@ -42,10 +42,11 @@ client: chat's destructive operations key their approval gate on it.
   could be triggered by any page that could make the browser navigate; a JSON body cannot be sent
   cross-origin without a preflight this Box refuses.
 
-  The link itself points at the SPA (`<APP_URL>/login?link=<grant>`), so a bot that follows it just
-  gets `index.html`. `/login` is not a client route - the auth gate renders the login screen on any
-  path, and the SPA normalizes `/login` back to `/` on boot while KEEPING the query
-  (`apps/web/src/router.tsx`). `LoginView` shows "Continue as &lt;user&gt;" behind a button and
+  The link itself points at the SPA (`<APP_URL>/login/<grant>`), so a bot that follows it just
+  gets `index.html`. `/login` is not a client route: the auth gate renders the login screen on any
+  path, and the SPA moves the path grant into transient query state before normalizing to `/`
+  (`apps/web/src/router.tsx`). `LoginView` immediately reads and scrubs that state, then shows
+  "Continue as &lt;user&gt;" behind a button and
   never auto-submits: the click is what a scanner will not do.
 - `GET /api/auth/instance` - this process's random per-boot id, and deliberately nothing else. Its
   only consumer is the loopback guard, which asks `127.0.0.1` "are you me?" before the chat agent
@@ -57,7 +58,7 @@ set iff the login arrived over TLS, or from a loopback proxy sending `x-forwarde
 (`requestIsSecure`). A cookie that can only ever be set over `http://` gains nothing
 from `Secure` and loses everything: the browser drops it and the sign-in fails back to the login
 screen with no error. Chromium hides that by treating `localhost` as a secure context; Safari does
-not, so the old env-var default made a local Box unusable in Safari.
+not, so local HTTP must use a non-Secure cookie.
 There is **no server-side expiry**. `Max-Age` is 400 days (Chrome's ceiling) purely
 so the cookie survives a browser restart; it is a browser hint, not a server expiry. Revocation is
 still exact: the guard re-reads the `users` row on every request, so a revoked user's live session
@@ -147,11 +148,11 @@ admin. The system account still has no sign-in links and cannot be disabled thro
 A populated Box whose configured agent row does not exist refuses startup. Repair the choice; do not
 delete the identity lock to rename users.
 
-**Admin is the fresh-Box default, by decision.** It removes the previous member boundary against
-credential changes, user administration, service restart and credential-wired configuration.
+**Admin is the fresh-Box default.** It permits credential changes, user administration,
+service restart and credential-wired configuration.
 Untrusted chat and ingested content can prompt an admin-credentialed agent. The chat agent is off
-by default; its configuration is in `box.json`, and no equivalent role boundary
-replaces the one removed. `user-invite-reveal` remains off MCP; destructive chat operations retain
+by default; its configuration is in `box.json`. `user-invite-reveal` is not exposed over MCP;
+destructive chat operations retain
 their human approval cards. These do not protect every admin action. Choose `member` when that
 restriction is wanted. A teammate's sidebar session still uses that teammate's own token and role.
 
@@ -161,8 +162,17 @@ reveal the credential privately with `box auth reveal nova` when wiring its prof
 
 ## First run and the commands that exist
 
-A fresh Box has no users and every way to create one sits behind the login, so the one path in is a
-process on the host (`apps/server/scripts/auth-token.ts`):
+A fresh Box has no users and every way to create one sits behind the login. The primary path is the
+host-only guided setup:
+
+```bash
+bun setup
+```
+
+It confirms the configured machine principal, creates the first human as an administrator, stores
+their permanent token in mode-0600 `box.local.json` for the local CLI without printing it, and
+issues a short-lived single-use sign-in link. It refuses a populated Box rather than changing an
+existing profile or rotating a credential. The lower-level host commands remain available:
 
 ```bash
 box auth token <id> --name "Full Name"   # on a Box with NO human users: creates <id> as an ADMIN
@@ -182,6 +192,11 @@ ID, including a revoked user, without changing its profile, role or credential. 
 `--create` keeps the first-human-as-admin rule. There is **no network-reachable bootstrap window** at
 any point; the host was always the trust boundary, and nothing here changes that.
 
+The signed-out dashboard makes the fallback host step visible when it detects a fresh Box. Its public
+`GET /api/auth/me` probe returns only `needsOwner: true`; it exposes no user count or identity and
+does not create an account. Guided setup instead lands the owner through its short-lived link, so
+the signed-in onboarding dashboard begins with the owner quest already complete.
+
 `--quiet` prevents a token from appearing in command output or agent transcripts.
 
 **Access tokens, the contract:** one per user (`users.token_ciphertext` is a single column), no
@@ -200,11 +215,16 @@ admin-only.
 ### 1.7 Sign-in links
 
 A **grant** (`packages/core/src/auth/link.ts`) is a signed assertion that its bearer may become one
-user, once, before an expiry. `bl1.<b64url{sub,iat,exp}>.<HMAC-SHA256>`, 15 minutes by default and
-24 hours at most. It carries no secret of the user's and cannot be exchanged for an access token,
+user, once, before an expiry. The compact `bl2` format packs the millisecond issue time, lifetime and
+UTF-8 user ID into a binary payload and authenticates it with a 160-bit truncated HMAC-SHA256. It is
+typically about 50 characters, lasts 15 minutes by default and 24 hours at most. It carries no
+secret of the user's and cannot be exchanged for an access token,
 which is what makes it safe to send in a message or mint on someone's behalf inside an agent
-transcript. Mint with `box auth link <id>`, Settings -> Users -> Send sign-in link, or the
+transcript. Mint with `box auth login <id>`, Settings -> Users -> Send sign-in link, or the
 admin-only `user-link` tool.
+
+The verifier continues to accept the earlier `bl1.<JSON>.<HMAC-SHA256>` format so an already-issued
+link remains usable for its short lifetime. New links are always `bl2`.
 
 **Its key is derived, not separately configured:** HKDF-SHA256 from `auth.sessionSecret` with the
 `info` string `silkweave-box/signin-link/v1`. Rotating the session secret invalidates outstanding
@@ -212,7 +232,7 @@ links.
 
 **A grant must never be confusable with a session cookie**, and the naive `{sub, exp}` HMAC signed
 with the session secret *is* a valid one, because session payloads accept an `exp`. Four
-locks, all tested in both directions: the derived key, the `bl1.` prefix inside the signed string, a
+locks, all tested in both directions: the derived key, the format prefix inside the signed string, a
 strict three-part parse, and `verifySession` rejecting any payload carrying `iat`.
 
 **Single use** is one `users.link_watermark` column holding the `iat` of the last consumed grant; a
@@ -226,8 +246,9 @@ link.
 
 ### User management, from the app or an agent
 
-`apps/server/src/users/users.controller.ts` exposes each of these as **both** a tRPC procedure and
-an MCP tool, so Settings -> Users, `bun run cli` and an admin's own agent session are the same surface:
+`apps/server/src/users/users.controller.ts` exposes user management through tRPC and selected
+MCP tools. Settings -> Users, `box <tool-name>` and an admin's agent session share the same handlers;
+the table identifies operations available only through tRPC:
 
 | MCP tool | tRPC | Tier |
 |---|---|---|

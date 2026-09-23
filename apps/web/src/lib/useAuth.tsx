@@ -2,19 +2,21 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { setActiveUser } from './useActiveUser.ts'
 
 // Client auth state. Probes GET /api/auth/me on mount; no principal means the login gate. The
-// authenticated principal drives the active-user scope (its id stamps `actor` on mutations). It
-// says WHO, and nothing else - roles and per-view permissions were removed on 2026-09-10, so the
-// UI hides nothing from anybody who is signed in. See docs/AUTH.md.
+// authenticated principal drives the active-user scope (its id stamps `actor` on mutations) and
+// supplies the coarse role needed for admin-only surfaces. See docs/AUTH.md.
 
 export interface Principal {
   id: string
   display: string
+  role?: 'admin' | 'member'
 }
 
 interface AuthState {
   loading: boolean
   principal: Principal | null
   agent: { id: string; name: string; role: 'admin' | 'member' } | null
+  /** The public first-run signal. Creating the owner remains a host-only CLI operation. */
+  needsOwner: boolean
   login: (token: string) => Promise<{ ok: boolean; error?: string }>
   /** Spend a short-lived sign-in grant from a `?link=` URL. See LoginView. */
   loginWithLink: (grant: string) => Promise<{ ok: boolean; error?: string }>
@@ -28,13 +30,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [principal, setPrincipal] = useState<Principal | null>(null)
   const [agent, setAgent] = useState<AuthState['agent']>(null)
+  const [needsOwner, setNeedsOwner] = useState(false)
 
   const refetch = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
-      const data = (await res.json()) as { principal: Principal | null; agent: AuthState['agent'] }
+      const data = (await res.json()) as { principal: Principal | null; agent: AuthState['agent']; needsOwner?: boolean }
       setPrincipal(data.principal)
       setAgent(data.agent)
+      setNeedsOwner(data.needsOwner === true)
       // The authenticated principal IS the active user (locks the actor to who is signed in).
       if (data.principal) setActiveUser(data.principal.id)
     } catch {
@@ -105,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refetch])
 
   return (
-    <AuthContext.Provider value={{ loading, principal, agent, login, loginWithLink, logout, refetch }}>
+    <AuthContext.Provider value={{ loading, principal, agent, needsOwner, login, loginWithLink, logout, refetch }}>
       {children}
     </AuthContext.Provider>
   )

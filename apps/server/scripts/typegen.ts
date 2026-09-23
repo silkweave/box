@@ -27,11 +27,10 @@
 //                          the file is restored, so a --check run never dirties the tree.
 //   bun run typegen --quiet   drop Nest's WARN level. The silkweave adapter warns once per procedure
 //                          whose output it could only reflect one level deep (~50 lines, constant,
-//                          nothing to act on today). That is tolerable in `box verify` and NOT in
-//                          the root `prepare`, which runs on every `bun install`: a fresh clone
-//                          greeting a new user with fifty yellow WARNs teaches them to stop reading
-//                          the output, and this repo already made that argument once about a 404
-//                          favicon (apps/web/index.html).
+//                          nothing to act on today). `prepare` and `box verify` use this mode: a
+//                          fresh clone or a successful verification run greeting someone with 200+
+//                          yellow WARNs teaches them to stop reading the output. Direct
+//                          `bun run typegen` remains verbose when working on output precision.
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'

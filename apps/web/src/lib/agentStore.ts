@@ -204,7 +204,15 @@ export async function refreshAgentSession(): Promise<SessionInfo | undefined> {
     // No identity (transition mode, no picker chosen): only claim UNOWNED sessions - never attach
     // an anonymous window to a session another user's identity stamped.
     const active = sessions
-      .filter((s) => s.meta?.app === AGENT_SESSION_APP && s.meta?.user === uid && !TERMINAL_STATUS.has(s.status))
+      // Builder sessions have their own workspace and transcript. Never attach the everyday
+      // assistant sidebar to one, even though both products use the same WorkerDeck mount.
+      .filter(
+        (s) =>
+          s.meta?.app === AGENT_SESSION_APP &&
+          s.meta?.kind !== 'builder' &&
+          s.meta?.user === uid &&
+          !TERMINAL_STATUS.has(s.status),
+      )
       .sort((a, b) => b.createdAt - a.createdAt)[0]
     update({ unavailable: false, sessionId: active?.id, session: active })
     writeStored(SESSION_KEY, active?.id ?? null)
@@ -246,7 +254,9 @@ async function createSession(prompt: string | undefined): Promise<void> {
     // The proxy's one-agent gate answers 409 {error:'agent_active'} on a race - surface takeover.
     if (err instanceof Error && err.message === 'agent_active') {
       const active = await refreshAgentSession()
-      update({ starting: false, ...(active ? { conflict: { command: prompt, session: active } } : {}) })
+      update({ starting: false, ...(active
+        ? { conflict: { command: prompt, session: active } }
+        : { error: 'Your Builder session is active. Continue or end it in Builder before starting an assistant session.' }) })
       return
     }
     // The profile gate answers 403 - the mapping changed under us (config is read per call).

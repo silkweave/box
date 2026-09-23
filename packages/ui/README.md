@@ -168,11 +168,16 @@ the key as an argument; `SplitPane` already required a `storageKey` and is the p
 follows.
 
 **An app sets that prefix ONCE, on `ShellExtensions`** (2026-09-15), not per `<AppShell>`. The prop
-still wins where it is passed - a story needs that - but an app mounts the shell once per view
-(apps/web has thirteen), and a namespace thirteen call sites have to remember is a namespace that
-splits the first time somebody adds a fourteenth. `Sidebar` and `SidebarRail` thread it into
+still wins where it is passed - a story needs that - but a namespace repeated at route call sites
+will split as soon as one is omitted. `Sidebar` and `SidebarRail` thread it into
 `ThemeToggle` for the same reason: before this, a Box that set `storagePrefix` still had its theme
 toggle writing `ui.theme`, and half a namespace is the bug the parameter exists to prevent.
+
+**A persistent `AppShell` takes navigation lifecycle keys.** Change `navigationKey` whenever a
+navigation commits so an open mobile drawer closes even for browser or programmatic navigation.
+Change `scrollResetKey` only when the owning section changes so the shell-owned `<main>` returns to
+the top while same-section navigation and inner feature scrollers keep their positions. Group,
+secondary-item, and home selections also close the drawer immediately, including same-URL clicks.
 
 **The grid's storage key is the caller's, in full** - `useColumnWidths(appKey('crm'))`. That is a
 deliberate difference from `storagePrefix`: the shell's keys name a SHELL concept (the sidebar, the

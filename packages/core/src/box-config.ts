@@ -9,13 +9,12 @@ import { dirname, join } from 'node:path'
 import {
   defaultBoxJson,
   parseBoxAgent,
-  parseBoxJson,
   parseBoxJsonText,
   writeBoxJsonIfAbsent,
   readBoxConfig,
   type BoxJson,
 } from './box-json.js'
-import { configPath, configRoot, instanceDir, warehousePath } from './io.js'
+import { configPath, configRoot, warehousePath } from './io.js'
 import type { UserRole } from './users/types.js'
 
 export { readBoxConfig } from './box-json.js'
@@ -30,6 +29,18 @@ const localBoxJsonPath = (): string => join(configRoot(), 'box.local.json')
 /** The identity lock stays beside the other generated files; nothing hand-edits it. */
 const lockPath = (): string => configPath('agent-identity.lock.json')
 
+// The supervisor's maintenance boot is a process-local mode. It deliberately never changes
+// box.json or box.local.json, so a repair child cannot leave background work disabled after exit.
+let maintenanceOverride = false
+
+export function setMaintenanceOverride(enabled: boolean): void {
+  maintenanceOverride = enabled
+}
+
+export function clearMaintenanceOverride(): void {
+  maintenanceOverride = false
+}
+
 const label = (file: string): string => file.endsWith('box.local.json') ? 'box.local.json' : 'box.json'
 const readRaw = (file: string): unknown => parseBoxJsonText(readFileSync(file, 'utf8'), label(file))
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -39,8 +50,12 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  */
 export function boxJson(): BoxJson {
   const file = boxJsonPath()
-  if (existsSync(file) || existsSync(localBoxJsonPath())) return readBoxConfig(configRoot())
-  return defaultBoxJson()
+  const parsed = existsSync(file) || existsSync(localBoxJsonPath()) ? readBoxConfig(configRoot()) : defaultBoxJson()
+  if (!maintenanceOverride) return parsed
+  return {
+    ...parsed,
+    background: { automation: false, chatAgent: false, relay: false },
+  }
 }
 
 /**

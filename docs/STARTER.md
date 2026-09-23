@@ -1,7 +1,7 @@
 # Core-only starter checklist
 
 Produce a core-only consumer checkout from a recorded Stack commit using this checklist.
-Feature integration is agent-driven.
+Feature integration is agent-driven; record the actual source revision used.
 
 ## Prepare the source
 
@@ -45,11 +45,12 @@ Feature integration is agent-driven.
 11. Record the actual command, source state, dependency update date, test counts, warnings, and any
     limitations in `_docs/VALIDATION.md`. A passing lockfile build does not prove latest dependency
     freshness unless the update date and command are recorded.
-12. Configure identity, brand, ports, and secrets in local `box.json` and gitignored `box.local.json`.
-    Never commit credentials. Keep background automation, chat agents, relay, and workerdeck off for
-    the first boot unless the Box has explicitly configured them.
-13. Start the source server and production server against disposable fresh data. Confirm the log
-    says the agent surface is off when no workerdeck config exists. Check `/`, `/api/auth/instance`,
+12. Configure identity, brand and ports in `box.json`, then run `bun setup`. Confirm the system
+    principal, create the first owner, and select any detected Codex or Claude profiles. Setup keeps
+    the owner token and generated secrets in gitignored mode-0600 `box.local.json`. Never commit
+    credentials. Keep background automation, chat agents and relay off for the first boot.
+13. Start the source server and production server against disposable fresh data. When setup found
+    no provider, confirm the log says the agent surface is off. Check `/`, `/api/auth/instance`,
     `/settings`, and the feature paths that must remain absent. Confirm the browser shell, sign-in
     entry point, and disabled-agent path.
 
@@ -70,5 +71,5 @@ Feature integration is agent-driven.
     explicit historical reconciliation. New behavior gets a new migration.
 18. Run the full validation chain again, then boot against disposable data and test the feature's
     route, server surface, schema, migrations, and disabled-agent behavior. Record adapted files,
-    local decisions, backup locations, unresolved work, and rollback instructions in `_docs/INTEGRATION.md`.
-    Promote durable source ancestry and product constraints into the Box docs.
+    backup locations, unresolved work, and rollback instructions in `_docs/INTEGRATION.md`.
+    Promote durable operating guidance to the Box's product docs.

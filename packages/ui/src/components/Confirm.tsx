@@ -4,6 +4,7 @@
 
 import * as React from 'react'
 import { Button } from './Button.tsx'
+import { InlineDialog, InlineDialogContent, InlineDialogTitle, InlineDialogDescription, useInlineDialogTarget } from './InlineDialog.tsx'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './Dialog.tsx'
 
 export interface ConfirmOptions {
@@ -37,13 +38,19 @@ export function confirm(options: string | ConfirmOptions): Promise<boolean> {
   })
 }
 
-/** Mount ONCE at the app root. Renders the head of the confirm queue as a small dialog. */
+/** Mount one host at a time. In an InlineDialogScope, confirmations occupy the pane. */
 export function ConfirmHost() {
+  const inline = useInlineDialogTarget()
+  const Root = inline ? InlineDialog : Dialog
+  const Content = inline ? InlineDialogContent : DialogContent
+  const Title = inline ? InlineDialogTitle : DialogTitle
+  const Description = inline ? InlineDialogDescription : DialogDescription
   const [, force] = React.useReducer((n: number) => n + 1, 0)
   React.useEffect(() => {
     notify = force
     return () => {
       notify = null
+      for (const pending of queue.splice(0)) pending.resolve(false)
     }
   }, [])
 
@@ -56,11 +63,11 @@ export function ConfirmHost() {
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && answer(false)}>
-      <DialogContent className='max-w-sm' showClose={false}>
-        <DialogTitle className='pr-0 text-body font-medium font-sans'>{o.title ?? 'Are you sure?'}</DialogTitle>
+    <Root open onOpenChange={(open) => !open && answer(false)}>
+      <Content className='max-w-sm' showClose={false}>
+        <Title className='pr-0 text-body font-medium font-sans'>{o.title ?? 'Are you sure?'}</Title>
         {o.message != null && (
-          <DialogDescription className='whitespace-pre-wrap'>{o.message}</DialogDescription>
+          <Description className='whitespace-pre-wrap'>{o.message}</Description>
         )}
         <div className='flex items-center justify-end gap-2'>
           <Button variant='ghost' onClick={() => answer(false)}>
@@ -70,7 +77,7 @@ export function ConfirmHost() {
             {o.confirmLabel ?? 'Confirm'}
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </Content>
+    </Root>
   )
 }

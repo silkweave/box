@@ -1,10 +1,11 @@
 import 'reflect-metadata'
+import { diagnostic, errorKind, runtimeHeartbeat, traceHttp, traceSocket } from './diagnostics/runtime.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { boxBrand, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, rateLimit, setSecurityHeaders } from '@silkweave/box-core'
+import { boxBrand, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, rateLimit, setMaintenanceOverride, setSecurityHeaders } from '@silkweave/box-core'
 import { AppModule } from './app.module.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
@@ -16,7 +17,30 @@ import { AuthGuard } from './auth/auth.guard.js'
 // the in-process workerdeck mount registered below (which also gets the per-IP rate limit).
 const RESERVED = /^\/(api|trpc|mcp|agent)(\/|$)/
 
+const flagValue = (name: string): string | undefined => {
+  const prefix = `--${name}=`
+  const raw = process.argv.find((arg) => arg.startsWith(prefix))
+  return raw?.slice(prefix.length)
+}
+
+const parsePortFlag = (name: string): number | undefined => {
+  const raw = flagValue(name)
+  if (raw === undefined) return undefined
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error(`--${name} must be a port number`)
+  return port
+}
+
+const INTERNAL_PORT = parsePortFlag('internal-port')
+const MAINTENANCE = process.argv.includes('--maintenance')
+
 async function bootstrap(): Promise<void> {
+  const stopHeartbeat = runtimeHeartbeat('app')
+  const started = performance.now()
+  diagnostic('app', 'boot.start', { maintenance: MAINTENANCE, internalPort: INTERNAL_PORT })
+  // Must happen before NestFactory instantiates the module so schedulers, the chat agent and relay observe the
+  // process-local repair mode through boxJson(). It is never written to the Box configuration.
+  setMaintenanceOverride(MAINTENANCE)
   // Validate merged configuration and lock the system identity before opening the warehouse.
   ensureBoxConfig()
 
@@ -25,12 +49,17 @@ async function bootstrap(): Promise<void> {
   // member, so this is safe on every boot. It also applies the schema, which is otherwise lazy.
   // Deliberately NOT wrapped in a try: a Box that cannot write its own warehouse should fail here,
   // loudly, rather than at the first request.
+  diagnostic('app', 'boot.schema.start')
   await ensureSystemPrincipal()
+  diagnostic('app', 'boot.schema.ready', { durationMs: Math.round(performance.now() - started) })
 
+  diagnostic('app', 'boot.nest.start')
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: false })
   // Controllers carry incidental REST routes (`@Get()` on the methods the silkweave adapters reflect
   // into tRPC/MCP). Behind `/api` so they don't shadow the SPA's client routes (/signals, /inbox, …).
   // The dashboard only ever calls /trpc + /mcp (registered by the adapters, NOT prefixed).
+  diagnostic('app', 'boot.nest.ready', { durationMs: Math.round(performance.now() - started) })
+  app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => { traceHttp('app', req, res, true); next() })
   app.setGlobalPrefix('api')
 
   // Global auth guard for plain REST routes ONLY. The silkweave adapters do NOT run
@@ -67,8 +96,11 @@ async function bootstrap(): Promise<void> {
   // It must be listening before app.listen(), because AgentModule.onModuleInit starts the chat
   // agent, which sweeps orphan sessions against that URL immediately.
   try {
+    diagnostic('app', 'boot.workerdeck.start')
     await bootWorkerdeck()
+    diagnostic('app', 'boot.workerdeck.ready', { durationMs: Math.round(performance.now() - started) })
   } catch (err) {
+    diagnostic('app', 'boot.workerdeck.error', { error: errorKind(err) })
     console.error('  agent: workerdeck failed to boot, agent surface disabled -', (err as Error).message)
   }
 
@@ -106,13 +138,18 @@ async function bootstrap(): Promise<void> {
   // for why it is neither 8080 nor the predecessor engine's 8090. Production pins PORT=8080 in its
   // launchd plist.
   const port = servicePort()
-  await app.listen(port)
+  const listenPort = INTERNAL_PORT ?? port
+  if (INTERNAL_PORT !== undefined) await app.listen(listenPort, '127.0.0.1')
+  else await app.listen(listenPort)
+
+  diagnostic('app', 'listening', { port: listenPort, durationMs: Math.round(performance.now() - started) })
 
   // WebSocket upgrades bypass the express request pipeline, so dispatch them on the raw http.Server
   // by path: /agent sockets go to the authenticated agent mount, everything else to the Vite HMR
   // proxy (dev only; in prod non-agent upgrades are refused).
   if (agentMount || devProxy?.upgrade) {
     app.getHttpServer().on('upgrade', (req: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
+      traceSocket('app', req, socket, true)
       const path = (req.url ?? '/').split('?', 1)[0]
       if (AGENT_PATH.test(path)) {
         if (agentMount) agentMount.upgrade(req, socket, head)
@@ -132,9 +169,10 @@ async function bootstrap(): Promise<void> {
     process.on(signal, () => {
       if (stopping) return
       stopping = true
+      diagnostic('app', 'shutdown.start', { signal })
       void shutdownWorkerdeck()
         .catch((err: unknown) => console.error('  agent: drain failed -', err))
-        .finally(() => process.exit(0))
+        .finally(() => { stopHeartbeat(); diagnostic('app', 'shutdown.finish'); process.exit(0) })
     })
   }
 
@@ -143,16 +181,18 @@ async function bootstrap(): Promise<void> {
   // machine's Box, the case that cost a production write on 2026-09-02) coexists with this server
   // instead of colliding with it - the browser reaches us over ::1 and everything looks normal, while nova's
   // MCP client dials the literal IPv4 and reaches THEM. See agent/loopback-guard.ts.
-  void verifyLoopback(port).then((verdict) => {
+  void verifyLoopback(listenPort).then((verdict) => {
     if (verdict.ours) return
-    console.error(`\n  ⚠ 127.0.0.1:${port} IS NOT THIS SERVER - ${verdict.detail}`)
+    console.error(`\n  ⚠ 127.0.0.1:${listenPort} IS NOT THIS SERVER - ${verdict.detail}`)
     console.error('    The dashboard may still look local (browsers prefer ::1). Chat agent turns are REFUSED')
     console.error('    while this holds, because its MCP tools dial that address with real credentials.')
     console.error('    Usual cause: VS Code Remote-SSH auto-forwarding the remote\'s port onto yours.\n')
   })
 
-  console.log(`✓ ${boxBrand().name} server on http://localhost:${port}`)
-  console.log(`  tRPC:  http://localhost:${port}/trpc   (signalsData, inboxData, …)`)
+  const publicPort = INTERNAL_PORT === undefined ? listenPort : boxJson().server.port
+  console.log(`✓ ${boxBrand().name} ready at http://localhost:${publicPort}`)
+  if (INTERNAL_PORT !== undefined) console.log(`  Builder: http://localhost:${publicPort}/builder`)
+  console.log(`  tRPC:  http://localhost:${publicPort}/trpc   (signalsData, inboxData, …)`)
   console.log(
     viteDevUrl
       ? `  SPA:   proxied to Vite dev server at ${viteDevUrl} (HMR)`
@@ -160,4 +200,4 @@ async function bootstrap(): Promise<void> {
   )
 }
 
-bootstrap()
+bootstrap().catch(error => { diagnostic('app', 'boot.failed', { error: errorKind(error) }); console.error(error); process.exitCode = 1 })

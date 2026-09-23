@@ -8,10 +8,12 @@ import { join } from 'node:path'
 test('public commands use the enclosing Box, forward arguments and return the child exit status', () => {
   const root = mkdtempSync(join(tmpdir(), 'box-commands-'))
   try {
-    for (const dir of ['apps/server', 'packages/core', 'packages/cli/src']) mkdirSync(join(root, dir), { recursive: true })
+    for (const dir of ['apps/server/scripts', 'packages/core', 'packages/cli/src']) mkdirSync(join(root, dir), { recursive: true })
     for (const dir of ['apps/server', 'packages/core']) writeFileSync(join(root, dir, 'package.json'), '{}')
     const stub = "console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),bun:process.versions.bun})); process.exitCode=7"
     writeFileSync(join(root, 'packages/cli/src/verify.ts'), stub)
+    writeFileSync(join(root, 'apps/server/scripts/auth-login.ts'), stub)
+    writeFileSync(join(root, 'apps/server/scripts/setup.ts'), stub)
     writeFileSync(join(root, 'command.ts'), stub)
     writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module', scripts: {
       build: 'bun command.ts build', dev: 'bun command.ts dev', start: 'bun command.ts start', 'start:prod': 'bun command.ts production',
@@ -19,7 +21,8 @@ test('public commands use the enclosing Box, forward arguments and return the ch
     // Launch the real dispatch from outside its own checkout, as the installed shim does.
     for (const [args, expected] of [
       [['verify', '--plain'], ['--plain']], [['build', '--force'], ['build', '--force']],
-      [['dev'], ['dev']], [['start', '--prod'], ['production']],
+      [['setup', '--yes', '--owner', 'alice'], ['--yes', '--owner', 'alice']],
+      [['dev'], ['dev']], [['start', '--prod'], ['production']], [['auth', 'login', 'alice', '--ttl', '5'], ['alice', '--ttl', '5']],
     ]) {
       const child = spawnSync(process.execPath, ['--no-env-file', new URL('../index.ts', import.meta.url).pathname, ...args], {
         cwd: join(root, 'apps/server'), encoding: 'utf8', env: { ...process.env, BOX_INVOKED_FROM: root }, timeout: 10000,
@@ -31,6 +34,11 @@ test('public commands use the enclosing Box, forward arguments and return the ch
       // macOS resolves /var to /private/var when a script runner changes directories.
       assert.ok(output.cwd.endsWith(root.split('/').at(-1)))
     }
+    const retired = spawnSync(process.execPath, ['--no-env-file', new URL('../index.ts', import.meta.url).pathname, 'auth', 'link', 'alice'], {
+      cwd: root, encoding: 'utf8', env: { ...process.env, BOX_INVOKED_FROM: root }, timeout: 10000,
+    })
+    assert.equal(retired.status, 1)
+    assert.match(retired.stderr, /expected one of: token, login, reveal/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

@@ -27,9 +27,9 @@
 //
 //   1. A different key. HKDF from the session secret with a purpose-specific `info` string, so the
 //      two MACs are computed under keys that cannot be derived from each other.
-//   2. The literal `bl1.` prefix is INSIDE the signed string. Even if someone later "simplifies"
+//   2. The literal format prefix is INSIDE the signed string. Even if someone later "simplifies"
 //      (1) away, a grant's MAC still cannot equal a session's MAC over the same payload.
-//   3. A strict parse: exactly three dot-separated parts, the first exactly `bl1`. A session token
+//   3. A strict parse: exactly three dot-separated parts with a recognized format prefix. A session token
 //      has two parts, so it cannot be read as a grant.
 //   4. `verifySession` rejects any payload carrying `iat`, which only a grant has. So a grant
 //      cannot be read as a session either - the exclusion runs in both directions.
@@ -41,7 +41,11 @@ import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto'
 import { authSecret } from './secrets.js'
 
 /** Version + type tag. Inside the MAC, so it is a domain separator and not merely a label. */
-export const SIGNIN_GRANT_PREFIX = 'bl1'
+export const SIGNIN_GRANT_PREFIX = 'bl2'
+const LEGACY_SIGNIN_GRANT_PREFIX = 'bl1'
+// 160 bits is deliberately shorter on the wire than SHA-256's full output while retaining a vast
+// online-forgery margin for a short-lived credential. bl1 remains readable during its lifetime.
+const SIGNATURE_BYTES = 20
 
 /** Default lifetime. Long enough to read a message, walk to a laptop and click; short enough that a
  *  grant left in a transcript is worthless by the time anyone scrolls back to it. */
@@ -68,15 +72,22 @@ export type SigninGrantFailure = 'invalid' | 'expired'
 
 export type SigninGrantResult = { ok: true; claims: SigninGrantClaims } | { ok: false; reason: SigninGrantFailure }
 
-const b64url = (s: string): string => Buffer.from(s, 'utf8').toString('base64url')
-const unb64url = (s: string): string => Buffer.from(s, 'base64url').toString('utf8')
-
 // Purpose-bound key derivation keeps sign-in grants separate from sessions. Rotating the
 // session secret invalidates both sessions and outstanding grants.
 const linkKey = (): Buffer =>
   Buffer.from(hkdfSync('sha256', authSecret('AUTH_SESSION_SECRET'), '', 'silkweave-box/signin-link/v1', 32))
 
-const sign = (signed: string): string => createHmac('sha256', linkKey()).update(signed).digest('base64url')
+const mac = (signed: string): Buffer => createHmac('sha256', linkKey()).update(signed).digest()
+const sign = (signed: string, bytes = 32): string => mac(signed).subarray(0, bytes).toString('base64url')
+
+function compactPayload(claims: SigninGrantClaims): string {
+  const subject = Buffer.from(claims.sub, 'utf8')
+  const payload = Buffer.allocUnsafe(10 + subject.length)
+  payload.writeUIntBE(claims.iat, 0, 6)
+  payload.writeUInt32BE(claims.exp - claims.iat, 6)
+  subject.copy(payload, 10)
+  return payload.toString('base64url')
+}
 
 /**
  * Mint a grant for `sub`. Pure crypto and no I/O - the caller decides whether the user may have one
@@ -97,9 +108,28 @@ export function mintSigninGrant(
   }
   const iat = Math.floor(opts.now ?? Date.now())
   const claims: SigninGrantClaims = { sub: id, iat, exp: iat + Math.floor(ttlMs) }
-  const payload = b64url(JSON.stringify(claims))
+  const payload = compactPayload(claims)
   const signed = `${SIGNIN_GRANT_PREFIX}.${payload}`
-  return { grant: `${signed}.${sign(signed)}`, claims }
+  return { grant: `${signed}.${sign(signed, SIGNATURE_BYTES)}`, claims }
+}
+
+function readCompactClaims(payload: string): SigninGrantClaims | null {
+  const bytes = Buffer.from(payload, 'base64url')
+  if (bytes.length < 11 || bytes.toString('base64url') !== payload) return null
+  const iat = bytes.readUIntBE(0, 6)
+  const exp = iat + bytes.readUInt32BE(6)
+  const subject = bytes.subarray(10)
+  const sub = subject.toString('utf8')
+  if (!sub || !Buffer.from(sub, 'utf8').equals(subject)) return null
+  return { sub, iat, exp }
+}
+
+function readLegacyClaims(payload: string): SigninGrantClaims | null {
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as SigninGrantClaims
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -114,20 +144,18 @@ export function verifySigninGrant(grant: string, now: number = Date.now()): Sign
   // Lock 3: a session token has two parts, so it can never be parsed as a grant.
   if (parts.length !== 3) return { ok: false, reason: 'invalid' }
   const [prefix, payload, sig] = parts
-  if (prefix !== SIGNIN_GRANT_PREFIX || !payload || !sig) return { ok: false, reason: 'invalid' }
+  if (![SIGNIN_GRANT_PREFIX, LEGACY_SIGNIN_GRANT_PREFIX].includes(prefix) || !payload || !sig) {
+    return { ok: false, reason: 'invalid' }
+  }
 
   // Lock 2: the prefix is part of the signed string, not merely a label in front of it.
-  const expected = sign(`${prefix}.${payload}`)
+  const expected = sign(`${prefix}.${payload}`, prefix === SIGNIN_GRANT_PREFIX ? SIGNATURE_BYTES : 32)
   const a = Buffer.from(sig)
   const b = Buffer.from(expected)
   if (a.length !== b.length || !timingSafeEqual(a, b)) return { ok: false, reason: 'invalid' }
 
-  let claims: SigninGrantClaims
-  try {
-    claims = JSON.parse(unb64url(payload)) as SigninGrantClaims
-  } catch {
-    return { ok: false, reason: 'invalid' }
-  }
+  const claims = prefix === SIGNIN_GRANT_PREFIX ? readCompactClaims(payload) : readLegacyClaims(payload)
+  if (!claims) return { ok: false, reason: 'invalid' }
 
   const { sub, iat, exp } = claims ?? {}
   if (typeof sub !== 'string' || !sub.trim()) return { ok: false, reason: 'invalid' }

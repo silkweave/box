@@ -1,8 +1,9 @@
 # Features
 
-Silkstack features are reference source maintained in this repository. The source layout is
-`features/<id>/{core,server,web}` with documentation alongside it. The stack carries all maintained
-features; a consumer Box starts with core and integrates only what its team chooses.
+Silkstack features are reference source maintained in the upstream Stack. Their source layout is
+`features/<id>/{core,server,web}` with documentation alongside it. This Box starts with core and
+integrates only what its team chooses; an integrated feature becomes ordinary source in this
+repository.
 
 A feature describes its domain code, server controllers, web routes, imported packages, migrations,
 setup decisions, and gotchas. Its imports plus prose are its dependency description. There is no
@@ -21,7 +22,10 @@ confirm boot. New behaviour requires a new migration. The warehouse ledger check
 chat's current ledger does not.
 
 The maintained source includes planning, CRM, chat, sink, content, data, automation, alerts,
-notifications, engagement, and reminders. A consumer may have only a subset.
+notifications, engagement, reminders, and the web-only Artifacts placeholder. A consumer may have
+only a subset.
+
+[Builder](BUILDER.md) is a core administrator workspace, not an optional reference feature.
 
 
 ## Updating and resuming
@@ -29,12 +33,9 @@ notifications, engagement, and reminders. A consumer may have only a subset.
 Use `$adapt` for one feature, `$upgrade` for core, and `$verify` for the whole Box. Compare the
 recorded previous upstream commit, local code and target upstream commit. Keep full commit SHAs and
 path mappings in `docs/UPSTREAM.md`; a date or release label alone does not identify the ancestor.
-Write current scope, completed results and rollback instructions in `_docs/INTEGRATION.md`; keep
-durable source ancestry and path decisions in `docs/UPSTREAM.md`. On resume,
+Write the intended steps and completed results as work proceeds in `_docs/INTEGRATION.md`. On resume,
 inspect actual files and migration ledgers before replaying a step. Advance completed SHAs only
 after verification, and record deliberately skipped upstream changes.
 
-Existing consumers that used the retired adoption command keep their source and data. Recover the
-reference ancestor from their adoption records and historical tags where possible. There is no
-bulk reinstall, forced replacement of customized files, or renaming of historical migrations.
-Historical tags remain available for ancestry; the stack no longer creates feature release tags.
+When a consumer lacks a recorded source SHA, recover the closest ancestor from its repository
+history before integrating. Never bulk-replace customized files or rename shipped migrations.

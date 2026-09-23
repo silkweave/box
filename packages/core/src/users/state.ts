@@ -86,6 +86,11 @@ export async function readUser(id: string): Promise<User | null> {
   return rec ? toUser(rec) : null
 }
 
+/** Whether the directory contains a person rather than only the configured machine principal. */
+export function hasHumanUser(users: readonly Pick<User, 'id'>[], machineId = systemUserId()): boolean {
+  return users.some(user => user.id !== machineId)
+}
+
 /**
  * Guard an audit stamp: `actor` must be an existing principal. Called from the record layer on every audited write, because `actor` IS the
  * audit trail: an unvalidated one leaves `created_by` pointing at a person who does not exist, and

@@ -1,9 +1,10 @@
 # The server - NestJS, tRPC, MCP, one port
 
-`apps/server` (`@silkweave/box-server`) is the Box's **single front door**. One process serves the
-SPA, the REST routes under `/api`, the tRPC transport at `/trpc`, the MCP transport at `/mcp`, and
-the agent mount at `/agent`. The browser only ever talks to one origin, so the SPA uses relative
-URLs and there is no CORS anywhere.
+The Builder supervisor (`apps/server/src/builder/supervisor.ts`) is the Box's **single public front
+door**. It serves the stable Builder snapshot and assets, the control routes, and an authenticated
+proxy to the managed editable application, whose Nest process serves REST under `/api`, tRPC at
+`/trpc`, MCP at `/mcp` and the agent gateway. The browser only ever talks to one origin, so the
+SPA uses relative URLs and there is no CORS anywhere.
 
 This file describes **core's server**: what a blank Box (no features installed) already is. A
 feature's own controllers, tables and tools are described in its `features/<id>/SPEC.md`; how to
@@ -64,10 +65,10 @@ export class OpsController {
   gate `tools/list`, which is a transport route rather than a controller method, so without
   transport auth an anonymous client could enumerate every tool the Box has. `verifyToken` calls
   core's `authenticatePrincipal`.
-- **CLI:** `bun run cli` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
-  a running server's `/mcp` - one subcommand per tool. Configure its URL and bearer token in the
-  client config. It reads the resolved Box configuration through core's `readBoxConfig`, so its
-  default follows `server.port` and its explicit `mcp.url` override.
+- **CLI:** `box <tool-name>` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
+  a running server's `/mcp` - one subcommand per tool. Configure `mcp.url` and `mcp.token` in
+  `box.local.json`. Without an explicit URL, the proxy uses the configured `server.port`.
+  Its `@silkweave/box-core/box-json` import reads configuration without loading the warehouse.
 - Incidental REST routes sit behind a global `/api` prefix (`setGlobalPrefix('api')`) so they do not
   shadow the SPA's client routes. `/trpc` and `/mcp` are registered by the adapters and are **not**
   prefixed.
@@ -79,11 +80,9 @@ The `typegen()` adapter writes the `AppRouter` type to `apps/web/src/generated/a
 app's `skipLibCheck` then ignores typegen's always-on import list, which would otherwise trip
 `noUnusedLocals` on `TRPCMutation`/`TRPCSubscription` in a query-only router.
 
-**`bun run typegen` regenerates it without starting a server** (`apps/server/scripts/typegen.ts`). That
-matters more than it sounds: until it existed, `appRouter.d.ts` only changed when somebody ran the
-server, so a controller edit plus `bun run typecheck` type-checked the SPA against a **stale** router -
-a renamed or deleted procedure passed every check and broke in the browser. `bun run typegen` now runs
-inside `box verify`, ahead of `typecheck`. **A controller change no longer needs a boot.**
+**`bun run typegen` regenerates it without starting a server** (`apps/server/scripts/typegen.ts`).
+It runs inside `box verify`, ahead of `typecheck`, so the SPA is checked against current controller
+contracts. Generating types does not require listening on a port.
 
 It rests on two facts:
 
@@ -97,8 +96,8 @@ It rests on two facts:
 
 The script also redirects the instance directory in-process with `setInstanceDir()` from
 `@silkweave/box-core/testing` and disables
-everything that could arm, so a run never touches the real warehouse, the scheduler, the chat agent or workerdeck. Two
-extra jobs it does while it has the controller graph in hand:
+everything that could arm, so a run never touches the real warehouse, the scheduler, the chat agent
+or workerdeck. It also checks the discovered controller graph:
 
 - it fails on a **duplicate action name within one adapter's list**. A method carrying both `@Trpc`
   and `@Mcp` yields two actions that share a name, one per adapter, so a clash only matters inside
@@ -109,7 +108,7 @@ dirties the tree.
 
 ## 3. Auth, at the server level
 
-The design and operator reference is [`AUTH.md`](./AUTH.md). What
+The design is [`docs/AUTH.md`](./AUTH.md); the operator's view is [`AUTH.md`](./AUTH.md). What
 belongs here is **where the guard sits and why**.
 
 `AuthGuard` (`apps/server/src/auth/auth.guard.ts`) resolves the principal from a `Bearer` token
@@ -155,8 +154,8 @@ warehouse should fail at boot, loudly, rather than at the first request.
 
 Core owns the kernel (`packages/core/src/ops/`) and its server surface
 (`apps/server/src/ops/ops.controller.ts`). The cron scheduler over the same registry is the
-`automation` reference app, which is not in this repo: adopt it and read the `features/automation/SPEC.md`
-that arrives with it.
+`automation` reference feature, outside core. It is included in Stack; consumers integrate it
+separately. See `features/automation/SPEC.md` when that feature is present.
 
 **An action** is `{ id, label, group, description, run }` (`ops/types.ts`), where `run` is an
 `async function*` yielding `IngestProgress` chunks (`{ channel, phase, message, result? }`) and
@@ -231,13 +230,16 @@ server module's `onModuleInit`. The spine itself, and the table, are the warehou
 ## 6. The agent host
 
 `apps/server/src/agent/` is core. A blank Box has it. Only the agent's *seat in chat* belongs to the
-`chat` reference app, whose `SPEC.md` arrives with it when you adopt it.
+`chat` reference feature, documented beside its source when integrated.
 
-**workerdeck runs in this process.** `workerdeck.host.ts` boots `@workerdeck/server` in-process when
-`box.json`'s `workerdeck` section declares at least one profile, API-only: `@workerdeck/web` is not installed, so there is no
-second dashboard and no second cookie login. A boot failure is caught and logged - the agent surface
-is optional, the rest of the Box is not. It boots **before** `app.listen()`, because a feature's
-module init may sweep sessions against it immediately.
+**Builder has a dedicated WorkerDeck host in the supervisor.** Its shared session stays outside
+the restartable editable application. Ordinary agent and chat sessions still use a separate
+WorkerDeck host inside Nest, booted by `agent/workerdeck.host.ts` before application initialization.
+The WorkerDeck web dashboard is not installed; the Box supplies its own workspace UI.
+
+The supervisor serves the Builder snapshot at **/builder**, its **/builder-assets/** assets and
+the narrow control plane. The editable application remains a separate managed process. A provider
+or application failure must leave the stable Builder/recovery surface reachable.
 
 **`agent.mount.ts` is a mount, not a proxy.** The Box authenticates the caller, gates the request,
 rewrites `/agent/...` → `/...`, and hands the **same** `req`/`res` to `worker.server` with
@@ -337,61 +339,48 @@ credentialed writes on a positive identification, and "I could not tell" is not 
 a loud warning at boot when the verdict is negative; a caller that is about to spend credentials
 calls `verifyLoopback()` itself.
 
-**Draining on shutdown.** `SIGTERM`/`SIGINT` call `shutdownWorkerdeck()` before exiting, once.
-Sessions are in this process, so a bare exit can cut live turns mid-flight. Recovery is
-engine-specific: test idle-session recovery separately from preservation of an active turn, and do
-not infer either from the other.
+**Draining on shutdown.** `SIGTERM`/`SIGINT` ask the supervisor to drain the managed application
+and WorkerDeck host before exiting, once. A bare host exit can cut live turns mid-flight. Test
+shutdown and recovery for each configured engine; idle-session recovery does not establish that an
+active turn survives application restart.
 
 ## 7. Running and serving
 
 ```bash
-box dev          # turbo run dev: Nest (:8190, started with --dev) + Vite (:5190) together
+box dev          # start the supervisor with the editable dev app and Vite (:5190)
 box build        # core (tsdown → build/) + web (vite → dist/) + server (swc → dist/)
-box start        # Bun runs apps/server/src/main.ts directly
-box start --prod # Bun runs the compiled apps/server/dist/apps/server/src/main.js
+box start        # start the supervisor and managed editable app
+box start --prod # start the supervisor without Vite; Bun runs server source, SPA uses built assets
 box verify       # the full check chain - see the root AGENTS.md
 ```
 
 **No build step type-checks.** swc (server), tsdown (core) and vite (web) all strip types without
 checking them. **tsgo** is the sole type-checker and runs in `bun run typecheck`, inside `box verify`.
 
-**Ports are Nest `8190` and Vite `5190`**, from `box.json` (`server.port`, `server.vitePort`).
-Set different values in the gitignored `box.local.json` when running another instance. The listener
-and loopback probe use the same configured value.
+**The public supervisor port is `8190`; the managed Nest and dev Vite ports are internal**, from
+`box.json` (`server.port`, `server.vitePort`). Set different values in the gitignored
+`box.local.json` when running another instance. The supervisor listener and its loopback probe use
+the configured public value.
 
-**Nest is the single origin.**
+**The supervisor is the single public origin.** It listens on the configured server port and
+serves the stable Builder snapshot, Builder assets, control routes and authenticated proxy to the
+managed editable application. The Nest process uses an internal port owned by the supervisor.
+The browser still talks to one origin; the process boundary is internal to the Box.
 
-- **dev:** `box dev` starts the server with `--dev`, which builds the Vite URL from
-  `server.vitePort` in `box.json`. `main.ts` registers an
-  `http-proxy-middleware` handler **before** Nest's router that reverse-proxies every **non-reserved**
-  route to Vite; `RESERVED = /^\/(api|trpc|mcp|agent)(\/|$)/` falls through to Nest and the agent
-  mount. The query string is stripped before the test, so `/mcp?session=...` still matches.
-  `changeOrigin: false` preserves the Host, which is what makes Vite's `allowedHosts` and its HMR
-  client origin work. Vite's own reciprocal proxy in `apps/web/vite.config.ts` exists only so that
-  hitting the bare Vite port directly still reaches the backend.
-- **That dev proxy is built with `ws: false`, and must be.** In http-proxy-middleware v3, passing
-  `ws: true` *and* driving `.upgrade()` manually are mutually exclusive: `ws: true` subscribes the
-  library's own catch-all upgrade listener to the raw `http.Server` on the first request through the
-  middleware and sets `wsInternalSubscribed`, which silently turns the explicit `devProxy.upgrade()`
-  into a no-op - so every upgrade was handled twice. It only bites *after* the first REST call, so a
-  WS test straight after a restart passes even when it is broken. Always send a REST request first
-  when verifying this.
-- **Upgrades** bypass the express pipeline, so `main.ts` dispatches them on the raw `http.Server` by
-  path: `/agent/*` to the agent mount, everything else to the Vite HMR proxy. In production a
-  non-agent upgrade is destroyed.
-- **prod:** without `--dev` no dev proxy is registered and `ServeStaticModule` serves the
-  built `apps/web/dist` from a path resolved off `repoRoot()`. `/api`, `/trpc`, `/mcp` and `/agent`
-  are excluded from the static catch-all so they 404 as JSON rather than as `index.html`. That
-  catch-all is the SPA fallback the browser-history router relies on (`docs/WEB.md`
-  § Routing): every other path serves `index.html`, so `/crm/acme` survives a refresh - except
-  `/assets/{*path}`, excluded so a stale hashed chunk 404s instead of arriving as HTML. In dev the
-  same fallback is Vite's own (`appType: 'spa'`), behind the proxy above. Because the SPA and the
-  server now share one URL namespace, a top-level client route may not reuse a reserved prefix or a
-  file name under `apps/web/public`.
-- **Tailscale:** Nest binds all interfaces, so a Box is reachable at
-  `http://<host>.<tailnet>.ts.net:8190`. Vite's `allowedHosts` carries `.ts.net` for exactly this
-  reason - Nest proxies with `changeOrigin: false`, so the tailnet Host reaches Vite, which would
-  otherwise answer "Blocked request" with a blank page.
+- **dev:** **box dev** starts the supervisor, Vite and the editable Nest application. The
+  supervisor owns the public port, serves **/builder** and **/builder-assets/**, and proxies
+  ordinary application traffic to the managed internal port.
+- **prod:** after **box build**, **box start --prod** starts the same supervisor boundary with
+  the production application build. The Builder snapshot and control plane remain available when
+  the editable application is restarting or needs repair.
+- **Upgrades:** WorkerDeck Builder sockets terminate at the supervisor. Application WebSocket
+  traffic is proxied only to the managed application while it is available.
+- **Routing:** **/api**, **/trpc**, **/mcp** and **/builder-control** are control-plane routes;
+  **/builder-agent** is the authenticated Builder gateway. Editable application routes are
+  proxied separately and must not claim the Builder snapshot paths.
+- **Tailscale:** the supervisor binds the configured public port on all interfaces, so a Box is
+  reachable at `http://<host>.<tailnet>.ts.net:8190`. It forwards managed application traffic
+  internally; Vite host checks apply only to the supervisor's development child.
 
 **Boot a throwaway Box** without touching your real data. The instance directory is always
 `<checkout>/data` and no variable moves it, so a throwaway is a SECOND CHECKOUT of the repo. In it,
@@ -438,7 +427,7 @@ export default defineServerFeature({ id: 'sink', module: SinkModule })
 - **Registering into a port** - `onEvent`, `onRunOutcome`, `registerAgentSessionRule`,
   `registerUserCleanup` - happens in the module's `onModuleInit`, and the module unregisters on
   destroy. This is the direction the seam prescribes: a dependent registers into a dependency, never
-  the reverse. See [`core/SEAM.md`](./core/SEAM.md) § 4.3 and
+  the reverse. See [`docs/core/SEAM.md`](./core/SEAM.md) § 4.3 and
   [`FEATURES.md`](FEATURES.md).
 - **A feature may own a store outside the warehouse.** DuckDB is single-writer across processes and
   every query opens an ephemeral connection with lock-conflict backoff - right for "one UPSERT plus
@@ -448,7 +437,7 @@ export default defineServerFeature({ id: 'sink', module: SinkModule })
   reference app is the one that does it today.
 - **Actions, tables and migrations** are declared on the *core* manifest (`defineCoreFeature`), not
   this one. A feature with no schema of its own ships `migrations: []` - the ledger is append-only
-  and starts empty. See [`core/SEAM.md`](./core/SEAM.md) § 3 and [`WAREHOUSE.md`](./WAREHOUSE.md).
+  and starts empty. See [`docs/core/SEAM.md`](./core/SEAM.md) § 3 and [`WAREHOUSE.md`](./WAREHOUSE.md).
 
 After adding or removing a feature, update the maintained registration imports, then run `box verify`.
 
@@ -461,3 +450,45 @@ in a browser after touching the app's root files. The server half of that rule: 
 is covered by `bun run typegen` inside `verify` and needs no boot, but anything that only runs at boot -
 a module's `onModuleInit`, a registered port, the agent host - is proven by booting a throwaway Box
 (§ 7) and nothing else.
+
+
+## Runtime diagnostics
+
+The supervisor and application emit structured JSON diagnostic records to standard output, alongside
+normal Nest, Vite and Builder command output. Each record includes UTC time, PID, component and event.
+Capture a diagnostic session with `box dev > _docs/box-runtime.log 2>&1` after creating `_docs/`.
+The capture belongs in local developer notes, not committed product documentation. Stop the process
+before removing its capture; this explicit capture is not automatically rotated.
+
+- `process.heartbeat` reports uptime, RSS and event-loop delay every 10 seconds. A gap followed by a
+  large delay indicates that process could not service its loop on schedule.
+- `http.start`, `proxy.headers` and `http.finish` carry matching request IDs across the supervisor
+  and application. `http.wait` means no headers have been sent after 10 seconds; `http.open` means
+  headers were sent and the connection remains open, which is normal for SSE. Premature closure and
+  upstream errors have distinct events.
+- `ws.upgrade-request`, `ws.upgraded`, `ws.upgrade-refused`, upstream/peer closure and socket errors
+  show where a live-reload or agent connection stopped. No WebSocket payloads are logged.
+- `operation.queued`, `operation.start` and `operation.finish` expose Builder queue delay and work
+  duration. Control actions, UI refreshes and child build commands have separate start/end records.
+- Lifecycle logs identify child PIDs, readiness attempts, unexpected exits, restart requests, stop
+  signals and forced termination. Application boot logs bracket schema, Nest and WorkerDeck setup.
+
+Diagnostic records exclude request bodies, cookies, authorization headers and query strings.
+Dynamic paths and document IDs become route categories; errors record their kind/code rather than
+potentially sensitive messages. Existing framework and child-command output retains its own format.
+These logs do not change restart behavior or HTTP timeouts.
+
+The supervisor forwards WebSocket upgrades on dedicated HTTP connections (`agent: false`).
+Keep them out of the ordinary HTTP connection pool: under Bun, reusing a warmed connection across
+both proxy hops can stall the upgrade until the development client's timeout, causing a reload.
+The regression test exercises HTTP warm-up followed by repeated upgrades through a second proxy
+using the Bun runtime.
+
+Signed-in tabs receive maintenance changes through `/api/box-status/events`, an SSE endpoint owned
+by the supervisor. It sends the current maintenance flag on connection and after changes to the
+Builder control file, including atomic replacements. One shared 500ms file-stat watcher serves all connected tabs without native filesystem watchers;
+a 15-second keepalive also reconciles missed filesystem notifications. EventSource reconnects
+automatically and receives a fresh snapshot after interruption. The endpoint remains available
+during application restarts. Slow clients are disconnected instead of accumulating buffered data.
+The JSON `/api/box-status` snapshot remains available for diagnostics. Both expose only the public
+maintenance flag; application access and admin exceptions remain independently authenticated.

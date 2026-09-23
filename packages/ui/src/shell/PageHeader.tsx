@@ -18,12 +18,12 @@ export function PageHeader({
   className?: string
 }) {
   return (
-    <header className={cn('mb-6', actions ? 'flex items-start justify-between gap-3' : undefined, className)}>
+    <header data-page-header className={cn('mb-6', actions ? 'flex items-start justify-between gap-3' : undefined, className)}>
       <div className='min-w-0'>
-        <h1 className='font-serif text-display-md text-text'>{title}</h1>
-        {description && <p className='mt-1 text-body-sm text-muted-foreground'>{description}</p>}
+        <h1 data-page-title className='font-serif text-display-md text-text'>{title}</h1>
+        {description && <p data-page-description className='mt-1 text-body-sm text-muted-foreground'>{description}</p>}
       </div>
-      {actions && <div className='flex shrink-0 items-center gap-2'>{actions}</div>}
+      {actions && <div data-page-actions className='flex shrink-0 items-center gap-2'>{actions}</div>}
     </header>
   )
 }

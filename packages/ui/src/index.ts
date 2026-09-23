@@ -82,3 +82,4 @@ export * from './icons/iconTable.tsx'
 
 // Brand.
 export * from './brand/Wordmark.tsx'
+export * from './components/InlineDialog.tsx'

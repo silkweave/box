@@ -52,144 +52,117 @@ If Bun is older than 1.4.2, update it first. Everything downstream fails confusi
 ## 2. Create the team's branch and install
 
 Check `git status` and the current branch first. On a fresh clone, create `box` (or the team's
-chosen name). If already on a team branch, keep it; do not reset or discard existing work. If this checkout already
-carries apps in `features/`, it is not a fresh clone: say which apps are present
-and ask before integrating more.
+chosen name). If already on a team branch, keep it; do not reset or discard existing work. If this
+checkout already carries apps in `features/`, it is not a fresh clone: say which apps are present
+before continuing.
 
 ```bash
 git switch -c box       # on a fresh clone only
 bun install
 bun run box:install
-box build
 ```
 
-`box verify` includes the workspace build before the tests, so it also works on a fresh checkout.
-Build output is needed when a package resolves outside the source export condition.
+`bun install` writes `box.json` on a fresh checkout. `bun run box:install` puts the `box`
+command on PATH by linking this checkout's shim into `~/.local/bin`. If that directory is not on
+PATH, follow the printed instruction or use `bun run box -- <verb>` from the checkout until the
+shell is reopened. If another Box was registered, the installer repoints only the default; commands
+run inside a checkout still select that checkout. `box where` explains the selection.
 
-**`bun run box:install`** puts the `box` command on their PATH, by symlinking `~/.local/bin/box` at
-this checkout's `packages/cli/bin/box`. From here on, every command in this skill can be typed as `box ...`
-for the supported public verbs - and more to the point, so can every command they will ever run against
-their Box from outside the repo. Two things to watch and both are printed:
+## 3. Run guided first setup
 
-- If `~/.local/bin` is not on their PATH the script says so and gives them the export line. Until
-  they add it and reopen the terminal, `box` is not a command and they should use `packages/cli/bin/box` from the checkout.
-- If they already have a Box, this REPOINTS the default. It is only a default: `box` acts on the
-  checkout you are standing in and falls back to the registered one, so the first Box keeps working
-  from inside itself. `box where` answers the question at any time.
-
----
-
-## 3. Choose the apps - ASK, do not assume
-
-This is where the team chooses its working surface. Features are reference source, so read the
-feature documentation and gotchas, then integrate the source into this Box and make it fit.
-
-The short version is:
+Before opening the warehouse, review the machine principal in `box.json`. Its default is Nova
+(`nova`), admin. The ID cannot be renamed after initialization. Then run:
 
 ```bash
-read features/<id>/ documentation        # inspect selected source and gotchas
-integrate core, server and web source     # adapt paths and runtime wiring
-update maintained registration and exports
-bun install
-box build
-box verify
+bun setup
 ```
 
-Offer core alone too - it is a supported answer. A blank Box shows Settings and still has auth,
-users, warehouse, ops and the agent host; skip feature integration to keep it that way. Add the
-packages required by a feature's imports to the workspace package.
+Setup is a host-only operation. It:
 
-Once verification passes, review `git diff` and `git status`, stage the setup changes and commit
-on the team's branch. Never include credentials or tenant data, never absorb unrelated existing
-work into that commit, and do not push customisations to upstream. Keep the branch for later core
-merges.
+1. confirms the machine principal before binding its identity;
+2. asks for the first owner ID (default `admin`) and display name;
+3. detects `CODEX_HOME`/`~/.codex` and `CLAUDE_CONFIG_DIR`/`~/.claude`;
+4. asks which detected profiles belong to the owner;
+5. writes `workerdeck` and `agentProfiles` to mode-0600 `box.local.json`;
+6. creates the first human as an administrator;
+7. stores the permanent owner token for the local Box CLI without printing it; and
+8. prints a short-lived, single-use sign-in link.
 
-**Tell them plainly: the feature code is now theirs.** Customising it is the intended use. Taking a
-newer source revision later means reading its changes and applying the ones they want. Read
-`../../../docs/FEATURES.md` and the feature's documentation for the detail.
-If verification fails, fix it before booting or committing a claimed working setup.
+Detection reads directory and normal login-marker existence only, never credential contents. A
+profile directory without its marker may still be selected, but setup says that provider sign-in
+may be required. No detected profile is also a supported result; the provider quest remains open.
 
----
+Setup refuses a populated Box and never rotates an existing credential or silently replaces a
+custom owner mapping. A run interrupted before human creation can be resumed. For non-interactive
+rehearsals use explicit `--owner`, `--name`, `--profiles codex,claude` or `--no-profiles`,
+plus `--yes`.
 
 ## 4. Boot it
 
-Before the first boot or auth command, choose the machine identity with the owner. Defaults are
-Nova (`nova`), admin. `bun install` has already written `box.json`; edit its `agent` block,
-`{"agent":{"id":"nova","name":"Nova","role":"admin"}}`. The ID cannot be renamed after
-initialization. Explain that admin grants the agent credential/configuration and service controls;
-member retains the previous restriction. Read `docs/AUTH.md`'s identity-and-role section. Do not
-rewrite an existing identity or silently promote an existing Box when its config is missing.
-
 ```bash
-box dev
+bun dev
 ```
 
-Nest comes up on **:8190** and reverse-proxies the Vite dev server, so the browser only ever uses
-:8190. Both ports come from `box.json` (`server.port`, `server.vitePort`) if 8190 is taken;
-Use `box.local.json` for machine-specific port overrides.
+The supervisor comes up on **:8190** and reverse-proxies Vite, so the browser uses one public port.
+Both ports come from `box.json`; machine-specific overrides belong in `box.local.json`. Missing
+signing keys are generated in that ignored local file. Background automation, chat and relay remain
+off by default.
 
-`bun install` writes `box.json` on a fresh checkout. The first boot creates runtime stores and
-the identity lock; missing signing keys are generated in gitignored `box.local.json`.
+If setup configured a provider, the agent surface boots it. A configured directory without working
+provider authentication remains a visible readiness failure instead of being reported as ready.
+Leave the server running while signing in.
 
-Leave this running and work in a second terminal.
+## 5. Manual owner fallback
 
----
-
-## 5. Create the first admin
-
-```bash
-box auth token <their-id> --name "Their Full Name"    # or: box auth token <their-id> ...
-```
-
-On a Box with **no human users yet**, this creates that id as an **admin** and mints its token.
-On a populated Box, use `box auth token <their-id> --create --name "Their Full Name" --quiet`
-to explicitly add a **member** on the host. Add `--admin` only when an admin is intended. Existing
-IDs are refused by `--create`; it cannot overwrite a person's profile or credential. These are
-host commands; no network bootstrap endpoint is opened.
-
-It prints **two different things**, and telling them apart is the whole point:
-
-- **The access token.** Permanent, exactly one per user, and the credential for BOTH the browser
-  login AND every MCP connection. Minting another revokes it and breaks all of them. Tell them to
-  save it in a password manager now; it can be re-read later with `box auth reveal <id>`, but do
-  not rely on that. It is a password: never in a URL, never in a chat message.
-- **A sign-in link.** Short-lived (15 minutes) and single-use, so the first sign-in is a click
-  rather than pasting a 32-character secret into a browser. It carries no permanent credential,
-  which is what makes it safe to send. More with `box auth link <id>`.
-
-If you are running this on someone's behalf, use `--quiet`: it prints ONLY the sign-in link, so the
-permanent token never lands in your transcript. They run `box auth reveal <id>` themselves when
-they need it for MCP.
-
----
-
-## 6. Sign in
-
-Open the sign-in link it printed. (It works once; if it expired, `box auth link <id>` mints
-another.) Confirm in a browser that the shell renders.
-
-**Check the browser console.** `box verify` has no runtime step - it cannot see a white screen. If
-the page is blank, that is the failure mode to look for, not a server error.
-
----
-
-## 7. Wire the MCP connection
-
-This is what lets an agent read and write the Box directly.
+The signed-out page retains a recovery path for installations that skipped `bun setup`:
 
 ```bash
-cp docs/examples/mcp.json .mcp.json
+box auth token <their-id> --name "Their Full Name" --quiet
 ```
 
-Set the example's HTTP Authorization bearer header to the intended principal's token. The MCP
-client config is gitignored because it contains credentials. For the local `box` proxy instead,
-set `mcp.token` and optionally `mcp.url` in `box.local.json`.
+On a Box with no human users, this creates the first administrator and prints a short-lived sign-in
+link without printing the permanent token. The person can reveal that token later with
+`box auth reveal <id>`. On a populated Box, adding another person requires `--create` and defaults
+to member; add `--admin` only when intended. Existing IDs are refused, and replacing a live token
+requires explicit `--rotate`.
 
-The optional `warehouse` entry needs `uvx` and the absolute database path. Omit it if it is not
-needed. Reconnect the MCP client and confirm the Box tools respond. A 401 means the supplied
+There is no password and no network signup window. First-owner creation remains a process on the
+Box host.
+
+## 6. Sign in, then choose the first capability
+
+Open the sign-in link printed by setup. It works once and normally lasts 15 minutes; if it expires,
+run `box auth login <id>`. Confirm the onboarding dashboard renders and check the browser console.
+A blank page is a runtime failure that `box verify` cannot detect.
+
+The owner quest is now complete. If setup configured a working Codex or Claude profile, the provider
+quest is complete too. Otherwise finish provider sign-in or configuration before asking Builder to
+change the Box.
+
+Now ask which working surface the team wants. Core alone is supported. Reference features are source,
+so read the selected feature documentation and gotchas, then let Builder or an agent integrate and
+adapt `features/<id>/{core,server,web}`, update maintained registration and exports, install actual
+imports, and run `box verify`. Migrations are the hard boundary: back up first and preserve every
+shipped identity and body byte-for-byte.
+
+Tell the team plainly that integrated feature code is now theirs. Review the diff and validation
+before committing it on the team's branch. Never include credentials or instance data and never
+push customizations to upstream.
+
+## 7. Wire external MCP clients
+
+Guided setup stores the owner token as `mcp.token` in mode-0600 `box.local.json`, so the local
+`box` proxy works without printing the credential. For an external MCP client, copy
+`docs/examples/mcp.json` to the client's ignored configuration and have the owner privately obtain
+the same token:
+
+```bash
+box auth reveal <owner-id>
+```
+
+Set the HTTP Authorization bearer header to that token. The optional warehouse entry needs
+`uvx` and the absolute database path. Reconnect and confirm the Box tools respond. A 401 means the
 principal token is missing, invalid or revoked.
-
----
 
 ## 8. Seed THEIR starting state - this is the part that matters
 
@@ -220,9 +193,9 @@ The headline items:
 - **Credentials.** Anything that reaches an external service needs
   the `credentials` section of `box.local.json`. Follow the shape in `docs/SETUP.md` and fill in only
   the channels they use. Every channel is optional.
-- **The agent assistant** (a Claude/Codex seat inside chat) is **off by default** and is an advanced
-  install: it needs the `workerdeck` section of `box.json` (start from `docs/examples/workerdeck.json`)
-  AND their own Claude or Codex subscription.
+- **Builder providers.** Guided setup can configure detected Codex and Claude profiles, but each
+  still needs its own valid subscription and host sign-in. A missing login marker is a warning,
+  not a readiness claim. The in-chat assistant remains a separate feature decision.
 - **Some pulls cannot be configured at all yet** - the reddit and browser-driven LinkedIn paths need
   an external gateway this repo does not ship, and there is no way to mint a LinkedIn member token
   from a fresh Box.

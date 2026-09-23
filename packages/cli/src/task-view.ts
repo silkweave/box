@@ -3,7 +3,7 @@ import type { RunState, TaskState } from './tasks.ts'
 import { cleanText, clip, elapsedText, paint, span, type Row, type Tone } from './ui.ts'
 
 const phases = [
-  ['Build', 'Workspace packages'], ['Prepare', 'Skills · CLI tests · generated types'],
+  ['Build', 'Workspace packages'], ['Prepare', 'Skills · CLI tests · Web tests · generated types'],
   ['Check', 'Types · lint'], ['Validate', 'Core · server · schema'],
 ]
 const tone = (task: TaskState): Tone => task.status === 'running' ? 'active' : task.status === 'passed' ? 'good' : task.status === 'failed' ? 'bad' : task.status === 'cancelled' ? 'warn' : 'muted'

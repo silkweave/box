@@ -32,18 +32,26 @@ const escapeHtml = (text: string) => text.replace(/[&<>"']/g, char => ({
 })[char]!)
 
 export function brandingPlugin(brand: BoxBrand = readBrand()): Plugin {
-  const manifest = JSON.stringify({
+  let base = '/'
+  const assetUrl = (url: string): string => {
+    if (base === '/' || !url.startsWith('/') || url.startsWith('//')) return url
+    return `${base}${url.slice(1)}`
+  }
+  const manifestForBase = (): string => JSON.stringify({
     name: brand.name, short_name: brand.shortName, description: brand.description,
-    start_url: '/', display: 'standalone', background_color: brand.backgroundColor,
+    start_url: assetUrl('/'), display: 'standalone', background_color: brand.backgroundColor,
     theme_color: brand.themeColor,
     icons: [
-      { src: brand.icon192, sizes: '192x192', type: 'image/png' },
-      { src: brand.icon512, sizes: '512x512', type: 'image/png' },
+      { src: assetUrl(brand.icon192), sizes: '192x192', type: 'image/png' },
+      { src: assetUrl(brand.icon512), sizes: '512x512', type: 'image/png' },
     ],
   }, null, 2)
+  let manifest = manifestForBase()
   return {
     name: 'box-branding',
     configResolved(config) {
+      base = config.base.endsWith('/') ? config.base : `${config.base}/`
+      manifest = manifestForBase()
       for (const asset of [brand.logoUrl, brand.icon192, brand.icon512, brand.appleTouchIcon]) {
         if (!/^\/(?!\/)[a-zA-Z0-9_./-]+$/.test(asset) || asset.split('/').includes('..')) {
           throw new Error(`Brand artwork must be an origin-relative public asset: ${asset}`)
@@ -55,17 +63,25 @@ export function brandingPlugin(brand: BoxBrand = readBrand()): Plugin {
       return id === VIRTUAL_ID ? RESOLVED_ID : undefined
     },
     load(id) {
-      return id === RESOLVED_ID ? `export default ${JSON.stringify(brand)}\n` : undefined
+      const browserBrand = {
+        ...brand,
+        logoUrl: assetUrl(brand.logoUrl),
+        icon192: assetUrl(brand.icon192),
+        icon512: assetUrl(brand.icon512),
+        appleTouchIcon: assetUrl(brand.appleTouchIcon),
+      }
+      return id === RESOLVED_ID ? `export default ${JSON.stringify(browserBrand)}\n` : undefined
     },
     transformIndexHtml: { order: 'pre', handler(html) {
       const values: Record<string, string> = {
-        NAME: brand.name, SHORT_NAME: brand.shortName, ICON: brand.icon512,
-        APPLE_ICON: brand.appleTouchIcon, THEME_COLOR: brand.themeColor,
+        NAME: brand.name, SHORT_NAME: brand.shortName, ICON: assetUrl(brand.icon512),
+        APPLE_ICON: assetUrl(brand.appleTouchIcon), THEME_COLOR: brand.themeColor,
       }
-      return html.replace(/__BOX_BRAND_(\w+)__/g, (_, key: string) => {
+      const transformed = html.replace(/__BOX_BRAND_(\w+)__/g, (_, key: string) => {
         if (!(key in values)) throw new Error(`Unknown brand placeholder: ${key}`)
         return escapeHtml(values[key]!)
       })
+      return transformed.replace('href="/manifest.webmanifest"', `href="${escapeHtml(assetUrl('/manifest.webmanifest'))}"`)
     } },
     configureServer(server) {
       server.middlewares.use('/manifest.webmanifest', (_req, res) => {

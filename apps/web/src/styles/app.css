@@ -11,3 +11,47 @@
 
 /* Consolidated feature UI lives outside apps/web/src. */
 @source '../../../../features/*/web';
+
+/* Settings detail screens get their title from the fixed shared navigation bar. Existing page
+   headers keep their descriptions and action controls inside the scrolling surface. */
+.settings-detail-main [data-page-title] {
+  display: none;
+}
+
+.settings-detail-main [data-page-description] {
+  margin-top: 0;
+}
+
+.settings-detail-main [data-page-header]:not(:has([data-page-description], [data-page-actions])) {
+  display: none;
+}
+
+/* Initiative Kind rows share columns at every width. Narrow screens preserve usable label widths
+   by moving only the new permanent id onto a second line. */
+.initiative-kind-row-grid,
+.initiative-kind-create-grid {
+  grid-template-columns: 2rem minmax(5rem, 1fr) minmax(5.5rem, 7rem) 5rem;
+}
+
+.initiative-kind-row-actions {
+  grid-column: 4;
+}
+
+.initiative-kind-create-id {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.initiative-kind-create-button {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
+}
+
+@media (min-width: 640px) {
+  .initiative-kind-row-grid,
+  .initiative-kind-create-grid {
+    grid-template-columns: 2rem minmax(0, 1fr) minmax(7rem, 11rem) 6.5rem;
+  }
+
+}

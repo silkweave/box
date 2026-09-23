@@ -95,45 +95,102 @@ Tailwind scans this app's sources.
 |---|---|
 | `src/main.tsx` | `applyTheme()`, then mount `<App />` into `#root` |
 | `src/App.tsx` | `AuthProvider` -> auth gate -> `AppUsers` -> `AppShellExtensions` -> `RouterProvider` |
-| `src/router-root.tsx` | `rootRoute` alone, in its own file |
-| `src/router.tsx` | core's two routes + `WEB_ROUTES`, browser history, the legacy `#/` rewrite (see Routing below) |
-| `src/lib/nav.ts` | the sidebar groups, `appEntries()`, `homePath()`, `useGroupNav()` |
+| `src/router-root.tsx` | dependency-light `rootRoute`, with the injected root shell component |
+| `src/router.tsx` | injects `AppLayout`, then composes core's two routes + `WEB_ROUTES`, browser history, the legacy `#/` rewrite (see Routing below) |
+| `src/components/AppLayout.tsx` | the one persistent `AppShell`, route outlet, active group navigation, and safe fallback chrome |
+| `src/lib/routeShell.tsx` | `shellGroup` route metadata and the `RouteChrome` writer used by section layouts |
+| `src/lib/nav.ts` | the sidebar groups, `navEntries()`, `useGroupNav()` |
 | `src/lib/shell.tsx` | this app's `ShellExtensions` value: top-bar slots, user menu, agent panel |
-| `src/views/HomeView.tsx` | the app dashboard at `/` - one card per app this Box has |
+| `src/views/HomeView.tsx` | the Dashboard placeholder at `/` |
 | `src/views/SettingsView.tsx` | the Settings shell and core's two sections |
 
 **`rootRoute` lives in its own file** so a feature's routes can import it without importing
 `router.tsx`, which imports the features - that would be a cycle at module load.
 
-`router.tsx` contributes exactly two routes of its own: `/` (the app dashboard) and `/settings`
-with a `$section` child. Everything else is `...WEB_ROUTES`. The
-router uses **browser history** (`createBrowserHistory` - the Routing section
-below); a deep link survives a refresh because both topologies fall back to `index.html`. Every
-path segment is real (`/settings/$section`, and a feature's own `/sink/$file`), so links are
-shareable and the back button works.
+The authenticated router mounts one `AppLayout` for its lifetime. That layout owns the single
+`AppShell`; section layouts publish their current secondary items, selection callback, breadcrumbs,
+actions, and optional group action through `RouteChrome`. A section route declares
+`staticData: { shellGroup: '<nav id>' }`, and descendants inherit the deepest matching section.
+The host uses this static identity to show the destination's group and fallback breadcrumb before
+its data loads. A published descriptor is accepted only for the current section and committed
+location, so delayed cleanup or a slow previous route cannot restore stale actions.
 
-`navEntries()` sorts every present feature's `nav` entries plus core's Settings entry by `order`
-band, then `id`. Core's Settings is band 900 so it is always last. `appEntries()` is the same list
-WITHOUT Settings - "the apps this Box has" - and `homePath()` is simply the first entry.
+Feature layouts keep their providers, dialogs, and routed content inside `RouteChrome`. They must
+publish one complete descriptor per section owner. Leaves that only add a top-bar portal continue
+to use `TopBarActions` or `TopBarCenter`; global controls belong to the separate feature manifest
+`shell.topbar` seam. Route changes retain the sidebar, top bar, portal targets, and Assistant while
+the shell resets its drawer and section-level main scroll through its navigation lifecycle keys.
+`RouteChrome` writers receive a stable controller and do not subscribe to its snapshots, which
+prevents a publication loop. Descriptor React nodes render under the shell host, so route-local
+context-dependent controls use the existing portals or receive their state explicitly. The routed
+body still unmounts normally; the persistent shell does not cache inactive routes.
 
-**`/` is an app dashboard** (`HomeView`): a card per `appEntries()` entry, drawing the
-`label`, the `icon` and the optional one-line `description` a feature declares on its own nav entry.
-It replaced a `/` that redirected into whichever feature sorted first, which made every sign-in land
-inside one team's tool - a Box that kept `data` greeted everybody with an empty Signals chart. The
-redirect survives for exactly one case: **a Box with no apps still lands on Settings** via
-`homePath()`, which is the blank-slate case and it is proven (see `FEATURES.md`).
+`router.tsx` owns the dashboard, the Builder boundary, and legacy Settings redirects; features
+contribute `WEB_ROUTES`. Application pages use browser history and survive refresh through the
+server's `index.html` fallback. Settings uses the hash so the application page stays mounted.
 
-A nav entry's `description` is the FEATURE's sentence, not core's: core draws the card, the feature
-owns the vocabulary. A card without one is just the icon and the label.
+`navEntries()` reads feature navigation lazily and includes core's Dashboard entry.
+`useGroupNav()` organizes them using this Box's `SIDEBAR_SECTIONS` in `src/lib/nav.ts`:
 
-`HomeView` calls `appEntries()` inside the component, never at module scope - it sits on the
-registry import cycle, and a module-scope read white-screens the whole SPA with no check able to see
-it (`docs/core/SEAM.md` § 5.4).
+| Section | Destinations |
+| --- | --- |
+| Workspace | Dashboard, Chat, Artifacts, Sink |
+| Reporting | Signals, Circuit Boards |
+| Operations | Initiatives, Sprints, Reminders |
+| Sales | Accounts |
+| Marketing | Content, Engagement |
 
-`SettingsView` is one stateful view driven by the `$section` path param. Core owns two sections -
-Users (band 100) and Profile (band 900) - and every feature's `settings` entries sort in between.
-Profile is self-scoped: the signed-in principal's own row, every self-editable field inline, plus
-sign-out.
+Absent features create no empty headings; additional unassigned entries appear under Other.
+The UI library accepts optional `NavGroup.section` labels and renders a heading when the section
+changes. Selecting a group navigates to its overview and automatically shows its sub-navigation
+in a rounded panel with a solid header. `--sidebar-primary` controls the header fill and the
+lower-opacity sub-item hover (10%) and selected (18%) fills in both themes;
+`--sidebar-primary-text` controls the header foreground. Override these tokens in theme CSS.
+Groups use the 12px `--radius-lg`, buttons the 8px `--radius-md`, with uniform 4px panel
+padding and row gaps and 12px horizontal button padding. Every group reserves the same
+padding and 1px border, including closed groups and standalone destinations, so activating
+a header does not shift its icon or label. Navigation has no chevrons or selection stripes;
+selected sub-items use a tinted background. `expandable: false` suppresses sub-navigation for
+standalone destinations, including Dashboard and Artifacts.
+
+**`/` is Dashboard** (`HomeView`). A new Box uses it as a temporary onboarding workspace: it reads
+the compiled feature registry and the Builder supervisor's provider readiness, then routes an
+administrator through provider setup, a first feature integration and replacement of the onboarding
+view with the Box's real dashboard. Progress is derived from live state rather than stored as an
+onboarding ledger. Members see the installed state but not Builder actions.
+Artifacts is a web-only placeholder feature at `/artifacts`. Accounts is the display name for the
+CRM workspace; its `/crm` routes, feature identity and stored records retain their existing names.
+
+Navigation reads the generated registry inside component calls, never at module scope, because
+feature views participate in a registry import cycle (`docs/core/SEAM.md` § 5.4).
+
+`SettingsDialogHost` in `views/SettingsView.tsx` mounts once beside the persistent shell.
+Core owns Profile (order 0, the default) and Users (100); features contribute ordered sections
+through `settings`. Missing or unknown sections fall back to Profile. The footer shows Settings,
+theme, and collapse controls in a row, or vertically when collapsed. Automation and Alerts live
+inside Settings and have no main-sidebar entries.
+
+Use `useSettingsDialog().open('initiative-kinds')` from an application page to open that section
+without changing the pathname, query filters, or page scroll. Links use `to='.'`, `search={true}`,
+`hash='settings/initiative-kinds'`, `resetScroll={false}`, and `hashScrollIntoView={false}`.
+Sections receive the remaining path as `render(params: string[])`. Examples:
+
+- `/initiatives#settings/initiative-kinds`
+- `/initiatives#settings/users/new` or `#settings/users/<id>`
+- `#settings/automation/schedules`, `#settings/automation/actions`, `#settings/automation/runs/<id>`
+- `#settings/alerts/rules` and `#settings/alerts/feed`
+
+Section and sub-page navigation participates in browser history. Closing clears the hash with a
+replace navigation; the page behind the dialog stays mounted. Legacy `/settings/<section>`,
+`/automation/...`, and `/alerts` URLs redirect to the corresponding dialog over Dashboard.
+Old `schedules` and `rules` Settings identifiers remain valid aliases.
+
+Settings wraps its content in the UI library's `InlineDialogScope`. Editors use `InlineDialog`,
+`InlineDialogContent`, `InlineDialogTitle`, and `InlineDialogDescription`: they replace the pane
+with a Back action while preserving the underlying list. Outside that scope they retain normal
+dialog behavior, so shared editors still work on application pages. Confirmations use the same
+pane; leaving the section cancels pending confirmations. Keep new Settings editors in this scope
+instead of adding another modal. Profile edits stay inline and include sign-out.
 
 ## Routing - real paths, no server work
 
@@ -161,13 +218,11 @@ Two consequences worth holding on to:
    `/app-icon-512.png`), or with what Vite owns in dev (`/src`, `/node_modules`, `/@vite`, `/@fs`).
    A name clash is a silent break, so a feature that adds a route must check its path against these
    reserved prefixes and public files.
-2. **Old `/#/...` links are immortal and still work.** They sit in bookmarks, in agent transcripts
-   and in every AGENT.md that was ever read, so `router.tsx` rewrites `#/<path>` to `/<path>` with
-   `replaceState` *before* `createBrowserHistory()` snapshots `location`. The same block normalizes
-   `/login` (where sign-in links point, and where a retired magic link lands) to `/` KEEPING the
-   query, which carries the grant - it is not a client
-   route (the auth gate renders `LoginView` on any path), so the router would 404 on it the moment
-   the gate mounted. `box auth token` and `box auth reveal` print the root for the same reason.
+2. **Legacy `/#/...` links still work.** `router.tsx` rewrites `#/<path>` to `/<path>` with
+   `replaceState` before `createBrowserHistory()` snapshots `location`. It also moves a grant from
+   `/login/<grant>` into transient query state and normalizes the path to `/`. `/login` is not a
+   client route: the auth gate renders `LoginView` on any path, and the grant is scrubbed from the
+   visible URL after the login view reads it. `box auth token` and `box auth reveal` print the root.
 
 An `<a href='/'>` is now a full document reload, not a route change - the sidebar wordmark links
 through the shell seam's `homeLink`, which this app fills with TanStack's `<Link to='/'>` in
@@ -176,7 +231,7 @@ router). The push chain moved with it: web push carries `url: '/chat/<slug>'`, a
 worker's "never push to the room you are looking at" check reads `pathname`, not `hash`. **A service
 worker and the notifications it has shown are cached on the client**, so a click on a notification
 delivered before the change still posts `/#/chat/<slug>`, so the notifications app's
-`listenPushNavigate()` accepts both spellings on purpose. If you adopt an app that shows
+`listenPushNavigate()` accepts both spellings on purpose. If you integrate a feature that shows
 notifications, it inherits this problem and this answer.
 
 ## The feature registry, and the ports a feature fills
@@ -200,7 +255,7 @@ tuples infers `unknown[]` and every typed `<Link to=...>` in the app goes dark.
 |---|---|---|
 | `routes` | `router.tsx` | `sink`: `routes.tsx` builds `/sink` with a `$file` child off `rootRoute` and exports `sinkRoutes` |
 | `nav` | `lib/nav.ts` | `planning` contributes two groups: Initiatives (order 200) and Sprints (210) |
-| `settings` | `views/SettingsView.tsx` | `automation`: `{ id: 'schedules', label: 'Schedules', order: 800, render: () => <SchedulesSection /> }` |
+| `settings` | `views/SettingsView.tsx` | `automation`: `{ id: 'automation', label: 'Automation', order: 800, render: (params) => <AutomationSettings params={params} /> }` |
 | `shell.topbar` | `lib/shell.tsx` | `automation`'s `RestartRequiredButton` at order 100, `notifications`' `NotificationBell` at 200 |
 | `onSession` | `App.tsx`'s auth gate | `notifications` starts its poller and returns `listenPushNavigate(...)` as the teardown |
 | `slots` | `lib/slots.ts` | `engagement` contributes `PodEngagementPanel` to content's `content.piece.panel` slot |
@@ -337,8 +392,7 @@ feed unsubscribes and reconnects from scratch after 5s.
 
 ## Auth on the web side
 
-The full model is [`AUTH.md`](./AUTH.md). What is the web
-app's part:
+The full model is in [AUTH.md](AUTH.md). The web app is responsible for:
 
 - `src/lib/useAuth.tsx` probes `GET /api/auth/me` on mount. That endpoint is `@Public()` so the SPA
   can ask without eating a 401. The principal is `{ id, display }` and **nothing else** - no role
@@ -348,9 +402,8 @@ app's part:
   the app. The change feed and every feature's `onSession` start on that same gate, because an SSE
   subscription or a tRPC fetch before a session just 401s.
 - `src/views/LoginView.tsx` exchanges a pasted access token for a session cookie. There is no
-  password. A sign-in link (`/login?link=<grant>`) is read by `LoginView`, spent with a POST on a
-  click, and sets the cookie, which
-  is the same flow with the paste already done.
+  password. For `/login/<grant>`, the router passes the grant through transient client state.
+  `LoginView` spends it with a POST when the user confirms, then receives the same session cookie.
 - The authenticated principal IS the active-user scope: `useAuth` pushes it into
   `lib/useActiveUser.ts`, whose `getActiveUserId()` stamps `actor` on mutations from non-React data
   code.

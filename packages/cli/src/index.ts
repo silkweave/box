@@ -5,14 +5,15 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { findBoxRoot, isBoxRoot, isMain, repoRoot } from './repo.ts'
+import { commandError, commandHeader, commandNotice } from './command-ui.ts'
 
 const selfRoot = repoRoot
 
 const die = (msg: string): never => {
-  console.error(`[box] ${msg}`)
+  commandError(msg)
   process.exit(1)
 }
-const note = (msg: string) => console.error(`[box] ${msg}`)
+const note = (msg: string) => commandNotice(msg)
 
 /** The Box this invocation acts on, and the one-line reason, for `box where` and for the warning. */
 function target(): { root: string; why: string } {
@@ -40,15 +41,16 @@ function runPackage(root: string, script: string, args: string[]): never {
   process.exit(result.status ?? (result.signal === 'SIGINT' ? 130 : 1))
 }
 
-const HELP = `box - the Silkweave Box command line
-
-  box dev                                    start server and web development
+const HELP = `  box dev [--log-level <level>]              start interactive development
+  box setup [options]                         create the first owner and configure providers
   box build                                  build workspace packages and the application
+  box builder refresh                        refresh Builder UI without restarting its session
+  box builder browser --session <session-id> <operation> [JSON object]
   box start                                  start the Box from source with built web assets
   box start --prod                           start the production build
   box verify [--plain|--verbose]              run the complete visual validation chain
   box auth token <id> [--name "Full Name"] [--create] [--rotate] [--admin] [--quiet]
-  box auth link <id>                          short-lived, single-use sign-in link
+  box auth login <id>                         short-lived, single-use browser sign-in
   box auth reveal <id>                        re-print an access token, breaking nothing
   box db backup                               a safety copy of the warehouse, kept generationally
   box db list                                 every restore point, with its time and size
@@ -63,14 +65,23 @@ Tool names are kebab-case (warehouse-backup, ingest-github), and need mcp.token 
 
 Anything not listed is an MCP tool name, so it grows with the features you install.
 `
+const DEV_HELP = `  box dev [--log-level <level>] [--plain]
 
-const AUTH = { token: 'auth-token.ts', link: 'auth-link.ts', reveal: 'auth-reveal.ts' } as const
+  Levels: error, warn, info (default), verbose, debug
+  Aliases: --verbose, --debug
+
+  Live keys: ↑/↓ scroll · v verbosity · r restart app · f restart frontend · c clear · q quit
+  Vite hot module replacement remains automatic.
+`
+
+const AUTH = { token: 'auth-token.ts', login: 'auth-login.ts', reveal: 'auth-reveal.ts' } as const
 // `seeds` stays as an alias for `list` so older AGENT recipes and muscle memory keep working.
 const DB = { backup: 'backup', list: 'list', seeds: 'list', restore: 'restore', snapshot: 'snapshot' } as const
 
 function main(argv: string[]): void {
   const [verb, ...rest] = argv
   if (!verb || verb === 'help' || verb === '--help' || verb === '-h') {
+    commandHeader('help')
     process.stdout.write(HELP)
     return
   }
@@ -88,9 +99,23 @@ function main(argv: string[]): void {
     note(`no Box above ${process.env.BOX_INVOKED_FROM ?? process.cwd()} - acting on ${root}`)
   }
 
+  if (verb === 'builder') {
+    if (rest.length === 1 && rest[0] === 'refresh') runScript(root, 'packages/cli/src/builder-refresh.ts', [])
+    if (rest[0] === 'browser') runScript(root, 'packages/cli/src/builder-browser.ts', rest.slice(1))
+    die('Expected: box builder refresh or box builder browser --session <id> <operation> [JSON]')
+  }
+
   if (verb === 'verify') runScript(root, 'packages/cli/src/verify.ts', rest)
-  if (verb === 'dev' || verb === 'build') runPackage(root, verb, rest)
-  if (verb === 'start') runPackage(root, rest.includes('--prod') ? 'start:prod' : 'start', rest.filter(arg => arg !== '--prod'))
+  if (verb === 'setup') runScript(root, 'apps/server/scripts/setup.ts', rest, true)
+  if (verb === 'dev') {
+    if (rest.includes('--help') || rest.includes('-h')) { commandHeader('dev'); process.stdout.write(DEV_HELP); return }
+    runPackage(root, verb, rest)
+  }
+  if (verb === 'build') { if (process.stdout.isTTY) commandHeader('build'); runPackage(root, verb, rest) }
+  if (verb === 'start') {
+    if (process.stdout.isTTY) commandHeader(rest.includes('--prod') ? 'start / production' : 'start')
+    runPackage(root, rest.includes('--prod') ? 'start:prod' : 'start', rest.filter(arg => arg !== '--prod'))
+  }
 
   if (verb === 'auth') {
     const [sub, ...args] = rest

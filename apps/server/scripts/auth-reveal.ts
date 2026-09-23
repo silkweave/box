@@ -8,39 +8,37 @@
 
 import { ensureSchema, ensureSystemPrincipal, resolvePrincipalById, revealPrincipalToken } from '@silkweave/box-core'
 import { appUrl } from '../src/auth/app-url.js'
+import { commandError, commandHeader, commandLine, commandValue, commandWarning } from '../../../packages/cli/src/command-ui.js'
 
 async function main(): Promise<void> {
   const id = process.argv[2]
   if (!id) {
-    console.error('usage: box auth reveal <user-id>')
+    commandError('Usage: box auth reveal <user-id>')
     process.exit(1)
   }
   await ensureSchema()
   await ensureSystemPrincipal()
   const principal = await resolvePrincipalById(id)
   if (!principal) {
-    console.error(`no user "${id}" (or they are revoked) - check Settings -> Users.`)
+    commandError(`No active user "${id}". Check Settings -> Users.`)
     process.exit(1)
   }
   const token = await revealPrincipalToken(id)
   if (!token) {
-    console.error(`"${id}" has no active access token - mint the first one with:  box auth token ${id}`)
+    commandError(`"${id}" has no access token. Create one with: box auth token ${id}`)
     process.exit(1)
   }
-  console.log(`current access token for "${id}" (${principal.display}) - unchanged, still valid:\n`)
-  console.log(`  ${token}\n`)
-  console.log('This is the PERMANENT credential: the MCP/CLI bearer, and what the dashboard login')
-  console.log(`box accepts at ${appUrl()}/. It does not expire.`)
-  console.log('')
-  console.log('Treat it like a password. Password manager, not a chat message, and never in a URL.')
-  console.log(`To just SIGN SOMEONE IN, send a short-lived link instead:  box auth link ${id}`)
-  console.log('')
-  console.log('This did NOT rotate anything - existing logins and MCP connections keep working.')
+  commandHeader('auth reveal')
+  commandLine(`Access token for ${principal.display}:`)
+  commandValue(token)
+  commandWarning('Permanent credential. Store it in a password manager; never put it in a URL.')
+  commandLine(`Unchanged · clients stay connected · dashboard: ${appUrl()}/`, 'muted')
+  commandLine(`Browser sign-in: box auth login ${id}`, 'muted')
 }
 
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err)
+    commandError(err instanceof Error ? err.message : String(err))
     process.exit(1)
   })

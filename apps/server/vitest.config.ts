@@ -32,5 +32,5 @@ export default defineConfig({
       { find: /^@silkweave\/box-core\/(.*)$/, replacement: core + '$1.ts' },
     ],
   },
-  test: { include: ['src/**/*.test.ts', '../../features/*/server/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', '../../features/*/server/**/*.test.ts'] },
 })

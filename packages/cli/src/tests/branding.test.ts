@@ -37,10 +37,18 @@ test('branding safely renders HTML, bakes the brand into a virtual module, serve
       handle({}, { setHeader(key, value) { assert.equal(value, 'application/manifest+json'); }, end(body) { served = body; } });
     } } });
     assert.equal(served, emitted.source);
-    assert.throws(() => plugin.configResolved({ publicDir: 'apps/web/public' }), /Missing brand artwork/);
-    assert.throws(() => brandingPlugin({ ...readBrand(), logoUrl: '/../secret.svg' }).configResolved({ publicDir: 'apps/web/public' }), /origin-relative/);
+    assert.throws(() => plugin.configResolved({ publicDir: 'apps/web/public', base: '/' }), /Missing brand artwork/);
+    assert.throws(() => brandingPlugin({ ...readBrand(), logoUrl: '/../secret.svg' }).configResolved({ publicDir: 'apps/web/public', base: '/' }), /origin-relative/);
     // The default brand (this checkout's box.json, or core's defaults without one) ships its artwork.
-    brandingPlugin().configResolved({ publicDir: 'apps/web/public' });
+    brandingPlugin().configResolved({ publicDir: 'apps/web/public', base: '/' });
+    const snapshot = brandingPlugin();
+    snapshot.configResolved({ publicDir: 'apps/web/public', base: '/builder-assets/' });
+    const snapshotBrand = JSON.parse(snapshot.load('\\0virtual:box-brand').slice('export default '.length));
+    assert.equal(snapshotBrand.logoUrl, '/builder-assets' + readBrand().logoUrl);
+    const snapshotHtml = snapshot.transformIndexHtml.handler('<link href="__BOX_BRAND_ICON__">');
+    assert.equal(snapshotHtml, '<link href="/builder-assets' + readBrand().icon512 + '">');
+    snapshot.generateBundle.call({ emitFile: asset => { emitted = asset; } });
+    assert.equal(JSON.parse(emitted.source).icons[0].src, '/builder-assets' + readBrand().icon192);
   `], { cwd: process.cwd(), stdio: 'pipe' })
 })
 

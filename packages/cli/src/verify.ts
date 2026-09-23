@@ -12,7 +12,12 @@ export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun
     ['build', 'Build workspace', 'Build', ['build']],
     ['skills', 'Link skills', 'Prepare', ['skills']],
     ['cli-tests', 'CLI tests', 'Prepare', ['test:cli']],
-    ['typegen', 'Generate types', 'Prepare', ['typegen']],
+    ['web-tests', 'Web tests', 'Prepare', ['test:web']],
+    // The adapter currently reports every nested reflected DTO as `unknown` (212 procedures in
+    // the full Stack). Those are known type-precision debt, not run-specific verification
+    // findings. Keep direct `bun run typegen` verbose for schema work, but do not make every
+    // otherwise-clean verify permanently yellow.
+    ['typegen', 'Generate types', 'Prepare', ['typegen', '--quiet']],
     ['typecheck', 'Typecheck', 'Check', ['typecheck']],
     ['lint', 'Lint', 'Check', ['lint']],
     ['core-tests', 'Core tests', 'Validate', ['--filter', '@silkweave/box-core', 'test']],
@@ -33,7 +38,7 @@ export async function main(argv: string[]): Promise<number> {
     } }))
   } catch (error) { process.stderr.write(`${(error as Error).message}\nUse box verify --help for usage.\n`); return 2 }
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, generated types, types, lint, core tests, server tests and schema.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --verbose   Append-only progress and full child output\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core tests, server tests and schema.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --verbose   Append-only progress and full child output\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   const out = process.stdout, input = process.stdin

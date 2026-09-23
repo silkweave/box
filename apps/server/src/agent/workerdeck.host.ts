@@ -4,8 +4,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import type { IncomingMessage } from 'node:http'
 import { createFileSessionStore, createWorkerServer, type WorkerServer, type WorkerServerOptions } from '@workerdeck/server'
 import type { ProfileInfo, SessionInfo } from '@workerdeck/protocol'
-import { agentSessionAccess, boxJson, repoRoot } from '@silkweave/box-core'
+import { agentSessionAccess, boxJson, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
 import { parkedDir, readWorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
+import { revokeBuilderControl, trackBuilderControl } from './builder-control.js'
 
 /**
  * Boots workerdeck INSIDE this server's process (see docs/SERVER.md).
@@ -60,6 +61,8 @@ export type AgentAuth =
   | {
       via: 'box'
       user: string
+      /** Resolved from Box on this request, never supplied by the browser. */
+      admin?: boolean
       /** Undefined = this deployment does not pin profiles at all (no agentProfiles map). */
       allowedProfiles?: string[]
       scope: { user: string }
@@ -267,6 +270,7 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
         // 'host' owns everything it creates; 'anon' means auth is off and there is nothing to scope by.
         return true
       }
+      if (session.meta?.kind === 'builder' && auth.admin !== true) return false
       // Ownership is `scope` and nothing else. A session with no scope belongs to nobody a Box
       // principal can be, so it is refused rather than fuzzily matched on `meta`. There was a
       // bridge here that fell back to `meta.user` for sessions created before phase 2; it was
@@ -299,6 +303,30 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
 
   const worker = createWorkerServer(options)
 
+  worker.registry.observe((runner) => {
+    const info = runner.info()
+    if (info.meta?.kind !== 'builder' || typeof info.meta.user !== 'string') return
+    const user = info.meta.user
+    const untrack = trackBuilderControl(user, () => runner.close('server'))
+    // User-management calls revoke immediately. This also catches host-side role/token changes
+    // while a browser is connected or a turn continues without a browser.
+    let checking = false
+    const timer = setInterval(() => {
+      if (runner.info().status === 'closed' || runner.info().status === 'failed') {
+        clearInterval(timer)
+        untrack()
+        return
+      }
+      if (checking) return
+      checking = true
+      void resolvePrincipalById(user).then((principal) => {
+        if (principal?.role !== 'admin') revokeBuilderControl(user)
+      }).catch(() => revokeBuilderControl(user)).finally(() => { checking = false })
+    }, 1000)
+    timer.unref()
+    return () => { clearInterval(timer); untrack() }
+  })
+
   // An upstream change that attaches a second handler would silently double-handle every request
   // once we start emitting into this server ourselves. Fail loudly instead.
   const requests = worker.server.listenerCount('request')
@@ -321,9 +349,9 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
  * restarting will answer the prompt, and the same reasoning is why workerdeck's own drain names
  * them but never waits for them.
  *
- * This exists because the merge introduced one real regression: before it, restarting the server
- * left the separate worker untouched, and now a restart ends every sidebar and @nova session - and a codex
- * session cannot be rebuilt from a park. See automation.controller.ts § restart.
+ * The embedded host shares the application's lifetime, so restart ends active execution.
+ * Supported provider resume state can restore a later session, but does not preserve an
+ * interrupted turn. See automation.controller.ts § restart.
  */
 export function agentSessionsWorking(): string[] {
   if (!host) return []

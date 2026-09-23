@@ -67,3 +67,15 @@ export const Rail: Story = {
     </div>
   ),
 }
+
+/** Top-level headings are supplied by the app, independently of sub-nav sections. */
+export const GroupHeadings: Story = {
+  ...Default,
+  args: {
+    ...Default.args,
+    groups: SAMPLE_GROUP_NAV.groups.map((group, index) => ({
+      ...group,
+      section: index < 2 ? 'Marketing' : 'Workspace',
+    })),
+  },
+}

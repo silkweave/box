@@ -417,8 +417,8 @@ composes without any of that: a feature's `routes` are `Route` objects whose par
 ```ts
 // apps/web/src/router.tsx (the composition)
 const routeTree = rootRoute.addChildren([
-  indexRoute,                                        // `/`: the app dashboard, or Settings on a Box with no apps
-  settingsRoute.addChildren([settingsSectionRoute]), // `/settings/$section`
+  indexRoute,                                        // `/`: the app dashboard
+  settingsRoute.addChildren([settingsSectionRoute]), // legacy `/settings/...` redirects
   ...WEB_ROUTES,
 ])
 export const router = createRouter({ routeTree, history: createBrowserHistory() })
@@ -426,7 +426,24 @@ export const router = createRouter({ routeTree, history: createBrowserHistory() 
 
 `rootRoute` lives alone in `apps/web/src/router-root.tsx` so a feature's `routes.tsx` can name
 its parent without importing `router.tsx`, which imports the features: that would be a cycle at
-module load.
+module load. It accepts a dependency-light injected root component; `router.tsx` supplies the
+app-owned `AppLayout` before composing the route tree. `AppLayout` remains outside recoverable
+route content boundaries and owns the one `AppShell` for the authenticated router's lifetime.
+
+Each section parent declares `staticData.shellGroup` with its navigation entry id. Its layout wraps
+the routed body in `RouteChrome`, publishing the complete set of secondary items, active id,
+selection callback, breadcrumbs/actions, and optional group action. The shell host matches that
+publication against both the deepest section route and the committed location. Until it matches,
+the host renders empty secondary navigation and a breadcrumb derived from the static group. This
+keeps old route callbacks out of a new destination while its data is loading. Publication is owned:
+a departing layout can remove only its own snapshot, so delayed cleanup cannot erase its successor.
+
+`RouteChrome` is route-local state, distinct from the manifest's global `shell.topbar` contribution.
+Feature providers and dialogs stay in the routed subtree. Existing `TopBarActions` and
+`TopBarCenter` portals remain the right seam for leaf controls that need route-local context.
+Descriptor React nodes render under the shell host rather than under those providers, so they must
+receive required state explicitly. Writers share a stable controller but do not subscribe to its
+snapshot, avoiding publication loops. Only the shell persists; inactive routed bodies still unmount.
 
 Typed links across features fall out of § 2.1: `typeof router` contains planning's paths iff
 planning's directory is present, so `navigate({ to: '/initiatives/$id' })` inside content is a type
@@ -441,22 +458,25 @@ the validation chain looks; a feature that adds a top-level route re-checks by h
 
 ### 5.2 Nav: contributed entries, numeric order bands
 
-`lib/nav.ts` sorts every present feature's `nav` entries plus core's Settings (order 900) by
-`order`, then `id`. `appEntries()` is the same list without Settings and draws the dashboard at
-`/`; `homePath()` is the first entry, which on a Box with no apps is Settings. A nav entry's
-`description` is the feature's sentence: core draws the card and never writes the copy.
+`lib/nav.ts` reads feature navigation lazily, alongside core's Dashboard (order 0). The receiving Box organizes entries into sidebar sections; the UI library renders
+supplied section labels without owning their domain vocabulary. Dashboard at `/` is the default
+landing page, including a featureless Box. See [WEB.md](../WEB.md) for this Box's section membership.
+A nav entry may set `expandable: false` for a destination without sub-navigation.
 
 Bands are fixed by convention so that integrating or removing a feature never reorders the others. The
 reference apps use `data` 100-199, `planning` 200-299, `content` 300, `engagement` 400, `chat` 500,
-`crm` 600, `sink` 700, `automation` 800, `alerts` 810, core Settings 900. A new feature picks a
+`artifacts` 510, `crm` 600, `sink` 700, `automation` Settings 800, `alerts` Settings 810. A new feature picks a
 free band; a collision is a tie broken by id, not an error.
 
 ### 5.3 Settings sections
 
-`views/SettingsView.tsx` is one stateful view driven by the `$section` path param. Core owns two
-sections, Users (100) and Profile (900); every feature's `settings` entries sort in between, in the
-same bands as § 5.2. A missing feature's section is simply not there, and an old link to it falls
-back to the first section.
+`views/SettingsView.tsx` hosts a dialog addressed by `#settings/<section>/<subpath>` over the
+current application page. Core owns Profile (0, the default) and Users (100). Feature sections
+use the same order bands as § 5.2 and receive their subpath through `render(params: string[])`.
+Unknown or unavailable sections fall back to Profile. `useSettingsDialog().open(path)` preserves
+the current page and its query state. See [WEB.md](../WEB.md) for links, legacy redirects, and
+inline editor composition. Settings uses `InlineDialogScope` so editors and confirmations occupy
+the pane rather than another modal.
 
 ### 5.4 Shell slots, and the rule that comes with them
 
@@ -464,9 +484,14 @@ The shell itself is not core's: `AppShell` lives in `@silkweave/box-ui`, which k
 tRPC, auth, the registry or the agent stack, and takes what it needs from the app through
 `ShellExtensions`. `apps/web/src/lib/shell.tsx` fills that value once, app-wide: the top-bar
 cluster (every feature's `shell.topbar` contributions by ascending `order`, then the user menu,
-then the agent toggle), the agent panel as the `aside`, the home link and the storage prefix. In
+then the agent toggle), the agent panel as the `aside`, the home link, the Settings footer control, and the storage prefix. In
 the reference apps, `automation` contributes `RestartRequiredButton` at 100 and `notifications`
 the `NotificationBell` at 200.
+
+`ShellExtensions` supplies persistent app-wide additions; `RouteChrome` supplies the active
+section's replaceable navigation and actions. Keeping these seams separate is what lets Assistant
+and global controls retain their component identity while a route's callbacks are released on
+departure.
 
 The rule that comes with every reader of the web registry: **no module that a feature's
 `index.tsx` can pull in may touch `WEB_FEATURES`, `WEB_FEATURE_LIST` or `WEB_ROUTES` at module
@@ -522,9 +547,8 @@ features/<id>/skills/<name>/SKILL.md           optional feature skills
 ```
 
 An agent adapts the source and updates maintained registration, root workspace package imports, and
-exports as needed. It records completed upstream SHA, path mapping and durable skipped changes in
-docs/UPSTREAM.md; current integration notes, validation and unresolved work stay in `_docs/`.
-Runtime contracts and package manifests
+exports as needed. It records completed upstream SHA, path mapping, skipped changes, validation, and
+unresolved work in docs/UPSTREAM.md and _docs/INTEGRATION.md. Runtime contracts and package manifests
 remain source contracts; no feature package or release catalogue is created.
 
 ### 6.2 `box verify`
@@ -532,9 +556,8 @@ remain source contracts; no feature package or release catalogue is created.
 Run the receiving Box's normal build, typecheck, tests, lint, and schema check, then boot a
 disposable instance and exercise the feature's documented surface. Type generation checks tRPC and
 MCP namespace collisions. Migration work additionally requires a backup rehearsal, ledger inspection,
-and boot verification before unrelated changes continue. Keep current command results in the
-gitignored `_docs/VALIDATION.md`; current integration scope and rollback information belongs in
-`_docs/INTEGRATION.md`. A passing lockfile build is not evidence of latest dependency testing.
+and boot verification before unrelated changes continue. Record actual commands and results in the
+integration log; a passing lockfile build is not evidence of latest dependency testing.
 
 ### 6.3 What the checks cannot see
 
@@ -545,6 +568,7 @@ gitignored `_docs/VALIDATION.md`; current integration scope and rollback informa
   host. A controller change is covered by `typegen`; a registration is proven by booting a
   throwaway Box.
 - **A top-level route colliding with a server prefix or a shipped file** (§ 5.1).
-- **A core web module naming a feature's tRPC procedure** (§ 1): only a featureless typecheck sees
-  it, which on `master` is the ordinary `bun run typecheck`.
+- **A core web module naming a feature's tRPC procedure** (§ 1): only a featureless consumer's
+  typecheck sees it. Stack includes all reference features, so its ordinary typecheck cannot prove
+  that core works without them.
 - **A migration against real rows** (§ 3.5): `box db backup`, a throwaway Box, a restored copy.

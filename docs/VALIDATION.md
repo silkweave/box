@@ -1,26 +1,31 @@
 # Validation
 
-Run validation from the Box checkout with Bun. Runtime rehearsals use independent checkouts with
-background automation, chat agents, relay and WorkerDeck disabled unless explicitly under test.
+Run `box verify` from the intended checkout. The complete chain builds the workspace, checks
+skill links, runs CLI and web tests, generates API types, typechecks, lints, runs core and server tests,
+and checks the schema matrix. `box verify --plain` provides append-only output; `--verbose`
+includes full child output. See [CLI.md](CLI.md) for progress, warnings and log locations.
 
-```sh
-bun install --frozen-lockfile
-box verify
-```
+Use focused checks during development, then run the complete chain before calling work complete.
+A passing exit status with warning output is not a warning-free run. Record the actual revision,
+commands, counts, warnings, failures and untested scope in local `_docs/VALIDATION.md`.
+Dependency freshness requires its own dated update/check result; a passing locked build alone
+does not establish that dependencies are current.
 
-The complete chain covers build, skill linking, CLI tests, generated types, typecheck, lint, core
-tests, server tests and the schema matrix. Use `box verify --plain` for a transcript suitable for
-automation and `--verbose` when child output is needed.
+## Runtime checks
 
-For changes that affect boot, routes, authentication, branding, configuration or the agent host,
-use an independent checkout with its own ports and fresh `data/`. Start the development and
-production servers as applicable, then exercise the changed surface in Chrome DevTools. Confirm
-the browser console, server logs, authentication boundary and disabled-feature behavior.
+Load changed routes using Chrome DevTools MCP. Typechecking cannot detect every module-scope
+registration cycle. Use an independent scratch checkout with its own data, configuration and
+free ports. Keep automation, chat agents and relay disabled unless the test explicitly needs them.
+Do not point two servers at one instance or copy live credentials into logs.
 
-For migrations, back up every affected store first, rehearse restore, inspect the migration ledger,
-and confirm boot before continuing. Preserve migration names and bodies byte-for-byte.
+Exercise authentication and representative changed routes in development and production modes.
+For runner changes, test streaming, approvals, interruption, reconnect, recovery and shutdown
+as appropriate. Distinguish scripted test peers from authenticated provider turns, and idle
+recovery from preservation of an active turn. Stop temporary servers after testing.
 
-Keep the commands, source state, dependency state, results, warnings, backups and limitations for
-the current run in the gitignored `_docs/VALIDATION.md`. Keep integration steps and rollback notes
-for the current run in `_docs/INTEGRATION.md`; committed `docs/` records only the reusable procedure
-and durable product invariants.
+## Schema and migration checks
+
+`schema:check` exercises fresh/repeated boot and enabled-later feature paths. A migration change
+also requires a rehearsal against a restored backup of every affected store. Preserve shipped
+migration identities and bodies. Record rehearsal evidence and rollback details locally; keep
+lasting operating requirements in [WAREHOUSE.md](WAREHOUSE.md) and [GOTCHAS.md](GOTCHAS.md).

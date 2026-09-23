@@ -1,6 +1,7 @@
 import { Controller, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiOperation, ApiProperty } from '@nestjs/swagger'
 import { Mcp, Trpc } from '@silkweave/nestjs'
+import { z } from 'zod/v4'
 import { drain, executeRecorded, instanceRelative, listRestorePoints } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { Admin } from '../auth/auth.decorators.js'
@@ -19,6 +20,15 @@ class RestorePointDto {
 class RestorePointsDto {
   @ApiProperty({ type: [RestorePointDto] }) points!: RestorePointDto[]
 }
+const restorePointsOutput = z.object({
+  points: z.array(z.object({
+    name: z.string(),
+    path: z.string(),
+    label: z.enum(['pre-migrate', 'manual', 'pre-restore', 'seed']),
+    takenAt: z.string(),
+    bytes: z.number(),
+  })),
+})
 
 /**
  * Warehouse backup: CORE, not a feature. A Box with zero features installed still has a warehouse
@@ -49,7 +59,7 @@ export class WarehouseController {
   @ApiOperation({ summary: 'List the warehouse restore points, newest first' })
   @ApiOkResponse({ type: RestorePointsDto })
   @Admin()
-  @Trpc({ kind: 'query' })
+  @Trpc({ kind: 'query', output: restorePointsOutput })
   @Mcp()
   restorePoints(): RestorePointsDto {
     return {

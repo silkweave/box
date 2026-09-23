@@ -6,9 +6,23 @@ date or release label alone is not an ancestor.
 
 ## Core consumer baseline
 
-The recorded core source is `05f6435d36e1e4f960ab6c05746813d6c1bdec9d`. The Box includes the core
-server, web app, CLI, provider utilities, UI library and core skills. Feature registration and
-exports are intentionally empty.
+The completed core refresh and guided first-run setup are based on Stack commit
+`d34b6182db9cd03bf58f98115bb397f4bbbe25e1`. The Box includes the core server, web application,
+Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
+intentionally empty.
+
+The target includes Stack commits `1679963573056b98046b8c5dc2bf2434452197a9` for the reviewed
+dependency and documentation cleanup and `bc9cf70f076ed1d505b380fd2389d51dc2d37a4b` for first-run
+owner guidance and the contextual onboarding dashboard. Stack commit
+`d34b6182db9cd03bf58f98115bb397f4bbbe25e1` adds `bun setup`, provider-home detection,
+first-owner creation, local CLI credential storage and the direct sign-in-link handoff. The
+consumer retains its reduced package scope, core-only lockfile, empty feature registration and
+Box-specific operational guidance. Stack-only development Box build and reset commands from that
+commit are intentionally not part of the consumer.
+
+The consumer intentionally omits repository-local `.codex/config.toml`. Codex configuration is
+machine-owned; `docs/examples/codex-config.toml` remains only an example for a user's global
+configuration.
 
 ## Scoped CLI integration
 

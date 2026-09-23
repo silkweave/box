@@ -53,7 +53,7 @@ describe('issueSigninLink', () => {
     const { grant, claims } = await issueSigninLink(alice)
     expect(claims.sub).toBe(alice)
     expect(claims.exp - claims.iat).toBe(SIGNIN_LINK_TTL_MS)
-    expect(grant.startsWith('bl1.')).toBe(true)
+    expect(grant.startsWith('bl2.')).toBe(true)
   })
 
   it('honours a custom ttl', async () => {

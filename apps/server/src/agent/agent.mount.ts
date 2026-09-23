@@ -4,6 +4,9 @@ import type { SessionInfo } from '@workerdeck/protocol'
 import { AGENT_SESSION_APP, SESSION_COOKIE, agentEnginesFor, agentSessionAccess, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, authenticatePrincipal, parseCookies, resolvePrincipalById, verifySession, type Principal } from '@silkweave/box-core'
 import { AGENT_AUTH, agentWorkerUrl, workerdeckHost, type AgentAuth, type AuthedRequest } from './workerdeck.host.js'
 import { relayReadOnly } from './session-relay.js'
+import { applyBuilderSessionPolicy, BuilderSessionPolicyError } from './builder-session-policy.js'
+import { trackBuilderControl } from './builder-control.js'
+import { repoRoot } from '@silkweave/box-core'
 
 /**
  * The browser's door onto the IN-PROCESS workerdeck (agent/workerdeck.host.ts, docs/SERVER.md).
@@ -141,6 +144,7 @@ const agentAuthFor = (principal: Principal | null, readOnly: boolean): AgentAuth
     ? {
         via: 'box',
         user: principal.id,
+        admin: principal.role === 'admin',
         ...(agentProfilesConfigured() ? { allowedProfiles: Object.values(agentProfileMapFor(principal.id)) } : {}),
         scope: { user: principal.id },
         operator: false,
@@ -219,6 +223,7 @@ export function createAgentMount(): AgentMount | undefined {
   const host = workerdeckHost()
   if (!host) return undefined
   const { worker } = host
+  const creating = new Set<string>()
 
   /** Every session the worker knows about, live or parked - what its own GET /v1/sessions lists. */
   const allSessions = async (): Promise<SessionInfo[]> => [
@@ -276,6 +281,15 @@ export function createAgentMount(): AgentMount | undefined {
           : ''
     delete body.engine
     delete body.profile
+    try {
+      await applyBuilderSessionPolicy(body, principal, engine, repoRoot())
+    } catch (error) {
+      if (error instanceof BuilderSessionPolicyError) {
+        respond(res, error.status, { error: error.message })
+        return
+      }
+      throw error
+    }
     if (agentProfilesConfigured()) {
       if (!user) {
         respond(res, 403, { error: 'agent_profile_unmapped', user: null })
@@ -342,7 +356,21 @@ export function createAgentMount(): AgentMount | undefined {
       return
     }
     if (method === 'POST' && gated === '/agent/v1/sessions') {
-      await gateCreate(req, res, principal, auth)
+      const user = principal!.id
+      if (creating.has(user)) {
+        respond(res, 409, { error: 'agent_starting' })
+        return
+      }
+      creating.add(user)
+      const release = (): void => { creating.delete(user) }
+      res.once('finish', release)
+      res.once('close', release)
+      try {
+        await gateCreate(req, res, principal, auth)
+      } catch (error) {
+        release()
+        throw error
+      }
       return
     }
     stash(req, auth)
@@ -403,6 +431,12 @@ export function createAgentMount(): AgentMount | undefined {
         // GET that opens a channel that writes. The room reader's case is served without ever
         // handing the worker this socket.
         const auth = agentAuthFor(principal, false)
+        // Track authenticated sockets so a role change closes existing control channels too.
+        // Tracking all of an admin's agent sockets covers a dormant Builder session waking below.
+        if (principal?.role === 'admin') {
+          const untrack = trackBuilderControl(principal.id, () => socket.destroy())
+          socket.once('close', untrack)
+        }
         const relay = auth.via === 'box' ? readerRelayUrl(req.url ?? '/', auth.user) : null
         if (relay !== null) {
           relayReadOnly({ upstreamUrl: relay, req, socket, head })

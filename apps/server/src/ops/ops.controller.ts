@@ -2,9 +2,56 @@ import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
+import { z } from 'zod/v4'
 import { listAutomationActions, readRun, readRuns, startDetachedRun, type IngestProgress } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { type PrincipalRequest } from '../auth/auth.decorators.js'
+
+// Nested DTO arrays need explicit schemas for precise generated tRPC output types.
+const actionsOutput = z.object({ actions: z.array(z.object({
+  id: z.string(),
+  label: z.string(),
+  group: z.string(),
+  description: z.string(),
+  plugin: z.boolean().optional(),
+  entryPath: z.string().optional(),
+  parameterized: z.boolean().optional(),
+})) })
+const runsOutput = z.object({
+  generatedAt: z.string(),
+  runs: z.array(z.object({
+    id: z.string(),
+    schedule_id: z.string().nullable(),
+    action_id: z.string(),
+    trigger: z.enum(['schedule', 'manual']),
+    triggered_by: z.string().nullable(),
+    status: z.enum(['queued', 'running', 'success', 'error', 'skipped']),
+    started_at: z.string(),
+    finished_at: z.string().nullable(),
+    duration_ms: z.number().nullable(),
+    summary: z.string().nullable(),
+    error: z.string().nullable(),
+  })),
+})
+const runOutput = z.object({
+  id: z.string(),
+  schedule_id: z.string().nullable(),
+  action_id: z.string(),
+  trigger: z.enum(['schedule', 'manual']),
+  triggered_by: z.string().nullable(),
+  status: z.enum(['queued', 'running', 'success', 'error', 'skipped']),
+  started_at: z.string(),
+  finished_at: z.string().nullable(),
+  duration_ms: z.number().nullable(),
+  summary: z.string().nullable(),
+  error: z.string().nullable(),
+  log: z.array(z.object({
+    ts: z.string(),
+    channel: z.string(),
+    phase: z.string(),
+    message: z.string(),
+  })),
+})
 
 // DTOs document the REST/Swagger surface and drive the generated tRPC input/output types.
 class PullResultDto {
@@ -89,7 +136,7 @@ export class OpsController {
   /** tRPC query `opsActions` - every schedulable/runnable action (fresh plugin discovery). */
   @Get('actions')
   @ApiOkResponse({ type: ActionsDto })
-  @Trpc()
+  @Trpc({ output: actionsOutput })
   actions(): ActionsDto {
     return { actions: listAutomationActions() }
   }
@@ -97,7 +144,7 @@ export class OpsController {
   /** tRPC query `opsRuns` - the latest run history (no logs; fetch one via opsRun). */
   @Get('runs')
   @ApiOkResponse({ type: RunsDto })
-  @Trpc()
+  @Trpc({ output: runsOutput })
   async runs(): Promise<RunsDto> {
     const runs = (await readRuns(100)) as RunDto[]
     return { generatedAt: new Date().toISOString(), runs }
@@ -109,7 +156,7 @@ export class OpsController {
    */
   @Post('run')
   @ApiOkResponse({ type: RunWithLogDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ kind: 'mutation', output: runOutput })
   @Mcp({ name: 'run-get' })
   async run(@Body() body: IdDto): Promise<RunWithLogDto> {
     const run = await readRun(body.id)

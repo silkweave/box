@@ -10,13 +10,14 @@
   },
   "scripts": {
     "prepare": "bun run box:json && bun run skills && bun run typegen --quiet",
+    "setup": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/setup.ts",
     "box:json": "bun --no-env-file packages/cli/src/box-json.ts",
-    "dev": "turbo run dev",
+    "dev": "bun --no-env-file --conditions=@silkweave/box-source apps/server/src/builder/supervisor.ts --dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint",
-    "start": "bun --bun --no-env-file run --filter @silkweave/box-server start",
-    "start:prod": "bun --bun --no-env-file run --filter @silkweave/box-server start:prod",
+    "start": "bun --no-env-file --conditions=@silkweave/box-source apps/server/src/builder/supervisor.ts",
+    "start:prod": "bun --no-env-file --conditions=@silkweave/box-source apps/server/src/builder/supervisor.ts",
     "cli": "bun --no-env-file packages/cli/src/mcp-proxy.ts",
     "skills": "bun --no-env-file packages/cli/src/skills.ts",
     "skills:check": "bun --no-env-file packages/cli/src/skills.ts --check",
@@ -24,7 +25,7 @@
     "typegen": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/typegen.ts",
     "verify": "bun --no-env-file packages/cli/src/verify.ts",
     "auth:token": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/auth-token.ts",
-    "auth:link": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/auth-link.ts",
+    "auth:login": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/auth-login.ts",
     "auth:reveal": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/auth-reveal.ts",
     "db:snapshot": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts snapshot",
     "db:restore": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts restore",
@@ -32,7 +33,8 @@
     "db:backup": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts backup",
     "box": "bun --no-env-file packages/cli/src/index.ts",
     "box:install": "bun --no-env-file packages/cli/src/box-install.ts",
-    "test:cli": "bun --no-env-file test ./packages/cli/src/tests/*.test.ts"
+    "test:cli": "bun --no-env-file test ./packages/cli/src/tests/*.test.ts",
+    "test:web": "bun --no-env-file test ./apps/web/tests/*.test.ts"
   },
   "dependencies": {
     "@silkweave/box-core": "workspace:*"
@@ -40,12 +42,12 @@
   "devDependencies": {
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.16.2",
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.2",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
-    "oxlint": "^1.83.0",
+    "oxlint": "^1.85.0",
     "rimraf": "^6.1.3",
     "tsdown": "^0.23.0",
-    "turbo": "^2.10.13",
+    "turbo": "^2.11.2",
     "vitest": "^5.0.1"
   },
   "workspaces": [

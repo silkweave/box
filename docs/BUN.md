@@ -43,18 +43,40 @@ includes child output. `bun run verify` remains a package-script entry point. Us
 
 When moving an existing checkout, a clean dependency install can remove obsolete pnpm links
 and stores under `node_modules`; never remove `data/` or local configuration as part of a
-package-manager migration. Keep command transcripts and run-specific results in the gitignored
-`_docs/VALIDATION.md`.
+package-manager migration.
+
+## Local WorkerDeck development
+
+The tracked helper can temporarily replace installed WorkerDeck packages with the built output of
+a local WorkerDeck checkout. Manifests and `bun.lock` keep their registry versions.
+
+```sh
+# Build WorkerDeck in its own checkout first.
+bun --no-env-file scripts/workerdeck-local.ts /path/to/workerdeck
+bun run build --force
+bun run typecheck --force
+box verify
+
+# Restore the registry packages.
+bun --no-env-file scripts/workerdeck-local.ts --restore
+bun run build --force
+bun run typecheck --force
+box verify
+```
+
+The local checkout must have its dependencies installed and its package outputs built. Rebuild it
+after every change, then force Stack's build and typecheck because Turbo cannot track source outside
+this checkout. Restart running Box processes after rebuilding. An install may replace the links;
+the helper records their state in ignored `node_modules/.workerdeck-local.json` and refuses to
+restore links that another operation changed.
 
 ## Validation boundary
 
-Browser/runtime rehearsals use independent checkouts and data, with background work disabled. Keep
-the current check results in `_docs/VALIDATION.md`.
+See [VALIDATION.md](VALIDATION.md) for validation requirements. Browser/runtime rehearsals
+use independent checkouts and data, with background work disabled.
 
-WorkerDeck is an optional in-process agent host. When upgrading it, update its workspace packages
-together and inspect peer ranges before changing the lockfile. Run `box verify`, then boot an
-independent Box with background work disabled and exercise gateway startup/shutdown, profile and
-user ownership, WebSocket close behavior, authenticated provider turns and parked-session recovery.
-Record the command, package state, backup and observed limits in `_docs/INTEGRATION.md` and
-`_docs/VALIDATION.md`. Provider executables may retain their own Node or native runtime
-requirements even though Box itself runs on Bun.
+Validate WorkerDeck upgrades against Box's actual runtime behavior: authenticated provider turns,
+streaming, approvals, interruption, reconnect, recovery and shutdown. Upstream's supported Node
+test suite and focused Box/Bun integration checks serve different purposes. A test-harness
+failure alone does not establish a deployed runtime failure. Provider executables may retain
+their own Node or native runtime requirements even though Box itself runs on Bun.

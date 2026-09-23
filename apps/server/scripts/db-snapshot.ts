@@ -25,6 +25,7 @@ import {
   warehousePath,
   withWrite,
 } from '@silkweave/box-core'
+import { commandError, commandHeader, commandLine, commandSuccess } from '../../../packages/cli/src/command-ui.js'
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/
 
@@ -37,40 +38,45 @@ async function main(): Promise<void> {
   const db = warehousePath()
 
   if (cmd === 'list') {
+    commandHeader('db list')
     const points = listRestorePoints()
     if (points.length === 0) {
-      console.log('no restore points yet - create one with: box db backup (or box db snapshot [name])')
+      commandLine('No restore points yet.', 'muted')
+      commandLine('Create one: box db backup or box db snapshot [name]', 'accent')
       return
     }
     for (const p of points) {
       const when = p.takenAt.toISOString().slice(0, 16).replace('T', ' ')
-      console.log(`${p.name.padEnd(40)} ${p.label.padEnd(12)} ${mb(p.bytes).padStart(7)} MB  ${when}`)
+      commandLine(`${p.name.padEnd(40)} ${p.label.padEnd(12)} ${mb(p.bytes).padStart(7)} MB  ${when}`)
     }
-    console.log(`\nrestore one with: box db restore <name>`)
+    commandLine('')
+    commandLine('Restore one: box db restore <name>', 'muted')
     return
   }
 
   if (cmd === 'backup') {
     const result = await backupWarehouse({ label: 'manual' })
-    console.log(result.summary)
+    commandHeader('db backup')
+    commandSuccess(result.summary)
     return
   }
 
   if (cmd === 'restore') {
     const name = nameArg ?? 'baseline'
     const result = await restoreWarehouse(name)
-    console.log(result.summary)
+    commandHeader('db restore')
+    commandSuccess(result.summary)
     return
   }
 
   if (cmd === 'snapshot') {
     const name = nameArg ?? 'baseline'
     if (!NAME.test(name)) {
-      console.error(`invalid snapshot name "${name}" (use a-z, 0-9, -)`)
+      commandError(`Invalid snapshot name "${name}". Use a-z, 0-9 and -.`)
       process.exit(1)
     }
     if (!existsSync(db)) {
-      console.error(`no warehouse at ${db} - nothing to snapshot`)
+      commandError(`No warehouse at ${db}. Nothing to snapshot.`)
       process.exit(1)
     }
     const dir = seedsDir()
@@ -84,17 +90,19 @@ async function main(): Promise<void> {
       copyFileSync(db, seed)
       if (existsSync(`${db}.wal`)) copyFileSync(`${db}.wal`, `${seed}.wal`)
     })
-    console.log(`seed '${name}' saved to ${instanceRelative(seed)} (${mb(statSync(seed).size)} MB) - restore with: box db restore ${name}`)
+    commandHeader('db snapshot')
+    commandSuccess(`Saved "${name}" to ${instanceRelative(seed)} · ${mb(statSync(seed).size)} MB`)
+    commandLine(`Restore it: box db restore ${name}`, 'muted')
     return
   }
 
-  console.error('usage: box db snapshot [name] | box db backup | box db list | box db restore [name]')
+  commandError('Usage: box db snapshot [name] | box db backup | box db list | box db restore [name]')
   process.exit(1)
 }
 
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(String((err as Error)?.message ?? err))
+    commandError(String((err as Error)?.message ?? err))
     process.exit(1)
   })

@@ -1,20 +1,24 @@
-import { Body, Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsString } from 'class-validator'
 import { Trpc } from '@silkweave/nestjs'
+import { z } from 'zod/v4'
 import {
   authenticatePrincipal,
   agentIdentity,
   clientIp,
   consumeSigninGrant,
+  hasHumanUser,
   mintSession,
   rateLimit,
+  readUsers,
   requestIsSecure,
   sessionCookie,
   type Principal,
 } from '@silkweave/box-core'
 import { INSTANCE_ID } from '../agent/loopback-guard.js'
-import { CurrentPrincipal, Public } from './auth.decorators.js'
+import { Public, type PrincipalRequest } from './auth.decorators.js'
+import { AuthGuard } from './auth.guard.js'
 
 // Minimal structural shapes so we don't take an express type dependency (see main.ts).
 interface Req {
@@ -36,10 +40,12 @@ class LinkDto {
 class PrincipalDto {
   @ApiProperty() id!: string
   @ApiProperty() display!: string
+  @ApiProperty({ enum: ['admin', 'member'] }) role!: Principal['role']
 }
 class MeDto {
   @ApiProperty({ required: false, nullable: true, type: PrincipalDto }) principal!: PrincipalDto | null
   @ApiProperty({ type: Object }) agent!: { id: string; name: string; role: 'admin' | 'member' }
+  @ApiProperty({ description: 'True until the host creates the first human owner.' }) needsOwner!: boolean
 }
 
 /**
@@ -102,10 +108,20 @@ export class AuthController {
    *  probe login state without a 401. */
   @Get('me')
   @Public()
+  @UseGuards(AuthGuard)
   @ApiOkResponse({ type: MeDto })
-  @Trpc()
-  me(@CurrentPrincipal() principal: Principal | null): MeDto {
-    return { principal, agent: agentIdentity() }
+  @Trpc({ output: z.object({
+    principal: z.object({ id: z.string(), display: z.string(), role: z.enum(['admin', 'member']) }).nullable(),
+    agent: z.object({ id: z.string(), name: z.string(), role: z.enum(['admin', 'member']) }),
+    needsOwner: z.boolean(),
+  }) })
+  async me(@Req() req: PrincipalRequest): Promise<MeDto> {
+    const users = await readUsers()
+    return {
+      principal: req.principal ?? null,
+      agent: agentIdentity(),
+      needsOwner: !hasHumanUser(users),
+    }
   }
 
   /**

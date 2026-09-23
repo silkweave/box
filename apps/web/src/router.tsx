@@ -1,43 +1,53 @@
 import { createBrowserHistory, createRoute, createRouter, redirect } from '@tanstack/react-router'
-import { rootRoute } from './router-root.tsx'
+import { AppLayout } from './components/AppLayout.tsx'
+import { CenteredNote } from '@silkweave/box-ui'
+import { rootRoute, installRootLayout } from './router-root.tsx'
 import { WEB_ROUTES } from './generated/features.ts'
-import { appEntries, homePath } from './lib/nav.ts'
 import { HomeView } from './views/HomeView.tsx'
-import { SettingsView } from './views/SettingsView.tsx'
 
-// The route tree is core's two routes plus whatever the present features contribute. Every path
-// segment is real (`/crm/$id`, `/settings/$section`) so links are shareable and the back button
+// The route tree is core's routes plus whatever the present features contribute. Every path
+// segment is real (`/crm/$id`, `/sink/$file`) so links are shareable and the back button
 // works; features keep their own sub-trees and any redirects they owe their history.
 
-// `/` is the app dashboard (HomeView), not a redirect into whichever feature sorted first.
-// The one exception is a Box with NO apps: an empty grid is not a landing page, so it still
-// redirects to homePath() - which on a featureless Box is Settings. Both calls read the generated
-// registry, and beforeLoad runs at navigation time rather than at module evaluation, so neither is
-// on the module-scope path that white-screens the SPA (see HomeView).
+// Dashboard is the default landing page, including a Box with no optional features.
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => {
-    if (appEntries().length === 0) throw redirect({ to: homePath() as never })
-  },
   component: HomeView,
+  staticData: { shellGroup: 'home' },
 })
 
-// Settings: one stateful view that reads the active section from the `$section` param; the child
-// route only registers the path segment. Sections come from core + every feature's `settings`.
+// Preserve bookmarked settings URLs as dialog links over the dashboard.
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: SettingsView,
+  beforeLoad: ({ location }) => {
+    const path = location.pathname.slice('/settings'.length).replace(/^\//, '')
+    throw redirect({ to: '/', hash: `settings/${path || 'profile'}`, replace: true })
+  },
 })
 const settingsSectionRoute = createRoute({
   getParentRoute: () => settingsRoute,
-  path: '$section',
+  path: '$',
+})
+
+const builderRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/builder',
+  beforeLoad: () => { window.location.replace('/builder'); },
   component: () => null,
+})
+
+// Keep composition here: router-root must not eagerly import the feature registry.
+installRootLayout(AppLayout)
+rootRoute.update({
+  notFoundComponent: () => <CenteredNote>Page not found.</CenteredNote>,
+  errorComponent: () => <CenteredNote>Unable to load this page. Navigate to another section or reload.</CenteredNote>,
 })
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  builderRoute,
   settingsRoute.addChildren([settingsSectionRoute]),
   ...WEB_ROUTES,
 ])
@@ -50,15 +60,23 @@ if (typeof window !== 'undefined') {
   if (window.location.hash.startsWith('#/')) {
     window.history.replaceState(null, '', window.location.hash.slice(1))
   }
-  // `/login` is where sign-in links point (`?link=<grant>`, see auth/app-url.ts) and where a
+  // `/login/<grant>` is where sign-in links point (see auth/app-url.ts) and `/login?e=...` is where a
   // retired old-style link is redirected (`?e=retired`). It is NOT a client route - the auth gate in
   // App.tsx renders LoginView ahead of the router, on any path - so under hash routing the path was
   // ignored. Under browser history the router WOULD see it once the user signs in and the gate
   // mounts, and 404. Normalize it away here instead of inventing a route for it.
   //
-  // THE QUERY MUST SURVIVE: it carries the grant. LoginView reads it on mount and scrubs it itself.
-  if (window.location.pathname === '/login') {
-    window.history.replaceState(null, '', '/' + window.location.search)
+  // Convert the path envelope into transient query state before the router snapshots the URL.
+  // LoginView reads and immediately scrubs it. This keeps the public URL clean without making the
+  // credential a client route or letting a GET consume it.
+  if (window.location.pathname === '/login' || window.location.pathname.startsWith('/login/')) {
+    const pathGrant = window.location.pathname.slice('/login/'.length)
+    const params = new URLSearchParams(window.location.search)
+    if (pathGrant) {
+      try { params.set('link', decodeURIComponent(pathGrant)) } catch { params.set('link', pathGrant) }
+    }
+    const query = params.toString()
+    window.history.replaceState(null, '', `/${query ? `?${query}` : ''}`)
   }
 }
 

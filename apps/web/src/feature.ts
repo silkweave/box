@@ -12,12 +12,12 @@ export interface NavEntry {
   id: string
   label: string
   icon: NavIcon
+  /** False for a destination with no sub-navigation. */
+  expandable?: boolean
   /** Absolute path of the group's index route. */
   to: string
   /**
-   * One line for the app dashboard at `/` (HomeView) - what this app is FOR, in this team's
-   * vocabulary. The feature owns the sentence: core draws the card, it never writes the copy.
-   * Optional; a card without one is just the icon and the label.
+   * Optional one-line description of what the app does, in the feature's vocabulary.
    */
   description?: string
   /** Sort key. Bands by feature (§ 5.2 of the seam); ties break on `id`. */
@@ -29,8 +29,10 @@ export interface SettingsSection {
   id: string
   label: string
   icon: NavIcon
+  /** False for a destination with no sub-navigation. */
+  expandable?: boolean
   order: number
-  render: () => ReactNode
+  render: (params: string[]) => ReactNode
 }
 
 export interface WebFeature {

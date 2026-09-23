@@ -1,5 +1,7 @@
 import * as React from 'react'
 import {
+  ChevronDown,
+  Hammer,
   Maximize2,
   Minimize2,
   PanelRightClose,
@@ -26,19 +28,20 @@ import {
   startAgentSession,
   useAgent,
 } from '../../lib/agentStore.ts'
-import { Button, confirm, Dialog, DialogContent, DialogDescription, DialogTitle } from '@silkweave/box-ui'
+import { useAuth } from '../../lib/useAuth.tsx'
+import { Button, confirm, Dialog, DialogContent, DialogDescription, DialogTitle, MenuRow, Popover, PopoverContent, PopoverTrigger } from '@silkweave/box-ui'
 
 /**
- * The agent sidebar (docs/SERVER.md §3): a collapsible right-hand panel inside
- * AppShell's framed canvas hosting a live workerdeck session. All the transcript machinery
+ * The Assistant panel (docs/SERVER.md §3): a collapsible right-hand panel beside
+ * AppShell's framed workspace hosting a live workerdeck session. All the transcript machinery
  * (streaming, tool cards, permission + question prompts, composer, interrupt) is
  * @workerdeck/ui's SessionPanel - the Box supplies only the slim header, the empty state, and the
  * one-agent-per-user takeover dialog. Always mounted (it owns the config fetch + re-attach flow);
  * renders md+ only - small screens keep the copy-paste flow.
  *
  * Two panel geometries, both persisted: a docked column whose width the separator drags (min
- * MIN_PANEL, always leaving MIN_MAIN for the view), and fullscreen - absolutely positioned over the
- * canvas row so <main> keeps its scroll position underneath (AppShell marks it `inert`).
+ * MIN_PANEL, always leaving MIN_MAIN for the view), and fullscreen - fixed over the workspace so
+ * <main> keeps its scroll position underneath (AppShell marks it `inert`).
  */
 export function AgentSidebar() {
   const { config, open, width, fullscreen, engine, sessionId, conflict, unavailable, starting, error } = useAgent()
@@ -77,6 +80,18 @@ export function AgentSidebar() {
     return () => window.removeEventListener('resize', clamp)
   }, [fullscreen, width])
 
+  // Closing the panel is a view preference. It must never interrupt or discard the live session.
+  React.useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      setAgentOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+
   if (!config?.enabled) return null
 
   const endSession = async (): Promise<void> => {
@@ -95,17 +110,16 @@ export function AgentSidebar() {
       {open && (
         <aside
           ref={asideRef}
-          style={!fullscreen && width != null ? { width } : undefined}
+          style={!fullscreen ? ({ '--agent-width': width != null ? `${width}px` : undefined } as React.CSSProperties) : undefined}
           className={cn(
-            'hidden min-h-0 flex-col bg-bg md:flex',
-            // Fullscreen covers the canvas row (AppShell makes it the containing block); docked, the
-            // ResizeHandle hairline is the panel's left border.
-            fullscreen ? 'absolute inset-0 z-20' : 'shrink-0',
-            !fullscreen && width == null && 'w-104',
+            'fixed inset-0 z-50 flex min-h-0 w-full flex-col bg-bg shadow-(--shadow-lg) md:relative md:inset-auto md:z-auto md:shadow-none',
+            // Fullscreen covers the workspace; docked, the ResizeHandle hairline is the panel's
+            // left border and the frame stays visible beside it.
+            fullscreen ? 'md:fixed md:inset-0 md:z-50 md:w-auto md:shadow-(--shadow-lg)' : 'md:w-[var(--agent-width,26rem)]',
           )}>
           <div className='flex h-14 shrink-0 items-center gap-2 border-b border-border px-3'>
             <Sparkles className='size-4 text-accent' />
-            <span className='text-label font-medium tracking-wide text-fg-2 uppercase'>Agent</span>
+            <span className='text-label font-medium tracking-wide text-fg-2 uppercase'>Assistant</span>
             {stagedProfile && (
               <span
                 className='truncate rounded-sm bg-surface-hover px-1.5 py-0.5 text-label text-fg-3'
@@ -166,7 +180,7 @@ export function AgentSidebar() {
             <div className='flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center'>
               <TriangleAlert className='size-6 text-warning' />
               <p className='max-w-64 text-body-sm text-muted-foreground'>
-                No agent profile is mapped to{' '}
+                No Assistant profile is mapped to{' '}
                 <span className='text-text'>{config?.user?.display ?? 'your account'}</span>, so agent sessions
                 can't start. Ask an admin to add you to <code className='text-code'>config/agent-profiles.json</code>.
               </p>
@@ -175,7 +189,7 @@ export function AgentSidebar() {
             <div className='flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center'>
               <Sparkles className='size-6 text-accent-dim' />
               <p className='max-w-64 text-body-sm text-muted-foreground'>
-                No agent session. Start one here, or hit Run now on a Generate button.
+                No Assistant session. Start one here, or hit Run now on a Generate button.
               </p>
               {/* Only worth showing when there is a choice: one engine is not a decision. */}
               {(config?.engines.length ?? 0) > 1 && (
@@ -315,25 +329,44 @@ export function useAgentFullscreen(): boolean {
   return open && fullscreen && config?.enabled === true
 }
 
-/** TopBar toggle: the Sparkles mark with a status dot while a session is live. */
+/** Work opens Assistant; the adjacent dropdown exposes admin workspace actions. */
 export function AgentToggle() {
   const { config, open, sessionId, session } = useAgent()
-  if (!config?.enabled) return null
+  const { principal } = useAuth()
+  const canBuild = principal?.role === 'admin'
+  if (!config?.enabled && !canBuild) return null
   const pending = (session?.pendingPermissionCount ?? 0) > 0
+  const openBuilder = (): void => {
+    const preview = window.location.pathname + window.location.search + window.location.hash
+    window.location.assign(`/builder?preview=${encodeURIComponent(preview)}`)
+  }
   return (
-    <Button
-      variant='ghost'
-      size='icon'
-      className='relative max-md:hidden'
-      title={open ? 'Hide agent panel' : 'Show agent panel'}
-      aria-label={open ? 'Hide agent panel' : 'Show agent panel'}
-      onClick={() => setAgentOpen(!open)}>
-      <Sparkles className={open ? 'text-accent' : undefined} />
-      {sessionId && (
-        <span
-          className={`absolute top-1.5 right-1.5 size-1.5 rounded-full ${pending ? 'bg-warning' : 'bg-success'}`}
-        />
+    <div className='inline-flex shrink-0 items-center rounded-lg border border-border' role='group' aria-label='Work tools'>
+      <Button
+        variant='ghost'
+        size='sm'
+        className={cn('relative', canBuild && 'rounded-r-none')}
+        disabled={!config?.enabled}
+        title='Open Assistant'
+        aria-label='Work: open Assistant'
+        aria-expanded={open && config?.enabled === true}
+        onClick={() => setAgentOpen(true)}>
+        <Sparkles className={open ? 'text-accent' : undefined} />
+        <span>Work</span>
+        {sessionId && (
+          <span className={`absolute top-1 right-1 size-1.5 rounded-full ${pending ? 'bg-warning' : 'bg-success'}`} />
+        )}
+      </Button>
+      {canBuild && (
+        <Popover>
+          <PopoverTrigger render={<Button variant='ghost' size='sm' className='rounded-l-none border-l border-border px-2' aria-label='More work options' />}>
+            <ChevronDown className='size-3.5' />
+          </PopoverTrigger>
+          <PopoverContent align='end' className='w-40 p-1'>
+            <MenuRow onClick={openBuilder}><Hammer className='size-4' /><span>Build</span></MenuRow>
+          </PopoverContent>
+        </Popover>
       )}
-    </Button>
+    </div>
   )
 }

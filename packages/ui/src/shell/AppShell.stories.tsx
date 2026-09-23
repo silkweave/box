@@ -20,7 +20,7 @@ const Canvas = ({ title }: { title: string }) => (
     <h1 className='text-heading-1 text-text'>{title}</h1>
     {Array.from({ length: 20 }, (_, i) => (
       <p key={i} className='text-body-sm text-muted-foreground'>
-        Canvas line {i + 1}. The shell owns the frame; this is whatever the app put in it.
+        Canvas line {i + 1}. The shell stays flat until an app extension opens a side panel.
       </p>
     ))}
   </div>
@@ -32,6 +32,8 @@ function Shell({ children, activeStart = 'overview' }: { children?: React.ReactN
   return (
     <AppShell
       groupNav={{ ...SAMPLE_GROUP_NAV, activeGroup, onSelectGroup: setActiveGroup }}
+      navigationKey={`${activeGroup}:${activeId}`}
+      scrollResetKey={activeGroup}
       items={SAMPLE_NAV_ITEMS}
       activeId={activeId}
       onSelect={setActiveId}
@@ -49,6 +51,12 @@ function Shell({ children, activeStart = 'overview' }: { children?: React.ReactN
 export const Bare: Story = { args: {} as never, render: () => <Shell /> }
 
 /**
+ * Change groups after scrolling the canvas. The same shell stays mounted while the navigation key
+ * closes the mobile drawer and the section key returns the shell-owned main scroller to the top.
+ */
+export const PersistentNavigation: Story = { args: {} as never, render: () => <Shell /> }
+
+/**
  * What an app actually hangs on it: a feature's bell, a user menu, an aside panel, and its
  * router's link for the wordmark (here a stand-in that only stops the document from reloading).
  */
@@ -57,8 +65,9 @@ export const WithExtensions: Story = {
   render: () => (
     <ShellExtensionsProvider
       value={{
-        homeLink: ({ children, ...rest }) => (
-          <a href='/' onClick={(e) => e.preventDefault()} {...rest}>
+        asideOpen: true,
+        homeLink: ({ children, onClick, ...rest }) => (
+          <a href='/' {...rest} onClick={(e) => { e.preventDefault(); onClick?.(e) }}>
             {children}
           </a>
         ),
@@ -95,6 +104,7 @@ export const MainInert: Story = {
   render: () => (
     <ShellExtensionsProvider
       value={{
+        asideOpen: true,
         mainInert: true,
         aside: (
           <div className='absolute inset-0 bg-surface p-6'>

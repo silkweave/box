@@ -1,11 +1,30 @@
 # Command-line tooling
 
+The public CLI uses the `box` shim at `packages/cli/bin/box`. Register it once with
+`bun --no-env-file packages/cli/src/box-install.ts`; use `--check` to inspect its registration without changing it.
+The installer links it into `~/.local/bin` and reports whether that directory is on PATH.
+`box where` explains which checkout it targets. Auth, database and MCP commands run through
+the selected checkout's CLI; no `bun run` or package-script prefix is needed for these verbs.
+
+## First-run setup
+
+`bun setup` is the guided host-only path immediately after `bun install`; `box setup` is the same
+command once the shim is registered. It confirms the machine principal, asks for the first owner,
+detects `CODEX_HOME`/`~/.codex` and `CLAUDE_CONFIG_DIR`/`~/.claude`, and offers each detected profile
+for configuration. It never reads or prints provider credentials. Marker files are used only to
+warn when provider sign-in may still be required.
+
+Setup creates the first administrator only when no human exists, stores the new access token in
+mode-0600 `box.local.json` for the local MCP proxy, and prints a single-use sign-in link. Re-running
+against a populated Box refuses without rotating anything. For automation and tests, use
+`--owner`, `--name`, `--profiles codex,claude`, `--no-profiles`, and `--yes`.
+
 `box verify` runs the checkout's complete validation chain with a four-phase progress view:
 
 | Phase | Checks, in order |
 |---|---|
 | Build | Workspace build |
-| Prepare | Skill linking, CLI tests, generated types |
+| Prepare | Skill linking, CLI tests, web tests, generated types |
 | Check | Typecheck, lint |
 | Validate | Core tests, server tests, schema matrix |
 
@@ -50,10 +69,81 @@ They use Node-compatible built-ins under Bun, with no React, Ink or additional d
 Verification executes explicit `bun run` commands using the current Bun executable. It does not
 inherit a package-manager executable from npm or pnpm. Each check runs in the selected checkout.
 
-The `box` shim exposes `dev`, `build`, `start`, `start --prod`, and `verify`, alongside auth,
+The **box** shim exposes **dev**, **build**, **start**, **start --prod**, and **verify**, alongside auth,
 database operations, target selection and MCP tools. These explicit verbs take precedence over
-MCP tool names. `box verify` preserves flags and exit status from the selected checkout's runner.
+MCP tool names. **box verify** preserves flags and exit status from the selected checkout's runner.
+
+`box auth login <id>` creates a compact, single-use sign-in URL and offers five seconds to press
+Enter and open it in the default browser. It exits without opening when the countdown reaches zero;
+redirected and non-interactive output never waits. Sign-in URLs use `/login/<grant>`. The current
+`bl2` grant is typically about 50 characters, while unexpired `bl1` grants remain compatible.
+
+Both development and production starts enter the Box supervisor. The supervisor owns the stable
+Builder/recovery surface at **/builder**, its **/builder-assets/** snapshot assets and the
+editable application lifecycle. **box dev** still supplies the development web experience; after
+**box build**, **box start --prod** runs the production application under the same supervisor
+boundary. Builder control actions are authenticated Box operations and do not start a provider
+turn implicitly.
+
+## Development console
+
+`box dev` uses a live terminal view when stdin and stdout are terminals. It keeps the latest 2,000
+supervisor, application and Vite lines in memory, while the selected log level controls only what is
+visible. Raising verbosity therefore reveals earlier buffered messages. Redirected output switches
+to append-only lines.
+
+```sh
+box dev                         # info
+box dev --log-level warn
+box dev --log-level verbose
+box dev --debug                 # alias for --log-level debug
+box dev --plain                 # append-only, no live terminal
+```
+
+Levels are `error`, `warn`, `info`, `verbose`, and `debug`. HTTP, proxy, WebSocket and heartbeat
+diagnostics are debug; lifecycle waits and control operations are verbose. Common Nest route and
+dependency startup messages are verbose. Errors and warnings remain visible at the normal `info`
+level.
+
+In the live view, Up/Down and Page Up/Page Down inspect buffered logs, `v` cycles verbosity, `r`
+restarts the application, `f` restarts the Vite frontend, `c` clears the buffer, and `q` or Ctrl+C
+shuts down cleanly. Vite HMR remains automatic and does not need a shortcut.
 Use `bun run verify` or `packages/cli/bin/box verify` before installing the shim.
 
-See [BUN.md](BUN.md) for the runtime contract. Subprocess cancellation and live rendering are
+See [BUN.md](BUN.md) for the runtime migration. Subprocess cancellation and live rendering are
 exercised on macOS/POSIX. Windows uses `taskkill`; Windows behavior has not been field-tested.
+
+`box builder refresh` rebuilds the saved Builder UI through the running local supervisor. It keeps
+the current version if the build fails and does not restart the shared session. Open Builder tabs
+offer a reload after success. See [Builder](BUILDER.md#refresh-the-builder-ui).
+
+## Builder browser control
+
+`box builder browser` controls the first available Builder Preview from the local host. Use
+the session id supplied by Builder. The command works with both Codex and Claude sessions without injecting MCP tools into
+the engine. It uses the owner-only `data/builder/browser.sock` transport and keeps browser control
+separate from WorkerDeck frames.
+
+```sh
+box builder browser --session <session-id> snapshot
+box builder browser --session <session-id> inspect '{"ref":"dom-preview-1"}'
+box builder browser --session <session-id> click '{"ref":"dom-preview-1"}'
+box builder browser --session <session-id> type '{"ref":"dom-preview-1","text":"hello"}'
+box builder browser --session <session-id> select '{"ref":"dom-preview-2","value":"active"}'
+box builder browser --session <session-id> scroll '{"x":0,"y":600}'
+box builder browser --session <session-id> style '{"ref":"dom-preview-1","styles":{"backgroundColor":"#eef"}}'
+box builder browser --session <session-id> navigate '{"path":"/signals"}'
+box builder browser --session <session-id> screenshot
+```
+
+Operations return bounded JSON. `snapshot` creates bounded DOM references for `inspect`, `click`,
+`type`, `select`, `scroll`, and `style`; `screenshot` saves a DOM PNG under `_docs/browser/` and
+returns its absolute path. Preview control is revoked by navigation or reload, disconnecting the
+selected browser, or five minutes without an action. Switching to Files or Review keeps Preview
+control available.
+Authentication and settings routes, private fields, secret-like controls, scripts, frames, media,
+and cross-origin assets are excluded. DOM screenshots are capped at 1600 pixels per side and 4 MB
+and do not embed fonts. Click rejects native form submission, new-tab links, and downloads. Secret
+detection is heuristic and DOM capture is bounded; this is not an OS sandbox or an OS-level screen
+capture. Navigation is queued, then invalidates the old references when the route changes; take a
+fresh snapshot after granting the new Preview state, because navigation has no full after snapshot.

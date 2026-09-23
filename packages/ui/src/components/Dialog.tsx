@@ -17,7 +17,7 @@ export const DialogContent: FunctionComponent<DialogPrimitive.Popup.Props & { sh
     <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop
         data-slot='dialog-backdrop'
-        className='fixed inset-0 z-50 bg-text/30 backdrop-blur-[1px] duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0'
+        className='fixed inset-0 z-50 bg-black/55 backdrop-blur-[1px] duration-150 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0'
       />
       <DialogPrimitive.Popup
         data-slot='dialog-content'

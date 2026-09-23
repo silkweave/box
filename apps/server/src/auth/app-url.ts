@@ -24,12 +24,12 @@ export function appUrl(): string {
 /**
  * The URL a person opens to sign in with a short-lived grant (core's auth/link.ts).
  *
- * Deliberately an SPA route carrying the grant in the QUERY, not a server `GET` that consumes it.
+ * Deliberately an SPA route carrying the grant in the PATH, not a server `GET` that consumes it.
  * Link unfurlers (Lark, Slack) and URL detonators (SafeLinks, Defender) fetch a URL the moment it is
  * pasted; if the fetch consumed the grant, a single-use link would be burned before the human ever
  * clicked it, and they would be told it was "already used". A bot that fetches this URL gets
  * index.html and nothing happens - consumption takes a POST that only the click makes.
  */
 export function signinLinkUrl(grant: string): string {
-  return `${appUrl()}/login?link=${encodeURIComponent(grant)}`
+  return `${appUrl()}/login/${encodeURIComponent(grant)}`
 }

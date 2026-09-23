@@ -1,3 +1,4 @@
+import { useSettingsDialog } from '../lib/settingsDialog.ts'
 import { useAuth } from '../lib/useAuth.tsx'
 import * as React from 'react'
 import {
@@ -15,7 +16,7 @@ import {
   Upload,
   type LucideIcon,
 } from 'lucide-react'
-import { Avatar, Badge, type BadgeProps, Button, confirm, Dialog, DialogContent, DialogDescription, DialogTitle, PageContainer, PageHeader, Popover, PopoverContent, PopoverTrigger } from '@silkweave/box-ui'
+import { Avatar, Badge, type BadgeProps, Button, confirm, InlineDialog as Dialog, InlineDialogContent as DialogContent, InlineDialogDescription as DialogDescription, InlineDialogTitle as DialogTitle, PageContainer, PageHeader, Popover, PopoverContent, PopoverTrigger } from '@silkweave/box-ui'
 import { ChannelGlyph } from '@/lib/channelIcons.tsx'
 import {
   deleteUser,
@@ -48,7 +49,11 @@ type DialogState = { mode: 'new' } | { mode: 'edit'; user: User } | null
  */
 export function UsersView() {
   const { all: users, error } = useUsersData()
-  const [dialog, setDialog] = React.useState<DialogState>(null)
+  const { params, open } = useSettingsDialog()
+  const selectedUser = users?.find((u) => u.id === params[0])
+  const dialog: DialogState = params[0] === 'new' ? { mode: 'new' } : selectedUser ? { mode: 'edit', user: selectedUser } : null
+  const setDialog = (next: DialogState) => open(next ? `users/${next.mode === 'new' ? 'new' : next.user.id}` : 'users')
+  const [failure, setFailure] = React.useState<string | null>(null)
   const [invite, setInvite] = React.useState<UserInvite | null>(null)
   const [link, setLink] = React.useState<UserSigninLink | null>(null)
 
@@ -57,11 +62,11 @@ export function UsersView() {
   const onDelete = async (u: User) => {
     const message = 'They will be unassigned from any initiatives and tasks.'
     if (!(await confirm({ title: `Delete ${userName(u)}?`, message, confirmLabel: 'Delete', danger: true }))) return
-    void deleteUser(u.id).catch((e) => window.alert(String(e)))
+    void deleteUser(u.id).catch((e) => setFailure(String(e)))
   }
 
   return (
-    <PageContainer width='wide'>
+    <PageContainer width='wide' className='md:px-6'>
       <PageHeader
         title='Users'
         description='Everyone with a principal. Each signs in with a short-lived sign-in link, or with their own access token.'
@@ -74,6 +79,7 @@ export function UsersView() {
         }
       />
 
+      {failure && <p role='alert' className='mb-4 text-body-sm text-danger'>{failure}</p>}
       {error && <p className='mb-4 text-body-sm text-danger'>Failed to load users: {error}</p>}
 
       {!users ? (
@@ -221,12 +227,13 @@ function MoreMenu({
 }) {
   const [open, setOpen] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
+  const [failure, setFailure] = React.useState<string | null>(null)
   const isDisabled = user.status === 'revoked'
 
   const run = (fn: () => Promise<void>) => {
     setBusy(true)
     void fn()
-      .catch((e) => window.alert(String(e)))
+      .catch((e) => setFailure(String(e)))
       .finally(() => {
         setBusy(false)
         setOpen(false)
@@ -274,30 +281,33 @@ function MoreMenu({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger onClick={(e) => e.stopPropagation()} title='More actions' className={actionBtnCls}>
-        <MoreHorizontal className='size-3.5' /> More
-      </PopoverTrigger>
-      <PopoverContent align='end' className='w-60 gap-0.5 p-1.5'>
-        {!isDisabled && (
-          <>
-            <MenuItem icon={Send} disabled={busy} onClick={sendSigninLink}>
-              Send sign-in link
-            </MenuItem>
-            <MenuItem icon={Link2} disabled={busy} onClick={viewInvitation}>
-              {user.has_token ? 'View access token' : 'Create access token'}
-            </MenuItem>
-            {user.has_token && (
-              <MenuItem icon={KeyRound} disabled={busy} onClick={rotate}>
-                Rotate access token
+    <>
+      {failure && <span role='alert' className='text-body-sm text-danger'>{failure}</span>}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger onClick={(e) => e.stopPropagation()} title='More actions' className={actionBtnCls}>
+          <MoreHorizontal className='size-3.5' /> More
+        </PopoverTrigger>
+        <PopoverContent align='end' className='w-60 gap-0.5 p-1.5'>
+          {!isDisabled && (
+            <>
+              <MenuItem icon={Send} disabled={busy} onClick={sendSigninLink}>
+                Send sign-in link
               </MenuItem>
-            )}
-            {!isSelf && (
-              <MenuItem icon={ShieldOff} disabled={busy} danger onClick={disable}>
-                Disable user
+              <MenuItem icon={Link2} disabled={busy} onClick={viewInvitation}>
+                {user.has_token ? 'View access token' : 'Create access token'}
               </MenuItem>
-            )}
-          </>
+              {user.has_token && (
+                <MenuItem icon={KeyRound} disabled={busy} onClick={rotate}>
+                  Rotate access token
+                </MenuItem>
+              )}
+              {!isSelf && (
+                <MenuItem icon={ShieldOff} disabled={busy} danger onClick={disable}>
+                  Disable user
+                </MenuItem>
+              )}
+
+    </>
         )}
         {isDisabled && (
           <MenuItem icon={ShieldCheck} disabled={busy} onClick={enable}>
@@ -306,6 +316,7 @@ function MoreMenu({
         )}
       </PopoverContent>
     </Popover>
+    </>
   )
 }
 

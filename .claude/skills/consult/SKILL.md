@@ -89,7 +89,7 @@ non-trivial.
 | "support a teammate's post" | `engagement` | Pods / engagement | engage queue → `/engage <pod-content-id>` | `features/engagement/SPEC.md` |
 | "how are my posts / numbers doing" | `data` | Signals | dashboard Signals; "update signals" = fresh snapshot | `docs/WAREHOUSE.md` |
 | "track this work / what are we working on" | `planning` | Planning | dashboard Initiatives; `/ingest-sink` (work route) | `features/planning/SPEC.md` |
-| "I can't log in / need access / a link" | - | Users/auth | Send a sign-in link: Settings → Users → **Send sign-in link**, `bun run cli user-link`, or `box auth link <id>`. Short-lived, single-use, safe to send | `docs/AUTH.md` § 1.7 |
+| "I can't log in / need access / a link" | - | Users/auth | Send a sign-in link: Settings → Users → **Send sign-in link**, `bun run cli user-link`, or `box auth login <id>`. Short-lived, single-use, safe to send | `docs/AUTH.md` § 1.7 |
 | "lost my token / my MCP config needs it" | - | Users/auth | an admin reveals it (Settings → Users → **View access token**, or `box auth reveal <id>` on the host). NEVER `user-invite` - that rotates. Read Step 2a first | `docs/AUTH.md` § First run |
 | "my MCP won't connect / no `box` tools / everything 401s" | - | Access | diagnose with Step 2b before anything else | `docs/SERVER.md` § 7 (running and serving) |
 | "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `features/automation/SPEC.md` + `features/alerts/SPEC.md` |

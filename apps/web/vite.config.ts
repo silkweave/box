@@ -3,6 +3,7 @@ import { defineConfig, defaultClientConditions } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import tailwindcss from '@tailwindcss/vite'
 import { dirname } from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath, URL } from 'node:url'
 import { APP_STORAGE_PREFIX } from './src/lib/storagePrefix.ts'
 import { readBoxConfig } from '@silkweave/box-core/box-json'
@@ -16,6 +17,8 @@ import { readBoxConfig } from '@silkweave/box-core/box-json'
 // Both ports use the merged root configuration. Vite's own dotenv loading is disabled.
 // The config reader imports only Node builtins and is safe to load before workspace builds.
 const root = fileURLToPath(new URL('.', import.meta.url))
+const require = createRequire(import.meta.url)
+const monacoEditorWorker = require.resolve('monaco-editor/editor/editor.worker.js') as string
 const box = readBoxConfig(dirname(boxJsonPath))
 
 // index.html's no-flash script has to resolve the persisted theme BEFORE any module loads, so it
@@ -34,16 +37,21 @@ const vitePort = box.server.vitePort
 const serverPort = box.server.port
 const serverUrl = `http://localhost:${serverPort}`
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root,
   envDir: false,
   base: '/',
   plugins: [react(), tailwindcss(), themeKey, brandingPlugin(box.brand)],
   resolve: {
+    // Local WorkerDeck packages must share the dashboard's React instance.
+    dedupe: ['react', 'react-dom'],
     // Prepend the @silkweave/box-source condition so any future workspace-package import resolves to its TS
     // source in dev (no build step); harmless today since the SPA imports no workspace package.
     conditions: ['@silkweave/box-source', ...defaultClientConditions],
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+      { find: 'monaco-editor/editor/editor.worker.js', replacement: monacoEditorWorker },
+    ],
   },
   server: {
     port: vitePort,
@@ -68,5 +76,12 @@ export default defineConfig({
       '/api': { target: serverUrl, changeOrigin: true },
     },
   },
-  build: { target: 'es2022' },
-})
+  build: {
+    target: 'es2022',
+    rollupOptions: { input: mode === 'builder' ? fileURLToPath(new URL('./builder.html', import.meta.url)) : { app: fileURLToPath(new URL('./index.html', import.meta.url)), builder: fileURLToPath(new URL('./builder.html', import.meta.url)) } },
+    // This full-featured Box ships a ~2.3 MB dashboard chunk. Keep a 3 MB budget
+    // for meaningful growth warnings without splitting modules solely for size.
+    chunkSizeWarningLimit: 3000,
+  },
+  optimizeDeps: { exclude: ['monaco-editor'] },
+}))

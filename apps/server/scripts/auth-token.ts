@@ -44,6 +44,7 @@ import {
   systemUserId,
 } from '@silkweave/box-core'
 import { appUrl, signinLinkUrl } from '../src/auth/app-url.js'
+import { commandError, commandHeader, commandLine, commandSuccess, commandValue, commandWarning } from '../../../packages/cli/src/command-ui.js'
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
@@ -57,8 +58,8 @@ async function main(): Promise<void> {
   const positional = argv.filter((a, i) => !a.startsWith('--') && (nameAt < 0 || i !== nameAt + 1))
   const [id, actor] = positional
   if (!id) {
-    console.error('usage: box auth token <user-id> [actor] [--create] [--rotate] [--admin] [--quiet] [--name "Full Name"]')
-    console.error('       box auth reveal <user-id>     # show the CURRENT token without rotating')
+    commandError('Usage: box auth token <user-id> [actor] [--create] [--rotate] [--admin] [--quiet] [--name "Full Name"]')
+    commandLine('Existing token: box auth reveal <user-id>', 'muted')
     process.exit(1)
   }
   if (nameAt >= 0 && (!name?.trim() || name.startsWith('--'))) {
@@ -87,67 +88,56 @@ async function main(): Promise<void> {
     await upsertUser({ id, nickname: id, first_name: first ?? id, last_name: rest.join(' ') })
     if (!populated) promote = true
     principal = (await resolvePrincipalById(id))!
-    console.log(populated ? `created "${id}" as ${promote ? 'admin' : 'member'}` : `this Box had no users - created "${id}" as admin`)
+    commandSuccess(populated ? `Created "${id}" as ${promote ? 'admin' : 'member'}` : `Created first user "${id}" as admin`)
   }
   if (promote && principal.role !== 'admin') {
     await setPrincipalRole(id, 'admin')
-    console.log(`"${id}" is now an admin`)
+    commandSuccess(`"${id}" is now an admin`)
   }
 
   // Guard the common footgun: someone who just lost their token mints a new one and silently kills
   // every MCP connection and bookmarked magic link that carried the old one.
   if (!rotate && (await revealPrincipalToken(id))) {
-    console.error(`"${id}" already has an active access token, and each user has only ONE.`)
-    console.error('')
-    console.error('  To SEE the existing token (nothing breaks):   box auth reveal ' + id)
-    console.error('  To REPLACE it (the old one dies instantly):   box auth token ' + id + ' --rotate')
-    console.error('')
-    console.error('Only rotate if the token leaked or is genuinely lost. Rotating breaks every place')
-    console.error('it was pasted: MCP server configs, saved magic links, scripts, other machines.')
+    commandError(`"${id}" already has an active access token.`)
+    commandLine(`Show it:    box auth reveal ${id}`, 'muted')
+    commandLine(`Replace it: box auth token ${id} --rotate`, 'muted')
+    commandWarning('Replacing it disconnects every client using the current token.')
     process.exit(1)
   }
 
   const token = await issuePrincipalToken(id, actor)
-  const verb = rotate ? 'ROTATED - the previous token is now dead' : 'minted'
+  const verb = rotate ? 'rotated' : 'minted'
+  commandHeader('auth token')
   if (quiet) {
     // --quiet exists so an agent can mint on someone's behalf without the permanent token landing in
     // a transcript (that is how the 2026-08-20 exposure happened). It now prints a SIGN-IN LINK
     // instead of nothing: short-lived and single-use, so it is safe there, and the person can
     // actually get in without a second round trip.
-    console.log(`access token ${verb} for "${id}" (${principal.display}); the token itself is not printed.`)
+    commandSuccess(`Access token ${verb} for ${principal.display}; the token itself is not printed.`)
     if (id === systemUserId()) return
     const { grant, claims } = await issueSigninLink(id)
-    console.log('')
-    console.log(`sign in (expires ${new Date(claims.exp).toISOString()}, works once):`)
-    console.log(`  ${signinLinkUrl(grant)}`)
-    console.log('')
-    console.log(`For their MCP config they run:  box auth reveal ${id}`)
+    commandLine('Sign in once:', 'muted')
+    commandValue(signinLinkUrl(grant))
+    commandLine(`Expires ${new Date(claims.exp).toISOString()}`, 'muted')
+    commandLine(`MCP token: box auth reveal ${id}`, 'muted')
     return
   }
-  console.log(`access token ${verb} for "${id}" (${principal.display}):\n`)
-  console.log(`  ${token}\n`)
-  console.log('SAVE IT NOW - permanently, in a password manager (1Password/Keychain), not a chat message.')
-  console.log('  - It does NOT expire. Keep it and you never need another one.')
-  console.log('  - It is shown once here. Later you can re-read it with `box auth reveal ' + id + '`')
-  console.log('    (admin-only) or Settings -> Users -> ... -> View access token.')
-  console.log('  - It is the ONE token for this user: browser login AND every MCP connection.')
-  console.log('    Minting another one revokes this one instantly and breaks all of them.')
-  console.log('  - Never put it in a URL. It is a password, and a URL is not a place for one.')
-  console.log('')
+  commandSuccess(`Access token ${verb} for ${principal.display}`)
+  commandValue(token)
+  commandWarning(`Save this permanent credential in a password manager. Show it later with: box auth reveal ${id}`)
   // A fresh Box's first act should not be "paste a 32-character secret into a browser". Mint the
   // link here so the very first sign-in is a click, and the token can go straight to a password
   // manager without ever being retyped.
   if (id === systemUserId()) return
-  const { grant, claims } = await issueSigninLink(id)
-  console.log(`sign in now (expires ${new Date(claims.exp).toISOString()}, works once):`)
-  console.log(`  ${signinLinkUrl(grant)}`)
-  console.log('')
-  console.log(`Or paste the token at ${appUrl()}/. Later links: box auth link ${id}`)
+  const { grant } = await issueSigninLink(id)
+  commandLine('Sign in once:', 'muted')
+  commandValue(signinLinkUrl(grant))
+  commandLine(`Or paste the token at ${appUrl()}/ · later: box auth login ${id}`, 'muted')
 }
 
 main()
   .then(() => process.exit(0))
   .catch((err) => {
-    console.error(err)
+    commandError(err instanceof Error ? err.message : String(err))
     process.exit(1)
   })

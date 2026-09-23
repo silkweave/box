@@ -11,6 +11,8 @@ export interface CrumbMenuItem {
 }
 
 export interface Crumb {
+  /** Stable route or record identity used to reset rename/menu state when the crumb's subject changes. */
+  key?: React.Key
   label: string
   onClick?: () => void
   /** When set (typically on the last crumb), the crumb renders as a quick-switch dropdown. */
@@ -75,7 +77,7 @@ function Breadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (
-          <React.Fragment key={`${crumb.label}-${i}`}>
+          <React.Fragment key={crumb.key ?? `${crumb.label}-${i}`}>
             {i > 0 && <ChevronRight className='size-3.5 shrink-0 text-muted-foreground' />}
             {crumb.menu && crumb.menu.length > 0 && crumb.onRename ? (
               // Both: the crumb IS the name field, and the chevron beside it jumps to a sibling.

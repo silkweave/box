@@ -108,6 +108,16 @@
   /* ---------- claudepad-compatible aliases ---------- */
   --surface: var(--bg-surface);
   --sidebar: #f5f5f8;
+  --sidebar-group-bg: #ffffff;
+  --sidebar-group-border: #dedee8;
+  /* Override this solid primary to recolor the header and its sub-item states together. */
+  --sidebar-primary: #7a7efe;
+  --sidebar-primary-text: #ffffff;
+  --sidebar-item-hover: color-mix(in srgb, var(--sidebar-primary) 10%, transparent);
+  --sidebar-item-selected: color-mix(in srgb, var(--sidebar-primary) 18%, transparent);
+  --sidebar-item-selected-border: color-mix(in srgb, var(--sidebar-primary) 24%, transparent);
+  --sidebar-item-selected-text: var(--fg-1);
+  --sidebar-item-selected-icon: var(--sidebar-primary);
   --text: var(--fg-1);
   --text-muted: var(--fg-3);
   --accent-tint: var(--accent-bg);
@@ -198,6 +208,16 @@
   /* App canvas behind the inset frame (and the sidebar on it): clearly lighter than --bg so the
      framed content panel reads as its own darker surface in dark mode. */
   --sidebar: #16161f;
+  --sidebar-group-bg: #1d1d29;
+  --sidebar-group-border: #30303f;
+  /* Override this solid primary to recolor the header and its sub-item states together. */
+  --sidebar-primary: #7a7efe;
+  --sidebar-primary-text: #ffffff;
+  --sidebar-item-hover: color-mix(in srgb, var(--sidebar-primary) 10%, transparent);
+  --sidebar-item-selected: color-mix(in srgb, var(--sidebar-primary) 18%, transparent);
+  --sidebar-item-selected-border: color-mix(in srgb, var(--sidebar-primary) 24%, transparent);
+  --sidebar-item-selected-text: var(--fg-1);
+  --sidebar-item-selected-icon: var(--sidebar-primary);
   --text: var(--fg-1);
   --text-muted: var(--fg-3);
   --accent-tint: var(--accent-bg);
@@ -232,6 +252,10 @@
     #134fb4 75%,
     #37c9d9 100%
   );
+  /* Active palette matches packages/cli/src/ui.ts. */
+  --silk-gradient-active: linear-gradient(110deg, #c5a3e8, #a3a4e8, #7b7ef5, #8aaeea, #a8e5ed);
+  --silk-gradient-active-text: #242238;
+
   --silk-gradient-soft: linear-gradient(
     135deg,
     #e8a9e9 0%,

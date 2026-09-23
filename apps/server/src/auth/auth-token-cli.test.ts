@@ -36,7 +36,7 @@ function commands(data: string) {
     const result = token(...args)
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('the token itself is not printed')
-    expect(result.stdout).toContain('/login?link=')
+    expect(result.stdout).toContain('/login/bl2.')
     expect(result.stdout).not.toMatch(/^\s+[A-Za-z0-9_-]{32}\s*$/m)
     return result
   }
@@ -94,7 +94,7 @@ test('custom agent tokens work without browser links, and host role changes pres
   configure('orion')
   const minted = token('orion')
   expect(minted.status, minted.stderr).toBe(0)
-  expect(minted.stdout).not.toContain('/login?link=')
+  expect(minted.stdout).not.toContain('/login/bl2.')
   expect(minted.stdout).not.toMatch(/^\s+[A-Za-z0-9_-]{32}\s*$/m)
   const initial = state('orion')
   expect(initial.user?.first_name).toBe('Orion')

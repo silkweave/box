@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { LogIn } from 'lucide-react'
-import { Wordmark, Button } from '@silkweave/box-ui'
+import { Copy, LogIn, Terminal } from 'lucide-react'
+import { Wordmark, Badge, Button } from '@silkweave/box-ui'
 import { useAuth } from '../lib/useAuth.tsx'
 
 // The sign-in gate, shown whenever there is no session. Two ways in, and they are different
 // credentials (see apps/server/src/auth/auth.controller.ts):
 //
-//   - A SIGN-IN LINK (`?link=<grant>`): short-lived, single-use, safe to send someone. The normal
+//   - A SIGN-IN LINK (`/login/<grant>`, normalized to transient query state by router.tsx):
 //     path for a person who is not set up yet.
 //   - An ACCESS TOKEN, pasted: the permanent credential, the same one their MCP client uses. For
 //     someone who kept theirs.
@@ -39,8 +39,12 @@ function grantSubject(grant: string): string | null {
   try {
     const payload = grant.split('.')[1]
     if (!payload) return null
-    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
-    const sub = (JSON.parse(json) as { sub?: unknown }).sub
+    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+    if (grant.startsWith('bl2.')) {
+      if (decoded.length < 11) return null
+      return new TextDecoder().decode(Uint8Array.from(decoded.slice(10), char => char.charCodeAt(0))) || null
+    }
+    const sub = (JSON.parse(decoded) as { sub?: unknown }).sub
     return typeof sub === 'string' && sub ? sub : null
   } catch {
     return null
@@ -48,10 +52,11 @@ function grantSubject(grant: string): string | null {
 }
 
 export function LoginView() {
-  const { login, loginWithLink } = useAuth()
+  const { login, loginWithLink, needsOwner } = useAuth()
   const [token, setToken] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   // Captured once, on mount. The URL is scrubbed immediately afterwards so the grant does not sit in
   // the address bar to be screenshotted, shoulder-read or copied out of a shared screen, and so Back
@@ -99,10 +104,17 @@ export function LoginView() {
   }
 
   const subject = grant ? grantSubject(grant) : null
+  const bootstrapCommand = 'bun setup'
+
+  const copyBootstrap = async (): Promise<void> => {
+    await navigator.clipboard.writeText(bootstrapCommand)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1600)
+  }
 
   return (
     <div className='flex h-dvh w-full items-center justify-center bg-bg px-4 text-text'>
-      <div className='w-full max-w-sm'>
+      <div className={`w-full ${needsOwner && !grant ? 'max-w-4xl' : 'max-w-sm'}`}>
         <div className='mb-8 flex justify-center'>
           <Wordmark />
         </div>
@@ -133,25 +145,35 @@ export function LoginView() {
               Use an access token instead
             </button>
           </div>
+        ) : needsOwner ? (
+          <div className='grid overflow-hidden rounded-xl border border-border bg-surface shadow-(--shadow-md) md:grid-cols-[1.1fr_0.9fr]'>
+            <section className='p-6 md:p-8'>
+              <Badge variant='silk'>First run</Badge>
+              <h1 className='mt-5 font-serif text-display-md'>Set up the owner of this Box</h1>
+              <p className='mt-2 max-w-lg text-body-sm leading-relaxed text-muted-foreground'>
+                This Box is running, but it has no human account yet. Guided setup creates the owner and connects any local Codex or Claude profiles without opening a network signup window.
+              </p>
+              <ol className='mt-6 space-y-5 text-body-sm'>
+                <li className='flex gap-3'><StepNumber value='1' /><div><p className='font-medium text-text'>Open another terminal in this checkout</p><p className='mt-1 text-muted-foreground'>Leave <code>bun dev</code> running.</p></div></li>
+                <li className='flex gap-3'><StepNumber value='2' /><div className='min-w-0 flex-1'><p className='font-medium text-text'>Run guided setup</p><div className='mt-2 flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2'><Terminal className='size-4 shrink-0 text-accent' /><code className='min-w-0 flex-1 overflow-x-auto text-label'>{bootstrapCommand}</code><Button variant='ghost' size='icon-xs' aria-label='Copy command' onClick={() => void copyBootstrap()}><Copy /></Button></div><p className='mt-1 text-label text-muted-foreground'>{copied ? 'Copied.' : 'Confirm the machine identity, choose the owner, and accept any detected provider profiles.'}</p></div></li>
+                <li className='flex gap-3'><StepNumber value='3' /><div><p className='font-medium text-text'>Open the printed sign-in link</p><p className='mt-1 text-muted-foreground'>It is short-lived and single-use. The permanent owner token stays out of terminal output.</p></div></li>
+              </ol>
+            </section>
+            <form onSubmit={submit} className='flex flex-col justify-center gap-4 border-t border-border bg-bg/50 p-6 md:border-l md:border-t-0 md:p-8'>
+              <div><h2 className='text-heading-3 font-semibold'>Manual fallback</h2><p className='mt-1 text-body-sm text-muted-foreground'>If you created the owner without guided setup, paste that owner's access token.</p></div>
+              <TokenInput token={token} setToken={setToken} />
+              {error && <p className='text-body-sm text-destructive'>{error}</p>}
+              <Button type='submit' disabled={!token.trim() || busy}><LogIn />{busy ? 'Signing in…' : 'Sign in as owner'}</Button>
+            </form>
+          </div>
         ) : (
-          <form
-            onSubmit={submit}
-            className='flex flex-col gap-4 rounded-xl border border-border bg-surface p-6 shadow-(--shadow-md)'>
+          <form onSubmit={submit} className='flex flex-col gap-4 rounded-xl border border-border bg-surface p-6 shadow-(--shadow-md)'>
             <div>
               <h1 className='text-heading-3 font-semibold'>Sign in</h1>
               <p className='mt-1 text-body-sm text-muted-foreground'>Paste your access token to continue.</p>
             </div>
             {notice && <p className='text-body-sm text-muted-foreground'>{notice}</p>}
-            <input
-              type='password'
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder='Access token'
-              autoFocus
-              autoComplete='off'
-              aria-label='Access token'
-              className='h-9 rounded-md border border-border bg-bg px-3 text-body-sm outline-none transition-colors focus-visible:border-accent'
-            />
+            <TokenInput token={token} setToken={setToken} />
             {error && <p className='text-body-sm text-destructive'>{error}</p>}
             <Button type='submit' disabled={!token.trim() || busy}>
               <LogIn />
@@ -162,4 +184,12 @@ export function LoginView() {
       </div>
     </div>
   )
+}
+
+function StepNumber({ value }: { value: string }) {
+  return <span className='flex size-6 shrink-0 items-center justify-center rounded-full bg-accent-bg text-label font-semibold text-accent'>{value}</span>
+}
+
+function TokenInput({ token, setToken }: { token: string; setToken: (value: string) => void }) {
+  return <input type='password' value={token} onChange={(event) => setToken(event.target.value)} placeholder='Access token' autoFocus autoComplete='off' aria-label='Access token' className='h-9 rounded-md border border-border bg-bg px-3 text-body-sm outline-none transition-colors focus-visible:border-accent' />
 }

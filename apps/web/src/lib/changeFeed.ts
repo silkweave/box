@@ -11,6 +11,7 @@
 // been missed, so every loaded store reloads.
 
 import { trpc } from './trpc.ts'
+import { whilePageActive } from './pageLifecycle.ts'
 
 interface ChangeEvent {
   seq: number
@@ -89,12 +90,22 @@ const reloadAll = (): void => {
 
 let started = false
 let sawHello = false
+let active = false
+let activeSub: { unsubscribe(): void } | undefined
+let retry: number | undefined
+
+function reconnect(): void {
+  if (!active || retry !== undefined) return
+  retry = window.setTimeout(() => { retry = undefined; connect() }, RETRY_MS)
+}
 
 function connect(): void {
+  if (!active) return
   const sub = trpc.changesFeed.subscribe(
     {},
     {
       onData: (raw) => {
+        if (activeSub !== sub) return
         const ev = raw as ChangeEvent
         if (ev.scope === 'ping') return
         if (ev.scope === 'hello') {
@@ -108,19 +119,35 @@ function connect(): void {
       // The SSE link reconnects transient drops itself; these fire on fatal errors (auth expiry,
       // server gone during a deploy) - back off and resubscribe from scratch.
       onError: () => {
+        if (activeSub !== sub) return
+        activeSub = undefined
         sub.unsubscribe()
-        window.setTimeout(connect, RETRY_MS)
+        reconnect()
       },
       onComplete: () => {
-        window.setTimeout(connect, RETRY_MS)
+        if (activeSub !== sub) return
+        activeSub = undefined
+        reconnect()
       },
     },
   )
+  activeSub = sub
 }
 
 /** Start the feed (idempotent). Called from the auth gate once a session is established. */
 export function startChangeFeed(): void {
   if (started) return
   started = true
-  connect()
+  whilePageActive(() => {
+    active = true
+    connect()
+    return () => {
+      active = false
+      const sub = activeSub
+      activeSub = undefined
+      sub?.unsubscribe()
+      if (retry !== undefined) clearTimeout(retry)
+      retry = undefined
+    }
+  })
 }

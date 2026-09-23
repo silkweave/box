@@ -16,10 +16,10 @@ const task = (id: string, code: string, phase = 'Build'): Task => ({
 })
 function cleanup(state: RunState): void { rmSync(state.logDirectory, { recursive: true, force: true }) }
 
-test('verify keeps the nine-command order and package-manager entry point', () => {
+test('verify keeps the ten-command order and package-manager entry point', () => {
   const tasks = verifyTasks('/example/bun')
   assert.deepEqual(tasks.map(t => t.command), [
-    'bun run build', 'bun run skills', 'bun run test:cli', 'bun run typegen', 'bun run typecheck', 'bun run lint',
+    'bun run build', 'bun run skills', 'bun run test:cli', 'bun run test:web', 'bun run typegen --quiet', 'bun run typecheck', 'bun run lint',
     'bun run --filter @silkweave/box-core test', 'bun run --filter @silkweave/box-server test', 'bun run schema:check',
   ])
   assert.ok(tasks.every(t => t.executable === '/example/bun'))
@@ -91,7 +91,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'verify-cli-')))
   const source = join(root, 'packages/cli/src')
   mkdirSync(source, { recursive: true })
-  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'typegen', 'typecheck', 'lint', 'schema:check'].map(name => [name, `bun fixture.cjs ${name}`]))
+  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'test:web', 'typegen', 'typecheck', 'lint', 'schema:check'].map(name => [name, `bun fixture.cjs ${name}`]))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module', workspaces: ['packages/*'], scripts }))
   for (const name of ['core', 'server']) {
     mkdirSync(join(root, 'packages', name), { recursive: true })
@@ -108,7 +108,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
     const plain = exec('--plain')
     logs.push(plain.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
     assert.equal(plain.status, 0, plain.stdout + plain.stderr)
-    assert.match(plain.stdout, /9\/9 checks/)
+    assert.match(plain.stdout, /10\/10 checks/)
     assert.ok(!plain.stdout.includes('child-detail') && !plain.stdout.includes('\x1b'))
     const verbose = exec('--verbose')
     logs.push(verbose.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
