@@ -5,12 +5,13 @@ import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { boxBrand, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, rateLimit, setMaintenanceOverride, setSecurityHeaders } from '@silkweave/box-core'
+import { SESSION_COOKIE, boxBrand, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, parseCookies, rateLimit, repoRoot, resolvePrincipalById, setMaintenanceOverride, setSecurityHeaders, verifySession } from '@silkweave/box-core'
 import { AppModule } from './app.module.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
 import { servicePort, verifyLoopback } from './agent/loopback-guard.js'
 import { AuthGuard } from './auth/auth.guard.js'
+import { createDevProxyGuard, devSourceScope } from './auth/dev-proxy-guard.js'
 
 // Reserved path prefixes the SPA front door must NOT swallow - they belong to Nest (REST under the
 // global `api` prefix, plus the silkweave-registered /trpc + /mcp transports) or, for /agent, to
@@ -126,10 +127,28 @@ async function bootstrap(): Promise<void> {
     // effect in dev: every upgrade was handled twice, the agent's included. Same bug class as the
     // a4f1649 incident on the agent proxy.
     devProxy = createProxyMiddleware({ target: viteDevUrl, ws: false, changeOrigin: false })
+    // Vite is a file server, and this proxy puts it on the Box origin before anyone signs in: the
+    // login page IS the SPA, so an anonymous browser must load the whole module graph (apps/,
+    // packages/, features/, the Bun store) through here. On 2026-09-23 `/@fs/<checkout>/box.local.json`
+    // came back with the session secret. vite.config.ts now limits `fs.allow` to those
+    // directories; this guard enforces its own copy of that list a second time (apps/web rather
+    // than apps/, and never node_modules/.cache), on the decoded, realpath'd target, and refuses
+    // the encodings Vite has been bypassed through, so a Vite regression or a loosened allow list
+    // does not reopen it. Deliberately no session bypass for `/@fs/`: a member needs the same
+    // directories as the login page, and instance state is not source. See auth/dev-proxy-guard.ts.
+    const devGuard = createDevProxyGuard({
+      scope: devSourceScope(repoRoot()),
+      authenticate: async (req) => {
+        const claims = verifySession(parseCookies(req.headers.cookie)[SESSION_COOKIE])
+        return claims !== null && (await resolvePrincipalById(claims.sub)) !== null
+      },
+      onRefuse: (req, verdict) => diagnostic('app', 'dev-proxy.refused', { verdict, url: req.url, ip: clientIp(req) }),
+    })
     app.use((req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
       // Strip the query string so `/mcp?session=…` etc. still match the reserved set.
       const path = (req.url ?? '/').split('?', 1)[0]
-      return RESERVED.test(path) ? next() : devProxy!(req, res, next)
+      if (RESERVED.test(path)) return next()
+      devGuard(req, res, () => devProxy!(req, res, next))
     })
   }
 
@@ -140,13 +159,16 @@ async function bootstrap(): Promise<void> {
   const port = servicePort()
   const listenPort = INTERNAL_PORT ?? port
   if (INTERNAL_PORT !== undefined) await app.listen(listenPort, '127.0.0.1')
-  else await app.listen(listenPort)
+  else await app.listen(listenPort, boxJson().server.host)
 
   diagnostic('app', 'listening', { port: listenPort, durationMs: Math.round(performance.now() - started) })
 
   // WebSocket upgrades bypass the express request pipeline, so dispatch them on the raw http.Server
   // by path: /agent sockets go to the authenticated agent mount, everything else to the Vite HMR
-  // proxy (dev only; in prod non-agent upgrades are refused).
+  // proxy (dev only; in prod non-agent upgrades are refused). The HMR socket is not put behind the
+  // dev proxy guard: it carries no file reads. Vite creates the browser-facing environment with
+  // `disableFetchModule: true` (vite 8.3.0, `defaultCreateClientDevEnvironment`), so the one
+  // `vite:invoke` handler that could return module source over the socket throws instead.
   if (agentMount || devProxy?.upgrade) {
     app.getHttpServer().on('upgrade', (req: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
       traceSocket('app', req, socket, true)

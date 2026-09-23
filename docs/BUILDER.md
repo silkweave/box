@@ -149,8 +149,12 @@ outage. This is an authentication lease, not a recovery-time objective.
 ## Operating boundaries
 
 The shared session is one host-level control surface on a dedicated live Builder branch. Starting
-Builder requires a clean Git checkout, creates a new dedicated `builder/live/...` branch, captures
-the integration branch and revision, and takes an offline backup before recording the session. The
+Builder creates a new dedicated `builder/live/...` branch, captures the integration branch and
+revision, and takes an offline backup before recording the session. When the checkout has
+uncommitted changes, **Start** first lists them and asks the administrator to adopt them. Adopted
+changes move onto the new Builder branch and appear in Review as pending work against the unchanged
+base revision. The confirmation carries a fingerprint of the listed change set; if the files change
+before the server starts the session, the start is refused and must be confirmed again. The
 server owns session selection, administrator access, maintenance state, backup, review, verification
 and restore preconditions. The browser displays those states and never invents execution,
 verification or recovery results.

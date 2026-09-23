@@ -11,6 +11,7 @@ import {
   recordBuilderSession,
   restoreBuilder,
   startBuilder,
+  readBuilderPendingChanges,
   stopBuilder,
   type BuilderLifecyclePaths,
 } from './builder-lifecycle.js'
@@ -76,12 +77,34 @@ describe('live Builder lifecycle', () => {
     expect(existsSync(join(builderBackupRoot(paths), state.backups[0].id, 'manifest.json'))).toBe(true)
   })
 
-  it('requires a clean checkout and keeps one shared session across administrators', async () => {
+  it('adopts confirmed uncommitted changes onto the new live branch', async () => {
     const paths = fixture()
-    writeFileSync(join(paths.repoRoot, 'README.md'), 'pending edit\n')
-    await expect(startBuilder({ paths, offline: true })).rejects.toThrow(/clean live checkout/)
+    const integration = git(paths.repoRoot, 'branch', '--show-current')
+    const base = git(paths.repoRoot, 'rev-parse', 'HEAD')
+    expect(readBuilderPendingChanges(paths)).toEqual({ fingerprint: null, files: [], truncated: false })
 
-    writeFileSync(join(paths.repoRoot, 'README.md'), 'source\n')
+    writeFileSync(join(paths.repoRoot, 'README.md'), 'pending edit\n')
+    writeFileSync(join(paths.repoRoot, 'draft.ts'), 'export {}\n')
+    const pending = readBuilderPendingChanges(paths)
+    expect(pending.fingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(pending.files).toEqual([{ path: 'README.md', status: 'M' }, { path: 'draft.ts', status: '??' }])
+    await expect(startBuilder({ paths, offline: true })).rejects.toThrow(/confirm adopting them/)
+
+    writeFileSync(join(paths.repoRoot, 'other.ts'), 'export {}\n')
+    await expect(startBuilder({ paths, offline: true, adoptChanges: pending.fingerprint! })).rejects.toThrow(/changed since they were confirmed/)
+    expect(git(paths.repoRoot, 'branch', '--show-current')).toBe(integration)
+
+    const confirmed = readBuilderPendingChanges(paths)
+    const result = await startBuilder({ paths, offline: true, adoptChanges: confirmed.fingerprint! })
+    expect(git(paths.repoRoot, 'branch', '--show-current')).toBe(result.state.branch)
+    expect(result.state.baseRevision).toBe(base)
+    expect(result.state.integrationBranch).toBe(integration)
+    expect(readFileSync(join(paths.repoRoot, 'README.md'), 'utf8')).toBe('pending edit\n')
+    expect(readBuilderPendingChanges(paths).files.map(file => file.path)).toEqual(['README.md', 'draft.ts', 'other.ts'])
+  })
+
+  it('keeps one shared session across administrators', async () => {
+    const paths = fixture()
     const first = await startBuilder({ paths, offline: true })
     await recordBuilderSession({ id: 'session-1', startedAt: new Date().toISOString(), status: 'running' }, { paths, offline: true })
     await expect(startBuilder({ paths, offline: true })).rejects.toThrow(/active shared session/)

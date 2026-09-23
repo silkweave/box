@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, test } from 'vitest'
@@ -8,9 +9,7 @@ const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const flags = ['--no-env-file', '--conditions=@silkweave/box-source']
 
 function fixture(run: (box: ReturnType<typeof commands>) => void): void {
-  const cache = join(root, 'node_modules', '.cache')
-  mkdirSync(cache, { recursive: true })
-  const data = mkdtempSync(join(cache, 'auth-create-'))
+  const data = mkdtempSync(join(tmpdir(), 'box-auth-create-'))
   try { run(commands(data)) } finally { rmSync(data, { recursive: true, force: true }) }
 }
 

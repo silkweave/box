@@ -3,10 +3,11 @@
 // relaxation depends on. The migration-path snapshot itself is covered by schema-upgrade.test.ts.
 
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { repoRoot, warehousePath } from '../io.js'
+import { warehousePath } from '../io.js'
 import { resetInstanceDir, setInstanceDir } from '../testing.js'
 import { withRead, withWrite } from './db.js'
 import { backupWarehouse, listRestorePoints, parseBackupName, planRetention, pruneBackups, restoreWarehouse } from './backup.js'
@@ -105,9 +106,7 @@ describe('on disk', () => {
   let previousBucket: string | undefined
 
   beforeEach(() => {
-    const parent = join(repoRoot(), 'node_modules', '.cache')
-    mkdirSync(parent, { recursive: true })
-    dir = mkdtempSync(join(parent, 'backup-test-'))
+    dir = mkdtempSync(join(tmpdir(), 'box-backup-test-')) // outside the checkout: an interrupted run must not leave a fake instance in it
     setInstanceDir(dir) // no box.json there, so backup.gcsBucket is null and never uploads either
     previousBucket = process.env.GCS_BUCKET
     delete process.env.GCS_BUCKET // the checkout's .env may name a real bucket; never upload from a test

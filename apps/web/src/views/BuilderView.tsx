@@ -12,6 +12,7 @@ import { configureBuilderMonacoWorker } from '../lib/monacoWorker.ts'
 import {
   builderClient,
   loadBuilderControlState,
+  loadBuilderPendingChanges,
   restoreBuilder,
   restartBuilder,
   setBuilderMaintenance,
@@ -20,6 +21,7 @@ import {
   takeBuilderBackup,
   type BuilderApplicationStatus,
   type BuilderControlState,
+  type BuilderPendingChanges,
 } from '../lib/builderStore.ts'
 
 configureBuilderMonacoWorker()
@@ -171,6 +173,24 @@ function SessionEmpty({ state, engine, setEngine, busy, onStart, onStop }: { sta
   )
 }
 
+const pendingStatusLabel = (status: string): string =>
+  status === '??' ? 'New' : status.includes('D') ? 'Deleted' : status.includes('R') ? 'Renamed' : status.includes('A') ? 'Added' : status.includes('U') ? 'Conflict' : 'Modified'
+
+/** Rendered inside the confirm description, so it uses phrasing elements only. */
+function PendingChangesMessage({ changes }: { changes: BuilderPendingChanges }) {
+  const count = changes.files.length
+  return <>
+    <span className='block'>The live checkout has {changes.truncated ? `more than ${count}` : count} uncommitted {count === 1 ? 'change' : 'changes'}. Starting Builder moves {count === 1 ? 'it' : 'them'} onto the new Builder branch, where {count === 1 ? 'it appears' : 'they appear'} in Review with the session's work.</span>
+    <span className='mt-3 block max-h-56 overflow-y-auto rounded-md border border-border bg-bg py-1 font-mono text-label'>
+      {changes.files.map(file => <span key={`${file.status}:${file.path}`} className='flex items-center gap-2 px-2 py-0.5' title={file.path}>
+        <span className='w-14 shrink-0 text-fg-4'>{pendingStatusLabel(file.status)}</span>
+        <span className='truncate text-fg-2'>{file.path}</span>
+      </span>)}
+      {changes.truncated && <span className='block px-2 py-0.5 text-fg-4'>More files not shown</span>}
+    </span>
+  </>
+}
+
 function BuilderSessionBar({ vitals, controls }: { vitals?: SessionVitals; controls?: SessionControls }) {
   const [contextOpen, setContextOpen] = React.useState(false)
   const [usageOpen, setUsageOpen] = React.useState(false)
@@ -262,6 +282,11 @@ export function BuilderView() {
     if (!await confirm({ title: 'Check and restart the Box?', message: 'The application will restart after successful checks. Builder stays connected.', confirmLabel: 'Restart' })) return
     await run('restart', () => restartBuilder(true))
   }
+  const start = (): Promise<void> => run('start', async () => {
+    const changes = await loadBuilderPendingChanges()
+    if (changes.fingerprint && !await confirm({ title: 'Adopt uncommitted changes?', message: <PendingChangesMessage changes={changes} />, confirmLabel: 'Adopt and start' })) return
+    await startBuilderSession(engine, changes.fingerprint ?? undefined)
+  })
   const stop = async (): Promise<void> => {
     if (!await confirm({ title: 'End without integrating?', message: 'Changes and the Builder branch remain on disk. Use Review to verify and integrate completed work.', confirmLabel: 'End session', danger: true })) return
     await run('stop', stopBuilder)
@@ -323,7 +348,7 @@ export function BuilderView() {
       {state.session ? <>
         <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} transcriptVariant='terminal' transcriptDensity='compact' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
         <BuilderSessionBar vitals={sessionVitals} controls={sessionControls} />
-      </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} onStart={() => void run('start', () => startBuilderSession(engine))} onStop={() => void stop()} /></div>}
+      </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} onStart={() => void start()} onStop={() => void stop()} /></div>}
     </aside>
   </div>
 }

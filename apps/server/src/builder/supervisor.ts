@@ -12,7 +12,7 @@ import { createBuilderBrowser } from './builder-browser.js'
 import { startBuilderBrowserLocal } from './builder-browser-local.js'
 import { createBuilderHost } from './builder-host.js'
 import { createBuilderGateway, json, readJson, sameOrigin } from './builder-gateway.js'
-import { backupBuilder, builderControlPath, BuilderLifecycleError, readBuilderControl, recordBuilderSession, restoreBuilder, setBuilderMaintenance, startBuilder, stopBuilder } from './builder-lifecycle.js'
+import { backupBuilder, builderControlPath, BuilderLifecycleError, readBuilderControl, readBuilderPendingChanges, recordBuilderSession, restoreBuilder, setBuilderMaintenance, startBuilder, stopBuilder } from './builder-lifecycle.js'
 import { checkpointBuilder, finishBuilder, reviewBuilder, finalizeCheckout } from './builder-review.js'
 import { createBuilderVerification } from './builder-verification.js'
 import { startBuilderLocalControl } from './builder-local-control.js'
@@ -141,6 +141,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     const identity = await auth.authenticate(req.headers.cookie)
     if (!identity.ok) { json(res, 403, { message: 'Builder requires a signed-in admin' }); return }
     if (req.method === 'GET' && path === '/review') { json(res, 200, { review: await reviewBuilder(paths), verification: verification.read() }); return }
+    if (req.method === 'GET' && path === '/pending-changes') { json(res, 200, readBuilderPendingChanges(paths)); return }
     if (req.method === 'GET' && path === '/state') { json(res, 200, await state(identity.principal)); return }
     if (req.method !== 'POST' || req.headers['x-box-csrf'] !== '1' || !sameOrigin(req)) { json(res, 403, { message: 'Invalid Builder control request' }); return }
     let body: Record<string, unknown>
@@ -159,8 +160,9 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
         switch (path) {
           case '/start': {
             if (body.engine !== undefined && typeof body.engine !== 'string') throw new BuilderLifecycleError(400, 'Invalid engine')
+            if (body.adoptChanges !== undefined && typeof body.adoptChanges !== 'string') throw new BuilderLifecycleError(400, 'Invalid adoptChanges fingerprint')
             if (!(await host.availableProfiles(principal.id)).length) throw new BuilderLifecycleError(409, 'Configure a provider profile for this admin before starting Builder')
-            await startBuilder(lifecycle)
+            await startBuilder({ ...lifecycle, ...(typeof body.adoptChanges === 'string' && { adoptChanges: body.adoptChanges }) })
             let id: string | undefined
             try {
               const session = await host.create(principal.id, body.engine as string | undefined)
@@ -325,8 +327,8 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const onSigterm = () => onSignal('SIGTERM')
   if (options.signals) { process.once('SIGINT', onSigint); process.once('SIGTERM', onSigterm) }
   try {
-    await new Promise<void>((done, reject) => { server.once('error', reject); server.listen(config.server.port, done) })
-    diagnostic('supervisor', 'listening', { publicPort: config.server.port, internalPort, vitePort: config.server.vitePort })
+    await new Promise<void>((done, reject) => { server.once('error', reject); server.listen(config.server.port, config.server.host, done) })
+    diagnostic('supervisor', 'listening', { host: config.server.host, publicPort: config.server.port, internalPort, vitePort: config.server.vitePort })
     report('info', `Builder ready at http://localhost:${config.server.port}/builder`)
     diagnostic('supervisor', 'boot.ui.start')
     ui = await prepareBuilderUi(root, paths.instanceDir, { build: runCommand })

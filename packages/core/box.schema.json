@@ -116,6 +116,11 @@
         "^_": {}
       },
       "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The interface the Box listens on. Default 127.0.0.1 (this machine only). Use 0.0.0.0 or :: to reach the Box from other machines, for example over a tailnet."
+        },
         "port": {
           "type": "integer",
           "minimum": 1,

@@ -16,6 +16,14 @@ consumer Box consolidates its durable local findings here.
   the tested revision, date, and freshness date in `_docs/VALIDATION.md`.
 - Migrations are transcribed byte-for-byte, backed up before application, and run before unrelated
   feature changes. Chat's ledger has no checksum, while the warehouse ledger does.
+- In development Vite serves files on the Box origin before sign-in, because the login page is the
+  SPA. Never widen `server.fs.allow` in `apps/web/vite.config.ts` to the checkout root: that served
+  `box.local.json` (the session signing secret) and `data/` to anonymous requests until 2026-09-23.
+  Widen it only together with `DEV_SOURCE_DIRS` in `apps/server/src/auth/dev-proxy-guard.ts`.
+- The public port binds `server.host`, `127.0.0.1` by default. A Box reached over a tailnet or LAN
+  needs `server.host` set explicitly in `box.local.json`; after upgrading from a revision that
+  bound every interface, such a Box is unreachable from other machines until that is set.
+
 
 ## Runtime integration
 

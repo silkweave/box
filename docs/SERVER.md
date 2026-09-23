@@ -145,6 +145,24 @@ controller; put it on any new one.
 to `/api`, `/trpc`, `/mcp` and `/agent`. CSP and HSTS are production-only (a strict CSP breaks Vite's
 HMR client), keyed off whether the dev proxy is on. Static asset loads are not rate-limited.
 
+In development the dev proxy puts Vite, a file server, on the Box origin before anyone signs in,
+because the login page is the SPA and loads the whole dashboard module graph anonymously. Two
+layers keep that from becoming a read of instance state. `server.fs.allow` in
+`apps/web/vite.config.ts` limits Vite itself to apps/web, packages/, features/ and node_modules/ and
+denies `box.json`, `box.local.json`, `.env` files, key material and `.git`. Independently,
+`auth/dev-proxy-guard.ts` in the server decides every proxied request before Vite sees it: an
+`/@fs/` path is percent-decoded once, refused on any `..` or `.` segment, empty segment, residual
+`%`, backslash, colon, control character or `#`, resolved through symlinks, and forwarded only if
+it lands inside apps/web, packages/, features/ or node_modules/ (never node_modules/.cache, where
+tests park throwaway instance directories). The verdict ignores the query string, so `?raw`,
+`?url`, `?inline` and `?import` cannot widen it, and it does not depend on a session: a member
+needs the same directories as the login page, and a session-gated hole would let any member cookie
+read the session secret the day Vite's own check regressed. Only Vite's `/__open-in-editor` hook
+requires a signed-in session. Refusals answer 403 and log `dev-proxy.refused`. The HMR websocket
+is proxied without a guard: Vite creates the browser environment with `fetchModule` disabled, so
+the socket carries no file reads. Widen `DEV_SOURCE_DIRS` and `fs.allow` together, never the
+guard alone.
+
 Before Nest is created at all, `bootstrap()` awaits `ensureSystemPrincipal()`. It seeds the machine
 account (identity and role from host config, fresh default Nova/admin) and, as a side effect, applies the warehouse schema, which is
 otherwise lazy. It is deliberately **not** wrapped in a try: a Box that cannot write its own
@@ -360,7 +378,8 @@ checking them. **tsgo** is the sole type-checker and runs in `bun run typecheck`
 **The public supervisor port is `8190`; the managed Nest and dev Vite ports are internal**, from
 `box.json` (`server.port`, `server.vitePort`). Set different values in the gitignored
 `box.local.json` when running another instance. The supervisor listener and its loopback probe use
-the configured public value.
+the configured public value. The public listener binds `server.host`, `127.0.0.1` by default;
+exposing a Box to other machines is an explicit `box.local.json` choice (see CONFIGURATION.md).
 
 **The supervisor is the single public origin.** It listens on the configured server port and
 serves the stable Builder snapshot, Builder assets, control routes and authenticated proxy to the

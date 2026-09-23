@@ -35,6 +35,8 @@ export interface BoxBrand {
 }
 
 export interface BoxServer {
+  /** The interface the public port binds. Loopback by default; `0.0.0.0` or `::` exposes it. */
+  host: string
   /** The port Nest serves on. */
   port: number
   /** The Vite dev-server port Nest proxies in dev. */
@@ -109,7 +111,7 @@ export function defaultBoxJson(): BoxJson {
     },
     // 8190/5190, and why neither is 8080: apps/server/src/agent/loopback-guard.ts. A second Box on
     // one machine must never be one default away from the first - give it its own numbers here.
-    server: { port: 8190, vitePort: 5190, viteDevUrl: null, dashboardUrl: null, vscodeRemoteHost: null },
+    server: { host: '127.0.0.1', port: 8190, vitePort: 5190, viteDevUrl: null, dashboardUrl: null, vscodeRemoteHost: null },
     backup: { gcsBucket: null },
     background: { automation: false, chatAgent: false, relay: false },
     auth: { sessionSecret: null, tokenSecret: null },
@@ -216,7 +218,9 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   const server = { ...defaults.server }
   const s = section(raw, 'server', where)
   if (s) {
-    onlyKeys(s, ['port', 'vitePort', 'viteDevUrl', 'dashboardUrl', 'vscodeRemoteHost'], `${where} server`)
+    onlyKeys(s, ['host', 'port', 'vitePort', 'viteDevUrl', 'dashboardUrl', 'vscodeRemoteHost'], `${where} server`)
+    server.host = text(s, 'host', `${where} server`, defaults.server.host)
+    if (/[\s/]/.test(server.host)) refuse(`${where} server`, 'host must be a bare address or hostname')
     server.port = port(s, 'port', `${where} server`, defaults.server.port)
     server.vitePort = port(s, 'vitePort', `${where} server`, defaults.server.vitePort)
     server.viteDevUrl = optionalText(s, 'viteDevUrl', `${where} server`)

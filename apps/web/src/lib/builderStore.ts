@@ -131,8 +131,24 @@ export function loadBuilderControlState(): Promise<BuilderControlState> {
   return request('/state', { signal: AbortSignal.timeout(8_000) }).then(normalizeState)
 }
 
-export function startBuilderSession(engine?: string): Promise<void> {
-  return request('/start', { method: 'POST', body: JSON.stringify(engine ? { engine } : {}) }).then(() => undefined)
+export interface BuilderPendingChanges {
+  fingerprint: string | null
+  files: Array<{ path: string; status: string }>
+  truncated: boolean
+}
+
+/** Uncommitted source changes that starting Builder would adopt onto its new live branch. */
+export async function loadBuilderPendingChanges(): Promise<BuilderPendingChanges> {
+  const body = await request('/pending-changes', { signal: AbortSignal.timeout(15_000) })
+  const raw = isRecord(body) ? body : {}
+  const files = Array.isArray(raw.files)
+    ? raw.files.filter(isRecord).flatMap((file) => typeof file.path === 'string' && typeof file.status === 'string' ? [{ path: file.path, status: file.status }] : [])
+    : []
+  return { fingerprint: asText(raw.fingerprint) ?? null, files, truncated: raw.truncated === true }
+}
+
+export function startBuilderSession(engine?: string, adoptChanges?: string): Promise<void> {
+  return request('/start', { method: 'POST', body: JSON.stringify({ ...(engine && { engine }), ...(adoptChanges && { adoptChanges }) }) }).then(() => undefined)
 }
 
 export function setBuilderMaintenance(enabled: boolean): Promise<void> {

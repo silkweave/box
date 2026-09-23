@@ -12,6 +12,13 @@ test('defaults expose the root schema and new sections', () => {
   expect(Object.keys(config.brand)).toEqual([...BOX_BRAND_KEYS])
   expect(config.auth).toEqual({ sessionSecret: null, tokenSecret: null })
 })
+test('server.host defaults to loopback and accepts an explicit interface', () => {
+  expect(defaultBoxJson().server.host).toBe('127.0.0.1')
+  expect(parseBoxJson({ server: { host: '0.0.0.0' } }).server.host).toBe('0.0.0.0')
+  expect(parseBoxJson({ server: { host: '::' } }).server.host).toBe('::')
+  expect(() => parseBoxJson({ server: { host: '' } })).toThrow(/host must be a non-empty string/)
+  expect(() => parseBoxJson({ server: { host: 'http://box' } })).toThrow(/bare address or hostname/)
+})
 test('local config deeply merges and replaces arrays', () => {
   const dir = temp()
   writeFileSync(join(dir, 'box.json'), JSON.stringify({ server: { port: 8200 }, features: { x: { a: 1, list: [1, 2] } } }))

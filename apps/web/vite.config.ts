@@ -17,6 +17,7 @@ import { readBoxConfig } from '@silkweave/box-core/box-json'
 // Both ports use the merged root configuration. Vite's own dotenv loading is disabled.
 // The config reader imports only Node builtins and is safe to load before workspace builds.
 const root = fileURLToPath(new URL('.', import.meta.url))
+const workspace = (path: string): string => fileURLToPath(new URL(`../../${path}`, import.meta.url))
 const require = createRequire(import.meta.url)
 const monacoEditorWorker = require.resolve('monaco-editor/editor/editor.worker.js') as string
 const box = readBoxConfig(dirname(boxJsonPath))
@@ -63,9 +64,17 @@ export default defineConfig(({ mode }) => ({
     // the tailnet suffix rather than `true`: this binds to loopback anyway, and a dev server that
     // trusts every Host is the DNS-rebinding hole the check is there to close.
     allowedHosts: ['.ts.net', 'localhost'],
-    // fs.allow up to the workspace root grants @fs access to the Bun dependency store where @fontsource ships
-    // its .woff2/.woff files (outside the apps/web Vite root).
-    fs: { allow: ['../..'] },
+    // The dev server is reachable through the Box origin before sign-in, so /@fs/ must never reach
+    // instance state. Allow only browser source and the Bun dependency store (where @fontsource
+    // ships its font files), never the checkout root or apps/server: box.local.json holds the
+    // session and token secrets and data/ holds the databases. The nested Stack box/ checkout is
+    // outside the list too. The deny list restates Vite's defaults, which `deny` replaces, and adds
+    // Box configuration by name. Do not deny `**/data/**`: dependencies ship data/ folders. Keep
+    // the allow list in step with DEV_SOURCE_DIRS in apps/server/src/auth/dev-proxy-guard.ts.
+    fs: {
+      allow: [workspace('apps/web'), workspace('packages'), workspace('features'), workspace('node_modules')],
+      deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', 'box.json', 'box.local.json'],
+    },
     // Reciprocal proxy so hitting the bare Vite port still reaches the backend. Normal flow is
     // Nest -> Vite. tRPC subscriptions are SSE and /mcp is Streamable HTTP - http-proxy streams
     // both (no compression on these paths, so nothing buffers).

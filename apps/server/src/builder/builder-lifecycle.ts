@@ -85,6 +85,19 @@ export interface BuilderStartResult {
   createdBranch: boolean
 }
 
+/** Uncommitted source changes a new Builder session would adopt onto its live branch. */
+export interface BuilderPendingChanges {
+  /** Null when the checkout is clean. Pass it back to `startBuilder` to confirm adoption. */
+  fingerprint: string | null
+  files: Array<{ path: string; status: string }>
+  truncated: boolean
+}
+
+export interface BuilderStartOptions extends BuilderOperationOptions {
+  /** Fingerprint of the pending changes the caller confirmed adopting into the Builder branch. */
+  adoptChanges?: string
+}
+
 export interface BuilderRestoreResult {
   state: BuilderControlState
   restored: BuilderBackupManifest
@@ -254,6 +267,38 @@ const integrationRevision = (paths: BuilderLifecyclePaths, branch: string | null
 
 const ensureClean = (paths: BuilderLifecyclePaths): void => {
   if (gitStatus(paths)) throw new BuilderLifecycleError(409, 'Builder requires a clean live checkout; commit or stash pending changes first')
+}
+
+const MAX_PENDING_FILES = 500
+
+const pendingChanges = (paths: BuilderLifecyclePaths): BuilderPendingChanges & { status: string } => {
+  const status = runGit(paths, ['status', '--porcelain=v1', '--untracked-files=all', '-z'])
+  if (!status) return { status, fingerprint: null, files: [], truncated: false }
+  const tokens = status.split('\0').filter(Boolean)
+  const files: BuilderPendingChanges['files'] = []
+  for (let index = 0; index < tokens.length; index++) {
+    const entry = tokens[index]
+    const code = entry.slice(0, 2)
+    files.push({ path: entry.slice(3), status: code.trim() || code })
+    // Renames and copies carry their source path as the following NUL-separated token.
+    if (code[0] === 'R' || code[0] === 'C') index++
+  }
+  const fingerprint = createHash('sha256').update(['builder-adopt-v1', gitSHA(paths), gitBranch(paths), status].join('\0')).digest('hex')
+  return { status, fingerprint, files: files.slice(0, MAX_PENDING_FILES), truncated: files.length > MAX_PENDING_FILES }
+}
+
+/** List uncommitted changes that starting Builder would carry onto its live branch. */
+export function readBuilderPendingChanges(paths: BuilderLifecyclePaths): BuilderPendingChanges {
+  const { status: _status, ...changes } = pendingChanges(paths)
+  return changes
+}
+
+/** A dirty checkout is only accepted when the caller confirmed exactly the current change set. */
+const ensureAdoptable = (paths: BuilderLifecyclePaths, adoptChanges: string | undefined): void => {
+  const { fingerprint } = pendingChanges(paths)
+  if (!fingerprint) return
+  if (!adoptChanges) throw new BuilderLifecycleError(409, 'The live checkout has uncommitted changes; confirm adopting them into the Builder branch')
+  if (adoptChanges !== fingerprint) throw new BuilderLifecycleError(409, 'Uncommitted changes changed since they were confirmed; review them again before starting Builder')
 }
 
 const withOfflineApp = async <T>(options: BuilderOperationOptions, operation: () => Promise<T> | T): Promise<T> =>
@@ -472,13 +517,16 @@ export async function setBuilderMaintenance(maintenance: boolean, options: Build
   })
 }
 
-/** Start the one shared live-checkout Builder session. The actual WorkerDeck session is recorded
+/** Start the one shared live-checkout Builder session. A dirty checkout is adopted only when
+ * `adoptChanges` matches `readBuilderPendingChanges`. The actual WorkerDeck session is recorded
  * separately with `recordBuilderSession`, after the caller has successfully created it. */
-export async function startBuilder(options: BuilderOperationOptions): Promise<BuilderStartResult> {
+export async function startBuilder(options: BuilderStartOptions): Promise<BuilderStartResult> {
   return withBuilderMutex(async () => {
     const current = readBuilderControl(options.paths)
     if (current.session) throw new BuilderLifecycleError(409, 'Builder already has an active shared session')
-    ensureClean(options.paths)
+    // Confirmed uncommitted work is carried onto the new branch by `git switch -c`; the review
+    // then presents it as pending Builder work against the unchanged base revision.
+    ensureAdoptable(options.paths, options.adoptChanges)
     const revision = gitSHA(options.paths)
     const currentBranch = gitBranch(options.paths)
     if (current.branch && currentBranch !== current.branch) throw new BuilderLifecycleError(409, `Builder branch ${current.branch} is not checked out`)
@@ -519,8 +567,9 @@ export async function startBuilder(options: BuilderOperationOptions): Promise<Bu
       writeBuilderControl(options.paths, state)
       return { state, backup, createdBranch }
     } catch (error) {
-      // A failed state write must not strand a newly-created live branch. The original checkout is
-      // clean, so switching back is safe; a detached source is restored to its original revision.
+      // A failed state write must not strand a newly-created live branch. Both branches share one
+      // revision, so switching back carries any adopted changes with it; a detached source is
+      // restored to its original revision.
       if (createdBranch && branch) {
         try {
           if (currentBranch) runGit(options.paths, ['switch', currentBranch])

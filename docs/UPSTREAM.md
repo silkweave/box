@@ -24,6 +24,18 @@ The consumer intentionally omits repository-local `.codex/config.toml`. Codex co
 machine-owned; `docs/examples/codex-config.toml` remains only an example for a user's global
 configuration.
 
+## Scoped Builder adoption and dev-mode hardening
+
+Stack commit `06aa6af83e9ecf32b1b8fad606bccd68ae6065ee` includes `404de79` (Builder adopts
+confirmed uncommitted changes into a new session instead of refusing a dirty checkout),
+`381fbc5` (dev-mode Vite serves only source roots, a dev proxy guard refuses `/@fs/` requests
+outside them, and the public listener binds the new `server.host` setting, `127.0.0.1` by
+default), and `06aa6af` (test fixtures move to the OS temp directory). Adopted paths are the
+Builder lifecycle, supervisor and view, the server entry point and new dev proxy guard, the Vite
+config, `box.json` parsing and schema, the affected tests and lockfile, and the Builder,
+configuration and server guides. The integration adds no migrations and preserves the consumer's
+empty feature registration.
+
 ## Scoped Builder model integration
 
 Stack commit `b0f5b265335b62f72ca91323161ab04a2c931791` moves WorkerDeck to 2.15.0, starts
