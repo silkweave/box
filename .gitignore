@@ -47,3 +47,6 @@ apps/web/src/generated/appRouter.d.ts
 
 # Machine-specific configuration and secrets.
 box.local.json
+
+# Stack source cache written by box stack fetch.
+/.stack/

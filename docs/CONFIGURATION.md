@@ -25,8 +25,39 @@ other machines, for example over a tailnet, set it to `0.0.0.0` (or `::` for IPv
 Keep automation and agent hosts disabled in runtime tests.
 
 Core sections include `agent`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
-`accounts`, `credentials`, `agentProfiles`, `workerdeck` and `workerdeckTokens`. Feature settings
-live under `features.<id>` and are described in each feature's documentation.
+`stack`, `accounts`, `credentials`, `agentProfiles`, `workerdeck` and `workerdeckTokens`. Feature
+settings live under `features.<id>`, keyed by the feature id, and are described in the
+documentation of the recipe the feature came from (`recipes/<id>/`).
+
+## Stack source
+
+`stack.source` names the Stack this Box adapts recipes from. `box stack fetch` reads it to find the
+reference implementation. The shared value belongs in `box.json`; the default is
+`silkweave/stack`.
+
+```json
+{ "stack": { "source": "silkweave/stack" } }
+```
+
+The value is one of:
+
+- GitHub shorthand `owner/repo`. A bare `owner/repo` always means GitHub; write `./owner/repo` for
+  a relative directory.
+- A git URL: anything containing `://` (`https://`, `ssh://`, `file://`) or the scp-like
+  `user@host:path` form.
+- A filesystem path: `.`, `..`, `~`, or a value starting with `/`, `./`, `../` or `~/`. Relative
+  paths resolve against the Box root and `~` expands to the home directory.
+
+To read a local Stack checkout on one machine, override the value in `box.local.json`, for example
+`{ "stack": { "source": "../stack" } }`. When the development Box's `box.local.json` has no `stack`
+key, `bun run box:build` writes one pointing at the Stack checkout it was built from: a relative
+path such as `..`, or an absolute path when the relative one would need more than two `../`. An
+existing `stack` key is left alone. A malformed value fails configuration loading, and whitespace
+inside a non-path value is refused. A git source is cached in the `.stack/` directory at the Box
+root, which is gitignored and denied by the Vite dev server so it is never served. See
+[RECIPES.md](RECIPES.md#the-stack-source) and [CLI.md](CLI.md).
+
+## Secrets and service settings
 
 Use `auth.sessionSecret` and `auth.tokenSecret` only in `box.local.json`. Missing signing keys are
 generated there at first use. Changing them invalidates sessions or encrypted access tokens.

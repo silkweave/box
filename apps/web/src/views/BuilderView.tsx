@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { AlertCircle, ChevronDown, ChevronRight, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Square } from 'lucide-react'
+import { AlertCircle, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Square } from 'lucide-react'
 import { ContextDialog, ModelSelect, PermissionModeSelect, ProgressRing, SessionPanel, UsageDialog, formatTokens, type SessionControls, type SessionVitals } from '@workerdeck/ui'
 import type { UsageWindowRow } from '@workerdeck/protocol'
 import { BuilderFiles } from '../components/builder/BuilderFiles.tsx'
@@ -7,6 +7,7 @@ import { BuilderReview } from '../components/builder/BuilderReview.tsx'
 import { useBuilderBrowser } from '../lib/useBuilderBrowser.ts'
 import { builderModelOptions } from '../lib/builderModels.ts'
 import { safePreviewPath } from '../lib/builderPreview.ts'
+import { BUILDER_BRIEF_MESSAGE, clearPendingBrief, readPendingBrief, storePendingBrief, validBrief } from '../lib/builderBrief.ts'
 import { Badge, Button, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, confirm } from '@silkweave/box-ui'
 import { configureBuilderMonacoWorker } from '../lib/monacoWorker.ts'
 import {
@@ -152,7 +153,7 @@ function ProviderPills({ value, onChange, state }: { value: string; onChange: (v
   </div>
 }
 
-function SessionEmpty({ state, engine, setEngine, busy, onStart, onStop }: { state: BuilderControlState; engine: string; setEngine: (engine: string) => void; busy: boolean; onStart: () => void; onStop: () => void }) {
+function SessionEmpty({ state, engine, setEngine, busy, brief, onDiscardBrief, onStart, onStop }: { state: BuilderControlState; engine: string; setEngine: (engine: string) => void; busy: boolean; brief: string | null; onDiscardBrief: () => void; onStart: () => void; onStop: () => void }) {
   const unavailable = state.unavailableSession !== null
   const selectedProfile = state.profiles.find(profile => profile.engine.toLowerCase() === engine)
   const canStart = !busy && !unavailable && selectedProfile !== undefined
@@ -161,6 +162,7 @@ function SessionEmpty({ state, engine, setEngine, busy, onStart, onStop }: { sta
       <div className='flex size-16 items-center justify-center rounded-2xl bg-accent-tint text-accent'><Hammer className='size-8' /></div>
       <h2 className='mt-5 text-heading-2 font-semibold tracking-tight text-text'>{unavailable ? 'The previous Builder runner is unavailable' : 'Open the shared Builder session'}</h2>
       <p className='mt-2 max-w-md text-body leading-relaxed text-muted-foreground'>{unavailable ? 'The saved session could not be resumed after the runner stopped. End it before starting another session.' : 'Start one shared Box session for the team. Administrators can work with the agent and Preview together.'}</p>
+      {brief && !unavailable && <BriefWaiting brief={brief} onDiscard={onDiscardBrief} />}
       {unavailable && <div className='mt-4 rounded-lg border border-danger/30 bg-danger-bg px-3 py-2 text-label text-danger'>Previous runner could not be resumed. End that session before starting another.</div>}
       {!unavailable && selectedProfile?.available !== true && <div className='mt-4 rounded-lg border border-border bg-bg px-3 py-2 text-label text-fg-3'>{selectedProfile?.unavailableReason ?? 'This provider is not currently available.'} You can still start the session and finish connecting before sending a turn.</div>}
       {unavailable ? (
@@ -171,6 +173,15 @@ function SessionEmpty({ state, engine, setEngine, busy, onStart, onStop }: { sta
       )}
     </div>
   )
+}
+
+/** A handed-over brief waits here until a session exists; it is then inserted, never sent. */
+function BriefWaiting({ brief, onDiscard }: { brief: string; onDiscard: () => void }) {
+  return <div className='mt-5 w-full max-w-md rounded-lg border border-accent/30 bg-accent-tint p-3 text-left'>
+    <div className='flex items-center gap-2 text-label font-medium text-text'><FileText className='size-3.5 text-accent' />Draft brief ready<Button variant='ghost' size='xs' className='ml-auto' onClick={onDiscard}>Discard</Button></div>
+    <p className='mt-1.5 line-clamp-4 text-label leading-relaxed text-fg-3'>{brief}</p>
+    <p className='mt-2 text-label text-fg-3'>It is placed in the composer when the session starts. You review and send it.</p>
+  </div>
 }
 
 const pendingStatusLabel = (status: string): string =>
@@ -236,6 +247,7 @@ export function BuilderView() {
   const [engine, setEngine] = React.useState('codex')
   const [sessionVitals, setSessionVitals] = React.useState<SessionVitals>()
   const [sessionControls, setSessionControls] = React.useState<SessionControls>()
+  const [brief, setBrief] = React.useState(readPendingBrief)
   const iframe = React.useRef<HTMLIFrameElement>(null)
   const [loadedUiVersion] = React.useState(() => document.querySelector<HTMLMetaElement>('meta[name="box-builder-ui"]')?.content ?? null)
   const polling = React.useRef(false)
@@ -254,7 +266,13 @@ export function BuilderView() {
   }, [refresh])
   React.useEffect(() => {
     const receive = (event: MessageEvent): void => {
-      if (event.origin !== location.origin || event.source !== iframe.current?.contentWindow || event.data?.type !== 'box:preview-location') return
+      if (event.origin !== location.origin || event.source !== iframe.current?.contentWindow) return
+      if (event.data?.type === BUILDER_BRIEF_MESSAGE) {
+        const text = event.data.v === 1 ? validBrief(event.data.text) : null
+        if (text) { storePendingBrief(text); setBrief(text) }
+        return
+      }
+      if (event.data?.type !== 'box:preview-location') return
       const path = safePreviewPath(event.data.path)
       setPreviewLocation(path)
       const url = new URL(location.href)
@@ -264,6 +282,22 @@ export function BuilderView() {
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
   }, [])
+  const discardBrief = (): void => { clearPendingBrief(); setBrief(null) }
+  // Insert a handed-over brief once the composer exists. Insertion only: the owner sends the turn.
+  React.useEffect(() => {
+    if (!brief || !sessionControls) return
+    let tries = 0
+    const timer = window.setInterval(() => {
+      const ready = document.querySelector('[aria-label="Shared Builder conversation"] [data-slot="composer"] [contenteditable="true"]')
+      if (!ready && ++tries < 60) return
+      window.clearInterval(timer)
+      if (!ready) return
+      sessionControls.insertComposerText(brief)
+      sessionControls.focusComposer()
+      discardBrief()
+    }, 150)
+    return () => window.clearInterval(timer)
+  }, [brief, sessionControls])
   const run = async (name: string, operation: () => Promise<void>): Promise<void> => {
     setAction(name); setError(null)
     try { await operation(); await refresh() }
@@ -348,7 +382,7 @@ export function BuilderView() {
       {state.session ? <>
         <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} transcriptVariant='terminal' transcriptDensity='compact' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
         <BuilderSessionBar vitals={sessionVitals} controls={sessionControls} />
-      </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} onStart={() => void start()} onStop={() => void stop()} /></div>}
+      </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} brief={brief} onDiscardBrief={discardBrief} onStart={() => void start()} onStop={() => void stop()} /></div>}
     </aside>
   </div>
 }

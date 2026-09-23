@@ -238,6 +238,22 @@
         }
       }
     },
+    "stack": {
+      "type": "object",
+      "description": "Where this Box's Silkweave Stack lives: the source an agent reads features/<id> implementation from when adapting a recipe. The Box itself ships recipes/ (docs and screenshots); box stack where shows the resolved location and box stack fetch makes the source readable locally (git sources are cached in the gitignored .stack/ directory). The Stack repository is internal today and will become public later; point this at a checkout or remote you can read. Override it per machine in box.local.json.",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "default": "silkweave/stack",
+          "description": "GitHub shorthand owner/repo (https://github.com/owner/repo.git), a git URL (https://, ssh://, git@host:path, file://), or a filesystem path: absolute, ~/..., or relative to the Box root with ./ or ../ (for example ..). A bare owner/repo always means GitHub."
+        }
+      }
+    },
     "features": {
       "type": "object",
       "additionalProperties": {

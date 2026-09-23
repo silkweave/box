@@ -1,6 +1,6 @@
 ---
 name: setup-box
-description: Stand up a new Silkweave Box from a fresh clone - check prerequisites, install core, help the team integrate selected reference features, boot it, create the first admin, sign in, wire the MCP connection, and seed the team's own starting state.
+description: Stand up a new Silkweave Box from a fresh clone - check prerequisites, install core, help the team adapt selected recipes from the Stack, boot it, create the first admin, sign in, wire the MCP connection, and seed the team's own starting state.
 ---
 
 # Set up a Silkweave Box
@@ -19,14 +19,16 @@ you are the one shaping it. Do not dump a wall of commands and walk away.
 
 ## 0. Know what you are installing
 
-Read `README.md` and `../../../docs/FEATURES.md` before you start so you can answer questions. The short
+Read `README.md` and `../../../docs/RECIPES.md` before you start so you can answer questions. The short
 version, which you may paraphrase:
 
 - A **core** (DuckDB warehouse, auth and users, the events spine, the ops kernel, the app shell)
-  plus **opt-in reference apps**.
-- A default consumer clone starts with core only. The team chooses reference features from this
-  stack and an agent integrates the selected `features/<id>/{core,server,web}` source into the Box.
-  The result is owned and adapted by the team; there is no package download or registry adoption.
+  plus **recipes**: capabilities the Stack offers, such as Planning, CRM or Chat.
+- A default consumer clone starts with core only. Every recipe's documentation ships in
+  `recipes/<id>/`, so the team can browse them all. The team chooses recipes and an agent adapts
+  each one: it fetches the reference implementation with `box stack fetch`, integrates
+  `features/<id>/` into the Box, and registers it as a feature. The result is owned and adapted by
+  the team; there is no package download, one-click install, or registry adoption.
 - A Box is **one team's instance**: a checkout plus its own ignored `data/`, always beside the
   code. A second Box, or a throwaway, is a second checkout.
 
@@ -53,8 +55,8 @@ If Bun is older than 1.4.2, update it first. Everything downstream fails confusi
 
 Check `git status` and the current branch first. On a fresh clone, create `box` (or the team's
 chosen name). If already on a team branch, keep it; do not reset or discard existing work. If this
-checkout already carries apps in `features/`, it is not a fresh clone: say which apps are present
-before continuing.
+checkout already carries code in `features/`, it is not a fresh clone: say which recipes are
+already adapted before continuing.
 
 ```bash
 git switch -c box       # on a fresh clone only
@@ -129,7 +131,7 @@ requires explicit `--rotate`.
 There is no password and no network signup window. First-owner creation remains a process on the
 Box host.
 
-## 6. Sign in, then choose the first capability
+## 6. Sign in, then choose the first recipe
 
 Open the sign-in link printed by setup. It works once and normally lasts 15 minutes; if it expires,
 run `box auth login <id>`. Confirm the onboarding dashboard renders and check the browser console.
@@ -139,13 +141,17 @@ The owner quest is now complete. If setup configured a working Codex or Claude p
 quest is complete too. Otherwise finish provider sign-in or configuration before asking Builder to
 change the Box.
 
-Now ask which working surface the team wants. Core alone is supported. Reference features are source,
-so read the selected feature documentation and gotchas, then let Builder or an agent integrate and
-adapt `features/<id>/{core,server,web}`, update maintained registration and exports, install actual
-imports, and run `box verify`. Migrations are the hard boundary: back up first and preserve every
-shipped identity and body byte-for-byte.
+Now ask which working surface the team wants. Core alone is supported. The onboarding dashboard
+lists every recipe from `recipes/*/RECIPE.md`; **Adapt recipe** opens Builder with a draft brief the
+owner reviews and sends. Whether it starts there or here, the adaptation follows `$adapt`: read
+`recipes/<id>/`, check `box stack where` and run `box stack fetch` for the implementation, adapt
+`features/<id>/{core,server,web}`, update maintained registration and exports, install actual
+imports, and run `box verify`. If `box stack fetch` cannot reach the Stack (it is private until it
+becomes public), ask the owner for access or for a local checkout path to put in `box.local.json`
+as `stack.source`. Migrations are the hard boundary: back up first and preserve every shipped
+identity and body byte-for-byte.
 
-Tell the team plainly that integrated feature code is now theirs. Review the diff and validation
+Tell the team plainly that adapted feature code is now theirs. Review the diff and validation
 before committing it on the team's branch. Never include credentials or instance data and never
 push customizations to upstream.
 
@@ -187,7 +193,7 @@ own initiative on the board understands this product; a person looking at an emp
 
 ## 9. Tell them the truth about what is not wired up
 
-Do not oversell. Read `docs/VALIDATION.md` and relay what is relevant to the features they kept.
+Do not oversell. Read `docs/VALIDATION.md` and relay what is relevant to the recipes they adapted.
 The headline items:
 
 - **Credentials.** Anything that reaches an external service needs
@@ -208,13 +214,14 @@ The headline items:
 
 Tell them where to go next:
 
-- `features/<id>/AGENT.md` - how to customise a feature they kept. **This is the real product**: the
-  Box is meant to be tailored, and those recipes are written for you to follow on their behalf.
+- `recipes/<id>/AGENT.md` - how to customise a recipe they adapted. **This is the real product**:
+  the Box is meant to be tailored, and those guides are written for you to follow on their behalf.
+- `recipes/README.md` - every recipe the Stack offers, for the next one they want.
 - `docs/SETUP.md` - the reference version of everything you just did.
 - `AGENTS.md` - the map of the repo, for the next agent session.
 
-Offer to keep going: the natural next step is picking one feature and shaping it to how they
-actually work, using its `AGENT.md`.
+Offer to keep going: the natural next step is picking one adapted recipe and shaping it to how
+they actually work, using its `AGENT.md`.
 
 ---
 

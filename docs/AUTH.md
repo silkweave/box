@@ -90,7 +90,7 @@ self-or-admin, checked in the method rather than with the decorator because the 
 the body: a member may edit their own profile fields, may not create a user (that would be minting
 a second identity), and may not set `tailscale_login` on any row.
 
-**In features**, by the same rule and listed in each feature's `SPEC.md`: data's signal definitions
+**In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: data's signal definitions
 and sources, automation's schedules and restart, content's channel profiles, planning's initiative
 kinds, engagement's pod membership, and chat's `moderate` flag on `chat-message-delete` - the last
 through `assertAdmin(req, ...)`, for a branch a decorator cannot express.

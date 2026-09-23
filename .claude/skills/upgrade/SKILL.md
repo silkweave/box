@@ -16,6 +16,14 @@ update maintained registration and exports with the rest of the change. The root
 owns shared feature dependencies; do not create feature dependency manifests or a package fetch
 protocol.
 
+`recipes/` is a managed core path: it carries every recipe's documentation and screenshots and is
+refreshed with core. Replace it with the target revision's `recipes/` rather than merging it, and
+keep Box-specific findings in `docs/GOTCHAS.md`, not under `recipes/`. An upgrade does not adapt
+recipe changes into the Box's `features/`: when the target's `recipes/<id>/` or `features/<id>/`
+changed for a recipe this Box has adapted, record that and update it separately with `$adapt`,
+reading the implementation from `box stack fetch --ref <target SHA>`. Keep `stack.source` in
+`box.json` and any `box.local.json` override as the owner configured them.
+
 Use the latest available dependencies. Record any necessary pin and its reason in
 `docs/GOTCHAS.md`. Write resume state to `docs/INTEGRATION.md` before each migration or source
 mutation and reconcile actual files and ledgers after an interruption.

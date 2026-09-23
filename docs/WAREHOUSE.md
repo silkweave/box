@@ -15,7 +15,7 @@ rebuild step - writes UPSERT straight into it.
 - **Ownership:** core owns the engine, the record layer, the schema lifecycle and four tables
   (`users`, `kv_state`, `events`, `automation_runs`,
   [`warehouse/core-models.ts`](../packages/core/src/warehouse/core-models.ts)). Every other table
-  belongs to a feature and is documented in that feature's `features/<id>/SPEC.md`. A Box with no
+  belongs to a feature and is documented in the recipe it came from, `recipes/<id>/SPEC.md`. A Box with no
   features installed has exactly those four.
 
 This document is core's half. For what a given table means, read its feature's SPEC.
@@ -360,7 +360,7 @@ feature. `alerts`' server module registers one `onEvent` listener that calls `ap
 core does not know it exists. That split is what lets a Box run with `alerts` removed and still have
 content publishing, the run funnel and every other producer emit normally: the events are recorded,
 nothing reacts. Fold the policy into `recordEvent` and the spine grows a dependency on a feature,
-which is the one thing the seam forbids (`FEATURES.md`, `docs/core/SEAM.md` § 1). It also keeps
+which is the one thing the seam forbids (`docs/core/SEAM.md` § 1). It also keeps
 the spine honest about what it guarantees: durability and idempotency, not delivery.
 
 ## `changes.ts` is not `events.ts`

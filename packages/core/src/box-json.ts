@@ -66,6 +66,29 @@ export interface BoxBackground {
   relay: boolean
 }
 
+/**
+ * Where this Box's Stack lives: the source an agent reads `features/<id>` implementation from when
+ * adapting a recipe. GitHub shorthand `owner/repo`, a git URL (https://, ssh://, git@host:path,
+ * file://), or a filesystem path (absolute, `~/...`, or relative to the Box root such as `..`).
+ * Resolution lives in stack-source.ts; `box stack where` and `box stack fetch` use it.
+ */
+export interface BoxStack {
+  source: string
+}
+
+/** The kind of Stack source a string names, or null when it names none. Pure and deterministic:
+ *  a bare `owner/repo` always means GitHub; write `./owner/repo` for a relative path. */
+export function stackSourceKind(source: string): 'path' | 'git' | 'github' | null {
+  const value = source.trim()
+  if (!value) return null
+  if (value === '.' || value === '..' || value === '~' || /^(\/|\.\/|\.\.\/|~\/)/.test(value)) return 'path'
+  if (/\s/.test(value)) return null
+  if (value.includes('://') || /^[\w.-]+@[\w.-]+:/.test(value)) return 'git'
+  const shorthand = /^([\w.-]+)\/([\w.-]+)$/.exec(value)
+  if (shorthand && !shorthand.slice(1).some(part => part === '.' || part === '..')) return 'github'
+  return null
+}
+
 export interface BoxJson {
   agent: BoxAgent
   brand: BoxBrand
@@ -75,6 +98,7 @@ export interface BoxJson {
   auth: BoxAuth
   mcp: BoxMcp
   http: BoxHttp
+  stack: BoxStack
   features: Record<string, Record<string, unknown>>
   workerdeck: Record<string, unknown> | null
   workerdeckTokens: Record<string, string>
@@ -117,6 +141,7 @@ export function defaultBoxJson(): BoxJson {
     auth: { sessionSecret: null, tokenSecret: null },
     mcp: { url: null, token: null },
     http: { userAgent: 'Silkweave Box' },
+    stack: { source: 'silkweave/stack' },
     features: {}, workerdeck: null, workerdeckTokens: {}, accounts: {}, credentials: {}, agentProfiles: {},
   }
 }
@@ -204,7 +229,7 @@ export function parseBoxAgent(raw: unknown, where: string): BoxAgent {
 export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   if (!isRecord(raw)) return refuse(where, 'must contain a JSON object')
   const defaults = defaultBoxJson()
-  onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'features', 'workerdeck', 'workerdeckTokens', 'accounts', 'credentials', 'agentProfiles'], where)
+  onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'features', 'workerdeck', 'workerdeckTokens', 'accounts', 'credentials', 'agentProfiles'], where)
 
   const agent = raw['agent'] === undefined ? defaults.agent : parseBoxAgent(raw['agent'], where)
 
@@ -250,6 +275,12 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   if (m) { onlyKeys(m, ['url', 'token'], `${where} mcp`); mcp.url = optionalText(m, 'url', `${where} mcp`); mcp.token = optionalText(m, 'token', `${where} mcp`) }
   const http = { ...defaults.http }; const h = section(raw, 'http', where)
   if (h) { onlyKeys(h, ['userAgent'], `${where} http`); http.userAgent = text(h, 'userAgent', `${where} http`, defaults.http.userAgent) }
+  const stack = { ...defaults.stack }; const st = section(raw, 'stack', where)
+  if (st) {
+    onlyKeys(st, ['source'], `${where} stack`)
+    stack.source = text(st, 'source', `${where} stack`, defaults.stack.source)
+    if (!stackSourceKind(stack.source)) refuse(`${where} stack`, 'source must be GitHub owner/repo, a git URL (https://, ssh://, git@host:path, file://) or a path (/abs, ./rel, ../rel, ~/dir)')
+  }
   const map = (key: string): Record<string, unknown> => {
     const v = raw[key]; if (v === undefined) return {}
     if (!isRecord(v)) return refuse(where, `${key} must be an object`)
@@ -287,7 +318,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     agentProfiles[user] = entry
   }
 
-  return { agent, brand, server, backup, background, auth, mcp, http, features, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, workerdeckTokens, accounts, credentials, agentProfiles }
+  return { agent, brand, server, backup, background, auth, mcp, http, stack, features, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, workerdeckTokens, accounts, credentials, agentProfiles }
 }
 
 /** Parse a file's text, naming the file in the one error JSON.parse would otherwise leave vague. */

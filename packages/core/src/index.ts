@@ -19,7 +19,10 @@ export {
   type BoxBackup,
   type BoxJson,
   type BoxServer,
+  type BoxStack,
+  stackSourceKind,
 } from './box-json.js'
+export * from './stack-source.js'
 export * from './changes.js'
 export * from './http.js'
 export * from './accounts.js'

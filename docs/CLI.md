@@ -70,7 +70,7 @@ Verification executes explicit `bun run` commands using the current Bun executab
 inherit a package-manager executable from npm or pnpm. Each check runs in the selected checkout.
 
 The **box** shim exposes **dev**, **build**, **start**, **start --prod**, and **verify**, alongside auth,
-database operations, target selection and MCP tools. These explicit verbs take precedence over
+database operations, target selection, Stack source commands and MCP tools. These explicit verbs take precedence over
 MCP tool names. **box verify** preserves flags and exit status from the selected checkout's runner.
 
 `box app status` reads the editable application's state from the owner-only local supervisor
@@ -95,6 +95,39 @@ editable application lifecycle. **box dev** still supplies the development web e
 **box build**, **box start --prod** runs the production application under the same supervisor
 boundary. Builder control actions are authenticated Box operations and do not start a provider
 turn implicitly.
+
+## Stack source
+
+`box stack where` and `box stack fetch` locate the Stack that this Box adapts recipes from. The
+recipe documents already ship in the Box under `recipes/`; these commands provide the reference
+implementation under `features/<id>/`. Both read `stack.source` from `box.json`, with any
+`box.local.json` override; see [CONFIGURATION.md](CONFIGURATION.md#stack-source).
+
+```sh
+box stack where
+box stack fetch
+box stack fetch --ref <rev>
+box stack fetch --ref <rev> --quiet
+```
+
+`box stack where` prints the configured source, its kind (path, git, or git from GitHub shorthand)
+and its resolved location. For a path source it also prints `HEAD`, whether the checkout has
+working-tree changes, and whether `recipes/` and `features/` exist. For a git source it prints the
+`.stack/` cache and the commit it holds, or that nothing has been fetched yet.
+
+`box stack fetch` returns a readable Stack and prints its path and commit. For a path source it
+checks that the directory contains `recipes/` and `features/` and never modifies it; when `--ref`
+names a different commit than its `HEAD`, it warns on stderr and still returns the path. For a git
+source it clones into the gitignored `<box>/.stack/` cache on first use, fetches on later runs, and
+checks out the requested revision detached. Without `--ref` it uses `origin/HEAD`, the remote's
+default branch. A `--ref` is looked up as a remote branch first, then as any revision the cache
+knows, and finally fetched directly by name. A revision starting with `-` or containing whitespace
+is refused. The `.stack/` cache is gitignored and denied by the Vite dev server.
+The cache is disposable: the command refuses a `.stack/` that is not a checkout of the configured
+source, and deleting it is always safe. `--quiet` prints only the path, so an agent can use
+`$(box stack fetch --ref <sha> --quiet)/features/<id>`. Pass the Stack revision recorded in the
+Box's `docs/UPSTREAM.md` so the implementation matches the recipe documents. Git runs with the
+user's own credentials; the Stack repository is private until it becomes public.
 
 ## Development console
 

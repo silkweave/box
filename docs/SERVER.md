@@ -7,8 +7,8 @@ proxy to the managed editable application, whose Nest process serves REST under 
 SPA uses relative URLs and there is no CORS anywhere.
 
 This file describes **core's server**: what a blank Box (no features installed) already is. A
-feature's own controllers, tables and tools are described in its `features/<id>/SPEC.md`; how to
-install and customise one is its `AGENT.md`.
+feature's own controllers, tables and tools are described in the recipe it came from,
+`recipes/<id>/SPEC.md`; how to adapt and customise one is that recipe's `AGENT.md`.
 
 - **Stack:** NestJS 12 + `@silkweave/nestjs` v5 (the `trpc()`, `mcp()` and `typegen()` adapters).
   Dev and `box start` run the TypeScript directly through Bun (including decorator metadata,
@@ -172,8 +172,8 @@ warehouse should fail at boot, loudly, rather than at the first request.
 
 Core owns the kernel (`packages/core/src/ops/`) and its server surface
 (`apps/server/src/ops/ops.controller.ts`). The cron scheduler over the same registry is the
-`automation` reference feature, outside core. It is included in Stack; consumers integrate it
-separately. See `features/automation/SPEC.md` when that feature is present.
+`automation` feature, outside core. The Stack carries it as a recipe; consumers adapt it
+separately. See `recipes/automation/SPEC.md`.
 
 **An action** is `{ id, label, group, description, run }` (`ops/types.ts`), where `run` is an
 `async function*` yielding `IngestProgress` chunks (`{ channel, phase, message, result? }`) and
@@ -248,7 +248,7 @@ server module's `onModuleInit`. The spine itself, and the table, are the warehou
 ## 6. The agent host
 
 `apps/server/src/agent/` is core. A blank Box has it. Only the agent's *seat in chat* belongs to the
-`chat` reference feature, documented beside its source when integrated.
+`chat` feature, documented in `recipes/chat/` and present only once that recipe is adapted.
 
 **Builder has a dedicated WorkerDeck host in the supervisor.** Its shared session stays outside
 the restartable editable application. Ordinary agent and chat sessions still use a separate
@@ -446,14 +446,13 @@ export default defineServerFeature({ id: 'sink', module: SinkModule })
 - **Registering into a port** - `onEvent`, `onRunOutcome`, `registerAgentSessionRule`,
   `registerUserCleanup` - happens in the module's `onModuleInit`, and the module unregisters on
   destroy. This is the direction the seam prescribes: a dependent registers into a dependency, never
-  the reverse. See [`docs/core/SEAM.md`](./core/SEAM.md) § 4.3 and
-  [`FEATURES.md`](FEATURES.md).
+  the reverse. See [`docs/core/SEAM.md`](./core/SEAM.md) § 4.3.
 - **A feature may own a store outside the warehouse.** DuckDB is single-writer across processes and
   every query opens an ephemeral connection with lock-conflict backoff - right for "one UPSERT plus
   a re-derive", wrong for many tiny writes at interactive latency plus point reads, and a feature
   contending for that lock would degrade every read-only reader of the warehouse too. So a feature
   with that access pattern is allowed its own file, entirely inside its own directories; the `chat`
-  reference app is the one that does it today.
+  feature is the one that does it today.
 - **Actions, tables and migrations** are declared on the *core* manifest (`defineCoreFeature`), not
   this one. A feature with no schema of its own ships `migrations: []` - the ledger is append-only
   and starts empty. See [`docs/core/SEAM.md`](./core/SEAM.md) § 3 and [`WAREHOUSE.md`](./WAREHOUSE.md).

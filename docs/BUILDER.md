@@ -42,6 +42,19 @@ views are:
 
 Closing the Builder panel returns to the previewed page without ending the shared session.
 
+## Draft briefs from the app
+
+The onboarding dashboard can hand Builder a draft brief, for example when the owner chooses
+**Adapt recipe** in the recipe catalog. The brief is text for the composer and nothing more. It
+never starts a session and is never sent automatically.
+
+Outside Builder, the dashboard stores the draft in the tab's session storage and navigates to
+Builder. Inside the Builder Preview, it posts the draft to the containing Builder window instead.
+Builder accepts only a bounded, non-empty draft from the same origin, and a stored draft expires
+after an hour. When no session is open, Builder shows the waiting draft in the start panel with a
+**Discard** control. Once a session is open, Builder inserts the draft into the composer. The owner
+reviews, edits and sends it like any other turn. See [RECIPES.md](RECIPES.md#the-onboarding-recipe-catalog).
+
 All administrators can send turns and respond to requests in the shared conversation. The shared
 session keeps one provider profile, credential and billing context while multiple browsers can
 participate.
@@ -167,9 +180,9 @@ the private backup area and protect access to that storage. Before migrations, f
 and [Validation](VALIDATION.md), including complete store and upload backups and a rehearsed
 recovery path.
 
-Builder does not implement onboarding or feature installation. Attachment uploads are not
-supported by the Builder gateway, although the upstream composer currently displays its attachment
-control. Those workflows remain outside the Builder surface and must not be represented as
+Builder has no one-click recipe install and no onboarding flow of its own: a recipe is adapted
+by an agent turn that the owner sends. Attachment uploads are not supported by the Builder gateway,
+although the upstream composer currently displays its attachment control. Those workflows remain outside the Builder surface and must not be represented as
 completed stages.
 
 The file editor loads local language workers for syntax support. It does not load the complete

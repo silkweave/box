@@ -7,11 +7,11 @@ app's: the auth gate, the router, the feature registry, the data-store/change-fe
 agent panel.
 
 This file describes **core's** web app - what a Box has with zero features installed. A feature's
-screens are documented in its own `features/<id>/SPEC.md`.
+screens are documented in the `SPEC.md` of the recipe it came from, `recipes/<id>/SPEC.md`.
 
 Related reading: [`../packages/ui/README.md`](../packages/ui/README.md) (the component library),
 [`docs/core/SEAM.md`](./core/SEAM.md) § 5 (the web half of the composition seam),
-[`FEATURES.md`](FEATURES.md) (what a feature is), [`AUTH.md`](./AUTH.md).
+[`RECIPES.md`](RECIPES.md) (recipes, and how one becomes a feature in a Box), [`AUTH.md`](./AUTH.md).
 
 ---
 
@@ -101,7 +101,9 @@ Tailwind scans this app's sources.
 | `src/lib/routeShell.tsx` | `shellGroup` route metadata and the `RouteChrome` writer used by section layouts |
 | `src/lib/nav.ts` | the sidebar groups, `navEntries()`, `useGroupNav()` |
 | `src/lib/shell.tsx` | this app's `ShellExtensions` value: top-bar slots, user menu, agent panel |
-| `src/views/HomeView.tsx` | the Dashboard placeholder at `/` |
+| `src/views/HomeView.tsx` | the Dashboard placeholder at `/`, with the onboarding recipe catalog |
+| `src/lib/recipes.ts` | the recipe catalog, parsed at build time from `recipes/*/RECIPE.md` and `screenshots/` |
+| `src/lib/builderBrief.ts` | the draft-brief handoff from the app to the Builder composer |
 | `src/views/SettingsView.tsx` | the Settings shell and core's two sections |
 
 **`rootRoute` lives in its own file** so a feature's routes can import it without importing
@@ -155,9 +157,21 @@ standalone destinations, including Dashboard and Artifacts.
 
 **`/` is Dashboard** (`HomeView`). A new Box uses it as a temporary onboarding workspace: it reads
 the compiled feature registry and the Builder supervisor's provider readiness, then routes an
-administrator through provider setup, a first feature integration and replacement of the onboarding
+administrator through provider setup, adapting a first recipe and replacement of the onboarding
 view with the Box's real dashboard. Progress is derived from live state rather than stored as an
-onboarding ledger. Members see the installed state but not Builder actions.
+onboarding ledger. Members see the adapted state but not Builder actions.
+
+The dashboard's recipe catalog lists every recipe in `recipes/*/RECIPE.md`. Vite bundles those files
+and their `screenshots/*.{png,jpg,jpeg,webp,svg}` at build time, in filename order, so the catalog
+works in a core-only Box that has none of the implementation. It offers search over titles,
+summaries and highlights, and a detail dialog with the summary, highlights, screenshots and the
+recipes it builds on. A recipe whose id is a registered web feature is marked as adapted; there is
+no stored flag; an adapted recipe offers **Update recipe** instead. For administrators, **Adapt recipe** calls `openBuilderWithBrief`: outside Builder
+it stores a draft brief in session storage and navigates to `/builder`, and inside the Builder
+Preview it posts the draft to the containing Builder window. Builder inserts the draft into the
+composer once a session is open, and the owner reviews and sends it. Nothing is sent
+automatically. See [RECIPES.md](RECIPES.md#the-onboarding-recipe-catalog) and
+[BUILDER.md](BUILDER.md#draft-briefs-from-the-app).
 Artifacts is a web-only placeholder feature at `/artifacts`. Accounts is the display name for the
 CRM workspace; its `/crm` routes, feature identity and stored records retain their existing names.
 
@@ -231,7 +245,7 @@ router). The push chain moved with it: web push carries `url: '/chat/<slug>'`, a
 worker's "never push to the room you are looking at" check reads `pathname`, not `hash`. **A service
 worker and the notifications it has shown are cached on the client**, so a click on a notification
 delivered before the change still posts `/#/chat/<slug>`, so the notifications app's
-`listenPushNavigate()` accepts both spellings on purpose. If you integrate a feature that shows
+`listenPushNavigate()` accepts both spellings on purpose. If you adapt a recipe whose feature shows
 notifications, it inherits this problem and this answer.
 
 ## The feature registry, and the ports a feature fills

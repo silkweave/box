@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, expect, test } from 'vitest'
-import { BOX_BRAND_KEYS, BOX_JSON_SCHEMA_REF, defaultBoxJson, parseBoxJson, readBoxConfig, writeBoxLocal } from './box-json.js'
+import { BOX_BRAND_KEYS, BOX_JSON_SCHEMA_REF, defaultBoxJson, parseBoxJson, readBoxConfig, stackSourceKind, writeBoxLocal } from './box-json.js'
 
 const dirs: string[] = []
 const temp = () => { const dir = mkdtempSync('/tmp/box-config-'); dirs.push(dir); return dir }
@@ -73,4 +73,29 @@ test('configuration ignores shell variables and does not load dotenv files', () 
     if (before === undefined) delete process.env.PORT
     else process.env.PORT = before
   }
+})
+
+test('stack.source defaults to the GitHub Stack and a local file overrides it', () => {
+  expect(defaultBoxJson().stack).toEqual({ source: 'silkweave/stack' })
+  expect(parseBoxJson({}).stack.source).toBe('silkweave/stack')
+  expect(parseBoxJson({ stack: { source: ' .. ' } }).stack.source).toBe('..')
+  const dir = temp()
+  writeFileSync(join(dir, 'box.json'), JSON.stringify({ stack: { source: 'silkweave/stack' } }))
+  writeFileSync(join(dir, 'box.local.json'), JSON.stringify({ stack: { source: '../stack' } }))
+  expect(readBoxConfig(dir).stack.source).toBe('../stack')
+})
+
+test('stack.source is refused when it is blank, unknown or names no recognised form', () => {
+  expect(() => parseBoxJson({ stack: { source: '' } })).toThrow(/source must be a non-empty string/)
+  expect(() => parseBoxJson({ stack: { source: 3 } })).toThrow(/source must be a non-empty string/)
+  expect(() => parseBoxJson({ stack: { ref: 'main' } })).toThrow(/unknown key "ref"/)
+  expect(() => parseBoxJson({ stack: 'silkweave/stack' })).toThrow(/stack must be an object/)
+  expect(() => parseBoxJson({ stack: { source: 'stack' } })).toThrow(/GitHub owner\/repo/)
+})
+
+test('stackSourceKind classifies each accepted form deterministically', () => {
+  for (const path of ['.', '..', '~', '~/src/stack', '/abs/stack', './stack', '../stack', '/with space/stack']) expect(stackSourceKind(path)).toBe('path')
+  for (const url of ['https://github.com/o/r.git', 'ssh://git@host/o/r.git', 'git@github.com:o/r.git', 'file:///tmp/stack']) expect(stackSourceKind(url)).toBe('git')
+  for (const shorthand of ['silkweave/stack', 'my.org/my-repo.git']) expect(stackSourceKind(shorthand)).toBe('github')
+  for (const bad of ['', 'stack', 'a/b/c', 'o/..', '~user/stack', 'owner/re po']) expect(stackSourceKind(bad)).toBe(null)
 })

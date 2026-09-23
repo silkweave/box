@@ -13,6 +13,7 @@ test('public commands use the enclosing Box, forward arguments and return the ch
     const stub = "console.log(JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2),bun:process.versions.bun})); process.exitCode=7"
     writeFileSync(join(root, 'packages/cli/src/verify.ts'), stub)
     writeFileSync(join(root, 'packages/cli/src/app-control.ts'), stub)
+    writeFileSync(join(root, 'packages/cli/src/stack.ts'), stub)
     writeFileSync(join(root, 'apps/server/scripts/auth-login.ts'), stub)
     writeFileSync(join(root, 'apps/server/scripts/setup.ts'), stub)
     writeFileSync(join(root, 'command.ts'), stub)
@@ -24,6 +25,7 @@ test('public commands use the enclosing Box, forward arguments and return the ch
       [['verify', '--plain'], ['--plain']], [['build', '--force'], ['build', '--force']],
       [['setup', '--yes', '--owner', 'alice'], ['--yes', '--owner', 'alice']],
       [['app', 'restart'], ['restart']],
+      [['stack', 'fetch', '--ref', 'v1', '--quiet'], ['fetch', '--ref', 'v1', '--quiet']],
       [['dev'], ['dev']], [['start', '--prod'], ['production']], [['auth', 'login', 'alice', '--ttl', '5'], ['alice', '--ttl', '5']],
     ]) {
       const child = spawnSync(process.execPath, ['--no-env-file', new URL('../index.ts', import.meta.url).pathname, ...args], {

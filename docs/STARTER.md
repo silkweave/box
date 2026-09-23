@@ -1,7 +1,7 @@
 # Core-only starter checklist
 
 Produce a core-only consumer checkout from a recorded Stack commit using this checklist.
-Feature integration is agent-driven; record the actual source revision used.
+Recipe adaptation is agent-driven; record the actual source revision used.
 
 ## Prepare the source
 
@@ -12,7 +12,9 @@ Feature integration is agent-driven; record the actual source revision used.
 3. Select only the core runtime and its required workspace packages. Keep `packages/core`,
    `packages/ui`, `packages/provider-kit`, `apps/server`, `apps/web`, `packages/cli`, workspace
    configuration, core docs, public assets, and their actual package manifests.
-4. Exclude every reference feature folder and feature documentation, the stack's independent `box/`
+   Copy `recipes/` whole: every recipe's documentation and screenshots ship with core, so the
+   onboarding recipe catalog and adapting agents can read them in the Box.
+4. Exclude every reference implementation folder under `features/`, the stack's independent `box/`
    directory, development `data/`, node_modules, build and dist output, Turbo state, and `.git`.
    Retain an empty `features/` directory with `.gitkeep` because the server build command names that
    directory and a fresh checkout cannot preserve an otherwise empty directory.
@@ -48,20 +50,23 @@ Feature integration is agent-driven; record the actual source revision used.
 12. Configure identity, brand and ports in `box.json`, then run `bun setup`. Confirm the system
     principal, create the first owner, and select any detected Codex or Claude profiles. Setup keeps
     the owner token and generated secrets in gitignored mode-0600 `box.local.json`. Never commit
-    credentials. Keep background automation, chat agents and relay off for the first boot.
+    credentials. Keep background automation, chat agents and relay off for the first boot. Keep
+    `stack.source` in `box.json` pointing at the shared Stack; put a local checkout path in
+    `box.local.json` only on machines that have one.
 13. Start the source server and production server against disposable fresh data. When setup found
     no provider, confirm the log says the agent surface is off. Check `/`, `/api/auth/instance`,
     `/settings`, and the feature paths that must remain absent. Confirm the browser shell, sign-in
     entry point, and disabled-agent path.
 
-## Integrate a feature
+## Adapt a recipe
 
-14. Read the feature's `INSTALL.md`, `GOTCHAS.md`, source, migrations, and the Box's
-    `docs/GOTCHAS.md` before copying anything. Identify the feature's imports and install the latest
-    packages those imports require in the Box workspace.
-15. Copy and adapt the feature's `core`, `server`, and `web` source into the Box. Rewrite imports,
-    paths, routes, styles, and package boundaries for the actual Box. Update core exports and all
-    maintained registration files by hand.
+14. Read the recipe's `recipes/<id>/INSTALL.md` and `GOTCHAS.md`, the Box's `docs/GOTCHAS.md`, and
+    the reference implementation and migrations from `box stack fetch --ref <sha>` before copying
+    anything. Identify the feature's imports and install the latest packages those imports require
+    in the Box workspace.
+15. Copy and adapt the implementation's `core`, `server`, `web` and `skills` source into the Box's
+    `features/<id>/`. Rewrite imports, paths, routes, styles, and package boundaries for the actual
+    Box. Update core exports and all maintained registration files by hand.
 16. Stage migration code and the minimum runner and registration required to execute it. Before
     applying a migration, take a named backup and record its path and restore command in
     `_docs/INTEGRATION.md`. Apply migrations first, confirm completion and boot, then continue with

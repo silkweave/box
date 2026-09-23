@@ -58,8 +58,9 @@ The answer's shape depends on the operator:
 ## Step 2 - Know what this Box HAS, then classify the intent
 
 **Read the installed feature set before you route anything.** A Box starts with core and gains
-features through agent-led source integration. A feature is present when its registered source is
-in the Box; do not assume the full stack is installed.
+features by adapting recipes from the Stack. A feature is present when its registered source is in
+the Box; do not assume every recipe is adapted. The recipe documents in `recipes/<id>/` ship with
+core and exist for every recipe, so their presence says nothing about what is installed.
 Routing someone to a flow their Box does not have is worse than saying "not installed", because
 they will go looking for it.
 
@@ -67,12 +68,13 @@ they will go looking for it.
   A feature is installed when its directory carries `manifest.ts`. The entire parent directory
   can be absent on a fresh core-only clone; that means no features are installed.
 - **Remote:** infer it from the tools you actually have. No `content-*` tools means no content; no
-  `initiative-*` means no planning; and so on. Do not assume the full ten.
+  `initiative-*` means no planning; and so on. Do not assume the full set.
 
 Then route against this table. **The `Needs` column is a gate, not a note**: skip any row whose
 feature this Box does not have, and if the person asked for exactly that, say it is not installed
-and route them to the feature integration instructions in `docs/FEATURES.md` and the selected
-feature's documentation. Do not invent a package or registry workflow.
+and route them to the recipe: its `recipes/<id>/RECIPE.md`, the **Adapt recipe** action in the
+onboarding recipe catalog, or `$adapt`, described in `docs/RECIPES.md`. Do not invent a package or
+registry workflow.
 Rows with `-` are core and are always there.
 
 The flows' own docs are the source of truth - read the linked doc before answering anything
@@ -80,21 +82,21 @@ non-trivial.
 
 | Intent sounds like | Needs | Flow | Where it happens | Deep-dive doc |
 |---|---|---|---|---|
-| "I have an idea / a doc / an article worth something" | `sink` | Sink → ingest | drop in `data/docs/sink/` (or paste it), then `/ingest-sink <file>` | `features/sink/SPEC.md` |
-| "I want to post about X / turn this into content" | `content` | Content pipeline | `/ingest-sink` → `/draft-content <slug>` | `features/content/OPERATOR.md` (operator map) |
-| "improve / change / fix my draft" | `content` | Refine | `/refine-content <id> <direction>` | `features/content/SPEC.md` |
-| "is it ready? check it" | `content` | The gate | `/verify-content <id>` | `features/content/SPEC.md` |
-| "publish / ship it" | `content` | Human-gated publish | approve in dashboard → publish path per channel | `features/content/SPEC.md` § Actions |
-| "someone replied / commented on my post" | `engagement` | Inbox | dashboard Inbox → `/draft-reply <item-id>` | `features/engagement/SPEC.md` |
-| "support a teammate's post" | `engagement` | Pods / engagement | engage queue → `/engage <pod-content-id>` | `features/engagement/SPEC.md` |
+| "I have an idea / a doc / an article worth something" | `sink` | Sink → ingest | drop in `data/docs/sink/` (or paste it), then `/ingest-sink <file>` | `recipes/sink/SPEC.md` |
+| "I want to post about X / turn this into content" | `content` | Content pipeline | `/ingest-sink` → `/draft-content <slug>` | `recipes/content/OPERATOR.md` (operator map) |
+| "improve / change / fix my draft" | `content` | Refine | `/refine-content <id> <direction>` | `recipes/content/SPEC.md` |
+| "is it ready? check it" | `content` | The gate | `/verify-content <id>` | `recipes/content/SPEC.md` |
+| "publish / ship it" | `content` | Human-gated publish | approve in dashboard → publish path per channel | `recipes/content/SPEC.md` § Actions |
+| "someone replied / commented on my post" | `engagement` | Inbox | dashboard Inbox → `/draft-reply <item-id>` | `recipes/engagement/SPEC.md` |
+| "support a teammate's post" | `engagement` | Pods / engagement | engage queue → `/engage <pod-content-id>` | `recipes/engagement/SPEC.md` |
 | "how are my posts / numbers doing" | `data` | Signals | dashboard Signals; "update signals" = fresh snapshot | `docs/WAREHOUSE.md` |
-| "track this work / what are we working on" | `planning` | Planning | dashboard Initiatives; `/ingest-sink` (work route) | `features/planning/SPEC.md` |
+| "track this work / what are we working on" | `planning` | Planning | dashboard Initiatives; `/ingest-sink` (work route) | `recipes/planning/SPEC.md` |
 | "I can't log in / need access / a link" | - | Users/auth | Send a sign-in link: Settings → Users → **Send sign-in link**, `bun run cli user-link`, or `box auth login <id>`. Short-lived, single-use, safe to send | `docs/AUTH.md` § 1.7 |
 | "lost my token / my MCP config needs it" | - | Users/auth | an admin reveals it (Settings → Users → **View access token**, or `box auth reveal <id>` on the host). NEVER `user-invite` - that rotates. Read Step 2a first | `docs/AUTH.md` § First run |
 | "my MCP won't connect / no `box` tools / everything 401s" | - | Access | diagnose with Step 2b before anything else | `docs/SERVER.md` § 7 (running and serving) |
-| "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `features/automation/SPEC.md` + `features/alerts/SPEC.md` |
-| "add / install a feature this Box lacks" | - | Integration | Read the feature source and gotchas, integrate its core/server/web code, update registration, then run the validation chain | `../../../docs/FEATURES.md` |
-| "how does the whole thing work" | - | Orientation | this skill's Step 4 output, plus the SPEC of each INSTALLED feature | `../../../docs/FEATURES.md`, then `features/<id>/SPEC.md` |
+| "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `recipes/automation/SPEC.md` + `recipes/alerts/SPEC.md` |
+| "add / install something this Box lacks" | - | Adapt a recipe | pick it in the dashboard recipe catalog (**Adapt recipe** drafts a Builder brief the owner sends), or run `$adapt`: read `recipes/<id>/`, `box stack fetch` the implementation, integrate it, update registration, then run the validation chain | `../../../docs/RECIPES.md`, `recipes/README.md` |
+| "how does the whole thing work" | - | Orientation | this skill's Step 4 output, plus the SPEC of each INSTALLED feature | `../../../docs/RECIPES.md`, then `recipes/<id>/SPEC.md` |
 
 Multiple intents in one question is normal - answer each, but keep ONE primary next action.
 
@@ -196,7 +198,7 @@ Structure every answer as:
    works, in a few sentences. Name which of their three verbs (pick/answer/approve) it involves, if
    any.
 2. **Where they are** - for anything in flight, the stage map with a you-are-here marker per piece
-   (`features/content/OPERATOR.md` operator rule 1):
+   (`recipes/content/OPERATOR.md` operator rule 1):
    ```
    IDEA ──▶ DRAFT ──▶ APPROVED ──▶ SCHEDULED ──▶ PUBLISHED
               ▲ ai-checked-the-founder/linkedin (2 findings still to accept)

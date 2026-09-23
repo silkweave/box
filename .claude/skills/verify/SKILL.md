@@ -9,6 +9,10 @@ Read `docs/UPSTREAM.md`, `docs/INTEGRATION.md`, and `docs/GOTCHAS.md` first. Est
 revision, local changes, migration state, backup location, and unresolved work. Do not call a
 partial check a verified Box.
 
+Establish which recipes are adapted: a recipe is adapted when its id is registered as a feature.
+Check each adapted feature against its `recipes/<id>/SPEC.md` and `GOTCHAS.md`, and confirm that the
+revision recorded for it in `docs/UPSTREAM.md` is the one whose implementation was read.
+
 Run the Box chain: build, typecheck, lint, meaningful tests, and `schema:check`. Include CLI tests
 and generated type work where the workspace provides them. Inspect server production output and web
 output, then boot a disposable Box and check sign-in and the browser console. Keep background

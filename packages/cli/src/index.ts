@@ -60,6 +60,8 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box db snapshot [name]                      a named dev seed you own; nothing ever prunes it
   box tools                                   browse and invoke MCP tools interactively
   box where                                   which Box this acts on, and why
+  box stack where                             the configured Stack source and where it resolves
+  box stack fetch [--ref <rev>] [--quiet]     make Stack source readable locally; print path and commit
   box <tool-name> [args]                      anything else runs as an MCP tool
 
 Tool names are kebab-case (warehouse-backup, ingest-github), and need mcp.token in box.local.json -
@@ -106,6 +108,8 @@ function main(argv: string[]): void {
     if (rest[0] === 'browser') runScript(root, 'packages/cli/src/builder-browser.ts', rest.slice(1))
     die('Expected: box builder refresh or box builder browser --session <id> <operation> [JSON]')
   }
+
+  if (verb === 'stack') runScript(root, 'packages/cli/src/stack.ts', rest)
 
   if (verb === 'app') runScript(root, 'packages/cli/src/app-control.ts', rest)
 

@@ -15,24 +15,23 @@ import { Badge, Button, PageContainer, PageHeader } from '@silkweave/box-ui'
 import { RouteChrome } from '../lib/routeShell.tsx'
 import { WEB_FEATURE_LIST } from '../generated/features.ts'
 import { builderReadiness, loadBuilderControlState, type BuilderControlState } from '../lib/builderStore.ts'
+import { openBuilderWithBrief } from '../lib/builderBrief.ts'
+import { RECIPES } from '../lib/recipes.ts'
 import { useAuth } from '../lib/useAuth.tsx'
+import { RecipeCatalog } from '../components/recipes/RecipeCatalog.tsx'
 
-const FEATURE_PROMPT = `Integrate a useful first reference feature from Silkweave Stack into this Box. Start by recommending Reminders unless another small, dependency-free feature better fits my needs. Preserve this Box's local decisions, record the source SHA and intended scope, back up before migrations, adapt registration and dependencies, run the complete validation chain, and let me review the result before finishing.`
+const FIRST_RECIPE_PROMPT = `Adapt a useful first recipe from Silkweave Stack into this Box. Start by recommending Reminders unless another small, dependency-free recipe better fits my needs. Read the recipe docs in recipes/ and follow the adapt skill. Preserve this Box's local decisions, record the source SHA and intended scope, back up before migrations, adapt registration and dependencies, run the complete validation chain, and let me review the result before finishing.`
 
 const DASHBOARD_PROMPT = `Help me replace the onboarding dashboard with a dashboard for how I actually use this Box. First ask what I open the Box to decide, which installed areas matter every day, what needs attention, and whether the dashboard is personal or team-wide. Then implement it, preview it, run the complete validation chain, and let me review the result before finishing.`
 
-const STARTER_PATHS = [
-  { title: 'Remember things', features: 'Reminders', description: 'A focused list and a small, complete first integration.', recommended: true },
-  { title: 'Capture ideas', features: 'Sink', description: 'An inbox for notes, source material, and things to work up.', recommended: false },
-  { title: 'Plan work', features: 'Data + Planning', description: 'Signals, initiatives, tasks, and sprints.', recommended: false },
-  { title: 'Publish ideas', features: 'Sink + Data + Planning + Content', description: 'A human-gated path from an idea to published pieces.', recommended: false },
-] as const
 
 /** Temporary first-run workspace. Its final quest is to replace this view with the owner's dashboard. */
 export function HomeView() {
   const { principal } = useAuth()
   const isAdmin = principal?.role === 'admin'
   const installed = useMemo(() => WEB_FEATURE_LIST.filter(feature => feature.id !== 'artifacts'), [])
+  const installedIds = useMemo(() => new Set(installed.map(feature => feature.id)), [installed])
+  const recipeTitle = (id: string): string => RECIPES.find(recipe => recipe.id === id)?.title ?? id
   const [builder, setBuilder] = useState<BuilderControlState>()
   const [builderError, setBuilderError] = useState<string>()
   const [copied, setCopied] = useState<'feature' | 'dashboard'>()
@@ -62,7 +61,7 @@ export function HomeView() {
     : !providerReady
       ? { title: 'Connect Codex or Claude', detail: 'Builder needs one signed-in provider profile before it can change this Box.', action: null, prompt: null }
       : !featureReady
-        ? { title: 'Add your first capability', detail: 'Use Builder to integrate a small feature from the Stack.', action: 'Open Builder', prompt: FEATURE_PROMPT }
+        ? { title: 'Adapt your first recipe', detail: 'Pick a recipe below, or let Builder recommend a small one from the Stack.', action: 'Open Builder', prompt: FIRST_RECIPE_PROMPT }
         : { title: 'Make the dashboard yours', detail: 'Ask Builder to replace this onboarding surface with the decisions and work that matter to you.', action: 'Open Builder', prompt: DASHBOARD_PROMPT }
 
   const copyPrompt = async (kind: 'feature' | 'dashboard', prompt: string): Promise<void> => {
@@ -93,7 +92,7 @@ export function HomeView() {
                 </div>
                 <p className='mt-2 line-clamp-3 text-label leading-relaxed text-muted-foreground'>{next.prompt}</p>
               </div>}
-              {next.action && <Button className='mt-5' onClick={() => location.assign('/builder?preview=/')}><Hammer />{next.action}<ArrowRight /></Button>}
+              {next.action && next.prompt && <Button className='mt-5' onClick={() => openBuilderWithBrief(next.prompt!)}><Hammer />{next.action}<ArrowRight /></Button>}
             </div>
             <div className='flex min-w-40 flex-col justify-center rounded-xl bg-accent-bg px-6 py-5 text-center'>
               <span className='text-4xl font-semibold tracking-tight text-accent'>{completeCount}/4</span>
@@ -111,11 +110,11 @@ export function HomeView() {
               <Quest complete={providerReady} active={isAdmin && !providerReady} icon={<Bot />} title='Connect a Builder provider' description={providerDescription(readiness, builderError)}>
                 {isAdmin && !providerReady && <ProviderSetup />}
               </Quest>
-              <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Add and use a capability' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'capability is' : 'capabilities are'} installed: ${installed.map(feature => feature.id).join(', ')}.` : 'Choose an outcome, then let Builder integrate and verify its source.'}>
-                {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => location.assign('/builder?preview=/')}><Hammer />Open Builder</Button>}
+              <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Adapt and use a recipe' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'recipe is' : 'recipes are'} adapted: ${installed.map(feature => recipeTitle(feature.id)).join(', ')}.` : 'Choose a recipe, then let Builder adapt and verify its source.'}>
+                {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => document.getElementById('recipes')?.scrollIntoView({ behavior: 'smooth' })}><Layers3 />Browse recipes</Button>}
               </Quest>
-              <Quest active={isAdmin && providerReady && featureReady} icon={<Sparkles />} title='Make the dashboard yours' description='Replace onboarding with a dashboard shaped around your installed capabilities and daily decisions.'>
-                {isAdmin && providerReady && featureReady && <Button className='mt-4' size='sm' onClick={() => location.assign('/builder?preview=/')}><Hammer />Design with Builder</Button>}
+              <Quest active={isAdmin && providerReady && featureReady} icon={<Sparkles />} title='Make the dashboard yours' description='Replace onboarding with a dashboard shaped around your adapted recipes and daily decisions.'>
+                {isAdmin && providerReady && featureReady && <Button className='mt-4' size='sm' onClick={() => openBuilderWithBrief(DASHBOARD_PROMPT)}><Hammer />Design with Builder</Button>}
               </Quest>
             </div>
           </section>
@@ -126,7 +125,7 @@ export function HomeView() {
               <dl className='mt-4 space-y-3 text-body-sm'>
                 <StatusRow label='Owner' value={principal?.display ?? 'Signed in'} tone='success' />
                 <StatusRow label='Builder' value={!isAdmin ? 'Admin only' : builderError ? 'Unavailable' : providerReady ? 'Ready' : builder ? 'Needs setup' : 'Checking'} tone={providerReady ? 'success' : builderError ? 'danger' : 'warning'} />
-                <StatusRow label='Capabilities' value={installed.length ? `${installed.length} installed` : 'Core only'} tone={installed.length ? 'success' : 'neutral'} />
+                <StatusRow label='Recipes' value={installed.length ? `${installed.length} adapted` : 'Core only'} tone={installed.length ? 'success' : 'neutral'} />
                 <StatusRow label='Safety backup' value={builder?.backups[0] ? new Date(builder.backups[0].createdAt).toLocaleDateString() : 'Created when Builder starts'} tone='neutral' />
               </dl>
             </section>
@@ -138,16 +137,7 @@ export function HomeView() {
           </aside>
         </div>
 
-        {!featureReady && <section className='mt-10'>
-          <div><h2 className='text-heading-2 font-semibold text-text'>Choose an outcome</h2><p className='mt-1 text-body-sm text-muted-foreground'>These are starting points from the Stack, not one-click packages. Builder adapts the source to this Box.</p></div>
-          <div className='mt-4 grid gap-3 sm:grid-cols-2'>
-            {STARTER_PATHS.map(path => <article key={path.title} className='rounded-xl border border-border bg-surface p-5'>
-              <div className='flex items-start justify-between gap-3'><h3 className='font-medium text-text'>{path.title}</h3>{path.recommended && <Badge variant='accent'>Recommended first</Badge>}</div>
-              <p className='mt-2 text-body-sm text-muted-foreground'>{path.description}</p>
-              <p className='mt-3 text-label font-medium text-fg-3'>{path.features}</p>
-            </article>)}
-          </div>
-        </section>}
+        <RecipeCatalog installed={installedIds} canAdapt={isAdmin} />
       </PageContainer>
     </RouteChrome>
   )

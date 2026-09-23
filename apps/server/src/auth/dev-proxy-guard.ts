@@ -8,8 +8,8 @@
 //
 // This layer is deliberately NOT an authentication step for `/@fs/`. The login page is the SPA,
 // and it loads the whole dashboard module graph before anyone signs in: packages/, features/,
-// apps/web, and the Bun store under node_modules/ (fonts, Vite's client). A signed-in member needs
-// exactly the same four directories, so "outside them but signed in" is never a legitimate
+// recipes/, apps/web, and the Bun store under node_modules/ (fonts, Vite's client). A signed-in
+// member needs exactly the same five directories, so "outside them but signed in" is never a legitimate
 // request, and letting a session through would turn any member cookie into a read of
 // `auth.sessionSecret` the day Vite's own check fails again. Same allow-set as vite.config.ts,
 // enforced a second time, on the real path, with the oddities Vite has been bitten by refused
@@ -24,10 +24,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /** Directories under the checkout root that the dev server may serve to anyone: what the browser
  *  module graph reaches through `/@fs/` (measured on the login page, 2026-09-23: packages/,
- *  features/ and the Bun store), plus apps/web itself. The same list as `server.fs.allow` in
+ *  features/ and the Bun store), plus apps/web itself and recipes/ (docs-only RECIPE.md files and
+ *  screenshots the onboarding catalog imports). The same list as `server.fs.allow` in
  *  apps/web/vite.config.ts; nothing in the browser graph imports apps/server, and that is the
- *  side that reads instance state. Change both files together. */
-export const DEV_SOURCE_DIRS = ['apps/web', 'packages', 'features', 'node_modules'] as const
+ *  side that reads instance state. The `.stack/` source cache stays outside. Change both files
+ *  together. */
+export const DEV_SOURCE_DIRS = ['apps/web', 'packages', 'features', 'recipes', 'node_modules'] as const
 
 /** Inside the allowed directories but never served: tests park throwaway instance directories
  *  (a data.db, a box.json) under node_modules/.cache, and nothing a browser loads lives there. */

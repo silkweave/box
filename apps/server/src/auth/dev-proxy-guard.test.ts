@@ -12,7 +12,7 @@ import { classifyDevProxyRequest, createDevProxyGuard, devSourceScope, resolveRe
 
 const REPO = '/Users/dev/stack'
 const SCOPE: DevSourceScope = {
-  roots: ['apps/web', 'packages', 'features', 'node_modules'].map((dir) => `${REPO}/${dir}`),
+  roots: ['apps/web', 'packages', 'features', 'recipes', 'node_modules'].map((dir) => `${REPO}/${dir}`),
   deny: [`${REPO}/node_modules/.cache`],
 }
 
@@ -51,6 +51,8 @@ describe('classifyDevProxyRequest: what the anonymous login page needs is forwar
     `/@fs${REPO}/packages/ui/src/index.ts`,
     `/@fs${REPO}/packages/core/src/builder-browser.ts`,
     `/@fs${REPO}/features/data/web/index.tsx`,
+    `/@fs${REPO}/recipes/crm/RECIPE.md?raw`,
+    `/@fs${REPO}/recipes/crm/screenshots/board.png`,
     `/@fs${REPO}/apps/web/src/lib/utils.ts?import`,
     `/@fs${REPO}/apps/web/src/App.tsx?raw`,
     `/@fs${REPO}/node_modules/.bun/vite@8.3.0+5e27b56279d105f0/node_modules/vite/dist/client/env.mjs`,
@@ -71,6 +73,9 @@ describe('classifyDevProxyRequest: instance state is refused on every spelling',
     `/@fs${REPO}/data/data.db`,
     `/@fs${REPO}/README.md`,
     `/@fs${REPO}/box/box.local.json`,
+    `/@fs${REPO}/.stack/features/crm/core/index.ts`,
+    `/@fs${REPO}/.stack/recipes/crm/RECIPE.md?raw`,
+    `/@fs${REPO}/box/.stack/box.local.json`,
     `/@fs${REPO}/_docs/INTEGRATION.md`,
     `/@fs${REPO}/apps/server/src/main.ts`,
     `/@fs${REPO}/apps/server/src/main.ts?raw`,
