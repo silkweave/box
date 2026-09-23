@@ -23,6 +23,13 @@ automatic decisions are unavailable. They use a workspace-write capable profile.
 can send turns that edit the dedicated Builder branch through the real WorkerDeck workspace
 controls; provider permission requests remain visible in the shared conversation.
 
+A new session starts on its profile's `defaults.model` when one is declared, otherwise on
+`gpt-5.6-luna` for Codex and `sonnet` (Sonnet 5) for Claude. The model select in the bottom
+status bar switches the running session. It offers only current models: GPT-5.6 Luna, Terra and Sol
+and GPT-6 Astra for Codex; Sonnet 5, Opus 5.5 and Fable 5.1 for Claude. A session already on
+another model keeps that model listed. The curated set lives in `apps/web/src/lib/builderModels.ts`
+and the start defaults in `apps/server/src/builder/builder-host.ts`.
+
 The Builder shell keeps the shared conversation in a persistent right-hand panel. Its workspace
 views are:
 

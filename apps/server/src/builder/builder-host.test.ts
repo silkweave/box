@@ -35,7 +35,7 @@ const fake = vi.hoisted(() => {
 })
 
 vi.mock('@silkweave/box-core', () => ({
-  boxJson: () => ({ agentProfiles: { alice: { codex: 'alice:codex' } }, workerdeckTokens: {} }),
+  boxJson: () => ({ agentProfiles: { alice: { codex: 'alice:codex', claude: 'alice:claude' } }, workerdeckTokens: {} }),
 }))
 vi.mock('../agent/workerdeck.config.js', () => ({
   readWorkerdeckConfig: () => ({
@@ -91,6 +91,32 @@ describe('Builder host command dispatch', () => {
       await host.create('alice', 'codex')
       await host.create('alice', 'codex')
       expect(requests.map(request => request.permissionMode)).toEqual(['auto', 'acceptEdits'])
+      expect(requests.map(request => request.model)).toEqual(['gpt-5.6-luna', 'gpt-5.6-luna'])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('starts claude on sonnet unless the profile declares a default model', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    const profiles = [
+      [{ name: 'alice:claude', engine: 'claude' }],
+      [{ name: 'alice:claude', engine: 'claude', defaults: { model: 'opus[1m]' } }],
+    ]
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url).pathname
+      if (path === '/v1/profiles') return new Response(JSON.stringify({ profiles: profiles[requests.length] }), { status: 200 })
+      if (path === '/v1/sessions' && init?.method === 'POST') {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+        return new Response(JSON.stringify({ session: { id: `created-${requests.length}`, status: 'idle', cwd: '/box', createdAt: 1, lastSeq: 0, pendingPermissionCount: 0 } }), { status: 200 })
+      }
+      return new Response('Not found', { status: 404 })
+    }))
+    try {
+      const host = await createBuilderHost({ repoRoot: '/box', instanceDir: '/box/data' })
+      await host.create('alice', 'claude')
+      await host.create('alice', 'claude')
+      expect(requests.map(request => request.model)).toEqual(['sonnet', 'opus[1m]'])
     } finally {
       vi.unstubAllGlobals()
     }

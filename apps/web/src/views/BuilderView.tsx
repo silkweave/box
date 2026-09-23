@@ -5,6 +5,7 @@ import type { UsageWindowRow } from '@workerdeck/protocol'
 import { BuilderFiles } from '../components/builder/BuilderFiles.tsx'
 import { BuilderReview } from '../components/builder/BuilderReview.tsx'
 import { useBuilderBrowser } from '../lib/useBuilderBrowser.ts'
+import { builderModelOptions } from '../lib/builderModels.ts'
 import { safePreviewPath } from '../lib/builderPreview.ts'
 import { Badge, Button, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, confirm } from '@silkweave/box-ui'
 import { configureBuilderMonacoWorker } from '../lib/monacoWorker.ts'
@@ -182,6 +183,7 @@ function BuilderSessionBar({ vitals, controls }: { vitals?: SessionVitals; contr
   const limit = windows.find(window => window.key === preferredKey) ?? windows[0]
   const ended = vitals.status === 'failed' || vitals.status === 'closed'
   const permissionModes = vitals.permissionModes.map(mode => mode.value)
+  const models = builderModelOptions(vitals.engine, vitals.models, vitals.model)
 
   return <>
     <div data-slot='builder-session-status' className='flex h-9 shrink-0 items-center overflow-x-auto border-t border-border px-1.5 text-label'>
@@ -191,7 +193,7 @@ function BuilderSessionBar({ vitals, controls }: { vitals?: SessionVitals; contr
           <ProgressRing value={limit.info.utilization ?? 0} />{limit.info.utilization?.toFixed(0)}%
         </button>}
         {vitals.tasks.length > 0 && <span className='whitespace-nowrap text-fg-3'>{vitals.tasks.length} {vitals.tasks.length === 1 ? 'task' : 'tasks'}</span>}
-        {controls && vitals.models.length > 0 && <ModelSelect models={vitals.models} model={vitals.model} onModelChange={controls.setModel} disabled={ended} className='h-6 max-w-40' />}
+        {controls && models.length > 0 && <ModelSelect models={models} model={vitals.model} onModelChange={controls.setModel} disabled={ended} className='h-6 max-w-40' />}
         {controls && vitals.permissionMode && <PermissionModeSelect mode={vitals.permissionMode} modes={permissionModes} onModeChange={controls.setPermissionMode} disabled={ended} className='h-6 max-w-32' />}
       </div>
     </div>

@@ -24,6 +24,15 @@ The consumer intentionally omits repository-local `.codex/config.toml`. Codex co
 machine-owned; `docs/examples/codex-config.toml` remains only an example for a user's global
 configuration.
 
+## Scoped Builder model integration
+
+Stack commit `b0f5b265335b62f72ca91323161ab04a2c931791` moves WorkerDeck to 2.15.0, starts
+Builder sessions on a default model per engine, and narrows the status bar model select to the
+current models. Adopted paths are the Builder host and its tests, the Builder view, the new
+`apps/web/src/lib/builderModels.ts` with its test, the app manifests and lockfile, and
+`docs/BUILDER.md`. The integration adds no migrations and preserves the consumer's empty feature
+registration.
+
 ## Scoped application-control integration
 
 Stack commit `75a62d2b3bb91367eb9192c85a6363b4284a955c` adds the bounded local application
