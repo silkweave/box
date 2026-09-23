@@ -16,6 +16,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "oxlint",
+    "clean": "turbo run clean",
     "start": "bun --no-env-file --conditions=@silkweave/box-source apps/server/src/builder/supervisor.ts",
     "start:prod": "bun --no-env-file --conditions=@silkweave/box-source apps/server/src/builder/supervisor.ts",
     "cli": "bun --no-env-file packages/cli/src/mcp-proxy.ts",
