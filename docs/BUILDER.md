@@ -62,6 +62,11 @@ session id supplied by Builder can use the owner-local CLI:
 Builder supplies this tool guidance once through WorkerDeck session instructions. It is not
 appended to each administrator message and does not appear as repeated user content.
 
+Those instructions also identify `box dev` as the stable supervisor and provide `box app status`
+and `box app restart`. An agent must use the latter after verified backend or registration changes;
+it must never stop, kill, replace or relaunch `box dev`, because that process owns the Builder host
+and the agent's own session.
+
 ```sh
 box builder browser --session <session-id> snapshot
 box builder browser --session <session-id> inspect '{"ref":"dom-preview-1"}'
@@ -98,6 +103,10 @@ The supervisor exposes the current application state and these administrator act
   restart the editable application and reports the resulting state. The authenticated control
   API accepts `check: false` for host repair when those checks cannot run; the Builder UI always
   uses the checked path.
+- **Local application restart** is available to an agent or host operator as `box app restart`
+  after repository validation. It uses the owner-only local socket, restarts only the editable
+  application, waits for health and preserves this supervisor and Builder session. `box app status`
+  reads the same bounded state. Neither command can stop or replace the supervisor.
 - **End session** stops the shared Builder session while retaining its host record.
 - **Restore a backup** is available to administrators. Select a snapshot timestamp and confirm the
   operation. Restore replaces Box instance data and configuration; the server requires
@@ -139,7 +148,8 @@ server owns session selection, administrator access, maintenance state, backup, 
 and restore preconditions. The browser displays those states and never invents execution,
 verification or recovery results.
 
-Do not start a second server against the live instance's stores. Keep provider credentials and
+Do not stop or relaunch `box dev` from a Builder turn, and do not start a second server against the
+live instance's stores. Keep provider credentials and
 permanent Box tokens out of transcripts. Builder backups include the instance database, uploads,
 `box.json`, and `box.local.json`, so they can contain credentials and other secrets. Store them in
 the private backup area and protect access to that storage. Before migrations, follow [Warehouse](WAREHOUSE.md)
@@ -196,10 +206,11 @@ draft saved in that browser's local storage. No reload is forced during a turn o
 typing. Save any editor changes before reloading.
 
 A local coding agent or host operator can run `box builder refresh` from the checkout. This command
-uses an owner-only Unix socket in `data/builder/`; it permits UI refresh only and does not need
-Box credentials or permission to signal the supervisor. It is a local host capability, separate
-from the authenticated browser control, which remains administrator-only. The supervisor must already
-be running a version that supports this command.
+uses the same owner-only local supervisor socket as `box app status` and `box app restart`; the
+socket exposes only those bounded operations and does not need Box credentials or permission to
+signal a process. It is a local host capability, separate from the authenticated browser control,
+which remains administrator-only. The supervisor must already be running a version that supports
+the requested command.
 
 New builds use versioned asset URLs, including branding artwork. A build failure leaves the current
 UI available and reports the error. Previous releases remain in `data/builder/ui-releases/` so open

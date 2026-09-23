@@ -24,6 +24,15 @@ The consumer intentionally omits repository-local `.codex/config.toml`. Codex co
 machine-owned; `docs/examples/codex-config.toml` remains only an example for a user's global
 configuration.
 
+## Scoped application-control integration
+
+Stack commit `75a62d2b3bb91367eb9192c85a6363b4284a955c` adds the bounded local application
+status and restart commands, keeps the Builder host outside the restartable child process, and
+teaches Builder agents never to stop or replace `box dev`. Adopted paths are the Builder local
+control and supervisor, Builder session instructions and tests, CLI application control and
+dispatch, core skill guidance, and the CLI, Builder and feature operating guides. The integration
+adds no migrations and preserves the consumer's empty feature registration.
+
 ## Scoped CLI integration
 
 The CLI implementation and tests were copied from the Stack working tree based on

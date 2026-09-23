@@ -118,6 +118,13 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const offline = <T>(fn: () => Promise<T> | T): Promise<T> => app.withStopped(fn)
   const lifecycle = { paths, withAppStopped: offline }
   const verification = createBuilderVerification(paths)
+  const restartApplication = () => mutate(async () => {
+    diagnostic('supervisor', 'local-app-restart.start')
+    browser.revoke('Box application restarting')
+    busy = true
+    try { return await app.restart(readBuilderControl(paths).maintenance) }
+    finally { busy = false; diagnostic('supervisor', 'local-app-restart.finish') }
+  })
   async function state(principal: BuilderSupervisorPrincipal) {
     const current = readBuilderControl(paths)
     const session = current.session ? await host.session(current.session.id) : null
@@ -325,7 +332,11 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     ui = await prepareBuilderUi(root, paths.instanceDir, { build: runCommand })
     diagnostic('supervisor', 'boot.ui.ready')
     closeBrowserLocal = await startBuilderBrowserLocal(paths.instanceDir, browser)
-    closeLocalControl = await startBuilderLocalControl(paths.instanceDir, () => mutate(refreshUi))
+    closeLocalControl = await startBuilderLocalControl(paths.instanceDir, {
+      status: () => app.status,
+      restart: restartApplication,
+      refresh: () => mutate(refreshUi),
+    })
     if (closing) throw new Error('Box supervisor is stopping')
     await app.startVite().catch(error => report('error', `Box frontend needs repair: ${String(error)}`))
     if (closing) throw new Error('Box supervisor is stopping')

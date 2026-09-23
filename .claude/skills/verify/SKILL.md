@@ -16,6 +16,12 @@ integrations disabled unless the requested verification explicitly covers their 
 The web registry has an import cycle, so a module-scope registry read can white-screen a browser
 after static checks pass.
 
+For the live Builder Preview, activate verified backend, registration, configuration, and migration
+changes with `box app restart` before the runtime check. `box dev` is the stable supervisor that
+owns the Builder agent, so never stop, kill, replace, or relaunch it and never start a second Box
+against the same instance. `box app restart` restarts only the editable application and waits for
+health. If it cannot reach the supervisor, stop and ask the host operator to restore it.
+
 For migration work, query the actual ledger and schema, compare them with the integration record,
 and verify the backup can be restored. If a progress note lags database state, trust the database
 and record the discrepancy. A checksum refusal is a data safety stop, not a lint failure.

@@ -38,6 +38,14 @@ paths, preserved customizations, migration identities, backup location, validati
 work in `docs/INTEGRATION.md` and `docs/UPSTREAM.md`. Do not record a completed source SHA until the
 full validation chain and boot check pass.
 
+When working inside Builder, `box dev` is the stable supervisor that owns the current agent
+session. Never stop, kill, replace, or relaunch it, and never start a second Box against the same
+instance. After the validation chain passes, run `box app restart` for backend, registration,
+configuration, or migration changes, then inspect the refreshed Preview. That command restarts only
+the editable application and waits for health while preserving the supervisor and Builder session.
+Use `box app status` to inspect the child. If application control cannot reach the supervisor, stop
+and ask the host operator to restore it.
+
 
 The warehouse ledger keys by `<feature>:<migration name>` and checks a digest. Chat's private
 ledger keys by migration object name and has no checksum. Never renumber an applied identity to

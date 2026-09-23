@@ -73,6 +73,17 @@ The **box** shim exposes **dev**, **build**, **start**, **start --prod**, and **
 database operations, target selection and MCP tools. These explicit verbs take precedence over
 MCP tool names. **box verify** preserves flags and exit status from the selected checkout's runner.
 
+`box app status` reads the editable application's state from the owner-only local supervisor
+socket. `box app restart` asks that already-running supervisor to restart only its editable
+application child and waits for the normal health check. It preserves the supervisor, Vite and the
+Builder WorkerDeck host, including the active Builder session. It does not run validation; run
+`box verify` first when activating source changes.
+
+Do not stop, signal or relaunch `box dev` from a Builder turn, and do not start a second Box against
+the same instance. If `box app status` or `box app restart` cannot reach the supervisor, stop and ask
+the host operator to restore it. A supervisor upgraded from a version without application control
+needs one host-operated restart before these commands become available.
+
 `box auth login <id>` creates a compact, single-use sign-in URL and offers five seconds to press
 Enter and open it in the default browser. It exits without opening when the countdown reaches zero;
 redirected and non-interactive output never waits. Sign-in URLs use `/login/<grant>`. The current

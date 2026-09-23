@@ -14,7 +14,9 @@ An agent reads the feature source, `docs/GOTCHAS.md`, and the Box's local gotcha
 adapts the relevant core, server, and web code, adds required packages, updates
 `src/generated/features.ts` and `packages/core/src/generated/exports.ts`, and runs build,
 typecheck, lint, tests, and `schema:check`. Build and type errors during integration are part of
-the work. Record durable local findings in the Box's `docs/GOTCHAS.md`.
+the work. In a live Builder session, the agent then runs `box app restart` to activate server and
+registration changes without stopping the stable supervisor, and validates the refreshed Preview.
+Record durable local findings in the Box's `docs/GOTCHAS.md`.
 
 Migrations are the carve-out. Preserve existing names and bodies byte-for-byte. Back up before
 applying, stage the minimum runner and registration, apply migrations before unrelated changes, and

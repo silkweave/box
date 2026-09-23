@@ -65,7 +65,10 @@ describe('Builder host command dispatch', () => {
     const options = vi.mocked(createWorkerServer).mock.calls.at(-1)?.[0]
     const config = options?.buildRunnerConfig?.({ cwd: '/box', profile: 'alice:codex' })
     if (typeof config?.instructions !== 'function') throw new Error('Builder instructions are not configured')
-    expect(config.instructions({ sessionId: 'session-42' })).toContain('box builder browser --session session-42 snapshot')
+    const instructions = config.instructions({ sessionId: 'session-42' })
+    expect(instructions).toContain('box builder browser --session session-42 snapshot')
+    expect(instructions).toContain('box app restart')
+    expect(instructions).toContain('Never stop, kill, replace, or relaunch box dev')
   })
 
   it('starts in auto mode when available and falls back to accept edits', async () => {

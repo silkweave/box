@@ -44,6 +44,8 @@ function runPackage(root: string, script: string, args: string[]): never {
 const HELP = `  box dev [--log-level <level>]              start interactive development
   box setup [options]                         create the first owner and configure providers
   box build                                  build workspace packages and the application
+  box app status                              inspect the supervised application
+  box app restart                             restart the app; preserve supervisor and Builder
   box builder refresh                        refresh Builder UI without restarting its session
   box builder browser --session <session-id> <operation> [JSON object]
   box start                                  start the Box from source with built web assets
@@ -104,6 +106,8 @@ function main(argv: string[]): void {
     if (rest[0] === 'browser') runScript(root, 'packages/cli/src/builder-browser.ts', rest.slice(1))
     die('Expected: box builder refresh or box builder browser --session <id> <operation> [JSON]')
   }
+
+  if (verb === 'app') runScript(root, 'packages/cli/src/app-control.ts', rest)
 
   if (verb === 'verify') runScript(root, 'packages/cli/src/verify.ts', rest)
   if (verb === 'setup') runScript(root, 'apps/server/scripts/setup.ts', rest, true)

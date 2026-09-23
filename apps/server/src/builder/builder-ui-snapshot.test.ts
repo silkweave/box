@@ -53,14 +53,19 @@ describe('Builder UI releases', () => {
     expect(await prepareBuilderUi('/repo', instance, { build: async () => { throw new Error('bad build') } })).toBe(legacy)
   })
 
-  it('offers only refresh on the private local control socket and reports failures', async () => {
+  it('offers bounded application and refresh controls on the private local socket', async () => {
     const instance = fixture()
     mkdirSync(join(instance, 'builder'))
-    let calls = 0
-    const close = await startBuilderLocalControl(instance, async () => { if (++calls === 2) throw new Error('build failed') })
+    let refreshes = 0
+    let restarts = 0
+    const close = await startBuilderLocalControl(instance, {
+      status: () => ({ status: 'running' }),
+      restart: async () => { restarts += 1; return { status: 'running' } },
+      refresh: async () => { if (++refreshes === 2) throw new Error('build failed') },
+    })
     const socketPath = join(instance, 'builder', 'ui-refresh.sock')
-    const call = (path: string) => new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
-      const req = request({ socketPath, method: 'POST', path }, res => {
+    const call = (path: string, method = 'POST') => new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+      const req = request({ socketPath, method, path }, res => {
         let body = ''
         res.on('data', data => { body += data })
         res.on('end', () => resolve({ status: res.statusCode, body }))
@@ -69,7 +74,15 @@ describe('Builder UI releases', () => {
     try {
       expect(statSync(socketPath).mode & 0o777).toBe(0o600)
       expect((await call('/stop')).status).toBe(404)
-      expect(calls).toBe(0)
+      expect(restarts).toBe(0)
+      expect(refreshes).toBe(0)
+      const status = await call('/app-status', 'GET')
+      expect(status.status).toBe(200)
+      expect(JSON.parse(status.body).application).toEqual({ status: 'running' })
+      const restart = await call('/app-restart')
+      expect(restart.status).toBe(200)
+      expect(restart.body).toContain('supervisor and Builder session stayed running')
+      expect(restarts).toBe(1)
       expect((await call('/refresh-ui')).status).toBe(200)
       const failure = await call('/refresh-ui')
       expect(failure.status).toBe(500)
