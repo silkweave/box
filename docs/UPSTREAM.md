@@ -26,9 +26,7 @@ configuration.
 
 ## Recipes, recipe catalog and Stack source
 
-Materialized on 2026-09-24 from the Stack working tree on top of commit
-`06aa6af83e9ecf32b1b8fad606bccd68ae6065ee`, with uncommitted changes. No Stack commit contains this
-snapshot yet; record the Stack commit here once it exists. The refresh adds the managed `recipes/`
+Materialized on 2026-09-24 from Stack commit `4d61abad047840b6086d2fe697ab33b767404f53`. The refresh adds the managed `recipes/`
 tree (recipe docs and placeholder screenshots), `docs/RECIPES.md`, the onboarding recipe catalog
 with search, detail dialog and the Builder brief handoff, the `stack.source` setting with
 `box stack where` and `box stack fetch`, and recipe wording in the guides and core skills. The
