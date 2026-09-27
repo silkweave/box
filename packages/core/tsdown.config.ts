@@ -8,7 +8,10 @@ export default defineConfig({
   entry: ['./src/index.ts', './src/testing.ts'],
   outDir: 'build',
   format: ['esm'],
-  dts: true,
+  // TS7 only: force tsgo so a transitively installed TypeScript 5 never becomes the generator. tsgo
+  // passes `--rootDir <directory of the tsconfig>`, and core also compiles features/*/core, so the
+  // declaration build reads a repo-root tsconfig that extends this package's (docs/GOTCHAS.md).
+  dts: { generator: 'tsgo', tsconfig: '../../tsconfig.core-build.json' },
   sourcemap: true,
   clean: true,
   // Keep every bare dependency external (duckdb native addon, playwright, etc.).
