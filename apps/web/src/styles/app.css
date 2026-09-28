@@ -9,8 +9,10 @@
 
 @source '../';
 
-/* Consolidated feature UI lives outside apps/web/src. */
-@source '../../../../features/*/web';
+/* Consolidated feature UI lives outside apps/web/src. A path containing a glob is a file pattern,
+   so keep the trailing double-star segment: without it the pattern matches only files named "web"
+   and feature-only utilities silently disappear from the build (see docs/GOTCHAS.md). */
+@source '../../../../features/*/web/**';
 
 /* Settings detail screens get their title from the fixed shared navigation bar. Existing page
    headers keep their descriptions and action controls inside the scrolling surface. */
