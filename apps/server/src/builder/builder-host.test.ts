@@ -162,12 +162,33 @@ describe('Builder host command dispatch', () => {
     const host = await createBuilderHost({ repoRoot: '/box', instanceDir: '/box/data' })
     await host.command('session-1', { type: 'user_message', text: '/clear' })
     expect(fake.calls).toEqual([{ name: 'clearContext', args: [] }])
-    await expect(host.command('session-1', { type: 'user_message', text: '   ' })).rejects.toThrow(/non-empty/)
+    await expect(host.command('session-1', { type: 'user_message', text: '   ' })).rejects.toThrow(/non-empty text or an attachment/)
   })
 
-  it('rejects attachments, bypass mode, shell, close, tool bridge, and malformed permission input', async () => {
+  it('resolves uploaded attachment ids from the worker before sending the turn', async () => {
+    fake.calls.length = 0
+    fake.reset()
+    const fetch = vi.fn(async (url: string) => url.endsWith('/attachments/img-1')
+      ? new Response(Buffer.from('png-bytes'), { status: 200, headers: { 'content-type': 'image/png', 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent('shot 1.png')}` } })
+      : new Response(JSON.stringify({ error: 'attachment not found' }), { status: 404 }))
+    vi.stubGlobal('fetch', fetch)
+    try {
+      const host = await createBuilderHost({ repoRoot: '/box', instanceDir: '/box/data' })
+      await expect(host.command('session-1', { type: 'user_message', text: 'look', attachmentIds: ['missing'] })).rejects.toThrow(/not available/)
+      expect(fake.calls).toEqual([])
+      expect(host.hasPendingWork('session-1')).toBe(false)
+      await host.command('session-1', { type: 'user_message', text: '', attachmentIds: ['img-1'] })
+      expect(fetch.mock.calls.at(-1)?.[0]).toMatch(/\/v1\/sessions\/session-1\/attachments\/img-1$/)
+      expect(fake.calls).toEqual([{ name: 'sendMessage', args: ['', [{ id: 'img-1', name: 'shot 1.png', mediaType: 'image/png', bytes: 9, data: Buffer.from('png-bytes').toString('base64') }]] }])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('rejects inline attachments, bypass mode, shell, close, tool bridge, and malformed permission input', async () => {
     const host = await createBuilderHost({ repoRoot: '/box', instanceDir: '/box/data' })
-    await expect(host.command('session-1', { type: 'user_message', text: 'hello', attachmentIds: [] })).rejects.toThrow(/attachments/)
+    await expect(host.command('session-1', { type: 'user_message', text: 'hello', attachments: [{ data: 'x' }] })).rejects.toThrow(/attachmentIds/)
+    await expect(host.command('session-1', { type: 'user_message', text: 'hello', attachmentIds: [42] })).rejects.toThrow(/attachment ids/)
     await expect(host.command('session-1', { type: 'set_permission_mode', mode: 'bypassPermissions' })).rejects.toThrow(/unsupported/)
     await expect(host.command('session-1', { type: 'shell_command', command: 'id' })).rejects.toThrow(/disabled/)
     await expect(host.command('session-1', { type: 'close' })).rejects.toThrow(/stop control/)

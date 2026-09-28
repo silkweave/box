@@ -2,11 +2,12 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createFileSessionStore, createWorkerServer, type WorkerServerOptions } from '@workerdeck/server'
 import { supportsPermissionMode, type PermissionMode, type ProfileInfo, type SessionInfo } from '@workerdeck/protocol'
-import type { Runner } from '@workerdeck/core'
+import type { AttachmentInput, Runner } from '@workerdeck/core'
 import { boxJson } from '@silkweave/box-core'
 import { readWorkerdeckConfig } from '../agent/workerdeck.config.js'
 import { builderRunnerRoot, type BuilderLifecyclePaths } from './builder-lifecycle.js'
 
+const MAX_ATTACHMENTS_PER_MESSAGE = 20
 const PERMISSION_MODES = new Set<PermissionMode>(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
 
 const builderInstructions = ({ sessionId }: { sessionId: string }): string =>
@@ -142,25 +143,49 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
     const prototype = Object.getPrototypeOf(value)
     return prototype === Object.prototype || prototype === null
   }
+  /**
+   * The WorkerDeck attachment store is private to the worker, so staged uploads are read back
+   * through its own session route. Unknown ids fail the turn rather than sending it without them.
+   */
+  async function resolveAttachments(sessionId: string, ids: string[]): Promise<AttachmentInput[]> {
+    return await Promise.all([...new Set(ids)].map(async id => {
+      const response = await request(`/v1/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(id)}`)
+      if (!response.ok) throw new Error(`Builder attachment ${id} is not available`)
+      const data = Buffer.from(await response.arrayBuffer())
+      const disposition = /filename\*=UTF-8''([^;]+)/.exec(response.headers.get('content-disposition') ?? '')?.[1]
+      let name = 'attachment'
+      try { if (disposition) name = decodeURIComponent(disposition) } catch { /* keep the neutral name */ }
+      return { id, name, mediaType: response.headers.get('content-type') ?? 'application/octet-stream', bytes: data.length, data: data.toString('base64') }
+    }))
+  }
   async function command(sessionId: string, frame: unknown): Promise<void> {
     if (!isPlainObject(frame) || typeof frame.type !== 'string') throw new Error('Builder command must contain a type')
     const runner = await runnerFor(sessionId)
     switch (frame.type) {
-      case 'user_message':
-        if (typeof frame.text !== 'string' || frame.text.trim() === '' || 'attachmentIds' in frame || 'attachments' in frame) throw new Error('Builder user messages require non-empty text and do not support attachments')
-        if (frame.text.trim() === '/clear') {
+      case 'user_message': {
+        if (typeof frame.text !== 'string') throw new Error('Builder user messages require text')
+        if ('attachments' in frame) throw new Error('Builder attachments must be uploaded and referenced by attachmentIds')
+        const ids = frame.attachmentIds ?? []
+        if (!Array.isArray(ids) || ids.length > MAX_ATTACHMENTS_PER_MESSAGE || !ids.every(id => typeof id === 'string' && id !== '')) {
+          throw new Error(`Builder attachmentIds must be up to ${MAX_ATTACHMENTS_PER_MESSAGE} attachment ids`)
+        }
+        if (frame.text.trim() === '' && ids.length === 0) throw new Error('Builder user messages require non-empty text or an attachment')
+        if (ids.length === 0 && frame.text.trim() === '/clear') {
           if (!runner.clearContext) throw new Error('This Builder engine cannot clear a conversation')
           await runner.clearContext()
           return
         }
+        const attachments = ids.length ? await resolveAttachments(sessionId, ids as string[]) : undefined
         markPendingUserMessage(runner)
         try {
-          runner.sendMessage(frame.text)
+          if (attachments) runner.sendMessage(frame.text, attachments)
+          else runner.sendMessage(frame.text)
         } catch (error) {
           clearPending(sessionId)
           throw error
         }
         return
+      }
       case 'permission_decision': {
         if (typeof frame.requestId !== 'string' || !frame.requestId) throw new Error('Builder permission decisions require requestId')
         let resolved = false

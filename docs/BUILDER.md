@@ -181,9 +181,15 @@ and [Validation](VALIDATION.md), including complete store and upload backups and
 recovery path.
 
 Builder has no one-click recipe install and no onboarding flow of its own: a recipe is adapted
-by an agent turn that the owner sends. Attachment uploads are not supported by the Builder gateway,
-although the upstream composer currently displays its attachment control. Those workflows remain outside the Builder surface and must not be represented as
-completed stages.
+by an agent turn that the owner sends. That workflow remains outside the Builder surface and must
+not be represented as a completed stage.
+
+The composer accepts attachments by drop, paste or the attach control. The gateway forwards only
+uploads to the current session's attachment route, with the same administrator, same-origin and
+CSRF checks as other writes, and refuses bodies over 10 MiB. WorkerDeck keeps staged attachments in
+memory for the session and validates their media type against what the engine accepts. A turn
+references uploads by ID; the supervisor reads them back from its worker before sending, and a turn
+with an unknown ID fails instead of being sent without it.
 
 The file editor loads local language workers for syntax support. It does not load the complete
 repository dependency graph as a language server, so TypeScript import diagnostics in the editor

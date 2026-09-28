@@ -380,7 +380,7 @@ export function BuilderView() {
         {state.ui.error && <span className='text-danger'>Refresh failed; previous UI retained.</span>}
       </div>
       {state.session ? <>
-        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} transcriptVariant='terminal' transcriptDensity='compact' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
+        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' transcriptDensity='compact' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
         <BuilderSessionBar vitals={sessionVitals} controls={sessionControls} />
       </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} brief={brief} onDiscardBrief={discardBrief} onStart={() => void start()} onStop={() => void stop()} /></div>}
     </aside>

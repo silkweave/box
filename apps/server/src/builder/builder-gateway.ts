@@ -36,6 +36,18 @@ export async function readJson(req: IncomingMessage): Promise<Record<string, unk
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Expected a JSON object')
   return body as Record<string, unknown>
 }
+/** Matches the WorkerDeck attachment store's per-file default; the store enforces its own limits too. */
+export const BUILDER_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024
+export async function readRaw(req: IncomingMessage, limit: number): Promise<Buffer> {
+  let size = 0
+  const chunks: Buffer[] = []
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > limit) throw new Error('Attachment is larger than the limit')
+    chunks.push(Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks)
+}
 export function sameOrigin(req: IncomingMessage): boolean {
   const origin = req.headers.origin
   if (req.headers['sec-fetch-site'] === 'cross-site') return false
@@ -124,7 +136,9 @@ export function createBuilderGateway(options: {
     const fsRead = method === 'GET' && ['/v1/fs/roots', '/v1/fs/list', '/v1/fs/find', '/v1/fs/read'].includes(path)
     const profilesRead = method === 'GET' && path === '/v1/profiles' && options.profiles !== undefined
     const fsWrite = path === '/v1/fs/write' && method === 'PUT'
-    if ((!write && !fsRead && !sessionRead && !profilesRead) || (write && !fsWrite)) {
+    // Uploads stage bytes in the WorkerDeck attachment store; a turn references them by id.
+    const attachmentUpload = method === 'POST' && sessionPath !== null && path === `${sessionPath}/attachments`
+    if ((!write && !fsRead && !sessionRead && !profilesRead) || (write && !fsWrite && !attachmentUpload)) {
       json(res, 404, { message: 'Builder route is not exposed' }); return
     }
     if (profilesRead) {
@@ -132,7 +146,15 @@ export function createBuilderGateway(options: {
       json(res, 200, { profiles: profiles.flatMap(profile => { const metadata = profileMetadata(profile); return metadata ? [metadata] : [] }) })
       return
     }
-    let body: string | undefined
+    let body: string | Buffer | undefined
+    let contentType: string | undefined
+    if (attachmentUpload) {
+      contentType = req.headers['content-type']
+      if (!contentType) { json(res, 400, { message: 'Attachment content-type is required' }); return }
+      try { body = await readRaw(req, BUILDER_ATTACHMENT_MAX_BYTES) } catch (error) {
+        json(res, 413, { message: error instanceof Error ? error.message : 'Attachment is too large' }); return
+      }
+    }
     if (fsRead || fsWrite) {
       let parsed: Record<string, unknown> | null = null
       if (fsWrite) {
@@ -144,10 +166,10 @@ export function createBuilderGateway(options: {
       if (typeof target !== 'string' || !builderFileAllowed(options.root, target)) {
         json(res, 403, { message: 'This path is outside the Builder editor' }); return
       }
-      if (parsed) body = JSON.stringify(parsed)
+      if (parsed) { body = JSON.stringify(parsed); contentType = 'application/json' }
     }
     const forward = async (): Promise<void> => {
-      const response = await host.request(`${path}${url.search}`, { method, body, headers: body ? { 'content-type': 'application/json' } : undefined })
+      const response = await host.request(`${path}${url.search}`, { method, body, headers: contentType ? { 'content-type': contentType } : undefined })
       if (fsRead && response.ok) {
         const result = await response.json() as Record<string, unknown>
         for (const key of ['roots', 'entries', 'matches']) if (Array.isArray(result[key])) {

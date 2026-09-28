@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocket, WebSocketServer } from 'ws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createBuilderGateway, type BuilderGatewayMutate } from './builder-gateway.js'
+import { BUILDER_ATTACHMENT_MAX_BYTES, createBuilderGateway, type BuilderGatewayMutate } from './builder-gateway.js'
 import type { BuilderSupervisorAuthResult } from './builder-auth.js'
 import { SupervisedApplication, type SupervisedChild } from './supervised-application.js'
 
@@ -78,6 +78,7 @@ describe('Builder gateway', () => {
       current,
       calls,
       auth,
+      host,
       setVerification(value: Principal | typeof denied) { verification = value },
       url: `http://127.0.0.1:${address.port}`,
       wsUrl: `ws://127.0.0.1:${address.port}`,
@@ -113,7 +114,7 @@ describe('Builder gateway', () => {
     expect(collaborator.calls).toHaveLength(1)
   })
 
-  it('keeps the session route allowlist narrow and does not expose attachment uploads', async () => {
+  it('keeps the session route allowlist narrow', async () => {
     const test = await setup()
     const allowed = await fetchGateway(test.url, '/v1/sessions/session-1/files/output.txt')
     expect(allowed.status).toBe(200)
@@ -123,8 +124,26 @@ describe('Builder gateway', () => {
     expect(events.status).toBe(200)
     const providerRoute = await fetchGateway(test.url, '/v1/sessions/session-1/mcp')
     expect(providerRoute.status).toBe(404)
-    const upload = await fetchGateway(test.url, '/v1/sessions/session-1/attachments', { method: 'POST', headers: { 'x-box-csrf': '1', 'content-type': 'application/octet-stream' }, body: 'attachment' })
-    expect(upload.status).toBe(404)
+  })
+
+  it('forwards current-session attachment uploads with their media type and caps their size', async () => {
+    const test = await setup()
+    const upload = await fetchGateway(test.url, '/v1/sessions/session-1/attachments?name=shot.png', { method: 'POST', headers: { 'x-box-csrf': '1', 'content-type': 'image/png' }, body: 'png-bytes' })
+    expect(upload.status).toBe(200)
+    const forwarded = test.host.request.mock.calls.at(-1)!
+    expect(forwarded[0]).toBe('/v1/sessions/session-1/attachments?name=shot.png')
+    expect(forwarded[1]).toMatchObject({ method: 'POST', headers: { 'content-type': 'image/png' } })
+    expect(Buffer.from(forwarded[1]!.body as Uint8Array).toString()).toBe('png-bytes')
+    const csrfMissing = await fetchGateway(test.url, '/v1/sessions/session-1/attachments', { method: 'POST', headers: { 'content-type': 'image/png' }, body: 'png' })
+    expect(csrfMissing.status).toBe(403)
+    const otherSession = await fetchGateway(test.url, '/v1/sessions/session-2/attachments', { method: 'POST', headers: { 'x-box-csrf': '1', 'content-type': 'image/png' }, body: 'png' })
+    expect(otherSession.status).toBe(404)
+    const listing = await fetchGateway(test.url, '/v1/sessions/session-1/attachments')
+    expect(listing.status).toBe(404)
+    const calls = test.host.request.mock.calls.length
+    const tooLarge = await fetchGateway(test.url, '/v1/sessions/session-1/attachments', { method: 'POST', headers: { 'x-box-csrf': '1', 'content-type': 'image/png' }, body: Buffer.alloc(BUILDER_ATTACHMENT_MAX_BYTES + 1) })
+    expect(tooLarge.status).toBe(413)
+    expect(test.host.request.mock.calls.length).toBe(calls)
   })
 
   it('serves only sanitized current-session profile metadata from the explicit catalog hook', async () => {
