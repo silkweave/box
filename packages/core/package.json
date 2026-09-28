@@ -26,7 +26,7 @@
     "clean": "rimraf build",
     "build": "tsdown",
     "typecheck": "tsgo -p tsconfig.json",
-    "test": "vitest run"
+    "test": "bun --bun vitest run"
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.5-r.5",

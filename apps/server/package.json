@@ -10,7 +10,7 @@
     "start": "bun --no-env-file --conditions=@silkweave/box-source src/main.ts",
     "start:prod": "bun --no-env-file --conditions=@silkweave/box-source dist/apps/server/src/main.js",
     "typecheck": "tsgo -p tsconfig.json",
-    "test": "vitest run"
+    "test": "bun --bun vitest run"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.4",

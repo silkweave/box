@@ -7,6 +7,9 @@ import { expect, test } from 'vitest'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const flags = ['--no-env-file', '--conditions=@silkweave/box-source']
+// The flags are Bun's. Vitest can end up under Node on a shared host (Bun's shebang shim lives at
+// one /tmp path per Bun version, and another user's copy is unusable), so spawn Bun explicitly.
+const bun = process.versions.bun ? process.execPath : 'bun'
 
 function fixture(run: (box: ReturnType<typeof commands>) => void): void {
   const data = mkdtempSync(join(tmpdir(), 'box-auth-create-'))
@@ -27,7 +30,7 @@ function commands(data: string) {
   ].join('\n'))
   const env: NodeJS.ProcessEnv = { ...process.env }
   delete env.BOX_DATA_DIR // refused by instanceDir() if a shell still exports it; not this test's subject
-  const node = (args: string[]) => spawnSync(process.execPath, [...flags, '--import', pathToFileURL(preload).href, ...args], {
+  const node = (args: string[]) => spawnSync(bun, [...flags, '--import', pathToFileURL(preload).href, ...args], {
     cwd: root, env, encoding: 'utf8', timeout: 30_000,
   })
   const token = (...args: string[]) => node(['apps/server/scripts/auth-token.ts', ...args, '--quiet'])
