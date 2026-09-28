@@ -22,7 +22,8 @@
 // the theme); here the key names one of the app's boards, which is vocabulary this file has no
 // business knowing. `storageKey()` in ./lib is there for a caller that wants the house prefix.
 
-import { useCallback, useRef, useState } from 'react'
+import type { CurrencyFormat } from '../components/Figures.tsx'
+import { useCallback, useRef, useState, type CSSProperties } from 'react'
 import { readStored, writeStored } from '../lib/usePersistedState.ts'
 
 /** Per-column pixel widths, keyed by column key. A user setting; NEVER part of a preset. */
@@ -87,6 +88,24 @@ export interface GridLayout {
  * Order comes from the view now, not from the catalog. The catalog's order is only the order the
  * columns are OFFERED in; which of them you took, and in which order you read them, is yours.
  */
+/**
+ * The inline style that FREEZES a grid's first (identity) column while the grid scrolls sideways:
+ * sticky to the scrollport's left edge and opaque so cells scroll under it. It reaches over the
+ * grid's 0.5rem gap (negative margin, matching padding) so nothing peeks between it and the next
+ * column, with a hairline on its edge. `background` is the surface it sits on; a row that tints on
+ * hover passes 'inherit' and gives itself a solid background, so the frozen cell tints with it.
+ * Inline rather than classes so a consumer's cells and these components always agree.
+ */
+export const frozenCellStyle = (background = 'var(--bg)'): CSSProperties => ({
+  position: 'sticky',
+  left: 0,
+  zIndex: 1,
+  background,
+  marginRight: '-0.5rem',
+  paddingRight: '0.5rem',
+  boxShadow: '1px 0 0 var(--border-light)',
+})
+
 export function orderColumns<T extends { key: string }>(catalog: readonly T[], selected: readonly string[]): T[] {
   const seen = new Set<string>()
   return selected.flatMap((k) => {
@@ -204,12 +223,15 @@ export interface Aggregatable<T> {
   value: (row: T) => number | null
   /** Defaults to `count`. */
   unit?: AggregateUnit
+  /** For a `currency` unit: which currency and locale, when not the Box default (USD, en-US). */
+  currency?: CurrencyFormat
 }
 
 /** One column's numbers, ready for the footer: what the visible rows read as, and how to print it. */
 export interface AggregateSource {
   values: number[]
   unit: AggregateUnit
+  currency?: CurrencyFormat
 }
 
 /** Column key → its numbers. Only the columns actually ON the board, and only the ones the module
@@ -233,6 +255,7 @@ export function aggregateSources<T>(
     out[key] = {
       values: rows.map((r) => agg.value(r)).filter((n): n is number => n != null && Number.isFinite(n)),
       unit: agg.unit ?? 'count',
+      ...(agg.currency ? { currency: agg.currency } : {}),
     }
   }
   return out

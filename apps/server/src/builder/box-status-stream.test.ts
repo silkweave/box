@@ -6,6 +6,11 @@ import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
 import { createBoxStatusStream } from './box-status-stream.js'
 
+// fs.watchFile takes its baseline stat asynchronously after registration: a write that lands before
+// it becomes the baseline and never fires (the stream only recovers on its 15 s heartbeat). Wait
+// past one 500 ms poll after an open() that starts the watcher before writing what it must see.
+const watcherReady = () => new Promise(resolve => setTimeout(resolve, 750))
+
 function response() {
   const frames: string[] = []
   const res = Object.assign(new EventEmitter(), {
@@ -29,6 +34,7 @@ it('broadcasts atomic state changes to all tabs, reconnects with current state, 
   try {
     feed.open(first.res)
     feed.open(second.res)
+    await watcherReady()
     expect(first.frames.join('')).toContain('data: {"maintenance":false}')
     expect(first.frames.join('')).not.toContain('secret')
     save(true)
@@ -42,6 +48,7 @@ it('broadcasts atomic state changes to all tabs, reconnects with current state, 
     save(true)
     feed.open(reconnect.res)
     expect(reconnect.frames.join('')).toContain('data: {"maintenance":true}')
+    await watcherReady()
     writeFileSync(file, 'invalid')
     await vi.waitFor(() => expect(reconnect.res.destroy).toHaveBeenCalled(), { timeout: 3000 })
   } finally { feed.close(); rmSync(dir, { recursive: true, force: true }) }

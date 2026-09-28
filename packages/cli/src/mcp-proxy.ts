@@ -10,7 +10,7 @@
 // Requires the server running: box dev
 
 import { silkweave } from '@silkweave/core'
-import { cliProxy } from '@silkweave/mcp/cli-proxy'
+import { cliProxy, defaultFormatter, type CLIFormatterFn } from '@silkweave/mcp/cli-proxy'
 import { readBoxConfig } from '@silkweave/box-core/box-json'
 
 // This subpath imports only Node builtins, keeping the proxy independent of the warehouse.
@@ -34,6 +34,14 @@ const retryingFetch: typeof fetch = async (input, init) => {
   throw lastErr
 }
 
+// A refused tool call (validation, a write the record layer rejects) comes back as an error result
+// whose text is `{"success":false,...}`. @silkweave/mcp 5.2.1's proxy prints it and still exits 0,
+// so a script trusting the exit code logs the refusal as done. Fail the command instead.
+const formatter: CLIFormatterFn = (message, index, messages) => {
+  if (message.type === 'text' && /^\s*\{\s*"success"\s*:\s*false\b/.test(message.text)) process.exitCode = 1
+  return defaultFormatter(message, index, messages)
+}
+
 await silkweave({ name: 'box', description: 'Silkweave Box actions over MCP', version: '0.1.0' })
-  .adapter(cliProxy({ url, fetch: retryingFetch, ...(token && { headers: { authorization: `Bearer ${token}` } }) }))
+  .adapter(cliProxy({ url, formatter, fetch: retryingFetch, ...(token && { headers: { authorization: `Bearer ${token}` } }) }))
   .start()

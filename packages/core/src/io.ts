@@ -34,11 +34,28 @@ let override: string | undefined
  * A test redirects with `setInstanceDir()` from `@silkweave/box-core/testing`.
  */
 export function instanceDir(): string {
-  return override ?? join(repoRoot(), 'data')
+  return override ?? join(liveRoot(), 'data')
 }
 
 /** Root configuration directory. Tests redirect this with setInstanceDir without touching the real checkout. */
 export function configRoot(): string { return override ?? repoRoot() }
+
+/**
+ * The checkout root, for reaching the LIVE instance data. Under Vitest it refuses: a test that has not
+ * redirected with setInstanceDir would read and write the real Box. That happened when a feature's
+ * tests ran from a config that loaded a second copy of core: setInstanceDir landed on one copy, the
+ * code under test used the other, and the run migrated and overwrote a production warehouse.
+ */
+function liveRoot(): string {
+  if (process.env.VITEST) {
+    throw new Error(
+      'Refusing to use the live Box instance under Vitest: call setInstanceDir() from ' +
+        '@silkweave/box-core/testing first, and run feature tests through packages/core or apps/server ' +
+        'so every core import resolves to one module (docs/GOTCHAS.md).',
+    )
+  }
+  return repoRoot()
+}
 
 /**
  * Point THIS process at another instance directory, for typegen and tests. Absolute paths only.

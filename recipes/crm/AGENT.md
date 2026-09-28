@@ -12,19 +12,52 @@ The recipe documents ship with core at `recipes/crm/`; the reference implementat
 
 Copy or adapt `<fetched stack>/features/crm/` into the Box's `features/crm/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
-No shipped migrations currently. A future schema change must be a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
+No shipped migrations currently. A fresh Box gets every table from the ModelSpecs. A future schema change must be a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
+
+### Moving the pipeline onto deals
+
+Until 2026-09-28 the account WAS the deal: `crm_accounts.status` carried the pre-sale ladder, and
+`close_probability` and `loss_reason` sat on the account. The reference now keeps the pipeline in
+`crm_deals` and the relationship on the account. A Box whose warehouse predates that has account
+rows with pipeline statuses (`stale`, `meeting_requested`, `meeting_booked`, `demo`, `proposal`,
+`confirmed`, `revisit`) and no `crm_deals` rows. The reference ships no migration for this because
+every Box's book differs; the adapting agent writes one in the Box's `features/crm/core`, named for
+the Box (for example `crm:001-deals-from-accounts`), after a warehouse backup and a rehearsal on a
+restored copy. The shape that preserves everything:
+
+1. `crm_deals` is created by the baseline (`CREATE TABLE IF NOT EXISTS`) on the first boot of the
+   new code, so the migration only moves data.
+2. For every account whose status is a pipeline stage, or `lost` with a `loss_reason`, insert one
+   deal: `id` `<account-id>-<something stable>`, `account_id`, a `name` the team recognises,
+   `stage` = the old status (a `lost` account gives a `lost` deal), `mrr_usd`,
+   `close_probability`, `loss_reason` and `owner` from the account, `expected_close_at` from
+   `next_action_at` for `revisit`, `closed_at` from `updated_at` for a lost one.
+3. Then set those accounts' status to the relationship: pipeline stages become `lead`; `lost`
+   stays `lost` unless the team wants to keep pursuing them. Paying statuses are untouched. Decide
+   per team whether a paying account with an open expansion gets a deal too, and whether the
+   account's `mrr_usd` of a lead (a pipeline estimate until now) is cleared once its deal holds it.
+4. Leave `crm_accounts.close_probability` and `loss_reason` in place. The ModelSpec no longer
+   declares them, so nothing reads or writes them; dropping them is a later, separate migration if
+   ever. Never edit a shipped migration to do this.
+5. Saved views repair themselves on read: a stored status filter that named pipeline stages becomes
+   a `stage` filter, and the `value` column becomes `pipeline` (`lib/crmView.ts`).
+
+Rehearse against a restored backup, count accounts per status before and after, count deals per
+stage after, and boot the Box on the migrated copy before touching the live instance.
 
 ## 2. Customise for the team
 
 In descending order of how wrong the defaults will be:
 
-1. **The pipeline** - `CRM_ACCOUNT_STATUSES` in `features/crm/core/types.ts`. The
-   shipped ladder is
-   `stale -> meeting_requested -> meeting_booked -> demo -> proposal -> confirmed -> customer ->
-   onboarding` with `at_risk` / `churned` / `lost` / `archived` as exits. Keep
-   `CRM_PAYING_STATUSES` and `CRM_PIPELINE_STATUSES` in step, and check `CLOSED`/`PIPELINE_COLUMNS`
-   in `features/crm/web/lib/crmView.ts` - the kanban's default columns are derived there.
-2. **The deal shape** - none ships. `mrr_usd` is typed by hand; product, plan, quantity and price
+1. **The pipeline** - `CRM_DEAL_STAGES` in `features/crm/core/types.ts`. The shipped
+   ladder is `stale -> meeting_requested -> meeting_booked -> demo -> proposal -> confirmed -> won`,
+   with `revisit` as a siding and `lost` as the other exit. Keep `CRM_OPEN_DEAL_STAGES` and
+   `CRM_CLOSED_DEAL_STAGES` in step, mirror all three in `web/crm-types.ts`, and check
+   `PIPELINE_STAGES` in `features/crm/web/lib/crmView.ts` - the kanban's default columns. The
+   account relationship (`CRM_ACCOUNT_STATUSES`: `lead -> customer -> onboarding`, with `at_risk` /
+   `churned` / `lost` / `archived`) changes less often; keep `CRM_PAYING_STATUSES` beside it and
+   `PROMOTED_ON_WIN` in `deals.ts` in step.
+2. **The deal shape** - none ships. A deal's `mrr_usd` is typed by hand; product, plan, quantity and price
    are one team's commercial vocabulary and deliberately not the foundation's (a product decision,
    2026-09-14). If this team wants MRR derived from what it sells, follow
    [Adding a deal shape](#adding-a-deal-shape-products-plans-pricing) below - second on this list
@@ -68,11 +101,14 @@ box dev
 
 - `http://localhost:8190/crm` - the accounts board. Empty is fine on a fresh Box. **New account**
   writes a row; the sidebar shows the saved views and (once you open one) recent accounts; the
-  layout toggle swaps the grid for the pipeline kanban and a card drags between status columns.
-- `http://localhost:8190/crm/<account-id>` - the detail page: fields, contacts, the markdown doc
-  (type in **Next move**, then check `<BOX_DATA_DIR>/docs/crm/<account-id>.md` on disk - the heading
-  and the prose are really there, and the row's `next_action` now matches), the conversation stream,
-  the meetings panel and the money panel.
+  layout toggle swaps the grid for the pipeline kanban, where a deal card drags between stage
+  columns (drag one to Won and its lead account becomes a customer).
+- `http://localhost:8190/crm/<account-id>` - the detail page: the summary strip, **Add deal** and a
+  deal edited in place, contacts, the markdown doc (type in **Next move**, then check
+  `<BOX_DATA_DIR>/docs/crm/<account-id>.md` on disk - the heading and the prose are really there,
+  and the row's `next_action` now matches; set its due date and **Log a touch** from the same
+  block), the conversation stream, the meetings and money sections, and a section folding shut by
+  its heading and staying shut on the next account.
 - `http://localhost:8190/crm/queue` - the assign queue. Empty until a sync writes an unattributed
   row, a past meeting is still `scheduled`, or a paid recurring row has no coverage window.
 
@@ -81,6 +117,9 @@ Agent-side, the same surface is MCP:
 ```bash
 bun run cli crm-accounts
 bun run cli crm-account-upsert   # create or patch a company
+bun run cli crm-deals            # every deal, or one account's
+bun run cli crm-deal-upsert      # open or move a deal
+bun run cli crm-deal-delete
 bun run cli crm-contact-upsert   # a person at it
 bun run cli crm-meetings         # filtered, newest first
 bun run cli crm-revenue-events
@@ -89,7 +128,7 @@ bun run cli crm-doc-read / crm-doc-save
 bun run cli crm-activities / crm-activity-log / crm-activity-delete
 ```
 
-Seventeen tools in total (every procedure except `crmDocRegionsSave`, which is the dashboard's
+Twenty tools in total (every procedure except `crmDocRegionsSave`, which is the dashboard's
 region autosave and deliberately has no MCP name). Remember what comes back: `crm-accounts` returns
 real people's names and emails. They must never land in a public-facing draft.
 
@@ -101,7 +140,7 @@ To remove it, delete the feature's `core`, `server`, and `web` source directorie
 
 ## Adding a deal shape (products, plans, pricing)
 
-The foundation stores `crm_accounts.mrr_usd` as a number somebody typed. It carries no product,
+The foundation stores `crm_deals.mrr_usd` as a number somebody typed. It carries no product,
 plan, quantity or price column and no price list: those are one team's commercial vocabulary, and
 the template shipped one company's - two product lines, eight plan names, a USD list - until
 2026-09-14, when it was decided that the CRM ships the foundation and the deal shape is an optional
@@ -115,12 +154,12 @@ one (`platform_monthly`, `managed_annual`, ...) and the list multiplies with eve
 comes to mean a billing term for one product and a package tier for the other, and "the managed
 tier, billed quarterly" becomes inexpressible without minting a new value. Two axes means every
 plan belongs to exactly one product (the price table says which) and the term is a property of the
-plan. A plan from the other product's list on an account is always a mistake and a silent one - it
+plan. A plan from the other product's list on a deal is always a mistake and a silent one - it
 would derive a plausible number off the wrong price list - so the write path refuses it.
 
 ### Why derive MRR instead of typing it
 
-`mrr_usd` exists so the pipeline can be sorted and weighed. Once a deal has a shape, the shape IS
+A deal's `mrr_usd` exists so the pipeline can be sorted and weighed. Once a deal has a shape, the shape IS
 the number: `quantity x unit price / months in the term`. Deriving it in one place, on write, is
 what stops three roundings of one price landing in one column - in the predecessor's book the same
 price entered by hand three times sat as 332, 332.3 and 332.33, which no report can group on. The
@@ -145,25 +184,24 @@ type-checking between steps; `box verify` catches a miss in the first four, the 
 show in a browser.
 
 1. **The core vocabulary** - `features/crm/core/types.ts`. The unions and their
-   arrays (`CrmAccountProduct` / `CRM_ACCOUNT_PRODUCTS`, `CrmAccountPlan` / `CRM_ACCOUNT_PLANS`),
-   a `CRM_PLAN_PRICING: Record<CrmAccountPlan, { product; months; listUsd: number | null }>`
+   arrays (`CrmDealProduct` / `CRM_DEAL_PRODUCTS`, `CrmDealPlan` / `CRM_DEAL_PLANS`),
+   a `CRM_PLAN_PRICING: Record<CrmDealPlan, { product; months; listUsd: number | null }>`
    table, and `deriveMrrUsd()` / `planDiscountPct()` as pure functions over
-   `{ quantity, plan, unit_price_usd }`. Add the fields to `CrmAccount` and `CrmAccountInput`, and
-   the column names to BOTH `CRM_ACCOUNT_BOX_COLUMNS` and `CRM_ACCOUNT_FUTURE_PROVIDER_COLUMNS` - a
-   billing provider knows quantity, interval and price, and declaring that now is what stops a
-   hand-maintained shape being silently overwritten the day it connects.
-2. **The ModelSpec** - `models.ts`, `CRM_ACCOUNTS.columns`:
-   `product: { kind: 'text', default: "'platform'", enum: CRM_ACCOUNT_PRODUCTS }`,
-   `plan: { kind: 'text', nullable: true, enum: CRM_ACCOUNT_PLANS }`,
+   `{ quantity, plan, unit_price_usd }`. Add the fields to `CrmDeal` and `CrmDealInput`, and the
+   column names to `CRM_DEAL_BOX_COLUMNS`. If a won deal's shape should also become the customer's
+   billed shape, that is a second set of columns on the account, listed in
+   `CRM_ACCOUNT_FUTURE_PROVIDER_COLUMNS` - a billing provider knows quantity, interval and price.
+2. **The ModelSpec** - `models.ts`, `CRM_DEALS.columns`:
+   `product: { kind: 'text', default: "'platform'", enum: CRM_DEAL_PRODUCTS }`,
+   `plan: { kind: 'text', nullable: true, enum: CRM_DEAL_PLANS }`,
    `quantity: { kind: 'int', nullable: true }`, `unit_price_usd: { kind: 'float', nullable: true }`.
    The `enum` is the app-level CHECK constraint, and it is checked on the values a WRITE passes,
    never on read and never on what is already stored: a row carrying a value the list no longer
-   names reads back fine, and `upsertCrmAccount` - which re-sends every column it resolves - refuses
-   it on that row's next edit until the value is fixed, while the narrow doc-cache upsert in
-   `saveCrmDoc` does not (which is why it is narrow). A fresh Box gets the columns from the
-   baseline; **a Box that already has `crm_accounts` does not** - the baseline is `CREATE TABLE IF
+   names reads back fine, and `upsertCrmDeal` - which re-sends every column it resolves - refuses
+   it on that row's next edit until the value is fixed. A fresh Box gets the columns from the
+   baseline; **a Box that already has `crm_deals` does not** - the baseline is `CREATE TABLE IF
    NOT EXISTS` - so also append the feature's first migration to `manifest.ts`
-   (`{ name: '001-deal-shape', statements: ['ALTER TABLE crm_accounts ADD COLUMN IF NOT EXISTS product TEXT DEFAULT \'platform\'', ...] }`,
+   (`{ name: '001-deal-shape', statements: ['ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS product TEXT DEFAULT \'platform\'', ...] }`,
    one ALTER per column). Two DuckDB facts shape that statement, both measured on 2026-09-14: `IF
    NOT EXISTS` is honoured, so the same ALTER is safe to re-run; and `ADD COLUMN` refuses a
    constraint ("Adding columns with constraints not yet supported"), so write `DEFAULT` without
@@ -171,35 +209,34 @@ show in a browser.
    layer writes every column explicitly anyway, so a null never lands. `bun run schema:check` (a
    diagnostic; run it yourself, `verify` does not) proves the migration applies fresh, on reboot,
    and onto a Box that enabled `crm` later, and warns if it touches a table outside `crm_*`.
-3. **The resolve-before-write block** - `state.ts`, `upsertCrmAccount`, at the comment that names
-   itself as the seam. Resolve each new column the way the pause window is resolved
+3. **The resolve-before-write block** - `deals.ts`, `upsertCrmDeal`, at the comment that names
+   itself as the seam. Resolve each new column the way the others are resolved
    (`input.x !== undefined ? input.x : (prev?.x ?? default)`), refuse a plan whose product is not
-   the account's, then
+   the deal's, then
    `const mrr = deriveMrrUsd({ quantity, plan, unit_price_usd }) ?? (input.mrr_usd !== undefined ? input.mrr_usd : (prev?.mrr_usd ?? null))`,
    and write the new columns in the `upsertRecord` call. Refuse a negative quantity beside the
    negative-MRR guard.
 4. **The controller DTOs** - `features/crm/server/crm/crm.controller.ts`. On
-   `CrmAccountDto` an `@ApiProperty({ enum: CRM_ACCOUNT_PLANS })` per enum column; on
-   `UpsertCrmAccountDto` an `@ApiProperty` plus `@IsOptional() @IsIn(CRM_ACCOUNT_PLANS)` per enum
+   `CrmDealDto` an `@ApiProperty({ enum: CRM_DEAL_PLANS })` per enum column; on
+   `UpsertCrmDealDto` an `@ApiProperty` plus `@IsOptional() @IsIn(CRM_DEAL_PLANS)` per enum
    column, `@IsInt()` / `@IsNumber()` for the numbers. The description is what an agent reads over
    MCP, so say there that setting a plan makes `mrr_usd` derived and a passed value is ignored.
    `bun run typegen` (part of `verify`) then rewrites `apps/web/src/generated/appRouter.d.ts`.
 5. **The web mirror** - `features/crm/web/crm-types.ts` is hand-written on purpose
    (`apps/web` does not depend on `@silkweave/box-core`): the same unions and arrays, a
-   `CRM_ACCOUNT_PRODUCT_LABEL` / `CRM_ACCOUNT_PLAN_LABEL` map for the selects, the price table
+   `CRM_DEAL_PRODUCT_LABEL` / `CRM_DEAL_PLAN_LABEL` map for the selects, the price table
    again, a `plansForProduct()` filter, and copies of `deriveMrrUsd` / `planDiscountPct` so the
-   detail page can explain the number it shows. Add the fields to `CrmAccount` there and to
-   `CrmAccountUpsert` in `lib/useCrmData.ts`.
-6. **The UI control** - `views/CrmAccountDetailView.tsx`, the Deal card. A product select; a plan
-   select over `plansForProduct(account.product)` with a sentinel item for "no plan" (the select
+   detail page can explain the number it shows. Add the fields to `CrmDeal` there and to
+   `CrmDealUpsert` in `lib/useCrmData.ts`.
+6. **The UI control** - `views/CrmAccountDetailView.tsx`, `DealRow`. A product select; a plan
+   select over `plansForProduct(deal.product)` with a sentinel item for "no plan" (the select
    needs a real value, null does not travel), where switching product clears a plan that no longer
    belongs because the server would refuse it; quantity and unit-price inline edits (the placeholder
    shows the list price); and the MRR field switching to a read-only figure with a "derived" badge,
-   the discount, and the arithmetic spelled out whenever `deriveMrrUsd(account)` is non-null.
+   the discount, and the arithmetic spelled out whenever `deriveMrrUsd(deal)` is non-null.
    Optionally a column and footer aggregate in `lib/crmView.ts` (`CRM_COLUMNS`).
 
-Then the test. `accounts.test.ts` already pins what the seam does without a shape (a typed
-`mrr_usd` survives every unrelated write, to the cent); add three pins beside it: a plan plus a
+Then the test. `deals.test.ts` pins the deal write path without a shape; add three pins beside it: a plan plus a
 quantity stores the derived `mrr_usd` and ignores a passed one; a row with no plan keeps its typed
 value across a later, unrelated write; and a plan from the other product's list is refused. The
 third is what makes the two axes safe.
@@ -216,8 +253,8 @@ immutable because they are stored on rows, and the ModelSpec's `enum` becomes a 
 (`enum: () => planIds()`) so the write-time gate reads whatever the team's list says at write time
 rather than what it said at import time. The price table then lives in the same file, the UI reads
 it through a query instead of a compiled map, and a stored row can name a plan the file no longer
-lists - which reads back fine and is refused on that account's next edit - so copy planning's
-delete guard too and refuse to remove a plan an account still carries.
+lists - which reads back fine and is refused on that deal's next edit - so copy planning's
+delete guard too and refuse to remove a plan a deal still carries.
 
 ## Gotchas
 

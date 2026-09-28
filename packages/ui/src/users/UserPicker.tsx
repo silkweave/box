@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, UserCircle2 } from 'lucide-react'
+import { Check, ChevronsUpDown, UserCircle2 } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.tsx'
 import { Avatar } from '../components/Avatar.tsx'
@@ -22,6 +22,7 @@ export function UserPicker({
   readOnly = false,
   emptyLabel = 'Nobody',
   emptyHint,
+  caret = false,
 }: {
   value: string | null
   onChange: (id: string | null) => void
@@ -32,6 +33,8 @@ export function UserPicker({
   emptyLabel?: string
   /** Shown when the directory itself is empty. The caller knows where users come from. */
   emptyHint?: React.ReactNode
+  /** A trailing chevron at rest, so a table cell reads as a picker before it is hovered. */
+  caret?: boolean
 }) {
   const users = useUsers()
   const [open, setOpen] = useState(false)
@@ -82,6 +85,7 @@ export function UserPicker({
             <span>-</span>
           </span>
         )}
+        {caret && <ChevronsUpDown className='ml-auto size-3.5 shrink-0 text-muted-foreground' />}
       </PopoverTrigger>
       <PopoverContent align='start' className='w-56 gap-1 p-1.5'>
         <Row selected={!value} onClick={() => pick(null)}>

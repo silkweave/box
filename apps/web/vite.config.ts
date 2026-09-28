@@ -37,6 +37,11 @@ const themeKey = {
 const vitePort = box.server.vitePort
 const serverPort = box.server.port
 const serverUrl = `http://localhost:${serverPort}`
+// The configured browser-facing origin is a host this Box is reached by, e.g. a gateway name
+// that is not on the tailnet suffix. Accept it without a core edit.
+const dashboardHost = (() => {
+  try { return box.server.dashboardUrl ? new URL(box.server.dashboardUrl).hostname : undefined } catch { return undefined }
+})()
 
 export default defineConfig(({ mode }) => ({
   root,
@@ -62,8 +67,9 @@ export default defineConfig(({ mode }) => ({
     // tailscale that Host is the tailnet name, which Vite's host check rejects by default (a blank
     // page with "Blocked request" in the console, from a server that logged nothing wrong). Allow
     // the tailnet suffix rather than `true`: this binds to loopback anyway, and a dev server that
-    // trusts every Host is the DNS-rebinding hole the check is there to close.
-    allowedHosts: ['.ts.net', 'localhost'],
+    // trusts every Host is the DNS-rebinding hole the check is there to close. `server.dashboardUrl`
+    // adds its own host.
+    allowedHosts: ['.ts.net', 'localhost', ...(dashboardHost ? [dashboardHost] : [])],
     // The dev server is reachable through the Box origin before sign-in, so /@fs/ must never reach
     // instance state. Allow only browser source and the Bun dependency store (where @fontsource
     // ships its font files), never the checkout root or apps/server: box.local.json holds the

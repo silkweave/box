@@ -1,9 +1,9 @@
 import * as React from 'react'
-import { AlertCircle, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Square } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Square } from 'lucide-react'
 import { ContextDialog, ModelSelect, PermissionModeSelect, ProgressRing, SessionPanel, UsageDialog, formatTokens, type SessionControls, type SessionVitals } from '@workerdeck/ui'
 import type { UsageWindowRow } from '@workerdeck/protocol'
 import { BuilderFiles } from '../components/builder/BuilderFiles.tsx'
-import { BuilderReview } from '../components/builder/BuilderReview.tsx'
+import { BuilderWrapUp } from '../components/builder/BuilderWrapUp.tsx'
 import { useBuilderBrowser } from '../lib/useBuilderBrowser.ts'
 import { builderModelOptions } from '../lib/builderModels.ts'
 import { safePreviewPath } from '../lib/builderPreview.ts'
@@ -191,7 +191,7 @@ const pendingStatusLabel = (status: string): string =>
 function PendingChangesMessage({ changes }: { changes: BuilderPendingChanges }) {
   const count = changes.files.length
   return <>
-    <span className='block'>The live checkout has {changes.truncated ? `more than ${count}` : count} uncommitted {count === 1 ? 'change' : 'changes'}. Starting Builder moves {count === 1 ? 'it' : 'them'} onto the new Builder branch, where {count === 1 ? 'it appears' : 'they appear'} in Review with the session's work.</span>
+    <span className='block'>The live checkout has {changes.truncated ? `more than ${count}` : count} uncommitted {count === 1 ? 'change' : 'changes'}. Starting Builder moves {count === 1 ? 'it' : 'them'} onto the new Builder branch, where {count === 1 ? 'it appears' : 'they appear'} in Wrap Up with the session's work.</span>
     <span className='mt-3 block max-h-56 overflow-y-auto rounded-md border border-border bg-bg py-1 font-mono text-label'>
       {changes.files.map(file => <span key={`${file.status}:${file.path}`} className='flex items-center gap-2 px-2 py-0.5' title={file.path}>
         <span className='w-14 shrink-0 text-fg-4'>{pendingStatusLabel(file.status)}</span>
@@ -238,7 +238,8 @@ export function BuilderView() {
   const [loading, setLoading] = React.useState(true)
   const [action, setAction] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
-  const [view, setView] = React.useState<'preview' | 'files' | 'review'>('preview')
+  const [view, setView] = React.useState<'preview' | 'files'>('preview')
+  const [wrapUp, setWrapUp] = React.useState(false)
   const [previewLocation, setPreviewLocation] = React.useState(() => safePreviewPath(new URLSearchParams(location.search).get('preview')))
   const [initialPreview] = React.useState(previewLocation)
   const [openFile, setOpenFile] = React.useState<string>()
@@ -322,7 +323,7 @@ export function BuilderView() {
     await startBuilderSession(engine, changes.fingerprint ?? undefined)
   })
   const stop = async (): Promise<void> => {
-    if (!await confirm({ title: 'End without integrating?', message: 'Changes and the Builder branch remain on disk. Use Review to verify and integrate completed work.', confirmLabel: 'End session', danger: true })) return
+    if (!await confirm({ title: 'End without integrating?', message: 'Changes and the Builder branch remain on disk. Use Wrap Up to verify and integrate completed work.', confirmLabel: 'End session', danger: true })) return
     await run('stop', stopBuilder)
   }
   const restore = async (id: string): Promise<void> => {
@@ -353,15 +354,16 @@ export function BuilderView() {
         <div className='ml-auto flex shrink-0 items-center gap-2'>
           {state.maintenance && <Badge variant='warning'>Maintenance</Badge>}
           <nav className='flex rounded-full border border-border bg-surface p-1' aria-label='Builder workspace views'>
-            {(['preview', 'files', 'review'] as const).map(item => {
+            {(['preview', 'files'] as const).map(item => {
               const selected = view === item
               const disabled = item !== 'preview' && !state.session
               return <div key={item} className={`flex items-center rounded-full ${selected ? 'bg-accent/15 text-accent' : 'text-fg-3'}`}>
-                <button type='button' disabled={disabled} onClick={() => setView(item)} aria-current={selected ? 'page' : undefined} className='rounded-full px-3 py-1 text-label font-medium transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-40'>{item === 'preview' ? 'Preview' : item === 'files' ? 'Files' : 'Review'}</button>
+                <button type='button' disabled={disabled} onClick={() => setView(item)} aria-current={selected ? 'page' : undefined} className='rounded-full px-3 py-1 text-label font-medium transition-colors hover:text-text disabled:cursor-not-allowed disabled:opacity-40'>{item === 'preview' ? 'Preview' : 'Files'}</button>
                 {item === 'preview' && selected && <button type='button' onClick={reloadPreview} className='mr-1 flex size-6 items-center justify-center rounded-full text-accent transition-colors hover:bg-accent/10' aria-label='Refresh preview' title='Refresh preview'><RefreshCw className='size-3.5' /></button>}
               </div>
             })}
           </nav>
+          <Button size='sm' disabled={!state.session} onClick={() => setWrapUp(true)} title='Review, verify and commit this session'><Check />Wrap Up</Button>
         </div>
       </header>
       <div className={view === 'preview' ? 'relative min-h-0 flex-1' : 'hidden'}>
@@ -369,7 +371,8 @@ export function BuilderView() {
         <iframe ref={iframe} onLoad={browser.reset} name='box-builder-preview' title='Live Box preview' src={initialPreview} className='h-full w-full border-0 bg-bg' />
       </div>
       {state.session && <div className={view === 'files' ? 'min-h-0 flex-1' : 'hidden'}><BuilderFiles key={state.session.id} cwd={state.session.cwd} readOnly={false} openPath={openFile} onUnsaved={setUnsaved} /></div>}
-      {view === 'review' && <BuilderReview state={state} unsaved={unsaved} onUpdated={refresh} onOpenFile={revealFile} onFinished={() => location.assign(previewLocation)} />}
+      {state.session && <BuilderWrapUp open={wrapUp} onOpenChange={setWrapUp} cwd={state.session.cwd} unsaved={unsaved} onUpdated={refresh} onOpenFile={revealFile} onFinished={() => location.assign(previewLocation)}
+        onAskAgent={sessionControls ? text => { sessionControls.insertComposerText(text); sessionControls.focusComposer() } : undefined} />}
     </main>
     <div role='separator' aria-label='Resize Builder conversation' aria-orientation='vertical' tabIndex={0} aria-valuemin={340} aria-valuemax={800} aria-valuenow={panelWidth} onPointerDown={resize} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setPanelWidth(w => Math.max(340, Math.min(800, w + (e.key === 'ArrowLeft' ? 20 : -20)))) } }} className='hidden w-1 shrink-0 cursor-col-resize touch-none rounded bg-border/40 hover:bg-accent lg:block' />
     <aside style={{ '--builder-width': `${panelWidth}px` } as React.CSSProperties} className='flex h-[45vh] min-h-0 shrink-0 flex-col lg:h-full lg:w-(--builder-width)' aria-label='Shared Builder conversation'>

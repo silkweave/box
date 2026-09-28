@@ -1,9 +1,11 @@
-# `crm` - accounts, contacts, meetings, revenue, activities
+# `crm` - accounts, deals, contacts, meetings, revenue, activities
 
-The pipeline, worked one company at a time. An **account** is a company and, because there is
-deliberately no Deal object, it is also the deal: `status` carries the whole lifecycle, so Lead,
-Customer and Churned are three values of one column rather than three tables. Around it sit the
-**contacts** (the humans at that company), the **meetings** (future appointments with an outcome),
+The pipeline, worked one company at a time. An **account** is a company, and its `status` carries
+the RELATIONSHIP, so Lead, Customer and Churned are three values of one column rather than three
+tables. A **deal** is one attempt to sell to an account - a pilot, a renewal, an upsell, a second
+try after a loss - with its own stage, value, odds and close date, so the pipeline board is a board
+of deals and closing one never rewrites another's history (split out of the account on 2026-09-28;
+until then the account was the deal). Around them sit the **contacts** (the humans at that company), the **meetings** (future appointments with an outcome),
 the **revenue events** (invoices and payments, at the grain of the invoice) and the **activities**
 (messages exchanged, append-only). Two write paths run side by side: a human one that physically
 cannot express a provider-owned column, and a machine one (`import.ts`, `upsertImportedMeeting`,
@@ -26,25 +28,33 @@ in the **assign queue**, because a row written nowhere visible is a row lost.
 
 ## Tables
 
-Five, all prefixed `crm_`. The prefix is load-bearing: it is what keeps "no `crm_*` table is ever
+Six, all prefixed `crm_`. The prefix is load-bearing: it is what keeps "no `crm_*` table is ever
 publicly reachable" a greppable, scannable claim. Every table carries `timestamps: true` and
 `audit: true`, so the record layer manages `created_at` / `updated_at` and `created_by` /
 `updated_by` (from the call's `actor`) on top of the declared columns.
 
 | table | pk | what it holds |
 |---|---|---|
-| `crm_accounts` | `id` (a slug, `acme-uk`) | one company = one deal. `status`, `owner`, `source`, `referral_partner`, `mrr_usd` (the operator's hand-maintained pipeline weight, **not** a finance number, and typed rather than derived - see **What a team customises**), `close_probability`, `waiting_on`, `next_action(_at)`, `last_contacted_at`, subscription window, `website`, `tags`, `notes`, pause window, `loss_reason`, the renewal-risk triple, the three external links (`stripe_customer_id`, `supabase_space_id`, `whatsapp_group_jid`), an `external` JSON bag and the derived `name_key` |
+| `crm_accounts` | `id` (a slug, `acme-uk`) | one company. `status` (the relationship), `owner`, `source`, `referral_partner`, `mrr_usd` (what the customer pays per month today as the operator knows it, **not** a finance number), `waiting_on`, `next_action(_at)`, `last_contacted_at`, subscription window, `website`, `tags`, `notes`, pause window, the renewal-risk triple, the three external links (`stripe_customer_id`, `supabase_space_id`, `whatsapp_group_jid`), an `external` JSON bag and the derived `name_key` |
+| `crm_deals` | `id` (a slug, unique across accounts) | one attempt to sell to an account: `account_id`, `name`, `stage`, `owner` (falls back to the account's for display), `mrr_usd` (what it would be worth per month - an estimate, typed rather than derived, see **What a team customises**), `close_probability`, `expected_close_at`, `closed_at` and `loss_stage` (stamped on the stage move), `loss_reason`, `notes`, and a reserved `external` bag |
 | `crm_contacts` | `id` (the source's lead id verbatim, or a slug) | one human at exactly one account: `account_id`, `name`, `headline`, `email`, `phone`, `linkedin_url`, `role`, `is_primary` (int 0/1, at most one per account), `external_stage`, `tags`, `notes`, the derived `linkedin_key`, `last_activity_at` |
 | `crm_meetings` | `id` (idempotency IS the pk; machine rows are namespaced, e.g. `gcal:<event>`) | one sales conversation with a lifecycle: `account_id`/`contact_id` (nullable - null means the assign queue), `kind`, `scheduled_at`, `duration_min`, `outcome`, `rescheduled_count`, `source`, `meet_code`, `attendee_email`, `title`, `matched_by`, `notes`, `external` (organizer, attendees, transcript path, `rescheduled_from[]`) |
 | `crm_revenue_events` | `id` (namespaced, `hubspot:inv:...` / `stripe:inv:...`) | one money event at invoice grain: `account_id` (nullable = queue), `provider`, `kind`, `status`, `amount` + `currency` + `amount_usd` (frozen at `issued_at`'s rate) + `collected_usd` (struck once, at `paid_at`'s rate) + `fx_rate`/`fx_rate_month`, `issued_at`/`due_at`/`paid_at`/`refunded_at`, `period_months` and the **stored** coverage window `covers_from`/`covers_to`, `payer_email`, the external invoice/payment/subscription ids, `invoice_number`, `superseded_by`, `description`, `matched_by`, `notes` |
 | `crm_activities` | `id` (`<provider>:msg:<message id>` for synced rows, `manual:<uuid>` for hand-logged ones) | one message exchanged with a contact: `account_id` (denormalized from the contact on purpose), `contact_id`, `channel`, `direction`, `occurred_at`, `body`, `subject`, `thread_id`/`thread_index`, `message_type`, `interaction_type`, `author_name`, `campaign_id`/`campaign_name`, `external` |
 
-**Deleting a parent CASCADES to its activities** (2026-09-14), and it is the other half of the
+**Deleting an account CASCADES to its deals**, and **deleting a parent CASCADES to its activities** (2026-09-14), and it is the other half of the
 "a synced row cannot be hand-deleted" refusal: `readCrmActivities` only ever queries by
 `account_id`, so a row left behind by a parent delete is INVISIBLE, and the per-row delete refuses
 synced rows, so it is also PERMANENT - with no backfill able to re-create it either. Both
 `deleteCrmContact` and `deleteCrmAccount` therefore drop them by raw DELETE inside the same write,
-and both reports carry `activities_deleted` plus a warning naming the count.
+and both reports carry `activities_deleted` plus a warning naming the count; the account report
+also carries `deals_deleted`.
+
+**Deal stage moves carry three rules** (`deals.ts`): the move into `won` or `lost` stamps
+`closed_at` today unless one is passed, and re-opening clears it; the move to `lost` remembers the
+stage it left as `loss_stage`; and a win promotes a `lead` (or a `lost` / `churned` account being
+won back) to `customer`. That promotion is the only automatic account-status move, and it only ever
+moves an account INTO the paying base.
 
 **Baseline DDL: none.** `migrations: []` in `manifest.ts` - the tables are created from the
 `ModelSpec`s by `ensureSchema()`, and there is no bootstrap SQL, no index declaration and no DDL
@@ -60,7 +70,8 @@ and `## Notes` (or any later level-1/2 heading) for the rest. Headings, rather t
 delimiter, because TipTap measurably drops comments on round trip (`docs.ts` records the
 measurement, 2026-08-26). `crm_accounts.next_action` and `crm_accounts.notes` are **derived caches**
 of that file, refreshed on every doc write so the kanban card and the table sort have something
-queryable.
+queryable. The next move belongs to the ACCOUNT, not to a deal: it is about the company, and a board
+card shows its account's next move.
 
 Nothing else. A sync a team writes keeps its own configuration under `<BOX_DATA_DIR>/config/` and
 its secrets in core's `box.local.json credentials`, the way every other integration does.
@@ -99,7 +110,7 @@ structure the editor never contains is structure the user cannot delete or mangl
 
 **When a deal has a shape, the shape wins over a typed MRR.** The foundation ships no shape -
 product, plan, quantity and price are one team's commercial vocabulary, not the CRM's (a product
-decision, 2026-09-14) - and stores `mrr_usd` as typed. The rule to carry over when a team adds one
+decision, 2026-09-14) - and stores the deal's `mrr_usd` as typed. The rule to carry over when a team adds one
 (`AGENT.md` § "Adding a deal shape"): `mrr_usd` becomes DERIVED and a passed value is ignored, and
 the UI shows MRR read-only exactly when something derives it, because an editable box would accept
 a value the server discards and the edit would silently revert. Clear the plan and the box comes
@@ -130,14 +141,17 @@ effect of removing a directory.
 
 ## Procedures and tools
 
-`CrmController` (`@Controller('crm')`, class-level `@UseGuards(AuthGuard)`). Eighteen procedures,
-seventeen of them also MCP tools.
+`CrmController` (`@Controller('crm')`, class-level `@UseGuards(AuthGuard)`). Twenty-one procedures,
+twenty of them also MCP tools.
 
 | tRPC | MCP | what |
 |---|---|---|
-| `crmAccounts` (query) | `crm-accounts` | every account with its contacts nested; no server-side filtering - one payload behind one live store |
+| `crmAccounts` (query) | `crm-accounts` | every account with its contacts and deals nested; no server-side filtering - one payload behind one live store |
 | `crmAccountUpsert` (mutation) | `crm-account-upsert` | create or partially update a company; Box-owned columns only. Refuses a `stripe_customer_id` / link already held by another account |
-| `crmAccountDelete` (mutation) | `crm-account-delete` | remove a company and report what went with it - its contacts AND their activities (`contacts_deleted`, `activities_deleted`) |
+| `crmAccountDelete` (mutation) | `crm-account-delete` | remove a company and report what went with it - its deals, its contacts AND their activities (`deals_deleted`, `contacts_deleted`, `activities_deleted`) |
+| `crmDeals` (mutation) | `crm-deals` | every deal, or one account's, flat - the agent's and a report's read |
+| `crmDealUpsert` (mutation) | `crm-deal-upsert` | create or partially update a deal; `account_id` required on create. Stamps `closed_at` / `loss_stage` on the stage move; a win promotes a lead account |
+| `crmDealDelete` (mutation) | `crm-deal-delete` | remove one deal; warns when it was closed, because closed deals are the win rate |
 | `crmContactUpsert` (mutation) | `crm-contact-upsert` | create or partially update a person; `account_id` required on create, re-parents on update; first contact becomes primary |
 | `crmContactDelete` (mutation) | `crm-contact-delete` | remove a person and their activities (`activities_deleted`) and report: will the source re-send them, who was promoted to primary, is the account now uncallable |
 | `crmActivities` (mutation) | `crm-activities` | every message with an account across all its contacts, oldest first |
@@ -181,13 +195,21 @@ writes one against `import.ts` decides then whether it is an action (scheduled) 
   view store) above, then the ten most recently opened accounts (per-browser `localStorage`; where
   you have been is not team state), plus an assign-queue entry badged with its count. Filtering
   lives in exactly one place, the view bar.
-- **The accounts index** is two layouts over one view model: a full-width data grid with
-  totallable columns, and a pipeline kanban you drag cards through (`CrmKanban` over data's
-  `BoardKanban`).
-- **The detail page** carries the account fields, the contacts list, the markdown doc (lazy -
-  `CrmAccountDocLazy`, because TipTap is large), a conversation stream over `crm_activities`, a
-  meetings panel and a money panel.
-- **Live reload**: `useCrmData` registers `table:crm_accounts` and `table:crm_contacts`;
+- **The accounts index** is two layouts over one view model: a full-width grid with one row per
+  account and totallable columns (the leading open deal, the weighted pipeline, MRR), and a
+  pipeline kanban with one card per DEAL, dragged between deal stages (`CrmKanban` over data's
+  `BoardKanban`). The account filters narrow both; the `stage` filter is the board's column list
+  and "has a deal at this stage" on the list; the owner scope reads the deal's owner on the board.
+  Saved views stored before deals existed are repaired on read (`normalizeCrmFilters`).
+- **The detail page** is a summary strip (owner, MRR, open pipeline, last contact) above unboxed
+  sections that fold shut by their heading - deals, contacts, conversation, meetings, money,
+  relationship, retention and a record section folded by default - with the markdown doc beside
+  it (lazy - `CrmAccountDocLazy`, because TipTap is large). The doc opens with the **Next move**
+  block: the move itself, a size up in a tinted box, then its due date, whose turn it is and the
+  last contact, then shortcuts that open Conversation with its log form or Deals with a new deal
+  started. The fold state is one global per-browser preference (`CardCollapse`).
+- **Live reload**: `useCrmData` registers `table:crm_accounts`, `table:crm_contacts` and
+  `table:crm_deals`;
   `useCrmEvents` subscribes to `table:crm_meetings`, `table:crm_revenue_events` and
   `table:crm_activities`. Meetings, revenue and activities are fetched PER ACCOUNT and not folded
   into the accounts payload, which is already ~294KB.
@@ -206,15 +228,17 @@ Everything below is a plain list in `features/crm/core/types.ts` unless noted. E
 an enum needs no migration until a Box has shipped rows with the old values; after that, a migration
 in `migrations.ts` rewrites them.
 
-- **The pipeline itself** - `CRM_ACCOUNT_STATUSES`:
-  `stale -> meeting_requested -> meeting_booked -> demo -> proposal -> confirmed -> customer ->
-  onboarding`, with `at_risk` / `churned` / `lost` / `archived` as the exits. Two derived sets ride
-  on it: `CRM_PAYING_STATUSES` and `CRM_PIPELINE_STATUSES`. This is the single most team-specific
-  thing in the feature.
+- **The pipeline itself** - `CRM_DEAL_STAGES`:
+  `stale -> meeting_requested -> meeting_booked -> demo -> proposal -> confirmed -> won`, with
+  `revisit` as a dated siding and `lost` as the other exit. Two derived sets ride on it:
+  `CRM_OPEN_DEAL_STAGES` (what is forecast) and `CRM_CLOSED_DEAL_STAGES` (what stamps `closed_at`).
+  This is the single most team-specific thing in the feature.
+- **The relationship** - `CRM_ACCOUNT_STATUSES`: `lead -> customer -> onboarding`, with
+  `at_risk` / `churned` / `lost` / `archived` as the exits, and `CRM_PAYING_STATUSES` beside it.
 - **Where deals come from** - `CRM_ACCOUNT_SOURCES` (`direct`, `inbound`, `outbound`, `referral`,
   `partner`, `existing`, `unknown`).
 - **What you sell** - deliberately NOT in the foundation. No product, plan or price vocabulary
-  ships and `mrr_usd` is typed by hand (a product decision, 2026-09-14: the deal shape is an
+  ships and a deal's `mrr_usd` is typed by hand (a product decision, 2026-09-14: the deal shape is an
   optional spec a team implements on top of the CRM, on demand). `AGENT.md` § "Adding a deal
   shape" is that spec - the two axes, the derivation, and every file an enum column touches.
 - **The people vocabularies** - `CRM_CONTACT_ROLES` (`decision_maker`, `buyer`, `user`, `other`),
@@ -240,12 +264,12 @@ in `migrations.ts` rewrites them.
   that stops a gmail address being read as a company domain.
 - **The import's stage vocabulary** - `CRM_IMPORT_STAGES` (the upstream `external_stage` values
   that mean "still active at the source, will re-import"; the delete reports read it) and
-  `CRM_ACCOUNT_STATUS_SEED` (what status a sync-created account is born with; nothing reads it
-  today). Both are placeholders inherited from the predecessor's outreach tool - a team wiring a
+  `CRM_ACCOUNT_STATUS_SEED` (what status a sync-created account is born with - `lead` for every
+  key; nothing reads it today; whether a sync should also open a deal is the team's call). Both are placeholders inherited from the predecessor's outreach tool - a team wiring a
   sync replaces them with the stages its source actually reports, and keeps a stage like
   "Interested" deliberately OUT of the CRM by simply not mapping it.
 - **Labels and order** - the nav label and order band in `features/crm/web/index.tsx`; the
   grid's offered columns, widths, hints and aggregates in `lib/crmView.ts` (`CRM_COLUMNS`,
-  `PIPELINE_COLUMNS`, the closed-status set, the MRR chip buckets); the display labels in
-  `crm-types.ts` (`CRM_ACCOUNT_SOURCE_LABEL`, `CRM_MEETING_KIND_LABEL`,
+  `PIPELINE_STAGES` - the board's default columns - the closed-status set, the MRR chip buckets);
+  the display labels in `crm-types.ts` (`CRM_DEAL_STAGE_LABEL`, `CRM_ACCOUNT_SOURCE_LABEL`, `CRM_MEETING_KIND_LABEL`,
   `CRM_REVENUE_STATUS_LABEL`, ...).

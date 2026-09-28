@@ -1,7 +1,7 @@
 # Validation
 
 Run `box verify` from the intended checkout. The complete chain builds the workspace, checks
-skill links, runs CLI and web tests, generates API types, typechecks, lints, runs core and server tests,
+skill links, runs CLI and web tests (`apps/web/tests` and `features/*/web`), generates API types, typechecks, lints, runs core and server tests,
 and checks the schema matrix. `box verify --plain` provides append-only output; `--verbose`
 includes full child output. See [CLI.md](CLI.md) for progress, warnings and log locations.
 

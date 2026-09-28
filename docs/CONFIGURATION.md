@@ -21,7 +21,8 @@ Choose the system principal before first boot. Its ID is locked once initialized
 ports in `box.local.json` when running another checkout. `server.host` is the interface the Box
 listens on and defaults to `127.0.0.1`, so only this machine can reach it. To reach a Box from
 other machines, for example over a tailnet, set it to `0.0.0.0` (or `::` for IPv6 as well) in
-`box.local.json` and set `server.dashboardUrl` to the address people use. Brand changes require a frontend rebuild.
+`box.local.json` and set `server.dashboardUrl` to the address people use. The development server
+also accepts requests for the host in `server.dashboardUrl`. Brand changes require a frontend rebuild.
 Keep automation and agent hosts disabled in runtime tests.
 
 Core sections include `agent`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,

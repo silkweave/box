@@ -32,5 +32,10 @@ export default defineConfig({
       { find: /^@silkweave\/box-core\/(.*)$/, replacement: core + '$1.ts' },
     ],
   },
-  test: { include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', '../../features/*/server/**/*.test.ts'] },
+  // 10 s, not Vitest's 5: Builder review tests make hundreds of git calls and warehouse tests open
+  // a DuckDB instance per call, so a loaded host (the Box's own server, agents) overran 5 s.
+  test: {
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', '../../features/*/server/**/*.test.ts'],
+    testTimeout: 10_000, setupFiles: ['./vitest.setup.ts'],
+  },
 })

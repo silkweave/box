@@ -35,7 +35,7 @@
     "box": "bun --no-env-file packages/cli/src/index.ts",
     "box:install": "bun --no-env-file packages/cli/src/box-install.ts",
     "test:cli": "bun --no-env-file test ./packages/cli/src/tests/*.test.ts",
-    "test:web": "bun --no-env-file test ./apps/web/tests/*.test.ts"
+    "test:web": "bun --no-env-file test ./apps/web/tests ./features/*/web"
   },
   "dependencies": {
     "@silkweave/box-core": "workspace:*"

@@ -183,7 +183,7 @@ box builder browser --session <session-id> screenshot
 Operations return bounded JSON. `snapshot` creates bounded DOM references for `inspect`, `click`,
 `type`, `select`, `scroll`, and `style`; `screenshot` saves a DOM PNG under `_docs/browser/` and
 returns its absolute path. Preview control is revoked by navigation or reload, disconnecting the
-selected browser, or five minutes without an action. Switching to Files or Review keeps Preview
+selected browser, or five minutes without an action. Switching to Files or opening Wrap Up keeps Preview
 control available.
 Authentication and settings routes, private fields, secret-like controls, scripts, frames, media,
 and cross-origin assets are excluded. DOM screenshots are capped at 1600 pixels per side and 4 MB

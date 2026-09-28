@@ -18,15 +18,31 @@ import { builderReadiness, loadBuilderControlState, type BuilderControlState } f
 import { openBuilderWithBrief } from '../lib/builderBrief.ts'
 import { RECIPES } from '../lib/recipes.ts'
 import { useAuth } from '../lib/useAuth.tsx'
+import { slotComponents } from '../lib/slots.ts'
 import { RecipeCatalog } from '../components/recipes/RecipeCatalog.tsx'
 
 const FIRST_RECIPE_PROMPT = `Adapt a useful first recipe from Silkweave Stack into this Box. Start by recommending Reminders unless another small, dependency-free recipe better fits my needs. Read the recipe docs in recipes/ and follow the adapt skill. Preserve this Box's local decisions, record the source SHA and intended scope, back up before migrations, adapt registration and dependencies, run the complete validation chain, and let me review the result before finishing.`
 
-const DASHBOARD_PROMPT = `Help me replace the onboarding dashboard with a dashboard for how I actually use this Box. First ask what I open the Box to decide, which installed areas matter every day, what needs attention, and whether the dashboard is personal or team-wide. Then implement it, preview it, run the complete validation chain, and let me review the result before finishing.`
+const DASHBOARD_PROMPT = `Help me replace the onboarding dashboard with a dashboard for how I actually use this Box. First ask what I open the Box to decide, which installed areas matter every day, what needs attention, and whether the dashboard is personal or team-wide. Then implement it as a feature's home.dashboard slot contribution, preview it, run the complete validation chain, and let me review the result before finishing.`
 
+
+/**
+ * The Dashboard. A feature that contributes `home.dashboard` (a component, no props) owns it: the Box
+ * has been made useful, and the dashboard is that feature's front page. With none, the first-run
+ * onboarding below stays; its last quest is exactly to contribute one.
+ */
+export function HomeView() {
+  const [Dashboard] = slotComponents<object>('home.dashboard')
+  if (!Dashboard) return <OnboardingView />
+  return (
+    <RouteChrome items={[]} activeId='' onSelect={() => {}} topbar={{ crumbs: [{ label: 'Dashboard' }] }}>
+      <Dashboard />
+    </RouteChrome>
+  )
+}
 
 /** Temporary first-run workspace. Its final quest is to replace this view with the owner's dashboard. */
-export function HomeView() {
+function OnboardingView() {
   const { principal } = useAuth()
   const isAdmin = principal?.role === 'admin'
   const installed = useMemo(() => WEB_FEATURE_LIST.filter(feature => feature.id !== 'artifacts'), [])
@@ -131,8 +147,8 @@ export function HomeView() {
             </section>
             <section className='rounded-xl border border-border bg-surface p-5'>
               <div className='flex items-center gap-2'><ShieldCheck className='size-5 text-accent' /><h2 className='text-heading-sm font-semibold text-text'>How changes work</h2></div>
-              <p className='mt-3 text-body-sm leading-relaxed text-muted-foreground'>Builder creates a safety backup and a dedicated branch. You preview the result, verify it, review the diff, and choose when to finish.</p>
-              <p className='mt-3 font-mono text-label text-fg-3'>BACKUP → BUILD → PREVIEW → VERIFY → REVIEW → FINISH</p>
+              <p className='mt-3 text-body-sm leading-relaxed text-muted-foreground'>Builder creates a safety backup and a dedicated branch. You preview the result, then Wrap Up walks you through reviewing the changes, verifying them and committing.</p>
+              <p className='mt-3 font-mono text-label text-fg-3'>BACKUP → BUILD → PREVIEW → WRAP UP (REVIEW → VERIFY → COMMIT)</p>
             </section>
           </aside>
         </div>

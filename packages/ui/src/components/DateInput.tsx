@@ -62,6 +62,14 @@ export function DateInput({
   utc = false,
   /** Card-scale: no "today" shortcut and no width floor, for a field living inside a task card. */
   compact = false,
+  /** Full size without the "today" shortcut, for several dates side by side in a narrow row: the
+   *  calendar stays, and the floor drops to the 140px the date and one icon need. */
+  noToday = false,
+  /** Table-cell scale: reads as the cell's text at rest (no outline) with the calendar always
+   *  showing, and outlines on hover or focus, as InlineEdit does. No "today" shortcut. */
+  inline = false,
+  /** Classes for the input itself, e.g. a colour that flags an overdue date. */
+  inputClassName,
 }: {
   value: string
   onChange: (next: string) => void
@@ -70,6 +78,9 @@ export function DateInput({
   disabled?: boolean
   utc?: boolean
   compact?: boolean
+  noToday?: boolean
+  inline?: boolean
+  inputClassName?: string
 }) {
   const today = utc ? todayUtc() : todayLocal()
   const [open, setOpen] = useState(false)
@@ -102,14 +113,15 @@ export function DateInput({
       <span
         className={cn(
           'inline-flex items-center gap-1',
-          compact ? 'w-full min-w-0' : 'w-[168px] min-w-[168px] shrink-0',
+          compact || inline ? 'w-full min-w-0' : noToday ? 'w-[140px] min-w-[140px] shrink-0' : 'w-[168px] min-w-[168px] shrink-0',
           className,
         )}>
         <span className='relative min-w-0 flex-1'>
           <input
             type='text'
             inputMode='numeric'
-            placeholder='YYYY-MM-DD'
+            // A column of empty dates reads as dashes, not a column of format hints.
+            placeholder={inline ? '-' : 'YYYY-MM-DD'}
             maxLength={10}
             value={text}
             onChange={(e) => commit(e.target.value.trim())}
@@ -122,9 +134,20 @@ export function DateInput({
               'w-full rounded-md border bg-bg text-text tabular-nums transition-colors focus:outline-none disabled:cursor-not-allowed disabled:opacity-60',
               // The right padding is reserved for whichever affordances are mounted inside the
               // field: compact has the calendar alone, full size has "today" beside it.
-              compact ? 'py-0.5 pr-6 pl-1.5 text-label' : 'py-1.5 pr-14 pl-2.5 text-body-sm',
+              inline
+                ? 'block h-7 py-0.5 pr-7 pl-1.5 text-body-sm'
+                : compact
+                  ? 'py-0.5 pr-6 pl-1.5 text-label'
+                  : noToday
+                    ? 'py-1.5 pr-8 pl-2.5 text-body-sm'
+                    : 'py-1.5 pr-14 pl-2.5 text-body-sm',
               // A malformed entry is shown, not swallowed - but it is visibly not accepted.
-              text !== '' && !parseIso(text) ? 'border-danger/60' : 'border-border hover:border-accent/40 focus:border-accent',
+              text !== '' && !parseIso(text)
+                ? 'border-danger/60'
+                : inline
+                  ? 'border-transparent bg-transparent hover:border-border-light hover:bg-accent-tint focus:border-accent focus:bg-bg'
+                  : 'border-border hover:border-accent/40 focus:border-accent',
+              inputClassName,
             )}
           />
           {/* Both affordances sit INSIDE the field, right-aligned. "Today" used to be a sibling of
@@ -133,7 +156,7 @@ export function DateInput({
               part of it, and it pushed the group wider than the box it was labelling. The field
               already has the room. */}
           <span className='absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-0.5'>
-            {!compact && (
+            {!compact && !noToday && !inline && (
               <button
                 type='button'
                 onClick={() => onChange(today)}

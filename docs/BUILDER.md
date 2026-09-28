@@ -37,8 +37,9 @@ views are:
   navigation, so the shell can return to the page that was being edited.
 - **Files** provides the Builder session's repository file tree and editor. Administrators can
   inspect and edit files; unsaved editor changes block verification and finish in that browser.
-- **Review** shows the current branch, changed files, checkpoints and diff, then runs verification
-  before offering checkpoint and finish actions.
+
+**Wrap Up**, beside the view switch, opens a three-step dialog that takes the session's work from
+changed to committed: review changes, verify, commit. See [Wrap Up](#wrap-up).
 
 Closing the Builder panel returns to the previewed page without ending the shared session.
 
@@ -71,7 +72,7 @@ application cannot create a second Builder loop.
 Browser control is automatically available from Builder. When multiple administrators have a
 Preview open, the broker binds the first eligible Preview and keeps that binding while it remains
 available. The binding ends when that Preview navigates or reloads, when the browser disconnects,
-or after five minutes without a browser action. Switching to Files or Review does not disable the
+or after five minutes without a browser action. Switching to Files or opening Wrap Up does not disable the
 embedded Preview. The next command uses the first available Preview. Each administrator can still
 navigate their own Preview manually.
 
@@ -133,11 +134,20 @@ The supervisor exposes the current application state and these administrator act
   an idle Builder runner and a clean Box at the matching source revision. It stops the editable
   process before restoring and rejects the operation when those preconditions are not met.
 
-## Review and finish
+## Wrap Up
 
-Review is a server-backed gate over the current Git state. It displays the Builder live branch,
-the integration target, changed files, checkpoints and a bounded diff. **Verify changes** records
-the exact review fingerprint only after the repository verification command passes. If a dependency
+Wrap Up is a server-backed gate over the current Git state, presented as three steps:
+
+1. **Review changes** shows the Builder live branch, the integration target, changed files,
+   checkpoints already saved and a bounded diff. Selecting a file opens it in Files.
+2. **Verify** runs the complete validation chain (`box verify`) for that exact state and streams its
+   output. When it fails, **Ask Builder to fix** puts the failure into the conversation composer for
+   the owner to send. A file changed after a check makes the result stale and asks for a new run.
+3. **Commit** takes a message. **Finish** integrates and ends the session; **Checkpoint only**
+   commits on the Builder branch and keeps the session open.
+
+Verification records the exact review fingerprint only after the repository verification command
+passes. If a dependency
 file changed, verification first runs a frozen Bun install with scripts disabled while the editable
 application is stopped. A missing lockfile, a failed command, a stale fingerprint or a source
 change during verification leaves a failed record and requires a fresh review.
@@ -165,7 +175,7 @@ The shared session is one host-level control surface on a dedicated live Builder
 Builder creates a new dedicated `builder/live/...` branch, captures the integration branch and
 revision, and takes an offline backup before recording the session. When the checkout has
 uncommitted changes, **Start** first lists them and asks the administrator to adopt them. Adopted
-changes move onto the new Builder branch and appear in Review as pending work against the unchanged
+changes move onto the new Builder branch and appear in Wrap Up as pending work against the unchanged
 base revision. The confirmation carries a fingerprint of the listed change set; if the files change
 before the server starts the session, the start is refused and must be confirmed again. The
 server owns session selection, administrator access, maintenance state, backup, review, verification

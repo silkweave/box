@@ -17,6 +17,9 @@ interface InlineEditProps {
   autoFocus?: boolean
   /** Fired after commit on blur/Enter/Escape - lets a parent-controlled edit mode exit. */
   onDone?: () => void
+  /** 'always' keeps the pencil showing at rest, so a table cell reads as editable before it is
+   *  hovered; 'hover' (the default) shows it only on hover, for forms where every field edits. */
+  icon?: 'hover' | 'always'
   'aria-label'?: string
 }
 
@@ -40,6 +43,7 @@ export function InlineEdit({
   rows = 3,
   autoFocus,
   onDone,
+  icon = 'hover',
   'aria-label': ariaLabel,
 }: InlineEditProps) {
   const orig = String(defaultValue ?? '')
@@ -87,7 +91,8 @@ export function InlineEdit({
       <Pencil
         aria-hidden
         className={cn(
-          'pointer-events-none absolute right-2 size-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-50 peer-focus:opacity-0',
+          'pointer-events-none absolute right-2 size-3.5 text-muted-foreground transition-opacity peer-focus:opacity-0',
+          icon === 'always' ? 'opacity-40 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-50',
           multiline ? 'top-2.5' : 'top-1/2 -translate-y-1/2',
         )}
       />

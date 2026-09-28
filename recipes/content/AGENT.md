@@ -43,10 +43,9 @@ No shipped migrations currently. A future schema change must be a new migration.
    `features.content.linkedinPublishLive` and `features.content.substackPublishLive` false and the scheduled
    publishers dry-run. Configure these switches in `box.local.json` only when the team has agreed to real sends.
 6. **The skills** - the six under `features/content/skills/`, linked into `.claude/skills/`, are procedures, so they are edited as
-   prose. `ingest-sink`/`consult` reference `bun run idea:apply` and `illustration` references
-   `bun run image`,
-   neither of which is a script in this template's `package.json`. Rewrite them for the team's own
-   host and tools. (`draft-reply` and `engage` moved to `features/engagement/skills/` on
+   prose. `ingest-sink` applies plans through the planning tools and `illustration` runs the
+   `generate-image.mjs` it ships, so neither needs a script in the Box's `package.json`. Rewrite
+   authors, hosts and voice paths for the team. (`draft-reply` and `engage` moved to `features/engagement/skills/` on
    2026-09-13 - they drive that feature's tools, not this one's.)
 7. **Labels and order** - the nav entry and the Channels settings section in
    `features/content/web/index.tsx`, both band 300.

@@ -280,6 +280,10 @@ of a slot names it and types the props it renders with (`content.piece.panel` re
 contributors match that shape and never edit the owner. `slotComponents<P>(name)` returns every
 contribution in feature order.
 
+Core owns one slot itself: `home.dashboard` (a component with no props). The first feature that
+contributes it replaces the first-run onboarding on `/` with its dashboard, so a Box gets its own
+front page without editing `apps/web/src/views/HomeView.tsx`.
+
 `docs` exists because of a concrete break: `useDoc` named `trpc.planningDoc`, `trpc.sinkDoc` and
 `useDoc` resolves a `kind`
 through the registry and names no procedure itself; a `kind` no present feature provides resolves to

@@ -33,6 +33,7 @@ import {
   AGGREGATE_METHODS,
   aggregate,
   aggregateDecimals,
+  frozenCellStyle,
   type AggregateMethod,
   type AggregateSource,
   type AggregateStore,
@@ -45,9 +46,12 @@ export function GridFooter({
   label,
   sources,
   store,
+  freezeFirst = false,
 }: {
   columns: GridColumn[]
   template: string
+  /** Keep the label cell in view while the grid scrolls sideways, as `GridHeader` does. */
+  freezeFirst?: boolean
   /**
    * What sits in the identity column's footer cell - in this Box, "17 / 53 accounts" (see
    * `apps/web/src/lib/rowCount.ts`). It is a NODE the app hands over, not a count and a noun this
@@ -69,7 +73,7 @@ export function GridFooter({
       {columns.map((c, i) => {
         const source = i === 0 ? undefined : sources[c.key]
         return (
-          <div key={c.key} className='min-w-0'>
+          <div key={c.key} className='min-w-0' style={freezeFirst && i === 0 ? { ...frozenCellStyle('var(--surface)'), zIndex: 2 } : undefined}>
             {i === 0 ? (
               <span className='truncate text-label tabular-nums text-muted-foreground'>{label}</span>
             ) : source ? (
@@ -134,7 +138,7 @@ function AggregateCell({
             // axis, or the board is empty. The `·` is the grid's established "readable as empty".
             <span className='text-fg-4'>·</span>
           ) : source.unit === 'currency' ? (
-            <Money value={value} />
+            <Money value={value} {...source.currency} />
           ) : source.unit === 'percent' ? (
             <Percent value={value} decimals={decimals} />
           ) : (
