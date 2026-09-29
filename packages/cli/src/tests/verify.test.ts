@@ -6,10 +6,10 @@ import { stripVTControlCharacters } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { runTasks, OutputLines, isWarning, type Task, type RunState } from '../tasks.ts'
+import { runTasks, OutputLines, isWarning, readProgress, type Task, type TaskState, type RunState } from '../tasks.ts'
 import { cleanText, clip, screenFrame, span, widthOf } from '../ui.ts'
 import { taskReceipt, taskRows } from '../task-view.ts'
-import { verifyTasks } from '../verify.ts'
+import { verifyEvent, verifyTasks } from '../verify.ts'
 
 const task = (id: string, code: string, phase = 'Build'): Task => ({
   id, name: id, phase, command: `node ${id}`, executable: process.execPath, args: ['-e', code],
@@ -226,4 +226,42 @@ test('live rows remain within the terminal and activity always animates', async 
       assert.ok(!cleanText(a).includes('m motion'))
     }
   } finally { cleanup(state) }
+})
+
+test('reads Vitest and Bun test progress through Turbo prefixes', () => {
+  const state = { progress: undefined, cached: false, expected: { elapsed: 1000, total: 30 } } as unknown as TaskState
+  readProgress(state, '@silkweave/box-core:test: ✓ src/a.test.ts (12 tests) 34ms')
+  readProgress(state, '@silkweave/box-core:test: ❯ src/b.test.ts (6 tests | 1 failed) 20ms')
+  readProgress(state, '✓ editing and deleting (6)')
+  assert.deepEqual(state.progress, { done: 18, total: 30, unit: 'tests' })
+  readProgress(state, '@silkweave/box-core:test: Tests  1 failed | 31 passed (32)')
+  assert.deepEqual(state.progress, { done: 32, total: 32, unit: 'tests' })
+  const bun = { cached: false } as unknown as TaskState
+  readProgress(bun, 'Ran 44 tests across 9 files. [3.15s]')
+  assert.deepEqual(bun.progress, { done: 44, total: 44, unit: 'tests' })
+  readProgress(bun, 'Cached:    2 cached, 2 total')
+  assert.equal(bun.cached, true)
+})
+
+test('verify --json snapshots carry progress, warnings and failure diagnostics', async () => {
+  const state = await runTasks([
+    task('warn', 'console.log("@pkg:build: WARN careful"); console.log("Ran 3 tests across 1 files.")'),
+    task('fail', 'console.error("error TS2322: wrong type"); process.exit(2)', 'Check'),
+  ], { cwd: tmpdir() })
+  try {
+    const event = JSON.parse(verifyEvent(state))
+    assert.equal(event.verify, 1)
+    assert.deepEqual(event.tasks[0].warnings, ['WARN careful'])
+    assert.deepEqual(event.tasks[0].progress, { done: 3, total: 3, unit: 'tests' })
+    assert.equal(event.tasks[1].status, 'failed')
+    assert.ok(event.tasks[1].diagnostics.some((line: string) => line.includes('TS2322')))
+  } finally { cleanup(state) }
+})
+
+test('verify asks Vitest for per-file results without changing the displayed command', () => {
+  const core = verifyTasks('/example/bun').find(t => t.id === 'core-tests')!
+  assert.equal(core.command, 'bun run test:core')
+  assert.deepEqual(core.args.slice(-4), ['test:core', '--', '--', '--reporter=default'])
+  const forced = verifyTasks('/example/bun', { force: true }).find(t => t.id === 'core-tests')!
+  assert.deepEqual(forced.args.slice(-5), ['test:core', '--', '--force', '--', '--reporter=default'])
 })

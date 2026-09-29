@@ -33,12 +33,14 @@ with search, detail dialog and the Builder brief handoff, the `stack.source` set
 integration adds no migrations and preserves the consumer's empty feature registration.
 `box.local.json` points `stack.source` at the enclosing Stack checkout (`..`).
 
-## TS7-only core declaration build
+## No core declaration build
 
-Materialized on 2026-09-27 from Stack commit `0e225fbbc188932724783b2acf53d5d894a64f9d`. Core's
-declaration build forces the `tsgo` generator and reads the repo-root `tsconfig.core-build.json`,
-shipped as a shared root file. The refresh adds no migrations, no direct `typescript` dependency,
-and preserves the consumer's empty feature registration.
+Stack commit `aef0f8a4ef10b652fe1da29f6d14f03f12503154` supersedes the TS7-only declaration build
+materialized on 2026-09-27 from `0e225fbbc188932724783b2acf53d5d894a64f9d`. Core and provider-kit
+build JavaScript only, because every type check resolves the `@silkweave/box-source` condition to
+`src/`. `tsconfig.core-build.json` is no longer a shared root file and was removed here. Refreshed
+at Stack `53a3a719821b01c6e06babaa838d90ac5d9da7d2` with the Wrap Up task list and `box verify
+--json`. No migrations; the consumer's empty feature registration is preserved.
 
 ## Scoped Builder adoption and dev-mode hardening
 

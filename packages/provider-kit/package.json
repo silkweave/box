@@ -5,11 +5,9 @@
   "type": "module",
   "description": "The provider contract: the Provider interface a data-source module implements, the signal vocabulary its measures declare defaults in, and the fetch helpers. Deliberately free of the warehouse and the tenant io layer so a provider package never depends on @silkweave/box-core.",
   "main": "./build/index.mjs",
-  "types": "./build/index.d.mts",
   "exports": {
     ".": {
       "@silkweave/box-source": "./src/index.ts",
-      "types": "./build/index.d.mts",
       "default": "./build/index.mjs"
     }
   },

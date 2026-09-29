@@ -55,6 +55,8 @@ Failures also show diagnostics, recent output, the failed command and a rerun hi
 ```sh
 box verify
 box verify --plain
+box verify --json
+box verify --list
 box verify --verbose
 ```
 
@@ -62,6 +64,16 @@ box verify --verbose
 output, with check names as prefixes. CI, redirected output and dumb terminals automatically use
 append-only progress. `NO_COLOR` removes colors; the live progress view still updates. Terminal
 capabilities control color depth. These are terminal conventions, not Box configuration settings.
+
+`--json` writes one progress snapshot per line (`{"verify":1,...}`) with every check's status,
+elapsed time, counted test progress, warning excerpts and failure diagnostics, then the plain
+summary. Builder Wrap Up uses it to draw its task list. Test progress comes from the runners' own
+lines: Vitest runs with its default reporter so finished files report their test counts, and Bun
+test reports its total at the end. Each passing run records check durations and test totals in
+`node_modules/.cache/silkweave-verify.json`, so the next run can show `172/244 tests` and a
+time-based estimate for checks that report no counts.
+`--list` prints the checks as one JSON array without running them; Wrap Up uses it to show the
+whole table, queued, before a first run's opening snapshot.
 
 Every run creates a private `silkweave-verify-*` directory in the operating system's temporary
 directory, with one log per started check. The final summary prints its absolute path. Logs retain

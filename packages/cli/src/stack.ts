@@ -162,7 +162,10 @@ function fetchGit(root: string, url: string, ref?: string): FetchResult {
     // Follow a default-branch rename on the remote; harmless when nothing changed.
     git(cache, ['remote', 'set-head', 'origin', '--auto'])
   } else {
-    gitLoud(root, ['clone', '--filter=blob:none', '--no-checkout', '--', url, cache])
+    // A blobless clone keeps hosted fetches small. Local file:// remotes do not offer filtering and
+    // would only answer with a warning, so they get an ordinary clone.
+    const filter = url.startsWith('file:') ? [] : ['--filter=blob:none']
+    gitLoud(root, ['clone', ...filter, '--no-checkout', '--', url, cache])
   }
   const commit = resolveCacheRef(cache, ref)
   // The cache is disposable and managed by this command, so a stray edit there does not block a checkout.

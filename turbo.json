@@ -2,7 +2,7 @@
   "$schema": "https://turborepo.com/schema.json",
   // AGENTS.md is maintained source; keep turbo from appending its agent block to it.
   "agentGuidance": false,
-  "globalDependencies": ["features/**", "recipes/**", "tsconfig.core-build.json", "tsconfig.json", "box.json", "box.local.json"],
+  "globalDependencies": ["features/**", "recipes/**", "tsconfig.json", "box.json", "box.local.json"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

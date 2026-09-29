@@ -17,6 +17,8 @@ export interface Task {
    * Declared needs let independent checks still run and report after an unrelated failure.
    */
   needs?: string[]
+  /** What the previous passing run of this task took and counted, for progress estimates. */
+  expected?: { elapsed: number; total?: number }
 }
 export type TaskStatus = 'pending' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped'
 export interface TaskState extends Task {
@@ -30,7 +32,12 @@ export interface TaskState extends Task {
   log: string
   exitCode: number | null
   signal: NodeJS.Signals | null
+  /** Counted progress, when the command reports it (test files finishing, a final test total). */
+  progress?: TaskProgress
+  /** Turbo replayed every package task from its cache. */
+  cached: boolean
 }
+export interface TaskProgress { done: number; total?: number; unit: string }
 export interface RunState {
   tasks: TaskState[]
   started: number
@@ -69,6 +76,28 @@ export function isWarning(line: string): boolean {
   return (/\bwarn(?:ing|ings)?\b/i.test(line) || /(?:^|\s)\(!\)|⚠/.test(line)) && !/\b(?:no|0)\s+(?:\w+\s+)?warnings?\b/i.test(line)
 }
 
+// Turbo prefixes package output with `package:task:`; strip it before reading runner lines.
+const turboPrefix = /^@?[\w./-]+:[\w:-]+:\s+/
+/**
+ * Reads the runners' own progress lines. Vitest reports each finished file with its test count
+ * and a final `Tests ... (total)` line; Bun test prints `Ran N tests across M files.`.
+ */
+export function readProgress(task: TaskState, raw: string): void {
+  const line = raw.replace(turboPrefix, '')
+  const file = /^[✓❯×↓]\s+\S+\s+\((\d+) tests?\b/.exec(line)
+  const total = /^Tests\s+.*\((\d+)\)$/.exec(line) ?? /^Ran (\d+) tests? across\b/.exec(line)
+  if (total) {
+    const count = Number(total[1])
+    task.progress = { done: count, total: count, unit: 'tests' }
+  } else if (file) {
+    const done = (task.progress?.done ?? 0) + Number(file[1])
+    const expected = task.expected?.total
+    task.progress = { done, total: expected && expected >= done ? expected : undefined, unit: 'tests' }
+  }
+  const cache = /^Cached:\s+(\d+) cached, (\d+) total/.exec(line.trim())
+  if (cache && cache[1] === cache[2]) task.cached = true
+}
+
 function terminate(child: ChildProcess, force: boolean): void {
   if (!child.pid) return
   if (process.platform === 'win32') {
@@ -88,6 +117,7 @@ async function execute(task: TaskState, options: RunOptions, update: () => void)
   let storageError = ''
   const accept = (line: string): void => {
     task.lastOutput = performance.now()
+    readProgress(task, line)
     task.tail.push(line)
     if (task.tail.length > 30) task.tail.shift()
     if (isWarning(line) && task.warnings.length < 5 && !task.warnings.includes(line)) task.warnings.push(line)
@@ -146,7 +176,7 @@ export async function runTasks(tasks: Task[], options: RunOptions): Promise<RunS
   const state: RunState = {
     started, elapsed: 0, finished: false, cancelled: false, logDirectory,
     tasks: tasks.map((task, i) => ({ ...task, status: 'pending', started: 0, elapsed: 0, lastOutput: 0,
-      tail: [], warnings: [], diagnostics: [], log: join(logDirectory, `${String(i + 1).padStart(2, '0')}-${task.id}.log`), exitCode: null, signal: null })),
+      tail: [], warnings: [], diagnostics: [], log: join(logDirectory, `${String(i + 1).padStart(2, '0')}-${task.id}.log`), exitCode: null, signal: null, cached: false })),
   }
   const update = (): void => { state.elapsed = performance.now() - started; options.onUpdate?.(state) }
   try {

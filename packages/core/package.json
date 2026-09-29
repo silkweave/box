@@ -5,16 +5,13 @@
   "type": "module",
   "description": "Silkweave Box core: warehouse, auth, events and operations, linked from source with installed feature registration.",
   "main": "./build/index.mjs",
-  "types": "./build/index.d.mts",
   "exports": {
     ".": {
       "@silkweave/box-source": "./src/index.ts",
-      "types": "./build/index.d.mts",
       "default": "./build/index.mjs"
     },
     "./testing": {
       "@silkweave/box-source": "./src/testing.ts",
-      "types": "./build/testing.d.mts",
       "default": "./build/testing.mjs"
     },
     "./*": {

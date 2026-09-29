@@ -16,6 +16,7 @@ import {
   loadBuilderPendingChanges,
   restoreBuilder,
   restartBuilder,
+  sendBuilderMessage,
   setBuilderMaintenance,
   startBuilderSession,
   stopBuilder,
@@ -375,7 +376,7 @@ export function BuilderView() {
       </div>
       {state.session && <div className={view === 'files' ? 'min-h-0 flex-1' : 'hidden'}><BuilderFiles key={state.session.id} cwd={state.session.cwd} readOnly={false} openPath={openFile} onUnsaved={setUnsaved} /></div>}
       {state.session && <BuilderWrapUp open={wrapUp} onOpenChange={setWrapUp} cwd={state.session.cwd} unsaved={unsaved} onUpdated={refresh} onOpenFile={revealFile} onFinished={() => location.assign(previewLocation)}
-        onAskAgent={sessionControls ? text => { sessionControls.insertComposerText(text); sessionControls.focusComposer() } : undefined} />}
+        onAskAgent={text => sendBuilderMessage(state.session!.id, text)} />}
     </main>
     <div role='separator' aria-label='Resize Builder conversation' aria-orientation='vertical' tabIndex={0} aria-valuemin={340} aria-valuemax={800} aria-valuenow={panelWidth} onPointerDown={resize} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setPanelWidth(w => Math.max(340, Math.min(800, w + (e.key === 'ArrowLeft' ? 20 : -20)))) } }} className='hidden w-1 shrink-0 cursor-col-resize touch-none rounded bg-border/40 hover:bg-accent lg:block' />
     <aside style={{ '--builder-width': `${panelWidth}px` } as React.CSSProperties} className='flex h-[45vh] min-h-0 shrink-0 flex-col lg:h-full lg:w-(--builder-width)' aria-label='Shared Builder conversation'>

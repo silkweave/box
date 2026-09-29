@@ -63,6 +63,41 @@ describe('Builder verification', () => {
     expect(verification.read()?.output).toContain('verify output')
   })
 
+  it('keeps verify progress snapshots as steps, even split across chunks, and the rest as output', async () => {
+    const paths = fixture()
+    const step = { id: 'core-tests', name: 'Core tests', phase: 'Validate', command: 'bun run test:core', status: 'running', elapsed: 900, progress: { done: 172, total: 244, unit: 'tests' }, cached: false, warnings: ['WARN slow'], diagnostics: [], exitCode: null, log: '/tmp/x.log' }
+    const line = JSON.stringify({ verify: 1, elapsed: 1200, finished: false, cancelled: false, logDirectory: '/tmp', tasks: [step] })
+    const verification = createBuilderVerification(paths, {
+      review: async () => review('current'),
+      run: async (_root, _args, options) => {
+        options?.onOutput?.(line.slice(0, 40))
+        options?.onOutput?.(line.slice(40) + '\n  All checks passed\n')
+      },
+    })
+
+    await verification.verify('current', offline)
+    expect(verification.read()).toMatchObject({ status: 'passed', elapsed: 1200, warnings: true, steps: [{ id: 'core-tests', progress: { done: 172, total: 244 } }] })
+    expect(verification.read()?.output).toBe('  All checks passed\n')
+  })
+
+  it('shows every check queued before the first snapshot: listed on a first run, reset from the last run after', async () => {
+    const paths = fixture()
+    const listed = [{ id: 'build', name: 'Build workspace', phase: 'Build', command: 'bun run build', expected: 2000 }]
+    const seen: unknown[] = []
+    const verification = createBuilderVerification(paths, {
+      review: async () => review('current'),
+      run: async (_root, args, options) => {
+        if (args.includes('--list')) { options?.onOutput?.(JSON.stringify(listed) + '\n'); return }
+        seen.push(structuredClone(verification.read()?.steps))
+        options?.onOutput?.(JSON.stringify({ verify: 1, elapsed: 5, tasks: [{ ...listed[0], status: 'passed', elapsed: 2500, cached: false, warnings: [], diagnostics: [], exitCode: 0, log: '/tmp/b.log' }] }) + '\n')
+      },
+    })
+    await verification.verify('current', offline)
+    await verification.verify('current', offline)
+    expect(seen[0]).toMatchObject([{ id: 'build', status: 'pending', expected: 2000 }])
+    expect(seen[1]).toMatchObject([{ id: 'build', status: 'pending', elapsed: 0, expected: 2500 }])
+  })
+
   it('records command failures as failed verification with command output', async () => {
     const paths = fixture()
     const verification = createBuilderVerification(paths, {
@@ -115,8 +150,9 @@ describe('Builder verification', () => {
     })
     expect(stoppedCalls).toBe(1)
     expect(calls).toEqual([
+      ['packages/cli/src/verify.ts', '--list'],
       ['install', '--frozen-lockfile', '--ignore-scripts'],
-      ['packages/cli/src/verify.ts', '--plain'],
+      ['packages/cli/src/verify.ts', '--json'],
     ])
     expect(verification.read()).toMatchObject({ status: 'passed', fingerprint: 'current' })
   })

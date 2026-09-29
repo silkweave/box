@@ -41,6 +41,7 @@ export function taskRows(state: RunState, target: string, height: number, detail
         for (const task of members) rows.push([
           span(`    ${icon(task, now)} `, tone(task)), span(task.name, tone(task)),
           span(task.started ? `  ${elapsedText(taskTime(task, now))}` : '', 'muted'),
+          span(task.progress ? `  ${task.progress.done}${task.progress.total ? `/${task.progress.total}` : ''} ${task.progress.unit}` : '', 'muted'),
         ])
       } else if (height >= 24) rows.push([span(`    ${summary}`, 'muted')])
     }
@@ -60,6 +61,13 @@ export function taskRows(state: RunState, target: string, height: number, detail
   }
   rows.push([], [span(interactive ? `  d ${details ? 'hide' : 'show'} output   Ctrl+C cancel` : '  Full command output retained in logs.', 'muted')])
   return rows
+}
+
+/** Drops transport prefixes, keeping the actual warning and controller/source context. */
+export function warningExcerpt(line: string): string {
+  return cleanText(line)
+    .replace(/^@[^\s]+:[^\s:]+:\s*/, '')
+    .replace(/^\[Nest\]\s+\d+\s+-\s+.*?\bWARN\s+(?:\[[^\]]+\]\s*)?/, '')
 }
 
 /** Permanent scrollback receipt, including useful diagnostics even outside a TTY. */
@@ -110,11 +118,7 @@ export function taskReceipt(state: RunState, { depth = 1, columns = 100 } = {}):
   for (const task of warnings) {
     rows.push([], [span(`  ! Warning output in ${task.name}`, 'warn')])
     for (const line of task.warnings.slice(0, 2)) {
-      // Drop transport prefixes, keeping the actual warning and controller/source context.
-      const excerpt = cleanText(line)
-        .replace(/^@[^\s]+:[^\s:]+:\s*/, '')
-        .replace(/^\[Nest\]\s+\d+\s+-\s+.*?\bWARN\s+(?:\[[^\]]+\]\s*)?/, '')
-      rows.push([span(`    ${clip(excerpt, Math.max(12, Math.min(104, columns - 5)))}`, 'muted')])
+      rows.push([span(`    ${clip(warningExcerpt(line), Math.max(12, Math.min(104, columns - 5)))}`, 'muted')])
     }
   }
   // Keep the path intact for copying, even in narrow terminals. Logs contain full warnings.

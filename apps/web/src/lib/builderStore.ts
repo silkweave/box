@@ -196,9 +196,51 @@ export interface BuilderReviewData {
   diff: string
   truncated: boolean
 }
+/** One `box verify` check with its live progress (see the supervisor's verification record). */
+export interface BuilderVerificationStep {
+  id: string
+  name: string
+  phase: string
+  command: string
+  status: 'pending' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped'
+  elapsed: number
+  expected?: number
+  progress?: { done: number; total?: number; unit: string }
+  cached: boolean
+  warnings: string[]
+  diagnostics: string[]
+  exitCode: number | null
+  log: string
+}
+export interface BuilderVerificationState {
+  fingerprint: string
+  status: 'running' | 'passed' | 'failed'
+  output: string
+  checkedAt: string
+  warnings: boolean
+  steps?: BuilderVerificationStep[]
+  elapsed?: number
+}
 export interface BuilderReviewState {
   review: BuilderReviewData
-  verification: { fingerprint: string; status: 'running' | 'passed' | 'failed'; output: string; checkedAt: string; warnings: boolean } | null
+  verification: BuilderVerificationState | null
+}
+/**
+ * Sends a turn to the shared Builder session from outside its composer. A short-lived second
+ * attachment carries the message; the visible session panel shows the turn like any other.
+ */
+export function sendBuilderMessage(sessionId: string, text: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const handle = builderClient.attach(sessionId, { reconnect: false, truncateResults: true })
+    const timer = setTimeout(() => { handle.detach(); reject(new Error('The Builder session did not answer. Try again.')) }, 10_000)
+    const off = handle.on('attached', () => {
+      off(); clearTimeout(timer)
+      handle.send(text)
+      // Leave the socket open briefly so the frame is flushed before the attachment closes.
+      setTimeout(() => handle.detach(), 1000)
+      resolve()
+    })
+  })
 }
 export const loadBuilderReview = (): Promise<BuilderReviewState> => request('/review', { signal: AbortSignal.timeout(15_000) }) as Promise<BuilderReviewState>
 export const verifyBuilderReview = (fingerprint: string): Promise<unknown> => request('/verify-review', { method: 'POST', body: JSON.stringify({ fingerprint }) })
