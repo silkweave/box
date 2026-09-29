@@ -5,6 +5,7 @@ import { storageKey } from '../lib/storage.ts'
 import { Wordmark } from '../brand/Wordmark.tsx'
 import { Button } from '../components/Button.tsx'
 import { ThemeToggle } from './ThemeToggle'
+import { NavAnchor } from '../components/NavAnchor.tsx'
 import { PlainHomeLink, useShellExtensions } from './ShellExtensions.tsx'
 
 /** Any icon component taking a className - lucide and tabler (brand) icons both satisfy this. */
@@ -33,6 +34,11 @@ export interface NavItem {
    * (every sidebar but the CRM's) renders exactly as it always did.
    */
   section?: string
+  /**
+   * The URL this item leads to. When set the row is a real link, so Cmd/Ctrl/Shift/middle click
+   * open it in a new tab or window; a plain click still goes through `onSelect`.
+   */
+  href?: string
 }
 
 /** A top-level navigation group = one of the app's views (Signals / Inbox / Automation). */
@@ -44,6 +50,8 @@ export interface NavGroup {
   id: string
   label: string
   icon: NavIcon
+  /** The URL of the group's destination; makes the header a real link (see `NavItem.href`). */
+  href?: string
 }
 
 /** The top-level view switcher, threaded from App through AppShell into the Sidebar. */
@@ -131,14 +139,14 @@ export function Sidebar({
                       ? 'bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-text)] font-semibold'
                       : 'text-text hover:bg-accent-tint',
                   )}>
-                  <button
-                    type='button'
+                  <NavAnchor
+                    href={group.href}
                     onClick={() => onSelectGroup(group.id)}
                     aria-current={isActive ? 'page' : undefined}
                     className='flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-3 py-2 text-left'>
                     <GroupIcon className={cn('size-4 shrink-0', isActive ? 'text-current' : 'text-muted-foreground')} />
                     <span className='line-clamp-1 flex-1'>{group.label}</span>
-                  </button>
+                  </NavAnchor>
                   {isActive && groupAction && <span className='mr-1.5 flex shrink-0 items-center'>{groupAction}</span>}
                 </div>
 
@@ -159,8 +167,8 @@ export function Sidebar({
                               {heading}
                             </div>
                           )}
-                          <button
-                            type='button'
+                          <NavAnchor
+                            href={item.href}
                             onClick={() => onSelect(item.id)}
                             aria-current={active ? 'page' : undefined}
                             className={cn(
@@ -184,7 +192,7 @@ export function Sidebar({
                                 {item.badge ?? item.count}
                               </span>
                             )}
-                          </button>
+                          </NavAnchor>
                         </li>
                       )
                     })}
@@ -246,9 +254,9 @@ export function SidebarRail({
           const GroupIcon = group.icon
           const isActive = group.id === activeGroup
           return (
-            <button
+            <NavAnchor
               key={group.id}
-              type='button'
+              href={group.href}
               onClick={() => onSelectGroup(group.id)}
               aria-label={group.label}
               aria-current={isActive ? 'page' : undefined}
@@ -259,7 +267,7 @@ export function SidebarRail({
                 isActive ? 'bg-accent-tint text-accent' : 'text-muted-foreground',
               )}>
               <GroupIcon className='size-4' />
-            </button>
+            </NavAnchor>
           )
         })}
       </div>

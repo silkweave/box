@@ -2,12 +2,15 @@ import * as React from 'react'
 import { Check, ChevronRight, ChevronsUpDown } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.tsx'
+import { NavAnchor } from '../components/NavAnchor.tsx'
 
 export interface CrumbMenuItem {
   label: string
   value: string
   current?: boolean
   onSelect: () => void
+  /** The item's URL; makes it a real link so modified clicks open it in a new tab or window. */
+  href?: string
 }
 
 export interface Crumb {
@@ -15,6 +18,8 @@ export interface Crumb {
   key?: React.Key
   label: string
   onClick?: () => void
+  /** The crumb's URL; makes a clickable crumb a real link so modified clicks open a new tab. */
+  href?: string
   /** When set (typically on the last crumb), the crumb renders as a quick-switch dropdown. */
   menu?: CrumbMenuItem[]
   /**
@@ -95,13 +100,13 @@ function Breadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
               <span className='truncate font-medium text-text' aria-current='page'>
                 {crumb.label}
               </span>
-            ) : crumb.onClick ? (
-              <button
-                type='button'
+            ) : crumb.onClick || crumb.href ? (
+              <NavAnchor
+                href={crumb.href}
                 onClick={crumb.onClick}
                 className='shrink-0 text-muted-foreground transition-colors hover:text-text'>
                 {crumb.label}
-              </button>
+              </NavAnchor>
             ) : (
               <span className='shrink-0 text-muted-foreground'>{crumb.label}</span>
             )}
@@ -175,9 +180,9 @@ function CrumbMenu({ crumb, current, triggerOnly = false }: { crumb: Crumb; curr
       </PopoverTrigger>
       <PopoverContent align='start' side='bottom' className='w-56 gap-0 p-1'>
         {crumb.menu!.map((item) => (
-          <button
+          <NavAnchor
             key={item.value}
-            type='button'
+            href={item.href}
             onClick={() => {
               setOpen(false)
               if (!item.current) item.onSelect()
@@ -188,7 +193,7 @@ function CrumbMenu({ crumb, current, triggerOnly = false }: { crumb: Crumb; curr
             )}>
             <Check className={cn('size-3.5 shrink-0', item.current ? 'opacity-100 text-accent' : 'opacity-0')} />
             <span className='truncate'>{item.label}</span>
-          </button>
+          </NavAnchor>
         ))}
       </PopoverContent>
     </Popover>

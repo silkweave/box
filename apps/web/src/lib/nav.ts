@@ -36,10 +36,10 @@ function sidebarGroups(): NavGroup[] {
     ...SIDEBAR_SECTIONS.flatMap((section) =>
       section.ids.flatMap((id) => {
         const entry = entries.find((item) => item.id === id)
-        return entry ? [{ ...entry, section: section.label }] : []
+        return entry ? [{ ...entry, href: entry.to, section: section.label }] : []
       }),
     ),
-    ...entries.filter((entry) => !assigned.has(entry.id)).map((entry) => ({ ...entry, section: 'Other' })),
+    ...entries.filter((entry) => !assigned.has(entry.id)).map((entry) => ({ ...entry, href: entry.to, section: 'Other' })),
   ]
 }
 

@@ -12,6 +12,7 @@
 
 import type { ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
+import { NavAnchor } from './NavAnchor.tsx'
 
 export function ActionListRow({
   icon,
@@ -19,6 +20,7 @@ export function ActionListRow({
   aside,
   title,
   onTitleClick,
+  titleHref,
   body,
   actions,
   muted,
@@ -33,6 +35,9 @@ export function ActionListRow({
   title: ReactNode
   /** Makes the headline the row's affordance. Omit it and the headline is text. */
   onTitleClick?: () => void
+  /** Where the headline leads. With it the headline is a real link: a plain click runs
+   *  `onTitleClick`, Cmd/Ctrl/Shift/middle click open the URL in a new tab or window. */
+  titleHref?: string
   /** A snippet, an excerpt, a reason. Clamped by the caller if it needs to be. */
   body?: ReactNode
   /** The bottom strip. A `<span className='flex-1' />` between two groups splits it left and right. */
@@ -59,11 +64,19 @@ export function ActionListRow({
           </div>
         )}
 
-        <p
-          className={cn('mt-1.5 text-body-sm font-medium text-text', onTitleClick && 'cursor-pointer hover:underline')}
-          onClick={onTitleClick}>
-          {title}
-        </p>
+        {titleHref != null ? (
+          <p className='mt-1.5 text-body-sm font-medium text-text'>
+            <NavAnchor href={titleHref} onClick={onTitleClick} className='hover:underline'>
+              {title}
+            </NavAnchor>
+          </p>
+        ) : (
+          <p
+            className={cn('mt-1.5 text-body-sm font-medium text-text', onTitleClick && 'cursor-pointer hover:underline')}
+            onClick={onTitleClick}>
+            {title}
+          </p>
+        )}
 
         {body && <div className='mt-1 text-body-sm leading-relaxed text-muted-foreground'>{body}</div>}
 

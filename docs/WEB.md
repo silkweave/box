@@ -117,6 +117,13 @@ The host uses this static identity to show the destination's group and fallback 
 its data loads. A published descriptor is accepted only for the current section and committed
 location, so delayed cleanup or a slow previous route cannot restore stale actions.
 
+Navigation controls are real links. Sidebar groups carry their entry's `to` as `href`; secondary
+items, clickable crumbs and crumb-menu items take an `href` built with `useHref()` or
+`useRouteLink()` from `src/lib/href.ts`. The shell renders them through `NavAnchor`, which hands a
+plain click to the selection callback for client-side routing and leaves Cmd/Ctrl/Shift/middle
+click to the browser, so any destination opens in a new tab or window. In-view controls that open
+a route use TanStack's `<Link>` or `NavAnchor` rather than a button calling `navigate`.
+
 Feature layouts keep their providers, dialogs, and routed content inside `RouteChrome`. They must
 publish one complete descriptor per section owner. Leaves that only add a top-bar portal continue
 to use `TopBarActions` or `TopBarCenter`; global controls belong to the separate feature manifest
