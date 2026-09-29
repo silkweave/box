@@ -34,8 +34,8 @@ and the ready-to-copy sign-in/token messages. It does not send an invitation or 
 The manifest is generated in production and served from the same object in Vite development;
 there is no separately edited `public/manifest.webmanifest`.
 
-Run `box build && box verify`, then restart the server. In development restart Vite and the
-server after changing branding. Rebuild **both** web and server for production: old web output
+Run `box build && box verify`, then restart the server. In development restart Vite
+(`box app restart --frontend`) and the server (`box app restart`) after changing branding. Rebuild **both** web and server for production: old web output
 and a new server can otherwise display different names. Browse the sign-in page, expanded and
 collapsed sidebar, and mobile header, inspect `/manifest.webmanifest`, and check dark mode. If
 notifications is installed, inspect `/api/push/sw.js` too. OS-installed app names/icons and old

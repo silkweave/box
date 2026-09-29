@@ -23,8 +23,8 @@ installer's printed shell instruction. Each checkout has its own source and lock
 shim selects the nearest Box above the invocation directory. `box where` explains that choice.
 
 `box build`, `box start` and `box start --prod` cover build and startup. Auth, database and MCP
-verbs retain their existing behavior. `box verify --plain` is append-only and `--verbose`
-includes child output. `bun run verify` remains a package-script entry point. Use explicit
+verbs retain their existing behavior. `box verify --plain` is append-only, `--verbose`
+includes child output and `--force` bypasses Turbo's cache. `bun run verify` remains a package-script entry point. Use explicit
 `bun run build` for internal scripts: `bun build` means Bun's bundler.
 
 ## Dependency and configuration contract

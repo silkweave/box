@@ -24,7 +24,10 @@ For the live Builder Preview, activate verified backend, registration, configura
 changes with `box app restart` before the runtime check. `box dev` is the stable supervisor that
 owns the Builder agent, so never stop, kill, replace, or relaunch it and never start a second Box
 against the same instance. `box app restart` restarts only the editable application and waits for
-health. If it cannot reach the supervisor, stop and ask the host operator to restore it.
+health. Check `box app status` first: in dev mode the preview is served by Vite, and
+`box app restart --frontend` restarts only Vite when it is down or holds stale module state; in built
+mode (`box start`) web changes reach the preview only after `box build`. If application control
+cannot reach the supervisor, stop and ask the host operator to restore it.
 
 For migration work, query the actual ledger and schema, compare them with the integration record,
 and verify the backup can be restored. If a progress note lags database state, trust the database
