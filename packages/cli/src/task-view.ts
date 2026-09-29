@@ -13,7 +13,8 @@ const icon = (task: TaskState, now: number): string => ({ running: spinner(now),
 
 export function taskRows(state: RunState, target: string, height: number, details: boolean, interactive: boolean, now = performance.now()): Row[] {
   const completed = state.tasks.filter(t => t.status === 'passed').length
-  const focus = state.tasks.find(t => t.status === 'running' || t.status === 'failed' || t.status === 'cancelled')
+  // The running check first: after an independent failure, later checks still run.
+  const focus = state.tasks.find(t => t.status === 'running') ?? state.tasks.find(t => t.status === 'failed' || t.status === 'cancelled')
   const elapsed = state.finished ? state.elapsed : now - state.started
   const filled = Math.floor(completed / state.tasks.length * 24)
   const rows: Row[] = [
@@ -64,10 +65,10 @@ export function taskRows(state: RunState, target: string, height: number, detail
 /** Permanent scrollback receipt, including useful diagnostics even outside a TTY. */
 export function taskReceipt(state: RunState, { depth = 1, columns = 100 } = {}): string {
   const completed = state.tasks.filter(t => t.status === 'passed').length
-  const failed = state.tasks.find(t => t.status === 'failed')
-  const cancelled = state.tasks.find(t => t.status === 'cancelled')
+  const failures = state.tasks.filter(t => t.status === 'failed')
+  const failed = failures[0]
   const warnings = state.tasks.filter(t => t.warnings.length)
-  const outcome = state.cancelled ? 'Cancelled' : failed ? `Failed at ${failed.name}` : warnings.length ? 'Verified with warning output' : 'All checks passed'
+  const outcome = state.cancelled ? 'Cancelled' : failed ? `Failed: ${failures.map(t => t.name).join(', ')}` : warnings.length ? 'Verified with warning output' : 'All checks passed'
   const outcomeTone: Tone = state.cancelled ? 'warn' : failed ? 'bad' : warnings.length ? 'warn' : 'good'
   const mark = state.cancelled ? '!' : failed ? '✕' : '✓'
   const rows: Row[] = [
@@ -93,13 +94,15 @@ export function taskReceipt(state: RunState, { depth = 1, columns = 100 } = {}):
       ...(hasWarning ? [span('  !', 'warn')] : []),
     ])
   }
-  const stopped = failed ?? cancelled
-  if (stopped) {
-    rows.push([], [span(`  $ ${stopped.command}`, 'accent')], [span(`  ${stopped.signal ? `Signal: ${stopped.signal}` : `Exit: ${stopped.exitCode ?? 'could not start'}`}`, 'muted')])
-    const diagnostics = [...new Set([...stopped.diagnostics, ...stopped.tail.slice(-8)])]
+  // Every failed check, not just the first: independent checks keep running after a failure.
+  const stopped = state.tasks.filter(t => t.status === 'failed' || t.status === 'cancelled')
+  for (const task of stopped) {
+    rows.push([], [span(`  $ ${task.command}`, 'accent')], [span(`  ${task.signal ? `Signal: ${task.signal}` : `Exit: ${task.exitCode ?? 'could not start'}`}`, 'muted')])
+    const diagnostics = [...new Set([...task.diagnostics, ...task.tail.slice(-8)])]
     for (const line of diagnostics) rows.push([span(`  ${line}`, 'text')])
-    rows.push([span(`  Inspect: ${stopped.command}`, 'accent')], [span('  Then rerun: box verify', 'muted')])
+    rows.push([span(`  Inspect: ${task.command}`, 'accent')])
   }
+  if (stopped.length) rows.push([span('  Then rerun: box verify', 'muted')])
   if (state.cancelled || failed) {
     const skipped = state.tasks.filter(t => t.status === 'skipped')
     if (skipped.length) rows.push([span(`  Not run: ${skipped.map(t => t.name).join(', ')}`, 'muted')])

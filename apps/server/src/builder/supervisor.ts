@@ -118,6 +118,14 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const offline = <T>(fn: () => Promise<T> | T): Promise<T> => app.withStopped(fn)
   const lifecycle = { paths, withAppStopped: offline }
   const verification = createBuilderVerification(paths)
+  const restartFrontend = () => mutate(async () => {
+    diagnostic('supervisor', 'local-frontend-restart.start')
+    // Refused before touching the preview when there is no Vite to restart (built mode).
+    if (!app.dev) return app.restartFrontend()
+    browser.revoke('Box frontend restarting')
+    try { return await app.restartFrontend() }
+    finally { diagnostic('supervisor', 'local-frontend-restart.finish') }
+  })
   const restartApplication = () => mutate(async () => {
     diagnostic('supervisor', 'local-app-restart.start')
     browser.revoke('Box application restarting')
@@ -336,7 +344,9 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     closeBrowserLocal = await startBuilderBrowserLocal(paths.instanceDir, browser)
     closeLocalControl = await startBuilderLocalControl(paths.instanceDir, {
       status: () => app.status,
+      frontend: () => app.frontendStatus(),
       restart: restartApplication,
+      restartFrontend,
       refresh: () => mutate(refreshUi),
     })
     if (closing) throw new Error('Box supervisor is stopping')

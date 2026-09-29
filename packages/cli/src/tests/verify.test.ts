@@ -20,8 +20,10 @@ test('verify keeps the ten-command order and package-manager entry point', () =>
   const tasks = verifyTasks('/example/bun')
   assert.deepEqual(tasks.map(t => t.command), [
     'bun run build', 'bun run skills', 'bun run test:cli', 'bun run test:web', 'bun run typegen --quiet', 'bun run typecheck', 'bun run lint',
-    'bun run --filter @silkweave/box-core test', 'bun run --filter @silkweave/box-server test', 'bun run schema:check',
+    'bun run test:core', 'bun run test:server', 'bun run schema:check',
   ])
+  const forced = verifyTasks('/example/bun', { force: true })
+  assert.deepEqual(forced.filter(t => t.command.endsWith('--force')).map(t => t.id), ['build', 'typecheck', 'core-tests', 'server-tests'])
   assert.ok(tasks.every(t => t.executable === '/example/bun'))
   assert.deepEqual(tasks[0].args, ['--bun', '--no-env-file', 'run', 'build'])
 })
@@ -53,6 +55,28 @@ test('runs in the requested checkout, retains complete output, and stops at a fa
     assert.match(receipt, /Inspect: node fail/)
     assert.match(receipt, /Warning output in first/)
   } finally { if (state) cleanup(state); rmSync(root, { recursive: true, force: true }) }
+})
+
+test('declared needs keep independent checks running after an unrelated failure', async () => {
+  const state = await runTasks([
+    { ...task('build', ''), needs: [] },
+    { ...task('tests', 'process.exit(3)', 'Validate'), needs: ['build'] },
+    { ...task('schema', 'console.log("ran")', 'Validate'), needs: ['build'] },
+    { ...task('types', '', 'Check'), needs: ['tests'] },
+  ], { cwd: tmpdir() })
+  try {
+    assert.deepEqual(state.tasks.map(t => t.status), ['passed', 'failed', 'passed', 'skipped'])
+    const receipt = taskReceipt(state)
+    assert.match(receipt, /Failed: tests/)
+    assert.match(receipt, /Not run: types/)
+  } finally { cleanup(state) }
+})
+
+test('verify declares the build as every check\'s prerequisite and typegen before typecheck', () => {
+  const needs = Object.fromEntries(verifyTasks('/example/bun').map(t => [t.id, t.needs]))
+  assert.deepEqual(needs.build, [])
+  assert.deepEqual(needs.typecheck, ['build', 'typegen'])
+  assert.deepEqual(needs.schema, ['build'])
 })
 
 test('a spawn error fails the task and skips following tasks', async () => {
@@ -91,12 +115,8 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'verify-cli-')))
   const source = join(root, 'packages/cli/src')
   mkdirSync(source, { recursive: true })
-  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'test:web', 'typegen', 'typecheck', 'lint', 'schema:check'].map(name => [name, `bun fixture.cjs ${name}`]))
+  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'test:web', 'typegen', 'typecheck', 'lint', 'test:core', 'test:server', 'schema:check'].map(name => [name, `bun fixture.cjs ${name}`]))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module', workspaces: ['packages/*'], scripts }))
-  for (const name of ['core', 'server']) {
-    mkdirSync(join(root, 'packages', name), { recursive: true })
-    writeFileSync(join(root, 'packages', name, 'package.json'), JSON.stringify({ name: `@silkweave/box-${name}`, scripts: { test: 'bun ../../fixture.cjs test' } }))
-  }
   for (const file of ['verify.ts', 'repo.ts', 'tasks.ts', 'ui.ts', 'task-view.ts']) copyFileSync(new URL(`../${file}`, import.meta.url), join(source, file))
   const fixture = join(root, 'fixture.cjs')
   const exec = (...args: string[]) => spawnSync(process.execPath, [join(source, 'verify.ts'), ...args], {
@@ -119,7 +139,13 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
     logs.push(failure.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
     assert.equal(failure.status, 7)
     assert.match(failure.stdout, /SyntaxError: regression fixture/)
-    assert.match(failure.stdout, /\[skipped\] Lint/)
+    assert.match(failure.stdout, /\[passed\] Lint/)
+    assert.match(failure.stdout, /\[passed\] Schema matrix/)
+    writeFileSync(fixture, 'if (process.argv[2] === "build") process.exit(5)')
+    const broken = exec('--plain')
+    logs.push(broken.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
+    assert.equal(broken.status, 5)
+    assert.match(broken.stdout, /\[skipped\] Lint/)
     assert.equal(exec('--help').status, 0)
     assert.equal(exec('--no-motion').status, 2)
   } finally {

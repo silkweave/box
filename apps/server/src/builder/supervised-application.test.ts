@@ -1,6 +1,9 @@
 import { EventEmitter } from 'node:events'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SupervisedApplication, type SupervisedChild } from './supervised-application.js'
+import { BUILT_FRONTEND_RESTART_MESSAGE, SupervisedApplication, type SupervisedChild } from './supervised-application.js'
 
 class FakeChild extends EventEmitter implements SupervisedChild {
   readonly pid = 4242
@@ -197,5 +200,83 @@ describe('SupervisedApplication', () => {
     await app.closeVite()
     expect(captured[0]).toEqual(['--no-env-file', 'run', 'dev', '--host', '127.0.0.1', '--port', '5191', '--strictPort'])
     expect(directories[0]).toBe('/box/apps/web')
+  })
+})
+
+describe('SupervisedApplication frontend status', () => {
+  it('reports built mode with the bundle time, or a missing bundle', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'box-frontend-status-'))
+    try {
+      const app = new SupervisedApplication({ repoRoot: root, internalPort: 8191, vitePort: 5191, dev: false })
+      await expect(app.frontendStatus()).resolves.toMatchObject({ mode: 'built', server: 'bundle', status: 'missing' })
+      mkdirSync(join(root, 'apps/web/dist'), { recursive: true })
+      writeFileSync(join(root, 'apps/web/dist/index.html'), '<!doctype html>')
+      const status = await app.frontendStatus()
+      expect(status).toMatchObject({ mode: 'built', status: 'built', path: join(root, 'apps/web/dist/index.html') })
+      expect(status.mode === 'built' && typeof status.builtAt).toBe('string')
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('refuses a frontend restart in built mode with the supported path', async () => {
+    const app = new SupervisedApplication({ repoRoot: '/box', internalPort: 8191, vitePort: 5191, dev: false })
+    await expect(app.restartFrontend()).rejects.toMatchObject({ statusCode: 409, message: BUILT_FRONTEND_RESTART_MESSAGE })
+  })
+
+  it('probes Vite in dev mode and restarts only Vite', async () => {
+    let answering = true
+    let starts = 0
+    let closes = 0
+    const app = new SupervisedApplication({
+      repoRoot: '/box', internalPort: 8191, vitePort: 5191,
+      probeVite: async () => answering,
+      startVite: () => { starts += 1 },
+      closeVite: () => { closes += 1 },
+    })
+    await expect(app.frontendStatus()).resolves.toEqual({ mode: 'dev', server: 'vite', port: 5191, status: 'stopped' })
+    await app.startVite()
+    await expect(app.frontendStatus()).resolves.toMatchObject({ mode: 'dev', status: 'running' })
+    answering = false
+    await expect(app.frontendStatus()).resolves.toMatchObject({ status: 'failed', message: 'Vite is not answering on port 5191' })
+    answering = true
+    await expect(app.restartFrontend()).resolves.toMatchObject({ mode: 'dev', status: 'running' })
+    expect({ starts, closes }).toEqual({ starts: 2, closes: 1 })
+    expect(app.status.status).toBe('stopped')
+  })
+
+  it('reports a Vite start failure until the next successful start', async () => {
+    let fail = true
+    const app = new SupervisedApplication({
+      repoRoot: '/box', internalPort: 8191, vitePort: 5191,
+      probeVite: async () => true,
+      startVite: () => { if (fail) throw new Error('port 5191 in use') },
+    })
+    await expect(app.startVite()).rejects.toThrow('port 5191 in use')
+    await expect(app.frontendStatus()).resolves.toMatchObject({ status: 'failed', message: 'port 5191 in use' })
+    fail = false
+    await app.startVite()
+    await expect(app.frontendStatus()).resolves.toMatchObject({ status: 'running' })
+  })
+
+  it('reports an unexpected Vite exit as a failure, but not a requested close', async () => {
+    const vite = new FakeChild()
+    const app = new SupervisedApplication({
+      repoRoot: '/box', internalPort: 8191, vitePort: 5191,
+      probeVite: async () => true,
+      spawn: () => { vite.spawn(); return vite },
+      killProcessGroup: (_pid, signal) => vite.exit(0, signal),
+    })
+    await app.startVite()
+    vite.exit(1)
+    await expect(app.frontendStatus()).resolves.toMatchObject({ status: 'failed', message: 'Vite exited with code 1' })
+    const next = new FakeChild()
+    const closing = new SupervisedApplication({
+      repoRoot: '/box', internalPort: 8191, vitePort: 5191,
+      probeVite: async () => true,
+      spawn: () => { next.spawn(); return next },
+      killProcessGroup: (_pid, signal) => next.exit(0, signal),
+    })
+    await closing.startVite()
+    await closing.closeVite()
+    await expect(closing.frontendStatus()).resolves.toMatchObject({ status: 'stopped' })
   })
 })

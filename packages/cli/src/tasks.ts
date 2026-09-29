@@ -12,6 +12,11 @@ export interface Task {
   command: string
   executable: string
   args: string[]
+  /**
+   * Task ids that must pass before this task runs. Omitted means every earlier task (fail-fast).
+   * Declared needs let independent checks still run and report after an unrelated failure.
+   */
+  needs?: string[]
 }
 export type TaskStatus = 'pending' | 'running' | 'passed' | 'failed' | 'cancelled' | 'skipped'
 export interface TaskState extends Task {
@@ -130,7 +135,11 @@ async function execute(task: TaskState, options: RunOptions, update: () => void)
   }
 }
 
-/** Serial execution preserves the previous shell chain's ordering and fail-fast semantics. */
+const blocked = (task: TaskState, tasks: TaskState[]): boolean => task.needs
+  ? task.needs.some(id => tasks.find(t => t.id === id)?.status !== 'passed')
+  : tasks.slice(0, tasks.indexOf(task)).some(t => t.status !== 'passed')
+
+/** Serial execution in declared order. A task runs only when everything it needs has passed. */
 export async function runTasks(tasks: Task[], options: RunOptions): Promise<RunState> {
   const started = performance.now()
   const logDirectory = mkdtempSync(join(tmpdir(), 'silkweave-verify-'))
@@ -143,7 +152,7 @@ export async function runTasks(tasks: Task[], options: RunOptions): Promise<RunS
   try {
     update()
     for (const task of state.tasks) {
-      if (options.signal?.aborted || state.tasks.some(t => t.status === 'failed' || t.status === 'cancelled')) {
+      if (options.signal?.aborted || state.tasks.some(t => t.status === 'cancelled') || blocked(task, state.tasks)) {
         task.status = 'skipped'
         continue
       }

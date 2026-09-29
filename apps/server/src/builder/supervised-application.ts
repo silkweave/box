@@ -1,11 +1,30 @@
 import { diagnostic, errorKind } from '../diagnostics/runtime.js'
 import { spawn as nodeSpawn } from 'node:child_process'
+import { statSync } from 'node:fs'
 import { join } from 'node:path'
 
 export type SupervisedApplicationStatus = {
   status: 'starting' | 'running' | 'stopped' | 'failed'
   message?: string
 }
+
+/**
+ * How the web frontend is served, so agents can check instead of guessing. `box dev` runs a Vite
+ * child the supervisor can restart; `box start` serves the built bundle in apps/web/dist, which
+ * only changes when it is rebuilt.
+ */
+export type SupervisedFrontendStatus =
+  | { mode: 'dev'; server: 'vite'; status: 'running' | 'stopped' | 'failed'; port: number; message?: string }
+  | { mode: 'built'; server: 'bundle'; status: 'built' | 'missing'; path: string; builtAt?: string }
+
+/** Refused operation with an HTTP status the local control socket passes through. */
+export class FrontendControlError extends Error {
+  constructor(readonly statusCode: number, message: string) { super(message) }
+}
+
+export const BUILT_FRONTEND_RESTART_MESSAGE =
+  'This Box serves the built web bundle (box start), so there is no Vite dev server to restart. '
+  + 'Rebuild with box build, then reload the preview; backend changes still need box app restart.'
 
 export interface SupervisedChild {
   readonly pid?: number
@@ -76,6 +95,7 @@ export class SupervisedApplication {
   #viteExitPromise: Promise<void> | undefined
   #viteExitResolve: (() => void) | undefined
   #viteStarted = false
+  #viteFailure: string | undefined
 
   constructor(options: SupervisedApplicationOptions) {
     if (!Number.isSafeInteger(options.internalPort) || options.internalPort < 1 || options.internalPort > 65_535) throw new Error('internalPort must be a port number')
@@ -113,6 +133,29 @@ export class SupervisedApplication {
   }
 
   get status(): SupervisedApplicationStatus { return { ...this.#status } }
+  get dev(): boolean { return this.#dev }
+
+  /** Live frontend state: probes Vite in dev mode, inspects the served bundle otherwise. */
+  async frontendStatus(): Promise<SupervisedFrontendStatus> {
+    if (!this.#dev) {
+      const path = join(this.#repoRoot, 'apps', 'web', 'dist', 'index.html')
+      try { return { mode: 'built', server: 'bundle', status: 'built', path, builtAt: statSync(path).mtime.toISOString() } }
+      catch { return { mode: 'built', server: 'bundle', status: 'missing', path } }
+    }
+    const base = { mode: 'dev', server: 'vite', port: this.#vitePort } as const
+    if (!this.#viteStarted) return this.#viteFailure ? { ...base, status: 'failed', message: this.#viteFailure } : { ...base, status: 'stopped' }
+    let answering = false
+    try { answering = await this.#probeVite(`http://127.0.0.1:${this.#vitePort}/`) } catch { /* reported below */ }
+    return answering ? { ...base, status: 'running' } : { ...base, status: 'failed', message: `Vite is not answering on port ${this.#vitePort}` }
+  }
+
+  /** Restart only the Vite dev server. Built mode has none and is refused with the supported path. */
+  async restartFrontend(): Promise<SupervisedFrontendStatus> {
+    if (!this.#dev) throw new FrontendControlError(409, BUILT_FRONTEND_RESTART_MESSAGE)
+    diagnostic('lifecycle', 'vite.restart', { childPid: this.#viteChild?.pid })
+    await this.restartVite()
+    return this.frontendStatus()
+  }
   get maintenance(): boolean { return this.#maintenance }
 
   async start(maintenance = false): Promise<SupervisedApplicationStatus> {
@@ -176,8 +219,10 @@ export class SupervisedApplication {
 
   async startVite(): Promise<void> {
     if (!this.#dev || this.#viteStarted) return
+    this.#viteFailure = undefined
     if (this.#startViteCallback) {
-      await this.#startViteCallback()
+      try { await this.#startViteCallback() }
+      catch (error) { this.#viteFailure = error instanceof Error ? error.message : String(error); throw error }
       this.#viteStarted = true
       return
     }
@@ -196,6 +241,8 @@ export class SupervisedApplication {
     })
     child.once('exit', (code, signal) => {
       diagnostic('lifecycle', 'vite.exit', { childPid: child.pid, code, signal })
+      // An exit while running is a crash until closeVite() says it was requested.
+      if (this.#viteStarted) this.#viteFailure = `Vite exited with ${signal ?? `code ${code ?? 'unknown'}`}`
       this.#viteChild = undefined
       this.#viteStarted = false
       this.#viteExitResolve?.()
@@ -210,6 +257,7 @@ export class SupervisedApplication {
         try { await this.#stopChildProcess(child, this.#viteExitPromise!, 'Vite') } catch { /* preserve startup failure */ }
       }
       this.#viteStarted = false
+      this.#viteFailure = error instanceof Error ? error.message : String(error)
       throw error
     }
   }
@@ -225,6 +273,7 @@ export class SupervisedApplication {
     const exited = this.#viteExitPromise
     if (child && exited) await this.#stopChildProcess(child, exited, 'Vite')
     this.#viteStarted = false
+    this.#viteFailure = undefined
   }
 
   async restartVite(): Promise<void> {

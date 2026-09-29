@@ -34,6 +34,8 @@
     "db:backup": "bun --no-env-file --conditions=@silkweave/box-source apps/server/scripts/db-snapshot.ts backup",
     "box": "bun --no-env-file packages/cli/src/index.ts",
     "box:install": "bun --no-env-file packages/cli/src/box-install.ts",
+    "test:core": "turbo run test --filter=@silkweave/box-core --output-logs=new-only",
+    "test:server": "turbo run test --filter=@silkweave/box-server --output-logs=new-only",
     "test:cli": "bun --no-env-file test ./packages/cli/src/tests/*.test.ts",
     "test:web": "bun --no-env-file test ./apps/web/tests ./features/*/web"
   },
@@ -48,7 +50,7 @@
     "oxlint": "^1.85.0",
     "rimraf": "^6.1.3",
     "tsdown": "^0.23.0",
-    "turbo": "^2.11.2",
+    "turbo": "^2.11.5",
     "vitest": "^5.0.1"
   },
   "workspaces": [

@@ -44,8 +44,9 @@ function runPackage(root: string, script: string, args: string[]): never {
 const HELP = `  box dev [--log-level <level>]              start interactive development
   box setup [options]                         create the first owner and configure providers
   box build                                  build workspace packages and the application
-  box app status                              inspect the supervised application
+  box app status [--json]                     app state, mode (dev or built) and frontend state
   box app restart                             restart the app; preserve supervisor and Builder
+  box app restart --frontend                  restart the Vite dev server (box dev only)
   box builder refresh                        refresh Builder UI without restarting its session
   box builder browser --session <session-id> <operation> [JSON object]
   box start                                  start the Box from source with built web assets

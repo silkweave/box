@@ -6,39 +6,48 @@ import { runTasks, type RunState, type Task } from './tasks.ts'
 import { taskReceipt, taskRows } from './task-view.ts'
 import { cleanText, elapsedText, screenFrame } from './ui.ts'
 
-// The same ordered contract as the original package script, including skill linking.
-export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun'): Task[] {
-  const definitions: [string, string, string, string[]][] = [
-    ['build', 'Build workspace', 'Build', ['build']],
-    ['skills', 'Link skills', 'Prepare', ['skills']],
-    ['cli-tests', 'CLI tests', 'Prepare', ['test:cli']],
-    ['web-tests', 'Web tests', 'Prepare', ['test:web']],
+// The ordered verification contract, including skill linking. Every check needs the build; the
+// typecheck also needs freshly generated types. Otherwise checks are independent, so one failure
+// (a timing-sensitive test on a loaded host, say) still lets the rest run and report.
+const TURBO_SCRIPTS = new Set(['build', 'typecheck', 'test:core', 'test:server'])
+
+export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun', { force = false } = {}): Task[] {
+  const definitions: [string, string, string, string[], string[]][] = [
+    ['build', 'Build workspace', 'Build', ['build'], []],
+    ['skills', 'Link skills', 'Prepare', ['skills'], ['build']],
+    ['cli-tests', 'CLI tests', 'Prepare', ['test:cli'], ['build']],
+    ['web-tests', 'Web tests', 'Prepare', ['test:web'], ['build']],
     // The adapter currently reports every nested reflected DTO as `unknown` (212 procedures in
     // the full Stack). Those are known type-precision debt, not run-specific verification
     // findings. Keep direct `bun run typegen` verbose for schema work, but do not make every
     // otherwise-clean verify permanently yellow.
-    ['typegen', 'Generate types', 'Prepare', ['typegen', '--quiet']],
-    ['typecheck', 'Typecheck', 'Check', ['typecheck']],
-    ['lint', 'Lint', 'Check', ['lint']],
-    ['core-tests', 'Core tests', 'Validate', ['--filter', '@silkweave/box-core', 'test']],
-    ['server-tests', 'Server tests', 'Validate', ['--filter', '@silkweave/box-server', 'test']],
-    ['schema', 'Schema matrix', 'Validate', ['schema:check']],
+    ['typegen', 'Generate types', 'Prepare', ['typegen', '--quiet'], ['build']],
+    ['typecheck', 'Typecheck', 'Check', ['typecheck'], ['build', 'typegen']],
+    ['lint', 'Lint', 'Check', ['lint'], ['build']],
+    // Turbo-cached: a package's tests rerun only when its inputs or a dependency's build changed.
+    ['core-tests', 'Core tests', 'Validate', ['test:core'], ['build']],
+    ['server-tests', 'Server tests', 'Validate', ['test:server'], ['build']],
+    ['schema', 'Schema matrix', 'Validate', ['schema:check'], ['build']],
   ]
-  return definitions.map(([id, name, phase, args]) => ({
-    id, name, phase, command: `bun run ${args.join(' ')}`,
-    executable: bun, args: ['--bun', '--no-env-file', 'run', ...args],
-  }))
+  return definitions.map(([id, name, phase, script, needs]) => {
+    // --force re-executes Turbo tasks instead of replaying cached results.
+    const args = force && TURBO_SCRIPTS.has(script[0]!) ? [...script, '--force'] : script
+    return {
+      id, name, phase, needs, command: `bun run ${args.join(' ')}`,
+      executable: bun, args: ['--bun', '--no-env-file', 'run', ...args],
+    }
+  })
 }
 
 export async function main(argv: string[]): Promise<number> {
   let values
   try {
     ({ values } = parseArgs({ args: argv, options: {
-      plain: { type: 'boolean' }, verbose: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      plain: { type: 'boolean' }, verbose: { type: 'boolean' }, force: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     } }))
   } catch (error) { process.stderr.write(`${(error as Error).message}\nUse box verify --help for usage.\n`); return 2 }
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core tests, server tests and schema.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --verbose   Append-only progress and full child output\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core tests, server tests and schema.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck and tests instead of replaying cached results\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   const out = process.stdout, input = process.stdin
@@ -79,7 +88,7 @@ export async function main(argv: string[]): Promise<number> {
       if (interactive) { input.setRawMode(true); input.resume(); input.on('data', onKey) }
       timer = setInterval(draw, 80)
     } else write(`silkweave / verify · ${target}\n`)
-    const result = await runTasks(verifyTasks(), {
+    const result = await runTasks(verifyTasks(undefined, { force: values.force }), {
       cwd: repoRoot, signal: controller.signal,
       onUpdate(next) {
         state = next

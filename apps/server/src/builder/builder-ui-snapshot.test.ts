@@ -60,7 +60,9 @@ describe('Builder UI releases', () => {
     let restarts = 0
     const close = await startBuilderLocalControl(instance, {
       status: () => ({ status: 'running' }),
+      frontend: async () => ({ mode: 'dev', server: 'vite', status: 'running', port: 5191 }),
       restart: async () => { restarts += 1; return { status: 'running' } },
+      restartFrontend: async () => ({ mode: 'dev', server: 'vite', status: 'running', port: 5191 }),
       refresh: async () => { if (++refreshes === 2) throw new Error('build failed') },
     })
     const socketPath = join(instance, 'builder', 'ui-refresh.sock')

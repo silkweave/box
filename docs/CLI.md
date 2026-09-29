@@ -28,6 +28,17 @@ against a populated Box refuses without rotating anything. For automation and te
 | Check | Typecheck, lint |
 | Validate | Core tests, server tests, schema matrix |
 
+Every check needs the workspace build, and the typecheck also needs generated types. Otherwise a
+failure does not stop the chain: independent checks still run, the receipt lists every failed check
+with its diagnostics, and checks whose prerequisites failed are reported as not run. The exit status
+is the first failed check's.
+
+The build, typecheck, core tests and server tests go through Turbo's content-hash cache. A package's
+tests rerun only when its sources, its test configuration, a workspace dependency's build (core for
+the server) or a global input (`features/`, `recipes/`, `box.json`, `box.local.json`) changed;
+otherwise Turbo replays the last passing output in milliseconds. `box verify --force` re-executes
+them all. Run `bun run test:core` or `bun run test:server` for the same cached package tests alone.
+
 The active phase expands into checks; completed phases collapse. The progress bar counts completed
 checks, not estimated elapsed time. The activity line comes from the real child process. A check
 that goes quiet keeps its spinner and elapsed time, with a notice after eight seconds without output.
@@ -74,15 +85,27 @@ database operations, target selection, Stack source commands and MCP tools. Thes
 MCP tool names. **box verify** preserves flags and exit status from the selected checkout's runner.
 
 `box app status` reads the editable application's state from the owner-only local supervisor
-socket. `box app restart` asks that already-running supervisor to restart only its editable
+socket, plus the run mode and the frontend's state: **dev** (`box dev`, the frontend is a Vite dev
+server the supervisor owns, and the command probes it) or **built** (`box start`, the frontend is the
+`apps/web/dist` bundle, and the command reports when it was built or that it is missing). In built
+mode there is no Vite: web changes appear only after `box build`. `--json` prints the raw
+`{ application, frontend }` document for agents. `box app restart` asks that already-running supervisor to restart only its editable
 application child and waits for the normal health check. It preserves the supervisor, Vite and the
 Builder WorkerDeck host, including the active Builder session. It does not run validation; run
 `box verify` first when activating source changes.
 
+`box app restart --frontend` restarts only the Vite dev server, the same operation as the `f` key in
+the `box dev` view, and waits until Vite answers. Use it after a `box.json` brand edit or when Vite is
+down or holds stale module state. The application, supervisor and Builder session keep running. In
+built mode it is refused with the supported path (`box build`, then reload), because there is no dev
+server to restart.
+
 Do not stop, signal or relaunch `box dev` from a Builder turn, and do not start a second Box against
 the same instance. If `box app status` or `box app restart` cannot reach the supervisor, stop and ask
 the host operator to restore it. A supervisor upgraded from a version without application control
-needs one host-operated restart before these commands become available.
+needs one host-operated restart before these commands become available; the same holds for the
+frontend fields and `--frontend` on a supervisor older than them (status then says the frontend
+state is unknown).
 
 `box auth login <id>` creates a compact, single-use sign-in URL and offers five seconds to press
 Enter and open it in the default browser. It exits without opening when the countdown reaches zero;

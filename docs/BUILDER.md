@@ -83,8 +83,12 @@ session id supplied by Builder can use the owner-local CLI:
 Builder supplies this tool guidance once through WorkerDeck session instructions. It is not
 appended to each administrator message and does not appear as repeated user content.
 
-Those instructions also identify `box dev` as the stable supervisor and provide `box app status`
-and `box app restart`. An agent must use the latter after verified backend or registration changes;
+Those instructions also identify `box dev` as the stable supervisor and provide `box app status`,
+`box app restart` and `box app restart --frontend`. The agent checks `box app status` first to learn
+whether the Box runs in dev mode (Vite, hot reload) or built mode (`box start`, the `apps/web/dist`
+bundle, web changes need `box build`) instead of inferring it from preview behaviour. An agent must
+use `box app restart` after verified backend or registration changes and `--frontend` only in dev
+mode when Vite is down or stale;
 it must never stop, kill, replace or relaunch `box dev`, because that process owns the Builder host
 and the agent's own session.
 
@@ -127,7 +131,9 @@ The supervisor exposes the current application state and these administrator act
 - **Local application restart** is available to an agent or host operator as `box app restart`
   after repository validation. It uses the owner-only local socket, restarts only the editable
   application, waits for health and preserves this supervisor and Builder session. `box app status`
-  reads the same bounded state. Neither command can stop or replace the supervisor.
+  reads the same bounded state plus the mode (dev or built) and the frontend state, and
+  `box app restart --frontend` restarts only Vite in dev mode. None of them can stop or replace the
+  supervisor.
 - **End session** stops the shared Builder session while retaining its host record.
 - **Restore a backup** is available to administrators. Select a snapshot timestamp and confirm the
   operation. Restore replaces Box instance data and configuration; the server requires
