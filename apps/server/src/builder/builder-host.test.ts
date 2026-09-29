@@ -122,6 +122,26 @@ describe('Builder host command dispatch', () => {
     }
   })
 
+  it('starts claude when no engine is requested and both are configured', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url).pathname
+      if (path === '/v1/profiles') return new Response(JSON.stringify({ profiles: [{ name: 'alice:codex', engine: 'codex' }, { name: 'alice:claude', engine: 'claude' }] }), { status: 200 })
+      if (path === '/v1/sessions' && init?.method === 'POST') {
+        requests.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+        return new Response(JSON.stringify({ session: { id: 'created-1', status: 'idle', cwd: '/box', createdAt: 1, lastSeq: 0, pendingPermissionCount: 0 } }), { status: 200 })
+      }
+      return new Response('Not found', { status: 404 })
+    }))
+    try {
+      const host = await createBuilderHost({ repoRoot: '/box', instanceDir: '/box/data' })
+      await host.create('alice')
+      expect(requests.map(request => [request.profile, request.model])).toEqual([['alice:claude', 'sonnet']])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('dispatches only supported commands directly to the runner', async () => {
     fake.calls.length = 0
     fake.reset()

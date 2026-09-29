@@ -36,7 +36,7 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
   const box = boxJson()
   const profilesConfigured = Object.keys(box.agentProfiles).length > 0
   const profileMapFor = (user: string): Record<string, string> => box.agentProfiles[user] ?? {}
-  const preferredEngineFor = (user: string): string => Object.keys(profileMapFor(user)).sort((a, b) => a === 'codex' ? -1 : b === 'codex' ? 1 : a.localeCompare(b))[0] ?? 'codex'
+  const preferredEngineFor = (user: string): string => Object.keys(profileMapFor(user)).sort((a, b) => a === 'claude' ? -1 : b === 'claude' ? 1 : a.localeCompare(b))[0] ?? 'claude'
   const profiles: ProfileInfo[] = (deployment?.profiles ?? []).map(p => p.engine === 'codex'
     ? { name: p.name, engine: 'codex', codexHome: p.home, defaults: profileDefaults(p.name, p.defaults), description: p.description }
     : { name: p.name, engine: 'claude', configDir: p.home, defaults: profileDefaults(p.name, p.defaults), description: p.description })

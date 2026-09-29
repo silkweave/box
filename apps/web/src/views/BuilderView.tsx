@@ -245,7 +245,10 @@ export function BuilderView() {
   const [openFile, setOpenFile] = React.useState<string>()
   const [unsaved, setUnsaved] = React.useState(false)
   const [panelWidth, setPanelWidth] = React.useState(460)
-  const [engine, setEngine] = React.useState('codex')
+  const [pickedEngine, setEngine] = React.useState<string>()
+  const configuredEngine = (id: string): boolean => state?.profiles.some(profile => profile.engine.toLowerCase() === id) ?? false
+  // Claude is the default provider; fall back to Codex only when Claude has no profile.
+  const engine = pickedEngine ?? (configuredEngine('claude') || !configuredEngine('codex') ? 'claude' : 'codex')
   const [sessionVitals, setSessionVitals] = React.useState<SessionVitals>()
   const [sessionControls, setSessionControls] = React.useState<SessionControls>()
   const [brief, setBrief] = React.useState(readPendingBrief)
@@ -383,7 +386,7 @@ export function BuilderView() {
         {state.ui.error && <span className='text-danger'>Refresh failed; previous UI retained.</span>}
       </div>
       {state.session ? <>
-        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' transcriptDensity='compact' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
+        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
         <BuilderSessionBar vitals={sessionVitals} controls={sessionControls} />
       </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} brief={brief} onDiscardBrief={discardBrief} onStart={() => void start()} onStop={() => void stop()} /></div>}
     </aside>

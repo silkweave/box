@@ -9,7 +9,7 @@ import type { ModelOption } from '@workerdeck/protocol'
  */
 export const BUILDER_MODELS: Record<string, readonly (readonly string[])[]> = {
   codex: [['gpt-5.6-luna'], ['gpt-5.6-terra'], ['gpt-5.6-sol'], ['gpt-6-astra']],
-  claude: [['sonnet', 'claude-sonnet-5'], ['opus[1m]', 'claude-opus-5-5'], ['claude-fable-5-1[1m]', 'claude-fable-5-1']],
+  claude: [['sonnet', 'claude-sonnet-5-5'], ['opus[1m]', 'claude-opus-5-5'], ['claude-fable-5-1[1m]', 'claude-fable-5-1']],
 }
 
 const bare = (id: string): string => id.replace(/\[.*\]$/, '')
