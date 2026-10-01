@@ -10,6 +10,12 @@ Initiatives tied to the signals they are meant to move, broken into tasks and sc
 - Rationale docs on disk, with row summaries derived from each doc
 - Configurable initiative kinds
 
+## Mobile
+
+- A Plan tab in the Box mobile app with initiatives by status and your open tasks across them
+- Initiative and task pages where every field can be changed in place, plus create, rename, move and delete
+- Initiative and task docs rendered as markdown, with an editor
+
 ## Builds on
 
 - [Data](../data/RECIPE.md)

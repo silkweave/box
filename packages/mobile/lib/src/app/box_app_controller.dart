@@ -175,6 +175,7 @@ class BoxAppController extends ChangeNotifier {
   void resume() {
     final s = session;
     if (phase == BoxPhase.ready && s != null) {
+      s.changes.resume();
       for (final state in s.states) {
         unawaited(_guard('resume', state.resume));
       }
@@ -229,6 +230,7 @@ class BoxAppController extends ChangeNotifier {
     for (final state in s.states) {
       state.dispose();
     }
+    s.changes.close();
     s.detachAll();
   }
 

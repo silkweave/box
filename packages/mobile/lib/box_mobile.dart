@@ -8,7 +8,8 @@
 ///
 /// * Module contract: [BoxModule], [BoxModuleState], [BoxTab], [BoxRoute],
 ///   [BoxLink], [BoxSettingsSection], [BoxNotificationChannel].
-/// * Session: [BoxSession] (api, principal, directory, storage, state), and
+/// * Session: [BoxSession] (api, principal, directory, changes, storage,
+///   state), and
 ///   the [BoxContext] helpers on `BuildContext` (`context.session`,
 ///   `context.state<T>()`, `context.openLink`, `context.pushPage`,
 ///   `context.toast`).
@@ -43,6 +44,7 @@ export 'src/kit/states.dart';
 export 'src/module/box_link.dart';
 export 'src/module/box_module.dart';
 export 'src/notify/box_notifier.dart';
+export 'src/session/box_changes.dart';
 export 'src/session/box_directory.dart';
 export 'src/session/box_session.dart';
 export 'src/theme/theme.dart';

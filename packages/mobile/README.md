@@ -15,7 +15,7 @@ import 'package:box_mobile/box_mobile.dart';
 | --- | --- |
 | `lib/src/module/` | `BoxModule`, `BoxModuleState`, `BoxTab`, `BoxRoute`, `BoxSettingsSection`, `BoxNotificationChannel`, `BoxLink` |
 | `lib/src/app/` | `runBoxApp`, `BoxApp`, `BoxAppConfig`, `BoxAppController` (phases), `BoxShell` (tabs, More, links), sign-in and phase screens, Settings, `BoxScope` and the `BoxContext` extension |
-| `lib/src/session/` | `BoxSession`, `BoxDirectory`, `BoxStorage` |
+| `lib/src/session/` | `BoxSession`, `BoxDirectory`, `BoxChanges`, `BoxStorage` |
 | `lib/src/api/` | `BoxApi`, `BoxApiException`, `BoxUnreachableException`, `listOf`, `parseTime`, core models |
 | `lib/src/notify/` | `BoxNotifier` (local notifications that open links) |
 | `lib/src/theme/` | `BoxColors` (ported from `packages/ui` tokens), `boxTheme`, `ThemeController`, glass settings |
@@ -26,7 +26,7 @@ import 'package:box_mobile/box_mobile.dart';
 ## Context helpers
 
 ```dart
-context.session                 // BoxSession: api, principal, agent, directory, storage(id)
+context.session                 // BoxSession: api, principal, agent, directory, changes, storage(id)
 context.api                     // the session's BoxApi
 context.state<ChatStore>()      // a module's running state
 context.openLink('chat/room/general')
@@ -45,8 +45,17 @@ class DealsStore extends BoxModuleState {
   late final deals = BoxResource(() async =>
       listOf((await session.api.getJson('/api/crm/deals'))['deals'], Deal.fromJson));
 
+  BoxChangeListener? _changes;
+
   @override
-  Future<void> start() => deals.load();
+  Future<void> start() {
+    // Reload when the server says the table changed (web edits, agents).
+    _changes = session.changes.listen(['table:crm_deals'], () => deals.refresh());
+    return deals.load();
+  }
+
+  @override
+  Future<void> stop() async => _changes?.cancel();
 
   @override
   Future<void> resume() => deals.refresh();

@@ -38,6 +38,22 @@ ledgers before replaying an operation.
    backup in isolation, confirm completion and boot compatibility, then continue with unrelated
    changes. Never edit or rename an applied migration.
 
+## Mobile module (optional)
+
+This recipe has a mobile module for the Box app at `features/planning/mobile/` (Dart package
+`box_planning`); read its `README.md` in the fetched Stack. Ask the owner whether to include it
+before starting, and record the answer in _docs/INTEGRATION.md. When included:
+
+1. Copy/adapt `<fetched stack>/features/planning/mobile/` into the Box's `features/planning/mobile/`.
+2. Add `box_planning: {path: ../../features/planning/mobile}` to the feature-module block of
+   `apps/mobile/pubspec.yaml`, and add the module to `apps/mobile/lib/generated/modules.dart`.
+3. The module has no native requirements.
+4. Run `bun run test:mobile`, then run the app against a disposable instance and exercise the
+   module. A Box without the Flutter SDK can still include the module; say so in the record, since
+   the mobile check then reports a skip rather than a pass.
+
+See docs/MOBILE.md, "Adding a module to the app".
+
 ## Validation
 
 Run the target Box's normal build, typecheck, tests, lint, and schema:check commands, then boot a

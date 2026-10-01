@@ -15,7 +15,10 @@ void main() {
       ..on(
         'GET /trpc/chatFeed',
         (_) => Response('data: {"id":1,"type":"hello","at":1}\n\n', 200),
-      );
+      )
+      // The same for planning.
+      ..on('GET /api/planning/initiatives', (_) => {'initiatives': <Object>[]})
+      ..on('GET /api/planning/kinds', (_) => {'kinds': <Object>[]});
     final app = await pumpBoxApp(tester, server: server, modules: mobileModules);
     expect(app.session, isNotNull);
     final tabs = [for (final m in mobileModules) ...m.tabs];

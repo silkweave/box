@@ -6,6 +6,7 @@ import '../api/models.dart';
 import '../module/box_link.dart';
 import '../module/box_module.dart';
 import '../notify/box_notifier.dart';
+import 'box_changes.dart';
 import 'box_directory.dart';
 
 /// Everything that exists while somebody is signed in.
@@ -23,10 +24,12 @@ class BoxSession {
     BoxLink? Function(Map<String, Object?> data)? resolveNotification,
     this.agent,
     BoxDirectory? directory,
+    BoxChanges? changes,
   }) : _prefs = prefs,
        _open = open,
        _resolveNotification = resolveNotification,
-       directory = directory ?? BoxDirectory(api);
+       directory = directory ?? BoxDirectory(api),
+       changes = changes ?? BoxChanges(api);
 
   /// The authenticated client. Add module calls as extensions on [BoxApi].
   final BoxApi api;
@@ -39,6 +42,9 @@ class BoxSession {
 
   /// The people directory, loaded once per session.
   final BoxDirectory directory;
+
+  /// The server's change feed: reload what you show when its scope changes.
+  final BoxChanges changes;
 
   /// Local notifications (shown while the app runs).
   final BoxNotifier notifier;

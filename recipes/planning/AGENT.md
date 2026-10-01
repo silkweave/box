@@ -13,6 +13,15 @@ Copy or adapt `<fetched stack>/features/planning/` into the Box's `features/plan
 
 Preserve the existing 001-sprint-tasks identity and body exactly. New schema behavior gets a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
+### Mobile module
+
+When the owner wants planning in the mobile app, integrate `features/planning/mobile/` as described
+in [INSTALL.md](./INSTALL.md#mobile-module-optional). It adds the Plan tab (order 20) and the
+`planning/initiative/<id>` and `planning/task/<initiative>/<task>` links. Its wire models mirror
+`planning.controller.ts`; a change that renames or removes a field the app reads breaks every
+installed build (docs/MOBILE.md, "Version skew"). Its tab label, icon and order live in the module
+declaration in `features/planning/mobile/lib/`.
+
 ## 2. Customise for the team
 
 Every vocabulary edit below is a plain source edit. **An enum edit needs no migration until a Box
@@ -99,7 +108,7 @@ bun run cli initiative-kinds
 
 To update this feature, compare the target Box with the recorded upstream SHA, preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 
-To remove it, delete the feature's `core`, `server`, and `web` source directories only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
+To remove it, delete the feature's `core`, `server`, and `web` source directories (and `mobile`, with its `box_planning` entries in `apps/mobile/pubspec.yaml` and `apps/mobile/lib/generated/modules.dart`, when the Box included it) only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
 
 ## Gotchas
 

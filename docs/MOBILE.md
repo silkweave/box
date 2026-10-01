@@ -48,6 +48,11 @@ runBoxApp(config, modules)
   the module by id and the page by the module's `BoxRoute`s, selects the module's tab and pushes
   the page. Notification taps, cross-module navigation and in-module navigation all use links, so
   a screen never has to know who opens it.
+- **Live data comes from the change feed.** `session.changes` is the server's `changesFeed`, the
+  same invalidation hints the web app's data stores reload from: one connection per session,
+  opened by the first listener. `session.changes.listen(['table:tasks'], reload)` calls `reload`
+  (debounced) when that scope changes, and once after a reconnect, since events may have been
+  missed. Cancel the listener in the state's `stop`.
 - **State is per session.** A module's `BoxModuleState` is created after sign-in, `start`ed,
   `resume`d when the app returns to the foreground, `stop`ped on sign-out while the credential
   still works, then disposed. Nothing leaks between sign-ins.
@@ -119,7 +124,7 @@ What a module can contribute, all optional except `id` and `title`:
 
 - **Ids.** The module id is the feature id and the recipe id. It is the first segment of every
   link the module owns and the namespace of `session.storage(id)`. Tab ids are unique across the
-  app. Core leaves gaps of 10 in tab `order`; chat takes 10.
+  app. Core leaves gaps of 10 in tab `order`; chat takes 10 and planning 20.
 - **API calls** are an extension or a thin wrapper over `BoxApi`, never a second HTTP client. The
   Box's REST mirror under `/api` is the surface (see [SERVER.md](SERVER.md)); `postJson` is also
   how the Box reads with structured input; `subscribe('<procedure>')` reads a tRPC subscription
@@ -154,6 +159,7 @@ One import, `package:box_mobile/box_mobile.dart`, carries everything:
 | Inputs | `BoxSearchField`, `BoxSegmented`, `BoxField` |
 | People and status | `BoxAvatar`, `BoxAvatar.user`, `BoxBadge` + `BoxTone`, `BoxCount` |
 | Feedback | `context.toast`, `context.toastError` |
+| Live reloads | `session.changes.listen(scopes, onChange)` |
 | Formatting | `formatRelative`, `formatClock`, `formatDate`, `formatDateTime`, `formatCompact`, `plural` |
 | Brand | `BoxBrandMark`, `BoxWordmark`, `boxSwatch(id, brightness)` |
 
