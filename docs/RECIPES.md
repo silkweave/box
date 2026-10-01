@@ -8,7 +8,8 @@ Planning, CRM or Chat. Each recipe has two halves that live in different places.
   customisation guide), `GOTCHAS.md` (recipe-specific hazards) and `screenshots/`. `recipes/` is a
   managed core path, so every Box carries the documents for every recipe, adapted or not.
 - **Reference implementation** at `features/<id>/{core,server,web}` in the Stack, plus
-  `features/<id>/skills/` when the recipe ships agent skills. The implementation stays in the Stack;
+  `features/<id>/skills/` when the recipe ships agent skills and `features/<id>/mobile/` when it
+  has a module for the mobile app ([MOBILE.md](MOBILE.md)). The implementation stays in the Stack;
   a core-only Box does not contain it.
 
 Adapting a recipe puts its code into the Box's `features/<id>/` and registers it there. From that
@@ -62,6 +63,11 @@ core, server, web and skill code into `features/<id>/`, adds required packages, 
 `src/generated/features.ts` and `packages/core/src/generated/exports.ts`, and runs build, typecheck,
 lint, tests and `schema:check`. Build and type errors during adaptation are part of the work.
 Adapt the recipes listed under `## Builds on` first.
+
+A recipe whose `RECIPE.md` has a `## Mobile` section also has a mobile module. Before adapting,
+ask the owner whether to include it in the Box's mobile app; the recipe's INSTALL.md has the steps
+("Mobile module (optional)") and [MOBILE.md](MOBILE.md) explains the app. Leaving it out changes
+nothing else about the recipe, and it can be added later the same way.
 
 In a live Builder session, the agent then runs `box app restart` to activate server and
 registration changes without stopping the stable supervisor, and validates the refreshed Preview.

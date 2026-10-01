@@ -16,8 +16,8 @@ in the **assign queue**, because a row written nowhere visible is a row lost.
 - **dependsOn**: `data`, and entirely on the WEB side - the board surface. `crm` imports data's
   `BoardKanban`, `BoardViewBar`, `GridHeader`, `GridFooter`, `presetIcon`
   (`features/data/components/board/*`), its saved-view store (`createViewStore`, `ViewStore`,
-  `BoardBarSpec` from `features/data/lib/boardView.ts`) and `useDataSources`
-  (`features/data/lib/useSourcesData.ts`, which labels a contact's origin on the detail page).
+  `BoardBarSpec` from `features/data/web/lib/boardView.ts`) and `useDataSources`
+  (`features/data/web/lib/useSourcesData.ts`, which labels a contact's origin on the detail page).
   Nothing in `features/crm/core` or `features/crm/server` imports another
   feature. Remove `data` and the accounts table, the pipeline board, the view bar and the saved
   views in the CRM sidebar all fail to resolve.
@@ -63,7 +63,7 @@ foreign key (the warehouse has none anywhere; `account_id` integrity is enforced
 
 ## Files on disk
 
-`<BOX_DATA_DIR>/docs/crm/<account-id>.md` - the account's prose, one file per account, path a pure
+`data/docs/crm/<account-id>.md` - the account's prose, one file per account, path a pure
 function of the (already slug-shaped) id and re-checked to stay inside the base dir. The format is
 two ATX sections: a `## Next move` block that must be the first content line after any frontmatter,
 and `## Notes` (or any later level-1/2 heading) for the rest. Headings, rather than an HTML comment
@@ -73,7 +73,7 @@ of that file, refreshed on every doc write so the kanban card and the table sort
 queryable. The next move belongs to the ACCOUNT, not to a deal: it is about the company, and a board
 card shows its account's next move.
 
-Nothing else. A sync a team writes keeps its own configuration under `<BOX_DATA_DIR>/config/` and
+Nothing else. A sync a team writes keeps its own configuration under `data/config/` and
 its secrets in core's `box.local.json credentials`, the way every other integration does.
 
 ## Four rules with reasons behind them
@@ -214,13 +214,13 @@ writes one against `import.ts` decides then whether it is an action (scheduled) 
   `table:crm_activities`. Meetings, revenue and activities are fetched PER ACCOUNT and not folded
   into the accounts payload, which is already ~294KB.
 
-## Env
+## Settings
 
-**None declared.** `defineServerFeature({ id: 'crm', module: CrmModule })` has no `env` key, so
-`bun run typegen` prints nothing for it. Keep it that way when adding a sync: what a sync needs is
-configuration, not env - a file under `<BOX_DATA_DIR>/config/` for its map of stages and spaces,
-and its API key in `box.local.json credentials` read through core's `credential()`. Unconfigured
-should mean the sync does nothing, never that the feature fails to load.
+**None.** `defineServerFeature({ id: 'crm', module: CrmModule })` declares only its id and module,
+and the feature reads no environment variables. Keep it that way when adding a sync: what a sync
+needs is configuration under `features.crm` in `box.json` (or a file under `data/config/`) for its
+map of stages and spaces, and its API key in `box.local.json credentials` read through core's
+`credential()`. Unconfigured should mean the sync does nothing, never that the feature fails to load.
 
 ## What a team customises
 

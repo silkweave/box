@@ -36,7 +36,7 @@ No shipped migrations currently. A future schema change must be a new migration.
    deriver, namespaced signal ids) and supplies the account binding that resolves signal ownership.
 5. **npm packages.** `box.json features.data.npmPackages` (`packages` = the line that sums into
    `npm.week`/`npm.month`; `tracked` = standalone packages that always get their own signal).
-   Start from `docs/examples/npm-packages.json`. EMPTY BY DEFAULT and never seeded - the npm pull
+   The shape is `{ "packages": [...], "tracked": [...] }`. EMPTY BY DEFAULT and never seeded - the npm pull
    needs no credential, so a default list would import somebody else's downloads on day one. No
    packages configured means the pull logs that and does nothing.
 6. **Signal ownership.** `box.json features.data.signalOwners`, editable from Settings → Signal owners.
@@ -54,9 +54,10 @@ No shipped migrations currently. A future schema change must be a new migration.
    `features/data/web/components/board/presetIcons.tsx`.
 8. **Nav and settings order.** `features/data/web/index.tsx` - band 100/110 for the two
    nav entries, 110/120 for the two settings sections. Band 100-199 is data's.
-9. **The env declarations.** `features/data/server/index.ts` declares `CDP_URL` and
-   `GITHUB_TOKEN`. Neither name is read by the code any more (see Gotchas). Replace them with the
-   names this Box actually uses before `bun run typegen` prints them at someone.
+9. **Browser and GitHub settings.** The CDP client reads `features.data.chromatrixUrl`,
+   `features.data.chromatrixIdentity` and `features.data.chromatrixToken`; the GitHub pull reads
+   `GH_TOKEN` per account from `box.local.json credentials`. The feature reads no environment
+   variables.
 
 Enum edits in `signals/types.ts` and `sources/types.ts` need no migration until a Box has shipped
 with the old set; after that, a migration in `migrations.ts` rewrites the rows (`docs/core/SEAM.md`
@@ -97,7 +98,7 @@ proves the registry, the point store, the bucket flooring and the merged read al
 backend and correctly returns `[]` for a purely-live signal.
 
 A pull needs real credentials, so the honest smoke test for ingestion is `bun run cli
-warehouse-derive` (or the `github` pull, once `GH_TOKEN` is in `credentials.json`), then checking
+warehouse-derive` (or the `github` pull, once `GH_TOKEN` is in `box.local.json credentials`), then checking
 that the run landed in the Automation run history. Tool names normalize: the CLI proxy accepts
 `warehouse-derive` for the tool the MCP listing calls `WarehouseDerive`.
 

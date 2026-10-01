@@ -63,6 +63,9 @@ export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun
     ['core-tests', 'Core tests', 'Validate', ['test:core'], ['build']],
     ['server-tests', 'Server tests', 'Validate', ['test:server'], ['build']],
     ['schema', 'Schema matrix', 'Validate', ['schema:check'], ['build']],
+    // Flutter analyze and test for the mobile framework, modules and app. Passes with a skip when
+    // the Flutter SDK is not installed.
+    ['mobile', 'Mobile app', 'Validate', ['test:mobile'], []],
   ]
   return definitions.map(([id, name, phase, script, needs]) => {
     // --force re-executes Turbo tasks instead of replaying cached results.
@@ -89,7 +92,7 @@ export async function main(argv: string[]): Promise<number> {
     } }))
   } catch (error) { process.stderr.write(`${(error as Error).message}\nUse box verify --help for usage.\n`); return 2 }
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core tests, server tests and schema.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck and tests instead of replaying cached results\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core tests, server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck and tests instead of replaying cached results\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   if (values.list) {

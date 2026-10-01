@@ -14,7 +14,10 @@ Check each adapted feature against its `recipes/<id>/SPEC.md` and `GOTCHAS.md`, 
 revision recorded for it in `docs/UPSTREAM.md` is the one whose implementation was read.
 
 Run the Box chain: build, typecheck, lint, meaningful tests, and `schema:check`. Include CLI tests
-and generated type work where the workspace provides them. Inspect server production output and web
+and generated type work where the workspace provides them. `box verify` also runs
+`bun run test:mobile` (Flutter analyze and test for `packages/mobile`, every `features/<id>/mobile`
+and `apps/mobile`); on a host without Flutter it reports a skip, which is not a pass for mobile
+changes. When modules changed, also run the app against the disposable Box (docs/MOBILE.md). Inspect server production output and web
 output, then boot a disposable Box and check sign-in and the browser console. Keep background
 integrations disabled unless the requested verification explicitly covers their live behaviour.
 The web registry has an import cycle, so a module-scope registry read can white-screen a browser

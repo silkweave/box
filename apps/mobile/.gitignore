@@ -1,0 +1,44 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+app.*.symbols
+app.*.map.json
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Development defines (BOX_DEV_TOKEN) - never committed.
+/dev-defines.json
+
+# Firebase native config, when a Box uses the file-based setup (docs/MOBILE.md).
+ios/Runner/GoogleService-Info.plist
+android/app/google-services.json
+
+# Release signing never enters the repo.
+*.jks
+*.keystore
+android/key.properties

@@ -174,17 +174,17 @@ The numbered **operator rules** the skills are written against live in
   not optimistic - the server can refuse one.
 - The body editor is behind a lazy chunk (`components/ContentBodyEditorLazy.tsx`).
 
-## Env
+## Settings
 
-From `features/content/server/index.ts`:
+Under `features.content` in `box.json`:
 
-| name | doc |
+| setting | doc |
 |---|---|
 | `features.content.linkedinPublishLive` | `true` to let the scheduled LinkedIn publisher post for real (dry-run otherwise) |
 | `features.content.substackPublishLive` | `true` to let the scheduled Substack publisher post for real (dry-run otherwise) |
 
-The LinkedIn and Substack clients themselves live in `data` and carry their own credentials/session
-requirements; those env entries belong to that feature, not this one.
+The LinkedIn and Substack clients themselves live in `data` and carry their own credentials and
+session requirements; those settings belong to that feature, not this one.
 
 ## The skills
 
@@ -214,7 +214,7 @@ it is a judgement, recorded so the next person does not have to re-derive it.
 
 ## Admin-only
 
-Since 2026-09-13 the Box has two tiers (`docs/core/AUTH.md` § 3), and the rule every feature applies is
+Since 2026-09-13 the Box has two tiers (`docs/AUTH.md`, "The two tiers"), and the rule every feature applies is
 one sentence: **an operation is admin-only when its blast radius is another person's identity or
 credential, the service itself, or configuration wired to credentials.**
 

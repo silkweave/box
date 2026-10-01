@@ -13,6 +13,14 @@ Copy or adapt `<fetched stack>/features/notifications/` into the Box's `features
 
 No feature-owned migrations. Chat migrations remain in chat's private chain. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
+### Mobile module
+
+When the owner wants push on the phone, integrate `features/notifications/mobile/` as described in
+[INSTALL.md](./INSTALL.md#mobile-module-optional). It registers the device with
+`POST /api/notifications/device/register`, unregisters on sign-out and opens tapped pushes through
+the module that claims them. Push works only once Firebase is configured for the app's identity;
+until then the Settings row says "Not set up".
+
 ## 2. Customise for the team
 
 1. **Generate a VAPID pair** if this team wants browser push. Any web-push keygen does it
@@ -89,7 +97,7 @@ own tools.
 
 To update this feature, compare the target Box with the recorded upstream SHA, preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 
-To remove it, delete the feature's `core`, `server`, and `web` source directories only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
+To remove it, delete the feature's `core`, `server`, and `web` source directories (and `mobile`, with its `box_notifications` entries in `apps/mobile/pubspec.yaml` and `apps/mobile/lib/generated/modules.dart`, when the Box included it) only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
 
 ## Gotchas
 

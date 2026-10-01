@@ -2,7 +2,7 @@
 
 A recipe is something the Silkweave Stack offers and a Box can adapt. This directory holds the
 documentation half of every recipe. The reference implementation lives in the Stack under
-`features/<id>/`. Adapting a recipe copies and adapts that code into the Box's own `features/<id>/`
+`features/<id>/` (`core`, `server`, `web`, and `mobile` when the recipe has a mobile module). Adapting a recipe copies and adapts that code into the Box's own `features/<id>/`
 and registers it, after which it is a feature of that Box. The recipe id and the feature id are the
 same string. [docs/RECIPES.md](../docs/RECIPES.md) describes the whole model.
 
@@ -42,6 +42,10 @@ shape:
 ## Builds on
 
 - [<Title>](../<dep-id>/RECIPE.md)
+
+## Mobile
+
+- <what the optional mobile module adds, plain text>
 ```
 
 - The first `# ` heading is the title. Keep it a short product name.
@@ -50,6 +54,9 @@ shape:
 - Bullets under `## Highlights` become the highlight list.
 - Links under `## Builds on` name the recipes that must be adapted first. The catalog reads the id
   from each `../<id>/` link target. Omit the section when the recipe needs only core.
+- Bullets under `## Mobile` say what the recipe's mobile module (`features/<id>/mobile`) adds to
+  the Box app. Include the section only when the recipe has one; the catalog shows it and the
+  adapt brief asks the owner whether to include the module.
 - Further prose sections may follow these blocks; the catalog ignores them.
 
 `RECIPE.md` is descriptive prose, not a manifest. Nothing installs from it. There is no registry,

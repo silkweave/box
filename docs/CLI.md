@@ -26,12 +26,18 @@ against a populated Box refuses without rotating anything. For automation and te
 | Build | Workspace build |
 | Prepare | Skill linking, CLI tests, web tests, generated types |
 | Check | Typecheck, lint |
-| Validate | Core tests, server tests, schema matrix |
+| Validate | Core tests, server tests, schema matrix, mobile app |
 
-Every check needs the workspace build, and the typecheck also needs generated types. Otherwise a
-failure does not stop the chain: independent checks still run, the receipt lists every failed check
+Every check except the mobile app needs the workspace build, and the typecheck also needs generated
+types. Otherwise a failure does not stop the chain: independent checks still run, the receipt lists every failed check
 with its diagnostics, and checks whose prerequisites failed are reported as not run. The exit status
 is the first failed check's.
+
+The mobile app check (`bun run test:mobile`, `packages/cli/src/mobile-check.ts`) runs `flutter pub
+get`, `flutter analyze` and, where a `test/` directory exists, `flutter test` for the framework
+(`packages/mobile`), each feature module (`features/<id>/mobile`) and the app (`apps/mobile`).
+Without `flutter` on PATH it prints a skip and passes, so a Box without the Flutter SDK still
+verifies; install Flutter to make the mobile app part of the verified chain. See [MOBILE.md](MOBILE.md).
 
 The build, typecheck, core tests and server tests go through Turbo's content-hash cache. A package's
 tests rerun only when its sources, its test configuration, a workspace dependency's build (core for
@@ -82,12 +88,12 @@ strips terminal controls and bounds its recent-output buffer. Temporary logs las
 or cleaned by the operating system. No logs or settings are written into the Box's instance data.
 
 Warning-looking output remains visible in the summary even when a command succeeds. This is a
-text heuristic, not a parsed warning count. A nonzero exit stops the chain and is returned to the
-caller; startup failures return 1, cancellation returns 130, and invalid options return 2.
+text heuristic, not a parsed warning count. The first failed check's nonzero exit is returned to
+the caller; startup failures return 1, cancellation returns 130, and invalid options return 2.
 
 The renderer, task engine and verify command live in `packages/cli/src/`. `ui.ts` supplies terminal
 styling, text clipping and safe redraw; `tasks.ts` owns ordered child execution and logs;
-`task-view.ts` supplies the verify layout; `verify.ts` connects terminal controls to the nine checks.
+`task-view.ts` supplies the verify layout; `verify.ts` connects terminal controls to the eleven checks.
 They use Node-compatible built-ins under Bun, with no React, Ink or additional dependencies.
 Verification executes explicit `bun run` commands using the current Bun executable. It does not
 inherit a package-manager executable from npm or pnpm. Each check runs in the selected checkout.

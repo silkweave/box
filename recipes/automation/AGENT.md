@@ -15,7 +15,7 @@ No shipped migrations currently. Back up data before applying any migration, sta
 
 ## 2. Customise for the team
 
-1. **The schedules file** - `<BOX_DATA_DIR>/box.json features.automation.schedules`. A fresh Box has none; a missing
+1. **The schedules file** - `box.json features.automation.schedules`. A fresh Box has none; a missing
    file is an empty list, and the first upsert creates it. Shape:
 
    ```json
@@ -56,7 +56,7 @@ a fresh Box) and **Actions** (the registry as a console). Click a run to get its
 
 Then `http://localhost:8190/settings/schedules`: the schedule cards. On a dev checkout the header
 reads "timers NOT armed - set background.automation=true in box.local.json to run them", which is the correct state.
-Create one with **New schedule**, and confirm `<BOX_DATA_DIR>/box.json features.automation.schedules` really changed -
+Create one with **New schedule**, and confirm `box.json features.automation.schedules` really changed -
 the file and the view agreeing is the feature's whole contract.
 
 Press **Run now** on a card. That does not touch the scheduler: it calls core's `opsRunNow`
@@ -79,22 +79,17 @@ bun run cli run-get                        # core's - one run with its full log
 bun run cli service-restart                # apply a config change (refuses mid-turn without force)
 ```
 
-**Arming it deliberately.** Set `AUTOMATION_ENABLED=1` (exactly `1`; `true` and `yes` do nothing)
-in the environment and restart. The boot log then says `armed N/M schedule(s) from
+**Arming it deliberately.** Set `background.automation` to `true` in that checkout's
+`box.local.json` and restart. The boot log then says `armed N/M schedule(s) from
 box.json features.automation.schedules`, and every entry that is `enabled` and valid gets a timer.
 
 Do **not** do this on a dev checkout seeded from production. Such a checkout shares the tenant's
 credentials and, often, its warehouse snapshot; armed timers mean a laptop firing the real pulls,
 backups and publishes beside the production Box, writing real rows and posting real posts. The
-off-by-default is the guard. If you must watch the scheduler itself arm, do it with a throwaway
-instance dir and a schedule pointing at something harmless:
-
-```bash
-BOX_DATA_DIR=$(mktemp -d) AUTH_SESSION_SECRET=<16+ chars> AUTOMATION_ENABLED=1 CHAT_AGENT_ENABLED=0 \
-PORT=8123 node --conditions=@silkweave/box-source --import @swc-node/register/esm-register apps/server/src/main.ts
-```
-
-(create `$BOX_DATA_DIR/config` first). Pick a `server.port` no other Box could be holding: a throwaway
+off-by-default is the guard. If you must watch the scheduler itself arm, do it in a throwaway
+second checkout with its own `data/` (the instance directory is always `<checkout>/data`; see
+"Boot a throwaway Box" in `docs/SERVER.md`), `background.automation` true, `background.chatAgent`
+false, and a schedule pointing at something harmless. Pick a `server.port` no other Box could be holding: a throwaway
 that lands beside a real Box on another address family is mistaken for it rather than rejected
 (`apps/server/src/agent/loopback-guard.ts`).
 

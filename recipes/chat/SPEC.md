@@ -24,7 +24,7 @@ None in the warehouse. `models: []`, `migrations: []` in `manifest.ts`, by desig
 
 ## Its own store
 
-`<BOX_DATA_DIR>/chat.db` - SQLite via `better-sqlite3`, opened lazily by `chatStore()` in
+`data/chat.db` - SQLite via `better-sqlite3`, opened lazily by `chatStore()` in
 `features/chat/core/store.ts` (one process-wide, long-lived connection; `closeChatStore()`
 on shutdown). The path is the feature's own `chatPath()` (`features/chat/core/paths.ts`) = `dataPath('chat.db')`.
 
@@ -86,7 +86,7 @@ write and its blob write happen in one event-loop tick.
 
 ## The agent seat
 
-Core's `config/box.json` selects the identity before first boot; `systemUserId()` reads it lazily.
+The `agent` block of the root `box.json` selects the identity before first boot; `systemUserId()` reads it lazily.
 The default is Nova (`nova`), admin. Chat uses this same identity for mentions, DM guest access,
 loop guards, prompts, approvals and worker-session ownership. The browser gets it from auth, so
 its mention picker and system badge do not hardcode a name. Examples below use the default ID.
@@ -95,13 +95,13 @@ See [identity and role](../../docs/AUTH.md#agent-identity-and-role), including t
 **What arms it.** `startChatAgent()` runs from `ChatModule.onModuleInit` unconditionally, and
 
 ```
-armed = CHAT_AGENT_ENABLED?.trim() === '1'  AND  agentWorkerUrl() !== undefined
+armed = boxJson().background.chatAgent  AND  agentWorkerUrl() !== undefined
 ```
 
-Both halves, or no turn ever runs. `CHAT_AGENT_ENABLED` must be **exactly `'1'`** (same grammar as
-`AUTOMATION_ENABLED`, same reason). `agentWorkerUrl()` comes from core's workerdeck host
-(`apps/server/src/agent/workerdeck.host.ts`), which boots only when `config/workerdeck.json` declares a
-deployment. It is its own flag rather than riding `AUTOMATION_ENABLED` so that "test the chat agent on
+Both halves, or no turn ever runs. `background.chatAgent` is a boolean that defaults to `false`.
+`agentWorkerUrl()` comes from core's workerdeck host
+(`apps/server/src/agent/workerdeck.host.ts`), which boots only when the `workerdeck` section of
+`box.json` declares a deployment. It is its own flag rather than riding `background.automation` so that "test the chat agent on
 dev" does not also arm every production schedule.
 
 **What is armed regardless of the flag**, deliberately:
@@ -124,7 +124,7 @@ reaches further back.
 
 **The host.** `chat-agent.ts` creates a workerdeck `SessionHandle` per room against
 `agentWorkerUrl()` with `hostAuth`, under the `codex` profile declared for `nova` in
-`config/agent-profiles.json` (`agentProfileFor('nova', 'codex')`; no profile = the turn throws).
+`agentProfiles` in `box.json` (`agentProfileFor('nova', 'codex')`; no profile = the turn throws).
 Model `gpt-5.6-luna`, reasoning effort `medium`, both probed against the profile's catalogue first
 and **omitted if the profile does not declare them** rather than failing. Sessions close after
 `SESSION_IDLE_TTL_MS` (1h idle); a turn that emits nothing for `TURN_SILENCE_LIMIT_MS` (10min) is
@@ -219,21 +219,19 @@ It is in core's action registry, so `automation` can schedule it and every invoc
   per tab, its cursor and its reconnect loop - chat does not ride the changes bus.
 - The composer is behind a lazy chunk (`ComposerLazy.tsx`), like sink's editor.
 
-## Env
+## Settings
 
-From `features/chat/server/index.ts`:
-
-| name | doc |
+| setting | doc |
 |---|---|
-| `CHAT_AGENT_ENABLED` | `1` arms the chat agent (nova answers in rooms); anything else leaves it off |
+| `background.chatAgent` (core, `box.json`) | `true` arms the chat agent (nova answers in rooms); `false`, the default, leaves it off |
 
-That is the feature's only declared env. The agent seat additionally depends on core's
-`config/workerdeck.json` (which is what makes `agentWorkerUrl()` non-undefined) and on `server.port`, through the
-loopback guard.
+The feature reads no environment variables. The agent seat additionally depends on the
+`workerdeck` section of `box.json` (which is what makes `agentWorkerUrl()` non-undefined) and on
+`server.port`, through the loopback guard.
 
 ## Admin-only
 
-Since 2026-09-13 the Box has two tiers (`docs/core/AUTH.md` § 3), and the rule every feature applies is
+Since 2026-09-13 the Box has two tiers (`docs/AUTH.md`, "The two tiers"), and the rule every feature applies is
 one sentence: **an operation is admin-only when its blast radius is another person's identity or
 credential, the service itself, or configuration wired to credentials.**
 
@@ -247,8 +245,8 @@ Everything else in chat is a member's, rooms included: a room is a conversation,
 1. **Room seeds** - there are none. No migration and no boot path creates a room; the first channel is
    created by a person (or by `chat-room-create`) after the Box boots. A team that wants `#general`
    day one creates it.
-2. **The agent's identity** - select it in core's `config/box.json` before first boot.
-   Core seeds the matching user; changing the ID later is unsupported. The agent also needs an entry in `config/agent-profiles.json` mapping it to a real workerdeck profile, and a
+2. **The agent's identity** - select it in the `agent` block of the root `box.json` before first boot.
+   Core seeds the matching user; changing the ID later is unsupported. The agent also needs an entry in `agentProfiles` mapping it to a real workerdeck profile, and a
    token for its MCP client. `AGENT_ENGINE = 'codex'`, `CHAT_AGENT_MODEL` and
    `CHAT_AGENT_REASONING_EFFORT` in `features/chat/server/chat-agent.ts` are the other three
    knobs, and the last two degrade rather than fail if the profile does not declare them.

@@ -16,6 +16,12 @@ update maintained registration and exports with the rest of the change. The root
 owns shared feature dependencies; do not create feature dependency manifests or a package fetch
 protocol.
 
+The mobile framework `packages/mobile` is core. In `apps/mobile`, core owns `lib/main.dart`,
+`lib/main_dev.dart`, `scripts/` and `tool/`; the Box owns `lib/app_config.dart`,
+`lib/generated/modules.dart`, the feature-module block and version of `pubspec.yaml`, and the
+native identity, signing and capabilities in `ios/` and `android/`. Merge those three-way like any
+customized file; never replace the native projects wholesale. Run `bun run test:mobile` after.
+
 `recipes/` is a managed core path: it carries every recipe's documentation and screenshots and is
 refreshed with core. Replace it with the target revision's `recipes/` rather than merging it, and
 keep Box-specific findings in `docs/GOTCHAS.md`, not under `recipes/`. An upgrade does not adapt

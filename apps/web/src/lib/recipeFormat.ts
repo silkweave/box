@@ -5,6 +5,8 @@ export interface RecipeText {
   summary: string
   highlights: string[]
   buildsOn: string[]
+  /** Bullets under `## Mobile`: what the recipe's optional mobile module adds. Empty when it has none. */
+  mobile: string[]
 }
 
 /** Plain text for display: drops inline code ticks, emphasis markers and link targets. */
@@ -40,5 +42,17 @@ export function parseRecipe(id: string, markdown: string): RecipeText | null {
     const link = /\]\(\.\.\/([^/)]+)\//.exec(item)?.[1]
     return link ? [link] : []
   })
-  return { id, title, summary: plain(summary.join(' ')), highlights: section('highlights').map(plain), buildsOn }
+  return { id, title, summary: plain(summary.join(' ')), highlights: section('highlights').map(plain), buildsOn, mobile: section('mobile').map(plain) }
+}
+
+/** The Builder brief drafted by "Adapt recipe" / "Update recipe". The owner edits it before sending. */
+export function recipeBrief(recipe: RecipeText, titles: ReadonlyMap<string, string>, adapted = false): string {
+  if (adapted) return `Update the ${recipe.title} recipe (\`${recipe.id}\`) in this Box from Silkweave Stack. Read \`recipes/${recipe.id}/\` and the recorded source revision in \`docs/UPSTREAM.md\`, then use \`box stack fetch\` to compare that revision, this Box's \`features/${recipe.id}/\`, and the Stack's current \`features/${recipe.id}/\`. Follow the adapt skill: preserve local customizations and migration history, back up before any migration, run the complete validation chain, and let me review the result before finishing.`
+  const deps = recipe.buildsOn.length
+    ? ` It builds on ${recipe.buildsOn.map(id => `${titles.get(id) ?? id} (\`${id}\`)`).join(', ')}; adapt any of those that are not already in this Box first.`
+    : ''
+  const mobile = recipe.mobile.length
+    ? ` This recipe also has a mobile app module (\`features/${recipe.id}/mobile\`, see \`docs/MOBILE.md\`): ask me whether to include it in the mobile app before you start, and if I say yes, integrate and register it too.`
+    : ''
+  return `Adapt the ${recipe.title} recipe (\`${recipe.id}\`) from Silkweave Stack into this Box.${deps}${mobile} Read \`recipes/${recipe.id}/\` and \`docs/RECIPES.md\` first, then use \`box stack fetch\` to read the implementation from the Stack's \`features/${recipe.id}/\`, ideally at the revision recorded in \`docs/UPSTREAM.md\`. Follow the adapt skill: record the scope and source SHA before editing and back up before any migration. Preserve this Box's local decisions and migration history, update registration and dependencies, run the complete validation chain, and let me review the result before finishing.`
 }

@@ -10,12 +10,14 @@ Recipe adaptation is agent-driven; record the actual source revision used.
 2. Preserve existing team edits. Make a recoverable copy of the consumer checkout and all instance
    data before changing source.
 3. Select only the core runtime and its required workspace packages. Keep `packages/core`,
-   `packages/ui`, `packages/provider-kit`, `apps/server`, `apps/web`, `packages/cli`, workspace
-   configuration, core docs, public assets, and their actual package manifests.
+   `packages/ui`, `packages/provider-kit`, `apps/server`, `apps/web`, `packages/cli`, the mobile
+   framework and app (`packages/mobile`, `apps/mobile`), workspace configuration, core docs, public assets, and their actual package manifests.
    Copy `recipes/` whole: every recipe's documentation and screenshots ship with core, so the
    onboarding recipe catalog and adapting agents can read them in the Box.
 4. Exclude every reference implementation folder under `features/`, the stack's independent `box/`
-   directory, development `data/`, node_modules, build and dist output, Turbo state, and `.git`.
+   directory, development `data/`, node_modules, build and dist output, Turbo state, `.git`, and
+   Flutter build state plus per-team mobile files (`pubspec.lock`, signing, Firebase configuration,
+   `dev-defines.json`).
    Retain an empty `features/` directory with `.gitkeep` because the server build command names that
    directory and a fresh checkout cannot preserve an otherwise empty directory.
 5. Keep the root package named `silkweave-box`. Remove root dependencies whose only consumers are
@@ -31,7 +33,8 @@ Recipe adaptation is agent-driven; record the actual source revision used.
 7. Keep the core, server, and web registration files as maintained source. In a blank starter,
    `FEATURES`, `SERVER_FEATURES`, `WEB_FEATURES`, and `WEB_ROUTES` are empty arrays and their public
    list exports remain present. `packages/core/src/generated/exports.ts` remains an explicit empty
-   export surface. Core's own warehouse, auth, users, events, ops, and agent-host runtime remains
+   export surface. The mobile app's `apps/mobile/lib/generated/modules.dart` lists no modules and
+   the feature-module block of `apps/mobile/pubspec.yaml` is empty. Core's own warehouse, auth, users, events, ops, and agent-host runtime remains
    registered through its ordinary modules.
 8. Confirm `apps/web/src/router.tsx`, navigation, settings, shell slots, and session startup still
    work with empty feature lists. A featureless Box should show the core shell and settings fallback,
@@ -43,7 +46,8 @@ Recipe adaptation is agent-driven; record the actual source revision used.
 ## Verify before first use
 
 10. Run `bun install`, then `box verify`. The chain must include build, CLI tests, type generation,
-    typecheck, lint, core tests, server tests, and `schema:check`.
+    typecheck, lint, core tests, server tests, `schema:check`, and the mobile check (a skip without
+    the Flutter SDK).
 11. Record the actual command, source state, dependency update date, test counts, warnings, and any
     limitations in `_docs/VALIDATION.md`. A passing lockfile build does not prove latest dependency
     freshness unless the update date and command are recorded.
@@ -65,7 +69,7 @@ Recipe adaptation is agent-driven; record the actual source revision used.
     anything. Identify the feature's imports and install the latest packages those imports require
     in the Box workspace.
 15. Copy and adapt the implementation's `core`, `server`, `web` and `skills` source into the Box's
-    `features/<id>/`. Rewrite imports, paths, routes, styles, and package boundaries for the actual
+    `features/<id>/`, plus `mobile` when the recipe has a mobile module and the owner wants it. Rewrite imports, paths, routes, styles, and package boundaries for the actual
     Box. Update core exports and all maintained registration files by hand.
 16. Stage migration code and the minimum runner and registration required to execute it. Before
     applying a migration, take a named backup and record its path and restore command in

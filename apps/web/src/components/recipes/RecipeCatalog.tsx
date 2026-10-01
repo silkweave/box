@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, Hammer, ImageIcon, SearchX } from 'lucide-react'
+import { Check, Hammer, ImageIcon, SearchX, Smartphone } from 'lucide-react'
 import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogTitle, ImageGallery, SearchInput } from '@silkweave/box-ui'
 import { RECIPES, RECOMMENDED_RECIPE, matchesRecipe, recipeBrief, type Recipe } from '../../lib/recipes.ts'
 import { openBuilderWithBrief } from '../../lib/builderBrief.ts'
@@ -86,6 +86,12 @@ function RecipeDetail({ recipe, titles, installed, canAdapt, onAdapt, onOpenReci
         <h3 className='text-label font-medium uppercase tracking-wider text-fg-3'>What you get</h3>
         <ul className='mt-2 space-y-1.5'>
           {recipe.highlights.map(item => <li key={item} className='flex gap-2 text-body-sm text-text'><Check className='mt-0.5 size-4 shrink-0 text-accent' />{item}</li>)}
+        </ul>
+      </div>}
+      {recipe.mobile.length > 0 && <div>
+        <h3 className='text-label font-medium uppercase tracking-wider text-fg-3'>Mobile app (optional)</h3>
+        <ul className='mt-2 space-y-1.5'>
+          {recipe.mobile.map(item => <li key={item} className='flex gap-2 text-body-sm text-text'><Smartphone className='mt-0.5 size-4 shrink-0 text-accent' />{item}</li>)}
         </ul>
       </div>}
       <div>

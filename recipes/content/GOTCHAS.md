@@ -25,8 +25,8 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **`metadata` deep-merges** on `content-upsert`. Passing only `{"flair": "x"}` keeps `subreddit`
   and `assets`; a key whose value is `null` is deleted.
 - **The publishers really send.** `linkedin-publish`, `linkedin-article-publish` and
-  `substack-publish` demand `confirm:"true"`; the two scheduled ones dry-run unless their
-  `*_PUBLISH_LIVE` env is `1`. The article path drives the author's own browser over CDP - it needs
+  `substack-publish` demand `confirm:"true"`; the two scheduled ones dry-run unless
+  `features.content.linkedinPublishLive` or `features.content.substackPublishLive` is `true`. The article path drives the author's own browser over CDP - it needs
   a real logged-in profile, not a headless one.
 - **A topic auto-closes.** Publishing the last outstanding piece moves a `planned`/`active` topic to
   `done`; a `blocked` or `dropped` topic is a human decision and a publish does not overrule it.

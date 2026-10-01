@@ -13,8 +13,8 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **Boot order is `onModuleInit`, and `registerAlertTransport` throws on a duplicate `id`.** It is
   not idempotent, unlike the delivery seam's `registerNotificationTransport`, which replaces by
   name. If you add a second registration path, you will find this the hard way.
-- **The two `PUSH_VAPID_*` env entries are read by nothing.** Configure `push.*.VAPID_*` in
-  `credentials.json`. `box verify` listing them as unset is not why push is off.
+- **Push keys are credentials, not environment variables.** Configure `push.*.VAPID_*` under
+  `credentials` in `box.local.json`; no `PUSH_VAPID_*` environment variable is read.
 - **All three VAPID credentials or none.** A pair without `VAPID_SUBJECT` reads as unconfigured and
   push is silently off.
 - **A malformed `FCM_SERVICE_ACCOUNT` warns and turns device push off**, it does not throw. Read

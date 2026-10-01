@@ -74,7 +74,7 @@ customises").
   text input. `@silkweave/box-ui` has no date-TIME field, and a native `<input type='datetime-local'>`
   would reintroduce exactly the browser-locale formatting that `DateInput` exists to end.
 
-## Env
+## Settings
 
 None.
 

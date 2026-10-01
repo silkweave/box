@@ -15,7 +15,7 @@ No shipped migrations currently. A future schema change must be a new migration.
 
 ## 2. Customise for the team
 
-1. **Write `<BOX_DATA_DIR>/box.json features.engagement.pods`.** Without it no channel expects an engagement and
+1. **Write `box.json features.engagement.pods`.** Without it no channel expects an engagement and
    the queue is permanently empty - this is the one required step.
 
    ```jsonc

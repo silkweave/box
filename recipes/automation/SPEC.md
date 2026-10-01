@@ -26,7 +26,7 @@ that applies a config change.
 **None.** `models: []`, `migrations: []` - the manifest is four lines. This is the interesting fact
 about the feature, and it is a boundary worth stating precisely:
 
-- **The schedules** are a config file, not a table: `<BOX_DATA_DIR>/box.json features.automation.schedules`, via
+- **The schedules** are a config file, not a table: `box.json features.automation.schedules`, via
   core's `configPath()` (`packages/core/src/io.ts`). Shape `{ "schedules": [ { id, action_id, cron,
   enabled, description? } ] }`; a missing file reads as an empty list, malformed JSON throws.
   `features/automation/core/config.ts` is the whole persistence layer - read, write
@@ -115,15 +115,13 @@ needs per-run params, and a cron has none to give.
   `config:schedules.json`, which core's fs watcher (`apps/server/src/changes/changes.watcher.ts`)
   emits for out-of-process edits - hand-editing the file refreshes the UI without a reload.
 
-## Env
+## Settings
 
-`background.automation` in `box.json` - declared in `features/automation/server/index.ts`, the feature's
-only env entry.
+`background.automation` in `box.json`, a core setting. The feature reads no environment variables.
 
-Exact grammar: core's `env()` trims the value and treats empty/whitespace as unset; the scheduler
-then does `this.disabled = !boxJson().background.automation`. So the timers arm **only when the
-value is exactly `1`**. `true`, `yes`, `on`, `01` all leave every timer off. Nothing else in the
-feature reads it.
+The value is a boolean that defaults to `false`; any other type fails configuration loading. The
+scheduler does `this.disabled = !boxJson().background.automation`, so the timers arm only when it is
+`true`. Nothing else in the feature reads it.
 
 The default is off on purpose. A dev checkout is routinely seeded from a production snapshot and
 points at the same credentials; if `box dev` armed the crons, a laptop would start firing the real
@@ -131,14 +129,14 @@ pulls, backups and publishes beside the production Box. With the flag off the fe
 end to end: schedules stay visible and editable, validation still runs, and any action is still
 runnable on demand (Settings → Schedules → Run now, Automation → Actions, `run-now` over MCP). Boot
 logs the state explicitly:
-`AUTOMATION_ENABLED is not 1 - schedules loaded but no timers armed`.
+`background.automation is false - schedules loaded but no timers armed (dev-safe default; set it true in box.json to run them)`.
 
 The UI surfaces the same as `disabled: true`: the Schedules header appends
 "(timers NOT armed - set background.automation=true in box.json to run them)".
 
 ## Admin-only
 
-Since 2026-09-13 the Box has two tiers (`docs/core/AUTH.md` § 3), and the rule every feature applies is
+Since 2026-09-13 the Box has two tiers (`docs/AUTH.md`, "The two tiers"), and the rule every feature applies is
 one sentence: **an operation is admin-only when its blast radius is another person's identity or
 credential, the service itself, or configuration wired to credentials.**
 

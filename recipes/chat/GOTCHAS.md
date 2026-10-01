@@ -10,10 +10,10 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 
 ## Recipe-specific operational details
 
-- **`CHAT_AGENT_ENABLED` must be exactly `'1'`** (trimmed). `true`, `yes`, `on` all leave the seat
-  off, silently and by design - same grammar as `AUTOMATION_ENABLED`. And the flag is only half of it:
-  `agentWorkerUrl()` must also resolve, which means core's workerdeck host booted, which means
-  `config/workerdeck.json` declares a profile for the agent's own account.
+- **`background.chatAgent` in `box.json` must be `true`** (a boolean; any other type fails
+  configuration loading). It defaults to `false`. And the flag is only half of it:
+  `agentWorkerUrl()` must also resolve, which means core's workerdeck host booted, which means the
+  `workerdeck` section of `box.json` declares a profile for the agent's own account.
 - **The agent host is core's, the seat is chat's.** `chat-agent.ts` resolves the worker URL registered
   by core's workerdeck host; chat does not own a worker. The per-user agent SIDEBAR is a different
   thing entirely - browser-initiated, per-task, through the `/agent` proxy. The two share nothing

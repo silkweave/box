@@ -9,6 +9,12 @@ One bell for everything that needs attention, merging chat mentions and messages
 - A chat transport so alert rules can post into a chat room
 - No tables of its own
 
+## Mobile
+
+- Push notifications on iOS and Android through Firebase Cloud Messaging
+- Tapping a push opens the screen it is about, such as the chat room
+- A Settings row that says whether this device can receive pushes, and why not
+
 ## Builds on
 
 - [Chat](../chat/RECIPE.md)

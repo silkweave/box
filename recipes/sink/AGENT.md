@@ -21,7 +21,7 @@ No shipped migrations currently. Back up data before applying any migration, sta
    `/ingest-sink <name>`. That skill lives with `content`
    (`features/content/skills/ingest-sink/`) and writes initiatives and pieces. Without `content`
    installed, point the button at whatever this team does with a note instead, or drop it.
-3. **Where the notes live** - `<BOX_DATA_DIR>/docs/sink/`, from core's `docsDir()`. Create the
+3. **Where the notes live** - `data/docs/sink/`, from core's `docsDir()`. Create the
    folder or let the first save create it. `README.md` and any `_`-prefixed name are skipped, so
    `_done/` is the conventional archive.
 
@@ -34,7 +34,7 @@ box dev
 ```
 
 Open `http://localhost:8190/sink`: the queue renders (empty is fine), **New** creates a file,
-typing autosaves, **Delete** removes it. Check `<BOX_DATA_DIR>/docs/sink/` afterwards - the file is
+typing autosaves, **Delete** removes it. Check `data/docs/sink/` afterwards - the file is
 really there. The feature's whole contract is that the folder and the view agree.
 
 Agent-side, the same operations are MCP tools: `bun run cli sink-read`, `sink-save`, `sink-create`,

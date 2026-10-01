@@ -35,7 +35,7 @@ every table is at its baseline shape.
 | `data_sources` | `id` | a user-created instance of a provider: `provider`, `label`, `config` JSON (non-secret settings only), `status` (`enabled`\|`disabled`, born disabled), `notes`, and the four denormalized `last_sync_*` health stamps. Timestamps + audit. **No secrets** - those stay in the gitignored `box.local.json credentials`. |
 
 `data_sources.id` is deliberately three keys at once: the row key, the credentials account key
-(`credentials.json → <provider> → <source id> → KEY`), and the `snapshots.channel` of the audit
+(`box.local.json credentials → <provider> → <source id> → KEY`), and the `snapshots.channel` of the audit
 snapshot. Hence the strict slug charset `^[a-z0-9][a-z0-9-]*$` and the refusal of ids that would
 collide with a derived channel (`sources/state.ts`).
 
@@ -263,21 +263,14 @@ others.
   reloads after a local write and picks up someone else's on the next page load.
 - The React Flow canvas is lazy (`components/board/CircuitBoardFlowLazy.tsx`).
 
-## Env
+## Settings
 
-Declared in `features/data/server/index.ts`:
+`features/data/server/index.ts` declares only the feature's id and module, and the feature reads no
+environment variables. The CDP client (`cdp.ts`) reads `features.data.chromatrixUrl`,
+`features.data.chromatrixIdentity` and `features.data.chromatrixToken`, and the GitHub pull takes its
+token per account from `box.local.json credentials` (`github → <account> → GH_TOKEN`).
 
-| name | doc |
-|---|---|
-| `CDP_URL` | Chrome DevTools endpoint of the stealth browser the Reddit pulls drive |
-| `GITHUB_TOKEN` | GitHub API token for the github pulls |
-
-Both declarations are stale against the code as it stands (see the Gotchas in
-[`AGENT.md`](./AGENT.md)): `cdp.ts` reads `features.data.chromatrixUrl`,
-`features.data.chromatrixIdentity` and `features.data.chromatrixToken`, and the GitHub pull takes its token per account from
-`box.local.json credentials` (`github → <account> → GH_TOKEN`), never from `GITHUB_TOKEN`.
-
-Everything else the pulls and syncs need is a **credential**, not an env var:
+Everything else the pulls and syncs need is a **credential**, not an environment variable:
 `credential(<provider-or-channel>, <account>, KEY)` over the gitignored
 `box.local.json credentials` - `GH_TOKEN`, `LINKEDIN_CLIENT_ID` / `_SECRET` / `_ACCESS_TOKEN` /
 `_PERSON_URN` / `_REFRESH_TOKEN`, the Substack email/password/session keys, GA4's
@@ -286,7 +279,7 @@ declares.
 
 ## Admin-only
 
-Since 2026-09-13 the Box has two tiers (`docs/core/AUTH.md` § 3), and the rule every feature applies is
+Since 2026-09-13 the Box has two tiers (`docs/AUTH.md`, "The two tiers"), and the rule every feature applies is
 one sentence: **an operation is admin-only when its blast radius is another person's identity or
 credential, the service itself, or configuration wired to credentials.**
 
@@ -364,7 +357,7 @@ platform with per-region workspaces.
    fetch helpers.
 2. **Implement `Provider`** (`packages/provider-kit/src/provider.ts`), five declarations and one
    function:
-   - `id` - stable, and doubles as the `credentials.json` channel key and the default signal
+   - `id` - stable, and doubles as the `credentials` channel key and the default signal
      channel (`mailer`).
    - `config` - the non-secret settings ONE instance needs, as `ProviderConfigField`s
      (`{key: 'workspace', label: 'Workspace', required: true}`). These are what the user fills in
@@ -386,7 +379,7 @@ platform with per-region workspaces.
 4. **Create data sources from the UI.** A provider is code; a **data source** is a row. Two
    regions are two rows of the same provider - "Mailer EU" with `{workspace: 'acme-eu'}` and
    "Mailer US" with `{workspace: 'acme-us'}`, each with its own credentials under
-   `credentials.json → mailer → <source id> → MAILER_API_KEY`. Rows are born `disabled`.
+   `box.local.json credentials → mailer → <source id> → MAILER_API_KEY`. Rows are born `disabled`.
 5. **Bind signals.** A measure exists whether or not anyone subscribes; a signal becomes connected
    by carrying both halves of the binding (`data_source_id` + `measure_key`) - `signalsUpsert`
    refuses half of one.

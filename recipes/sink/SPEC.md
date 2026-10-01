@@ -1,7 +1,7 @@
 # `sink` - the inbox of markdown notes
 
 A filesystem queue. Anything that arrives as prose and is not yet tracked state - a chat export, a
-research dump, a raw post idea - lands as a flat markdown file under `<BOX_DATA_DIR>/docs/sink/`.
+research dump, a raw post idea - lands as a flat markdown file under `data/docs/sink/`.
 The dashboard lists the queue, edits a file inline with autosave, and hands an agent the one command
 that processes it. **It owns no warehouse table**: the files on disk are the state.
 
@@ -17,7 +17,7 @@ None. `models: []`, `migrations: []`.
 
 ## Files on disk
 
-`<BOX_DATA_DIR>/docs/sink/*.md`, top level only. The queue is every `*.md` except `README.md` and
+`data/docs/sink/*.md`, top level only. The queue is every `*.md` except `README.md` and
 any `_`-prefixed name, newest first by mtime - so `_done/` is an archive folder, not a queue entry.
 A filename must match `^[a-z0-9][a-z0-9._-]*\.md$` and every path is re-resolved and proven to sit
 inside `docs/sink/` before it is touched (`features/sink/core/state.ts`, the same
@@ -51,7 +51,7 @@ None. The sink contributes nothing to core's run funnel - there is nothing to sc
 - The editor is `@silkweave/box-ui`'s markdown editor behind a lazy chunk
   (`components/SinkBodyEditorLazy.tsx`) - TipTap is large and the queue view does not need it.
 
-## Env
+## Settings
 
 None.
 

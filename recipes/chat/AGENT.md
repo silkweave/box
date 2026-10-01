@@ -14,16 +14,24 @@ Copy or adapt `<fetched stack>/features/chat/` into the Box's `features/chat/{co
 
 Chat has a private SQLite ledger keyed by migration object name and stores no checksum. Preserve every shipped name, body, order, and runner. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
+### Mobile module
+
+When the owner wants chat in the mobile app, integrate `features/chat/mobile/` as described in
+[INSTALL.md](./INSTALL.md#mobile-module-optional). It adds the Chat tab (order 10), the
+`chat/room/<slug>` link, the `box_chat` Android channel (which must equal `channel_id` in the
+notifications feature's `fcm.ts`) and foreground notifications for messages in other rooms. Its
+tab label, icon and order live in the module declaration in `features/chat/mobile/lib/`.
+
 ## 2. Customise for the team
 
 1. **Create the first rooms.** Nothing seeds them - no migration, no boot path. After the first boot,
    make them in the UI or over MCP: `bun run cli chat-room-create` with a slug, and optionally a `name`,
    `topic` and `icon` from the 69-name `CHAT_ROOM_ICONS` list.
-2. **Read the agent's identity** from core's `config/box.json`, chosen before first boot. The
+2. **Read the agent's identity** from the `agent` block of the root `box.json`, chosen before first boot. The
    default is Nova (`nova`), admin; ID changes after initialization are unsupported. Core seeds
    its directory row. Read [the role tradeoff](../../docs/AUTH.md#agent-identity-and-role) before
    arming chat. The seat also needs an entry in
-   `<BOX_DATA_DIR>/config/agent-profiles.json` mapping it to a real workerdeck profile under the
+   `agentProfiles` (`box.json`, or `box.local.json`) mapping it to a real workerdeck profile under the
    `codex` engine, and an access token for its MCP client (`box auth token`).
 3. **Tune the turn** - `CHAT_AGENT_MODEL`, `CHAT_AGENT_REASONING_EFFORT`, `AGENT_TURN_BUDGET`,
    `SESSION_IDLE_TTL_MS`, `TURN_SILENCE_LIMIT_MS` in
@@ -35,8 +43,9 @@ Chat has a private SQLite ledger keyed by migration object name and stores no ch
    nobody reading a one-line card can judge.
 5. **Nav label and order** - `features/chat/web/index.tsx`. Band 500.
 6. **Vocabulary** - `CHAT_ROOM_ICONS` and `CHAT_ROOM_NAME_MAX` in `types.ts`, `CHAT_REACTION_EMOJI`
-   and `CHAT_REACTION_QUICK_COUNT` in `reactions.ts`. Both icon and emoji lists also exist in
-   `apps/mobile`; change one and check the other.
+   and `CHAT_REACTION_QUICK_COUNT` in `reactions.ts`. Both lists are mirrored in the mobile module
+   (`features/chat/mobile`); its tests compare the icon list with `types.ts`, so change them
+   together.
 7. **Attachments** - `ATTACHMENT_MAX_BYTES` (25 MB) and `ATTACHMENT_ALLOWED_MIME` in
    `chat.controller.ts`. Keep it an allowlist; `text/html` and `image/svg+xml` are excluded because
    both execute script when a browser renders them from this origin.
@@ -53,7 +62,7 @@ Open `http://localhost:8190/chat`. With no rooms yet you get the empty shell; **
 the route forwards to it. Then, in one room: type a message (it appears without a refresh - that is
 the `chatFeed` subscription, not a poll), hover it and react, reply to it to open a thread, drag an
 image onto the composer, and open the same room in a second tab to watch the unread badge clear.
-Check `<BOX_DATA_DIR>/` afterwards: `chat.db`, `chat.db-wal` and `chat-uploads/` are really there.
+Check the instance directory `data/` afterwards: `chat.db`, `chat.db-wal` and `chat-uploads/` are really there.
 
 Agent-side, the same operations are MCP tools:
 
@@ -70,11 +79,12 @@ bun run cli chat-room-delete           # room + confirm (the slug, repeated)
 `status: 'pending'` with a card posted into the room, because the caller is a bearer-token client.
 Approve it in the browser and watch the card settle in place.
 
-**Arming the agent, safely.** Leave `CHAT_AGENT_ENABLED` unset on any dev machine unless you are
-deliberately testing against a worker you own. When you do arm it:
+**Arming the agent, safely.** Leave `background.chatAgent` false on any dev machine unless you are
+deliberately testing against a worker you own. When you do arm it, set it in that checkout's
+`box.local.json` and declare the agent's profile in the `workerdeck` section, then start `box dev`:
 
-```bash
-CHAT_AGENT_ENABLED=1 box dev   # plus a config/workerdeck.json declaring the agent's profile
+```json
+{ "background": { "chatAgent": true } }
 ```
 
 Both are required - the flag alone does nothing without `agentWorkerUrl()`. Then mention `@nova` in a
@@ -88,7 +98,7 @@ the loopback guard refused it: something other than this process owns `127.0.0.1
 
 To update this feature, compare the target Box with the recorded upstream SHA, preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 
-To remove it, delete the feature's `core`, `server`, and `web` source directories only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
+To remove it, delete the feature's `core`, `server`, and `web` source directories (and `mobile`, with its `box_chat` entries in `apps/mobile/pubspec.yaml` and `apps/mobile/lib/generated/modules.dart`, when the Box included it) only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
 
 ## Gotchas
 

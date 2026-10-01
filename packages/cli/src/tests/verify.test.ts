@@ -16,11 +16,11 @@ const task = (id: string, code: string, phase = 'Build'): Task => ({
 })
 function cleanup(state: RunState): void { rmSync(state.logDirectory, { recursive: true, force: true }) }
 
-test('verify keeps the ten-command order and package-manager entry point', () => {
+test('verify keeps the eleven-command order and package-manager entry point', () => {
   const tasks = verifyTasks('/example/bun')
   assert.deepEqual(tasks.map(t => t.command), [
     'bun run build', 'bun run skills', 'bun run test:cli', 'bun run test:web', 'bun run typegen --quiet', 'bun run typecheck', 'bun run lint',
-    'bun run test:core', 'bun run test:server', 'bun run schema:check',
+    'bun run test:core', 'bun run test:server', 'bun run schema:check', 'bun run test:mobile',
   ])
   const forced = verifyTasks('/example/bun', { force: true })
   assert.deepEqual(forced.filter(t => t.command.endsWith('--force')).map(t => t.id), ['build', 'typecheck', 'core-tests', 'server-tests'])
@@ -77,6 +77,7 @@ test('verify declares the build as every check\'s prerequisite and typegen befor
   assert.deepEqual(needs.build, [])
   assert.deepEqual(needs.typecheck, ['build', 'typegen'])
   assert.deepEqual(needs.schema, ['build'])
+  assert.deepEqual(needs.mobile, [])
 })
 
 test('a spawn error fails the task and skips following tasks', async () => {
@@ -115,7 +116,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'verify-cli-')))
   const source = join(root, 'packages/cli/src')
   mkdirSync(source, { recursive: true })
-  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'test:web', 'typegen', 'typecheck', 'lint', 'test:core', 'test:server', 'schema:check'].map(name => [name, `bun fixture.cjs ${name}`]))
+  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'test:web', 'typegen', 'typecheck', 'lint', 'test:core', 'test:server', 'schema:check', 'test:mobile'].map(name => [name, `bun fixture.cjs ${name}`]))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module', workspaces: ['packages/*'], scripts }))
   for (const file of ['verify.ts', 'repo.ts', 'tasks.ts', 'ui.ts', 'task-view.ts']) copyFileSync(new URL(`../${file}`, import.meta.url), join(source, file))
   const fixture = join(root, 'fixture.cjs')
@@ -128,7 +129,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
     const plain = exec('--plain')
     logs.push(plain.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
     assert.equal(plain.status, 0, plain.stdout + plain.stderr)
-    assert.match(plain.stdout, /10\/10 checks/)
+    assert.match(plain.stdout, /11\/11 checks/)
     assert.ok(!plain.stdout.includes('child-detail') && !plain.stdout.includes('\x1b'))
     const verbose = exec('--verbose')
     logs.push(verbose.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')

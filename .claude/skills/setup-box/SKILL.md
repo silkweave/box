@@ -29,6 +29,9 @@ version, which you may paraphrase:
   each one: it fetches the reference implementation with `box stack fetch`, integrates
   `features/<id>/` into the Box, and registers it as a feature. The result is owned and adapted by
   the team; there is no package download, one-click install, or registry adoption.
+- Every Box also has a **mobile app** (`apps/mobile`, Flutter, optional). With core alone it is an
+  empty shell with sign-in and Settings; recipes with a mobile module (chat, notifications) add
+  their screens when the team chooses to include them. See `docs/MOBILE.md`.
 - A Box is **one team's instance**: a checkout plus its own ignored `data/`, always beside the
   code. A second Box, or a throwaway, is a second checkout.
 
@@ -150,6 +153,11 @@ imports, and run `box verify`. If `box stack fetch` cannot reach the Stack (it i
 becomes public), ask the owner for access or for a local checkout path to put in `box.local.json`
 as `stack.source`. Migrations are the hard boundary: back up first and preserve every shipped
 identity and body byte-for-byte.
+
+When a recipe has a mobile module (a `## Mobile` section in its `RECIPE.md`), ask whether they
+want it in the mobile app; the adapt skill covers the steps. If they want the app at all, mention
+that it needs the Flutter SDK to build and its own identity (bundle id, name, icon) before anyone
+installs it, and point at `docs/MOBILE.md`. Core alone is a valid answer here too.
 
 Tell the team plainly that adapted feature code is now theirs. Review the diff and validation
 before committing it on the team's branch. Never include credentials or instance data and never

@@ -7,10 +7,13 @@
  * `box stack fetch`, adapts it into `features/<id>/`, and runs the validation chain.
  *
  * RECIPE.md contract (see recipes/README.md): `# Title`, one summary paragraph, `## Highlights`
- * bullets, and an optional `## Builds on` list of links to sibling recipes.
+ * bullets, an optional `## Builds on` list of links to sibling recipes, and an optional `## Mobile` list
+ * describing the recipe's mobile app module.
  */
 
 import { parseRecipe, type RecipeText } from './recipeFormat.ts'
+
+export { recipeBrief } from './recipeFormat.ts'
 
 export interface RecipeScreenshot { src: string; alt: string }
 
@@ -52,12 +55,4 @@ export function matchesRecipe(recipe: Recipe, query: string, titles: ReadonlyMap
   if (terms.length === 0) return true
   const haystack = [recipe.id, recipe.title, recipe.summary, ...recipe.highlights, ...recipe.buildsOn.map(id => titles.get(id) ?? id)].join(' ').toLowerCase()
   return terms.every(term => haystack.includes(term))
-}
-
-export function recipeBrief(recipe: Recipe, titles: ReadonlyMap<string, string>, adapted = false): string {
-  if (adapted) return `Update the ${recipe.title} recipe (\`${recipe.id}\`) in this Box from Silkweave Stack. Read \`recipes/${recipe.id}/\` and the recorded source revision in \`docs/UPSTREAM.md\`, then use \`box stack fetch\` to compare that revision, this Box's \`features/${recipe.id}/\`, and the Stack's current \`features/${recipe.id}/\`. Follow the adapt skill: preserve local customizations and migration history, back up before any migration, run the complete validation chain, and let me review the result before finishing.`
-  const deps = recipe.buildsOn.length
-    ? ` It builds on ${recipe.buildsOn.map(id => `${titles.get(id) ?? id} (\`${id}\`)`).join(', ')}; adapt any of those that are not already in this Box first.`
-    : ''
-  return `Adapt the ${recipe.title} recipe (\`${recipe.id}\`) from Silkweave Stack into this Box.${deps} Read \`recipes/${recipe.id}/\` and \`docs/RECIPES.md\` first, then use \`box stack fetch\` to read the implementation from the Stack's \`features/${recipe.id}/\`, ideally at the revision recorded in \`docs/UPSTREAM.md\`. Follow the adapt skill: record the scope and source SHA before editing and back up before any migration. Preserve this Box's local decisions and migration history, update registration and dependencies, run the complete validation chain, and let me review the result before finishing.`
 }

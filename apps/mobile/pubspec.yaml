@@ -1,0 +1,40 @@
+name: box_app
+description: The Silkweave Box mobile app - the shell plus this Box's feature modules.
+publish_to: 'none'
+# `<semver>+<build>`. The build number is Android's versionCode and iOS's
+# CFBundleVersion. Increment it on EVERY distributed build and never decrease
+# it: Android refuses a downgrade, and two builds with the same number cannot
+# be told apart by the package manager.
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  box_mobile:
+    path: ../../packages/mobile
+
+  # --- feature modules (maintained registration, see lib/generated/modules.dart) ---
+  # --- end feature modules ---
+
+# path_provider_foundation >=2.5.0 pulls `objective_c`, which Flutter builds as a
+# native-asset framework and embeds without re-signing it on iOS, so a physical
+# device refuses the install ("The executable contains an invalid signature",
+# 0xe8008014). 2.4.1 is the last release without it. Revisit when the Flutter
+# SDK signs native assets for iOS too; prove a device install before removing.
+dependency_overrides:
+  path_provider_foundation: 2.4.1
+
+dev_dependencies:
+  flutter_driver:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

@@ -126,7 +126,7 @@ Three refusals live in core (`packages/core/src/auth/principal.ts`), because the
 ### Agent identity and role
 
 The system principal is the `agent` block of `box.json`, the one file a Box is configured in
-([SETUP](SETUP.md#configuration)). `bun install` writes the file
+([CONFIGURATION](CONFIGURATION.md)). `bun install` writes the file
 on a fresh checkout; edit it before the first boot or auth command:
 
 ```json

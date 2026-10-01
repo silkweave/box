@@ -14,7 +14,7 @@ both fine. That is the whole argument for glue.
 - **dependsOn**: `chat`, `alerts`. From **chat** it takes `chatStore()` (mentions, recent messages,
   the notification watermark and dismissal tables, push subscriptions, device tokens, room lookup,
   `directPeer`), `onChatEvent`/`ChatBusEvent`/`ChatMessage` (the delivery trigger), and on the web `subscribeChatFrames` from
-  `features/chat/lib/useChatData.ts`. From **alerts** it takes `listAlerts` (the bell's second
+  `features/chat/web/lib/useChatData.ts`. From **alerts** it takes `listAlerts` (the bell's second
   stratum), the `AlertTransport` / `AlertRecord` types and `registerAlertTransport`. From core:
   `resolvePrincipalById`, `readUsers`, `credential`, the `AuthGuard`.
 - **Nothing depends on `notifications`.** It is a leaf; it is the longest chain in the Box
@@ -39,7 +39,7 @@ Its state lives in three places it does not own:
   called "chat" because chat got there first.
 - **The DuckDB warehouse**, via alerts: the `alerts` table is read through `listAlerts` and never
   written here.
-- **`<BOX_DATA_DIR>/box.local.json credentials`** under the `push.*` channel: the VAPID pair and the
+- **`box.local.json credentials`** under the `push.*` channel: the VAPID pair and the
   FCM service account. Secrets go in credentials, in `box.local.json` (see Configuration below).
 
 There is **no join between the two engines**, on purpose. Both reads are capped at `FEED_LIMIT`
@@ -57,7 +57,7 @@ providers at all - the chat SQLite handle belongs to `ChatModule`:
 | `startNotificationDelivery()` | its own chat-bus listener | translates `mention.created` and DM `message.created` into `NotificationDelivery` structs |
 | `registerWebPushTransport()` | its own delivery seam (`delivery.ts`) | web push; returns `false` and does nothing when VAPID is unconfigured |
 | `registerFcmTransport()` | the same seam | FCM/APNs device push; `false` when the service account is unconfigured |
-| `registerAlertTransport(CHAT_ALERT_TRANSPORT)` | **alerts'** port (`features/alerts/transports.ts`) | routes `chat:<slug>` to a chat room post |
+| `registerAlertTransport(CHAT_ALERT_TRANSPORT)` | **alerts'** port (`features/alerts/core/transports.ts`) | routes `chat:<slug>` to a chat room post |
 
 **The direction rule**: the dependent registers into the dependency, never the reverse. `alerts`
 owns the `AlertTransport` port and has no idea chat exists; `notifications` - which depends on both
@@ -100,7 +100,7 @@ browser cannot drift.
 Both transports are off by default and their absence is silent and harmless.
 
 **Web push (VAPID)**, `push.ts`. Reads `credential('push', '*', 'VAPID_PUBLIC_KEY' |
-'VAPID_PRIVATE_KEY' | 'VAPID_SUBJECT')` from `<BOX_DATA_DIR>/box.local.json credentials`; any one
+'VAPID_PRIVATE_KEY' | 'VAPID_SUBJECT')` from `box.local.json credentials`; any one
 missing means push is off and `notificationsPushConfig` answers `enabled:false`, at which point the
 toggle in the bell simply does not render. The pair is **durable**: rotating it invalidates every
 stored subscription. Sends carry the full 120-char preview (decided 2026-08-30), TTL 3600s,
@@ -203,7 +203,7 @@ Realistically, four things:
 1. **Which alerts land in which room** - a rule's `route` field in Settings -> Rules. `chat:<slug>`
    is the whole vocabulary this feature adds; everything else stays alerts'.
 2. **Whether push exists at all** - generate a VAPID pair and/or paste an FCM service account into
-   `credentials.json`. Nothing else changes when you do not.
+   `box.local.json credentials`. Nothing else changes when you do not.
 3. **The copy** - `notification-copy.ts` is two pure functions, and it is the only place the words
    live for both transports.
 4. **What pushes** - `startNotificationDelivery`'s two qualifying events. Widening this to "every

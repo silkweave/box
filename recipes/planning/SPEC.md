@@ -10,8 +10,8 @@ the long-form rationale lives in markdown on disk, and the row's one-line `summa
 that doc rather than typed.
 
 - **dependsOn**: `data`. Two things, both narrow. Core-side, `state.ts` imports
-  `autoRegisterDefinitions` (`features/data/signals/definitions.js`) and the `SignalHooks` type
-  (`features/data/signals/hooks.js`); the server module registers `PLANNING_SIGNAL_HOOKS` into
+  `autoRegisterDefinitions` (`features/data/core/signals/definitions.ts`) and the `SignalHooks` type
+  (`features/data/core/signals/hooks.ts`); the server module registers `PLANNING_SIGNAL_HOOKS` into
   data's `registerSignalHooks` port from `onModuleInit`. Web-side, `InitiativeKindsSection` imports
   data's `components/board/presetIcons.tsx` so a kind picks from the same closed icon vocabulary a
   preset does. Initiatives also *reference* `signals.signal_id` values in `signal_ids` and
@@ -73,7 +73,7 @@ for it, and NULL is the whole marker - there is no `kind` column.
 
 ## Docs on disk
 
-`<BOX_DATA_DIR>/docs/initiatives/`, from core's `docsDir()`:
+`data/docs/initiatives/`, from core's `docsDir()`:
 
 - initiative `silkweave-pr-targets` -> `docs/initiatives/silkweave-pr-targets.md`
 - task `silkweave-pr-targets/invoicerr` -> `docs/initiatives/silkweave-pr-targets/invoicerr.md`
@@ -228,14 +228,14 @@ dated by `done_at`, extended flat to today. Every task mutation, delete, move an
   is parameterised by id). The kind list is config, not a table, so it has no change-feed topic - it
   reloads after a local write and otherwise on the next page load.
 
-## Env
+## Settings
 
-None. `features/planning/server/index.ts` is `defineServerFeature({ id, module })` with no
-`env` array.
+None. `features/planning/server/index.ts` is `defineServerFeature({ id, module })`, and the
+feature reads no environment variables.
 
 ## Admin-only
 
-Since 2026-09-13 the Box has two tiers (`docs/core/AUTH.md` § 3), and the rule every feature applies is
+Since 2026-09-13 the Box has two tiers (`docs/AUTH.md`, "The two tiers"), and the rule every feature applies is
 one sentence: **an operation is admin-only when its blast radius is another person's identity or
 credential, the service itself, or configuration wired to credentials.**
 
@@ -256,7 +256,7 @@ tasks, sprints and docs are a member's.
   `PlanningStatus`: a sprint is a window with capacity, and `blocked` / `dropped` mean nothing for
   one. Nothing enforces "at most one active sprint".
 - **Initiative kinds** - NOT an enum. A flat, label-sorted set in
-  `<BOX_DATA_DIR>/box.json features.planning.initiativeKinds`, edited from Settings or via
+  `box.json features.planning.initiativeKinds`, edited from Settings or via
   `initiative-kind-save` / `-delete`. The ten the predecessor shipped with (`bug`, `business`,
   `channel-growth`, `decision`, `general`, `infra`, `capability`, `oss-pr`, `product`, `strategy`)
   are a SEED written on first use, not a floor; `seeded` is what stops them coming back after a

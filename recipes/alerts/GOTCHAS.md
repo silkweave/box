@@ -10,8 +10,8 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 
 ## Recipe-specific operational details
 
-- **The rules file is not in the repo.** It lives under `<BOX_DATA_DIR>/config/`, so a fresh Box
-  has no rules and the feature is silently dormant. That is correct behaviour, not a bug - but it
+- **A fresh Box has no rules.** They live in `box.json features.alerts.rules`, which starts empty,
+  so the feature is silently dormant. That is correct behaviour, not a bug - but it
   is also the first thing to check when "alerts do nothing".
 - **`ingestEvent` never throws, and neither does the policy.** Both swallow their errors by design
   so alerting cannot break its own trigger. A dropped alert leaves no exception anywhere: look at
@@ -26,7 +26,7 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **A `chat:` route needs `notifications` installed and the room to exist.** The transport throws
   on an unknown slug, which records the alert as `error` on purpose rather than losing it.
 - **Never import `notifications` from here.** The dependent registers into `registerAlertTransport`
-  from its own `onModuleInit`; alerts must stay unaware of it (`bun run lint:deps` enforces this).
+  from its own `onModuleInit`; alerts must stay unaware of it. No check enforces this, so review imports when changing alerts.
 - **After a controller change, boot once** so typegen rewrites `appRouter.d.ts`, or the web
   typecheck is stale (`AGENTS.md`). `box verify` runs `typegen` for you.
 - **`index.tsx` sits on the web feature-registry import cycle.** Never read a registry binding at

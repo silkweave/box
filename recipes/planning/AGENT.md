@@ -31,7 +31,7 @@ the manifest's `migrations` at it.
    `features/planning/web/sprint-types.ts`. Changing the order changes which tab opens for
    a sprint (`SprintDetailView` picks from the status).
 3. **Initiative kinds** - do NOT edit these in code. They are tenant config
-   (`<BOX_DATA_DIR>/box.json features.planning.initiativeKinds`): open Settings -> **Initiative kinds** in the
+   (`box.json features.planning.initiativeKinds`): open Settings -> **Initiative kinds** in the
    dashboard, or call `bun run cli initiative-kind-save`. Edit
    `features/planning/core/kinds.ts` only to change the SEED
    (`INITIATIVE_KIND_SEED`) before a Box's first write, or `DEFAULT_INITIATIVE_KIND`. An id is
@@ -69,7 +69,7 @@ Open `http://localhost:8190/initiatives`: the grid renders (empty is fine). Crea
 give it a kind and at least one bound signal, add a task, drag it to reorder, and open the task at
 `http://localhost:8190/initiatives/<initiative>/<task>`. Type into the doc editor - it autosaves,
 and the one-line summary under the title on the board becomes the doc's first paragraph. Check
-`<BOX_DATA_DIR>/docs/initiatives/<initiative>/<task>.md` on disk: the file is really there.
+`data/docs/initiatives/<initiative>/<task>.md` on disk: the file is really there.
 
 Then `http://localhost:8190/sprints`: create a sprint, set its dates and per-person availability
 on the **design** tab, slot tasks onto days on **planning**, and try to move it to `planned` while a

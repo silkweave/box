@@ -18,9 +18,9 @@ public thread JSON, or their own logged-in Chrome over CDP for x and linkedin - 
 engagement (karma included) only on a `confirmed` verdict.
 
 - **dependsOn**: `data`, `content`.
-  - From **`data`**: `browserIdentity` (`features/data/browsers.ts`, `box.json features.data.browsers`:
+  - From **`data`**: `browserIdentity` (`features/data/core/browsers.ts`, `box.json features.data.browsers`:
     `users.id` → chromatrix identity) and `connectCDP` / `firstContext` / `detach`
-    (`features/data/cdp.ts`) - the whole browser half of `verify/strategies.ts`. The inbox build
+    (`features/data/core/cdp.ts`) - the whole browser half of `verify/strategies.ts`. The inbox build
     also reads data's `snapshots` table directly (`github-engagement`, `hackernews`,
     `reddit-engagement`, latest row per channel).
   - From **`content`**: `pod_content` LEFT JOINs `content_pieces` to resolve a team piece's
@@ -60,12 +60,12 @@ never rations, gates or prioritises a card - and a dismissal awards none.
 
 ## Files on disk
 
-- `<BOX_DATA_DIR>/box.json features.engagement.pods` - owned by this feature. `windowDays` (default 14), `channels`
+- `box.json features.engagement.pods` - owned by this feature. `windowDays` (default 14), `channels`
   (channel → the always-expected `actions`), `karma` (flat points per action; defaults
   like/react 1, repost/crosspost 2, comment 5), `autoContent` (`{ pod, channels, enabled? }`).
   Read at query time, so edits apply without a restart. A missing file means "no channel expects
   engagement".
-- `<BOX_DATA_DIR>/_evidence/engagement/<pod_content_id>__<user>.png` - screenshots captured by the
+- `data/_evidence/engagement/<pod_content_id>__<user>.png` - screenshots captured by the
   browser verify strategies; the stored path is instance-relative. A capture failure never
   downgrades a `confirmed` verdict.
 
@@ -179,18 +179,18 @@ remaining action confirmed; one `unknown` makes the whole run `unknown`.
   `table:pod_engagements`, `table:pod_content`. The queue additionally polls every 5s while
   visible, because drafts land from outside the tab (an agent over MCP).
 
-## Env
+## Settings
 
-The `ServerFeature` declares **no `env`**. Two things are still environment-sensitive:
+The feature reads no environment variables. Two settings still change its behaviour:
 
 - `server.dashboardUrl` is read by `inbox/inbox-map.ts` (`dashboardUrl()`, `inboxDeepLink()`); unset
-  simply means no deep links. It is `alerts` that consumes them, and `alerts` declares it.
+  simply means no deep links. It is `alerts` that consumes them.
 - The browser verify path goes through data's CDP client, whose `features.data.chromatrixUrl`,
   `features.data.chromatrixIdentity` and `features.data.chromatrixToken` belong to `data`.
 
 ## Admin-only
 
-Since 2026-09-13 the Box has two tiers (`docs/core/AUTH.md` § 3), and the rule every feature applies is
+Since 2026-09-13 the Box has two tiers (`docs/AUTH.md`, "The two tiers"), and the rule every feature applies is
 one sentence: **an operation is admin-only when its blast radius is another person's identity or
 credential, the service itself, or configuration wired to credentials.**
 

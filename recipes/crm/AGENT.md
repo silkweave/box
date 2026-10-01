@@ -81,7 +81,7 @@ In descending order of how wrong the defaults will be:
    `upsertImportedContact` (`import.ts`), `upsertCrmActivity`, `upsertImportedMeeting` and
    `upsertImportedRevenueEvent`; resolve accounts through `findAccountForImport` and record the
    rung it returns; write the company's stable id to `external.company_urn` so rung 3 can find it
-   next time. Keep the configuration in `<BOX_DATA_DIR>/config/<source>.json` - a `data_source_id`,
+   next time. Keep the configuration in `data/config/<source>.json` - a `data_source_id`,
    an `actor` (a real `users.id`: a sync acting for a person stamps the person, and the record layer
    REFUSES an unknown one on every audited write, so a typo here is a failed sync, not a silent
    one), and a stage map keyed on the source's **stage id**, never its name - and the key in
@@ -105,7 +105,7 @@ box dev
   columns (drag one to Won and its lead account becomes a customer).
 - `http://localhost:8190/crm/<account-id>` - the detail page: the summary strip, **Add deal** and a
   deal edited in place, contacts, the markdown doc (type in **Next move**, then check
-  `<BOX_DATA_DIR>/docs/crm/<account-id>.md` on disk - the heading and the prose are really there,
+  `data/docs/crm/<account-id>.md` on disk - the heading and the prose are really there,
   and the row's `next_action` now matches; set its due date and **Log a touch** from the same
   block), the conversation stream, the meetings and money sections, and a section folding shut by
   its heading and staying shut on the next account.

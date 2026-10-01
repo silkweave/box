@@ -2,7 +2,10 @@
 
 Run `box verify` from the intended checkout. The complete chain builds the workspace, checks
 skill links, runs CLI and web tests (`apps/web/tests` and `features/*/web`), generates API types, typechecks, lints, runs core and server tests,
-and checks the schema matrix. `box verify --plain` provides append-only output; `--verbose`
+checks the schema matrix, and runs the mobile check (Flutter analyze and test for the framework,
+the app and each `features/<id>/mobile` module; reported as skipped when Flutter is not installed,
+see [MOBILE.md](MOBILE.md)). A skipped mobile check is not a mobile pass: record it as skipped.
+`box verify --plain` provides append-only output; `--verbose`
 includes full child output. A failed check does not stop independent checks, and core and server
 tests replay cached results when their inputs are unchanged; `box verify --force` re-executes
 everything. See [CLI.md](CLI.md) for progress, dependencies, caching, warnings and log locations.

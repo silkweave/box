@@ -397,9 +397,15 @@ The browser still talks to one origin; the process boundary is internal to the B
 - **Routing:** **/api**, **/trpc**, **/mcp** and **/builder-control** are control-plane routes;
   **/builder-agent** is the authenticated Builder gateway. Editable application routes are
   proxied separately and must not claim the Builder snapshot paths.
-- **Tailscale:** the supervisor binds the configured public port on all interfaces, so a Box is
-  reachable at `http://<host>.<tailnet>.ts.net:8190`. It forwards managed application traffic
-  internally; Vite host checks apply only to the supervisor's development child.
+- **Tailscale:** the supervisor binds the public port on `server.host`, `127.0.0.1` by default.
+  The recommended way to reach a Box over the tailnet is `tailscale serve`, which terminates HTTPS
+  on the tailnet and proxies to loopback, so `server.host` can stay at its default:
+  `tailscale serve --bg --https=443 http://localhost:8190` (use the Box's `server.port`), and
+  `tailscale serve --https=443 off` to stop. Put the resulting `https://<machine>.<tailnet>.ts.net`
+  in `server.dashboardUrl` in `box.local.json`; sign-in links and the mobile app scripts use it, so
+  the mobile app gets the HTTPS address ([MOBILE.md](MOBILE.md)). Binding `server.host` to `0.0.0.0` and using
+  `http://<machine>.<tailnet>.ts.net:<port>` also works but is plain HTTP. The supervisor forwards
+  managed application traffic internally; Vite host checks apply only to its development child.
 
 **Boot a throwaway Box** without touching your real data. The instance directory is always
 `<checkout>/data` and no variable moves it, so a throwaway is a SECOND CHECKOUT of the repo. In it,

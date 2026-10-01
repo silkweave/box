@@ -33,7 +33,13 @@ local path source is never modified and only warns when its `HEAD` differs from 
 case, either check out the wanted revision there yourself with the owner's agreement, or record
 the revision you actually read. Never guess a SHA.
 
-## 3. Record the plan
+## 3. Ask about the mobile module, then record the plan
+
+If `RECIPE.md` has a `## Mobile` section, the recipe also has a module for the Box's mobile app at
+`features/<id>/mobile/`. Ask the owner, before editing, whether to include it: summarise what the
+section lists and mention any native setup its README requires (push, for example, needs Firebase).
+Do not decide for them. Record the answer with the plan.
+
 
 Write the intended scope, source commits, current local state, and planned backup to
 `docs/INTEGRATION.md` before editing. Update that record as each meaningful step completes so an
@@ -51,6 +57,12 @@ Copy and adapt the implementation's `core`, `server`, `web` and, when present, `
 the Box's `features/<id>/`, adapt imports and runtime wiring, add packages required by its imports
 to the workspace package, and update maintained registration in `src/generated/features.ts` and
 exports in `packages/core/src/generated/exports.ts`.
+
+When the owner wants the mobile module, copy and adapt `features/<id>/mobile/` too, add its path
+dependency to the feature-module block of `apps/mobile/pubspec.yaml`, register it in
+`apps/mobile/lib/generated/modules.dart`, and apply its README's native requirements to
+`apps/mobile/ios` and `android`. Follow `docs/MOBILE.md` ("Adding a module to the app"). A module
+builds on the same recipes as its feature; add their modules first when it imports them.
 
 Use the latest available dependency versions. If a package must remain pinned, record the exact pin
 and its reason in `docs/GOTCHAS.md`.
@@ -70,7 +82,9 @@ compatibility against a restored backup, with a rollback path for both code and 
 
 ## 6. Validate and record
 
-Run focused build, typecheck, lint, tests, and schema checks before handing off. Record source SHAs,
+Run focused build, typecheck, lint, tests, and schema checks before handing off. With a mobile
+module, run `bun run test:mobile` and the app against the disposable Box; say plainly when Flutter
+is not installed and the mobile check only reported a skip. Record source SHAs,
 paths, preserved customizations, migration identities, backup location, validation, and remaining
 work in `docs/INTEGRATION.md` and `docs/UPSTREAM.md`. Do not record a completed source SHA until the
 full validation chain and boot check pass.

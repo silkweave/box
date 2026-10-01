@@ -1,7 +1,7 @@
 # `alerts` - rules over the events spine, the alert ledger, delivery
 
-Everything that should page somebody. A small set of declarative rules (`box.json features.alerts.rules` under
-`BOX_DATA_DIR`, no rules table) is matched against the events on core's spine; a match becomes a
+Everything that should page somebody. A small set of declarative rules (`box.json features.alerts.rules`, no
+rules table) is matched against the events on core's spine; a match becomes a
 deduped row in the `alerts` table, and a debounced flusher sends every pending row out as one
 batched message per target - a Lark card by default, or whatever a registered transport claims.
 Alerts also brings its own event sources: five funnel actions that poll Reddit, GitHub and
@@ -157,10 +157,9 @@ working digest rather than a broken one.
 - The feed store polls itself every 10s while any row is still `pending`, and reloads on the change
   feed for `table:alerts` + `table:events`; the rules store reloads on `config:alerts.json`.
 
-## Env
+## Settings
 
-`ServerFeature` declares **no** `env` entries. Two environment variables are still read at runtime
-by code this feature calls:
+The feature reads no environment variables. Two settings change runtime behaviour:
 
 - `features.alerts.larkCli` (`lark.ts`) - the `lark-cli` binary, defaulting to `lark-cli` on `PATH`. Delivery
   shells out to it; a non-zero exit is recorded as the alert row's `error`.
@@ -168,17 +167,17 @@ by code this feature calls:
   "Open in dashboard" button.
 
 GitHub polling takes its token from core's credential store (`requireCredentials('github', <default
-account>, 'GH_TOKEN')`), not from an env entry.
+account>, 'GH_TOKEN')`), not from an environment variable.
 
 ## What a team customises
 
-1. **The rules** - `<BOX_DATA_DIR>/box.json features.alerts.rules`, through Settings -> Rules or
+1. **The rules** - `box.json features.alerts.rules`, through Settings -> Rules or
    `alert-rule-save`. A rule is `{ id, event, route, message, enabled }` plus the optionals
    `cooldown_min`, `debounce_sec`, `notify`, `signal_id`, `threshold`, `tiers`. `validateAlertRule`
    is strict: kebab-case ids, and a route must be `owner`, `channel`, `user:<id>` or
    `chat:<room-slug>`. A missing file means "no rules configured" - the feature is dormant, not
    broken.
-2. **Routing** - `<BOX_DATA_DIR>/box.json features.alerts.routing` maps each route string to a Lark target
+2. **Routing** - `box.json features.alerts.routing` maps each route string to a Lark target
    (`receive_id` + type) with a `fallback`. An unmapped route that no transport claims records a
    delivery error rather than vanishing.
 3. **Which evaluators run** - the five actions are schedulable through `automation`. A team with no

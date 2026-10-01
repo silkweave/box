@@ -15,7 +15,7 @@ No shipped migrations currently. A future schema change must be a new migration.
 
 ## 2. Customise for the team
 
-1. **The voice files** - `<BOX_DATA_DIR>/docs/identity/voice-guide.md` and
+1. **The voice files** - `data/docs/identity/voice-guide.md` and
    `docs/identity/voice/global.md`, then a `<channel>.md` per channel the team uses and
    `@<author>.md` per person. This is the single biggest edit: every skill checks drafts against
    these, and the ones that ship are EXAMPLES - a worked house style for the example authors

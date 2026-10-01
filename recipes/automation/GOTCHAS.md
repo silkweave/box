@@ -1,6 +1,6 @@
 # automation gotchas
 
-Schedules are read at boot and AUTOMATION_ENABLED=1 is required. A config edit needs a supervised restart; do not arm timers against production data during integration.
+Schedules are read at boot and `background.automation` must be `true` in `box.json` to arm them. A config edit needs a supervised restart; do not arm timers against production data during integration.
 
 The feature id (`automation`, the same as the recipe id) is part of runtime registration and migration identity. Keep it stable. Existing
 migrations are byte-exact source: preserve names, order, evaluated SQL, and callback behavior.
@@ -33,7 +33,7 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **Invalid entries are surfaced, not fatal.** At boot, `scheduleProblem()` checks each entry softly:
   a bad cron or an unknown action logs a warning and leaves that one unarmed. The upsert mutation is
   the loud half - it throws with the reason.
-- **`AUTOMATION_ENABLED` must be exactly `1`.** `env()` trims, then compares `!== '1'`.
+- **`background.automation` must be the boolean `true`.** It defaults to `false`; any other type fails configuration loading.
 - **Schedule writes and `service-restart` are admin-only, and now really are** - `@Admin()`, read
   by `AuthGuard`, on 2026-09-13. Between 2026-09-10 and then the docstrings claimed it and nothing
   enforced it, so any signed-in principal could restart the service. The agent can reach these when

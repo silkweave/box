@@ -16,7 +16,7 @@ No shipped migrations currently. If one is added, preserve the feature id and ap
 ## 2. Customise for the team
 
 1. **The rules are the main thing.** Everything else is plumbing. Create
-   `<BOX_DATA_DIR>/box.json features.alerts.rules`:
+   `box.json features.alerts.rules`:
 
    ```json
    {
@@ -40,7 +40,7 @@ No shipped migrations currently. If one is added, preserve the feature id and ap
    kebab-case; the route grammar is enforced. Editing through Settings -> Rules writes the same
    file, and the file is re-read per evaluation, so no restart either way.
 
-2. **Routing.** `<BOX_DATA_DIR>/box.json features.alerts.routing`: `{ "routes": { "channel": {...},
+2. **Routing.** `box.json features.alerts.routing`: `{ "routes": { "channel": {...},
    "user:alice": {...} }, "fallback": "channel" }`, each target a `{ receive_id, type }`. A route
    with no mapping and no transport records a delivery `error`. If the team lives in the Box's own
    chat instead of Lark, install `notifications` and route rules at `chat:<room-slug>` - that
