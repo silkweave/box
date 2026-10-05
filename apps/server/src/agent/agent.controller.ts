@@ -1,6 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
-import { agentEnginesFor, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, repoRoot, type Principal } from '@silkweave/box-core'
+import { DEFAULT_AGENT_ENGINE, agentEnginesFor, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, repoRoot, type Principal } from '@silkweave/box-core'
 import { CurrentPrincipal } from '../auth/auth.decorators.js'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { agentWorkerUrl } from './workerdeck.host.js'
@@ -82,7 +82,7 @@ export class AgentController {
       profile: principal ? agentProfileFor(principal.id, preferredAgentEngine(principal.id)) : null,
       profileRequired: agentProfilesConfigured(),
       engines: engines.map((id) => ({ id, profile: byEngine[id]! })),
-      defaultEngine: principal ? preferredAgentEngine(principal.id) : 'codex',
+      defaultEngine: principal ? preferredAgentEngine(principal.id) : DEFAULT_AGENT_ENGINE,
     }
   }
 }

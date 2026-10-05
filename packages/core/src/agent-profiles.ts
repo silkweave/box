@@ -15,12 +15,11 @@ export type AgentProfileEntry = Record<string, string>
 export type AgentProfilesFile = Record<string, AgentProfileEntry>
 
 /**
- * The engine a new session prefers when the client names none. This is a DEPLOYMENT PREFERENCE
- * and nothing more - it decides ordering and the fallback, never what an existing mapping means.
- *
- * This is a deployment preference and does not change the meaning of an explicit mapping.
+ * The engine a new session prefers when the client names none: Claude, matching Builder. This is a
+ * DEPLOYMENT PREFERENCE and nothing more - it decides ordering and the fallback, never what an
+ * existing mapping means. The Work panel remembers each browser's last pick on top of it.
  */
-export const DEFAULT_AGENT_ENGINE = 'codex'
+export const DEFAULT_AGENT_ENGINE = 'claude'
 
 /** Read box.json's agentProfiles map; an absent map means no mapping. */
 export function readAgentProfiles(): AgentProfilesFile {
