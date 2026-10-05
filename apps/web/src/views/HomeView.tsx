@@ -121,7 +121,7 @@ function OnboardingView() {
             <div className='mb-3 flex items-center justify-between'><h2 className='text-heading-2 font-semibold text-text'>Onboarding quests</h2><span className='text-label text-muted-foreground'>The last quest removes this dashboard.</span></div>
             <div className='space-y-3'>
               <Quest complete icon={<UserRoundCheck />} title='Meet your Box' description='You are signed in and this Box is ready for its human owner.' />
-              <Quest complete={providerReady} active={isAdmin && !providerReady} icon={<Bot />} title='Connect a Builder provider' description={providerDescription(readiness, builderError)}>
+              <Quest complete={providerReady} active={isAdmin && !providerReady} icon={<Bot />} title='Connect a Builder provider' description={isAdmin ? providerDescription(readiness, builderError) : 'An administrator connects Builder to a Codex or Claude profile on the Box host.'}>
                 {isAdmin && !providerReady && <ProviderSetup />}
               </Quest>
               <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Adapt and use a recipe' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'recipe is' : 'recipes are'} adapted: ${installed.map(recipe => recipe.title).join(', ')}.` : 'Choose a recipe, then let Builder adapt and verify its source.'}>

@@ -336,9 +336,9 @@ export function AgentToggle() {
   const { config, open, sessionId, session } = useAgent()
   const { principal } = useAuth()
   const canBuild = principal?.role === 'admin'
-  if (!config?.enabled && !canBuild) return null
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = React.useState(false)
+  if (!config?.enabled && !canBuild) return null
   const pending = (session?.pendingPermissionCount ?? 0) > 0
   const openGallery = (): void => { setMenuOpen(false); void navigate({ to: '/recipes' }) }
   const openBuilder = (): void => {
