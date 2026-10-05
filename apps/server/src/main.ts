@@ -5,13 +5,15 @@ import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { SESSION_COOKIE, boxBrand, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, parseCookies, rateLimit, repoRoot, resolvePrincipalById, setMaintenanceOverride, setSecurityHeaders, verifySession } from '@silkweave/box-core'
+import { SESSION_COOKIE, authenticatePrincipal, boxBrand, dataPath, findPathMount, pathMountSigninUrl, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, parseCookies, rateLimit, repoRoot, resolvePrincipalById, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders, verifySession } from '@silkweave/box-core'
 import { AppModule } from './app.module.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
 import { servicePort, verifyLoopback } from './agent/loopback-guard.js'
 import { AuthGuard } from './auth/auth.guard.js'
 import { createDevProxyGuard, devSourceScope } from './auth/dev-proxy-guard.js'
+import { join } from 'node:path'
+import { serveWebApp } from './web/web-release.js'
 
 // Reserved path prefixes the SPA front door must NOT swallow - they belong to Nest (REST under the
 // global `api` prefix, plus the silkweave-registered /trpc + /mcp transports) or, for /agent, to
@@ -63,23 +65,52 @@ async function bootstrap(): Promise<void> {
   app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => { traceHttp('app', req, res, true); next() })
   app.setGlobalPrefix('api')
 
+  // Request bodies. Nest's default JSON limit is 100 kB, which refuses ordinary payloads a Box must
+  // take: a single-file artifact page over MCP or tRPC (artifact-publish `html`, a base64 tarball)
+  // is routinely larger. The parser runs before any guard, so the larger limit is only offered to
+  // requests that present a credential (a bearer header or the session cookie); the guard still
+  // decides whether that credential is real. Anything else keeps the 100 kB ceiling.
+  const BODY_LIMIT_BYTES = 64 * 1024 * 1024
+  const ANONYMOUS_BODY_LIMIT_BYTES = 100 * 1024
+  app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    const length = Number(req.headers['content-length'] ?? 0)
+    const credentialed = /^Bearer\s+/i.test(String(req.headers.authorization ?? '')) || SESSION_COOKIE in parseCookies(req.headers.cookie)
+    if (length > (credentialed ? BODY_LIMIT_BYTES : ANONYMOUS_BODY_LIMIT_BYTES)) {
+      res.statusCode = 413
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ statusCode: 413, message: 'request entity too large' }))
+      return
+    }
+    next()
+  })
+  app.useBodyParser('json', { limit: BODY_LIMIT_BYTES })
+  app.useBodyParser('urlencoded', { limit: ANONYMOUS_BODY_LIMIT_BYTES, extended: true })
+
   // Global auth guard for plain REST routes ONLY. The silkweave adapters do NOT run
   // useGlobalGuards instances for @Trpc procedures or @Mcp tools - the changesFeed subscription
   // leaked anonymously until 9339a16 proved it. The real boundary there is class-level
   // @UseGuards(AuthGuard) on every data controller; add it to any new controller.
   app.useGlobalGuards(new AuthGuard(app.get(Reflector)))
 
-  // Development proxies to the configured Vite server. Production serves the built SPA.
-  const viteDevUrl =
-    boxJson().server.viteDevUrl || (process.argv.includes('--dev') ? `http://localhost:${boxJson().server.vitePort}` : undefined)
+  // Three frontend topologies. `--dev` (box dev) or a configured viteDevUrl: every SPA request goes
+  // to Vite. Supervised without `--dev` (box start): the dual mode - everyone gets the promoted
+  // release, and only requests the supervisor marked with its trusted `x-box-frontend: dev` header
+  // (an admin's Builder Preview while a session runs) go to Vite. The supervisor strips any client
+  // copy of that header, which is why it is honoured only when the supervisor owns this process.
+  // Unsupervised without `--dev`: release only.
+  const configuredViteUrl = boxJson().server.viteDevUrl || (process.argv.includes('--dev') ? `http://localhost:${boxJson().server.vitePort}` : undefined)
+  const dualMode = !configuredViteUrl && INTERNAL_PORT !== undefined
+  const viteDevUrl = configuredViteUrl ?? (dualMode ? `http://127.0.0.1:${boxJson().server.vitePort}` : undefined)
+  const devRequest = (req: IncomingMessage): boolean =>
+    Boolean(configuredViteUrl) || (dualMode && req.headers['x-box-frontend'] === 'dev')
 
   // Hardening middleware (runs first, ahead of the dev proxy + Nest router): strict security headers
-  // on every response, plus a coarse per-IP rate limit on the API surfaces. CSP + HSTS are prod-only
-  // (a strict CSP would break Vite's HMR client/eval in dev) - keyed off the dev proxy. Static/SPA
+  // on every response, plus a coarse per-IP rate limit on the API surfaces. CSP + HSTS are off for
+  // Vite-served requests only (a strict CSP would break Vite's HMR client/eval). Static/SPA
   // asset loads are not rate-limited (only /api,/trpc,/mcp). See docs/AUTH.md.
-  const isProd = !viteDevUrl
   app.use((req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
-    setSecurityHeaders(res, { csp: isProd, hsts: isProd })
+    const prod = !devRequest(req)
+    setSecurityHeaders(res, { csp: prod, hsts: prod })
     const path = (req.url ?? '/').split('?', 1)[0]
     if (RESERVED.test(path) && !rateLimit(`api:${clientIp(req)}`, 600, 60_000)) {
       res.statusCode = 429
@@ -87,6 +118,55 @@ async function bootstrap(): Promise<void> {
       return
     }
     next()
+  })
+
+  // Feature path mounts (core port, packages/core/src/path-mounts.ts): a feature-owned top-level
+  // prefix such as `/artifacts/` is served here, ahead of the agent mount, the dev proxy and the
+  // production ServeStatic catch-all, so it behaves identically in both topologies. Never public:
+  // the Box session (or a bearer token) is resolved first; a browser without one is sent to the
+  // sign-in gate with a return path, an API client gets a 401. The registry is read per request
+  // because features register from onModuleInit, which runs at listen().
+  app.use((req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
+    const path = (req.url ?? '/').split('?', 1)[0]
+    const mount = findPathMount(path)
+    if (!mount) return next()
+    void (async () => {
+      const authz = req.headers.authorization
+      const viaBearer = typeof authz === 'string' && /^Bearer\s+/i.test(authz)
+      // Bearer resolution writes to the warehouse (token_last_used_at), so it gets the API limit.
+      if (viaBearer && !rateLimit(`api:${clientIp(req)}`, 600, 60_000)) {
+        res.statusCode = 429
+        res.end('rate limited')
+        return
+      }
+      const principal = viaBearer
+        ? await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim())
+        : await (async () => {
+          const claims = verifySession(parseCookies(req.headers.cookie)[SESSION_COOKIE])
+          return claims ? resolvePrincipalById(claims.sub) : null
+        })()
+      if (!principal) {
+        const wantsHtml = (req.method === 'GET' || req.method === 'HEAD') && String(req.headers.accept ?? '').includes('text/html')
+        if (wantsHtml && !viaBearer) {
+          res.statusCode = 302
+          res.setHeader('Location', pathMountSigninUrl(req.url ?? '/'))
+          res.end()
+        } else {
+          res.statusCode = 401
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ message: 'sign in required' }))
+        }
+        return
+      }
+      setTrustedContentHeaders(res)
+      await mount.handle({ req, res, path, principal, credential: viaBearer ? 'bearer' : 'session' })
+    })().catch((err: unknown) => {
+      diagnostic('app', 'path-mount.error', { mount: mount.id, error: errorKind(err) })
+      if (res.headersSent) { res.destroy(); return }
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+      res.end('internal error')
+    })
   })
 
   // Boot workerdeck IN THIS PROCESS first (config/workerdeck.json; no file means no agent
@@ -112,11 +192,10 @@ async function bootstrap(): Promise<void> {
   const agentMount = createAgentMount()
   if (agentMount) app.use(agentMount.middleware)
 
-  // Nest is the single origin. In dev (`viteDevUrl` above): reverse-proxy every non-reserved route
-  // to the Vite dev server so the browser hits ONE port and still gets HMR. Registered as plain
-  // express middleware BEFORE listen so it runs ahead of Nest's router; reserved prefixes fall
-  // through to Nest. In prod there is no dev URL and ServeStaticModule (registered in AppModule)
-  // serves the built SPA instead.
+  // Nest is the single origin. For a dev request (`devRequest` above): reverse-proxy every
+  // non-reserved route to the Vite dev server so the browser hits ONE port and still gets HMR.
+  // Registered as plain express middleware BEFORE listen so it runs ahead of Nest's router; reserved
+  // prefixes fall through to Nest. Every other request gets the release middleware below.
   let devProxy: RequestHandler | undefined
   if (viteDevUrl) {
     // changeOrigin:false keeps the original Host so Vite's allowedHosts + HMR client origin work.
@@ -147,10 +226,21 @@ async function bootstrap(): Promise<void> {
     app.use((req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
       // Strip the query string so `/mcp?session=…` etc. still match the reserved set.
       const path = (req.url ?? '/').split('?', 1)[0]
-      if (RESERVED.test(path)) return next()
+      if (RESERVED.test(path) || !devRequest(req)) return next()
       devGuard(req, res, () => devProxy!(req, res, next))
     })
   }
+
+  // The built SPA: the promoted release in data/web (apps/web/dist until the first release
+  // exists). Any unmatched path serves index.html, so `/crm/acme` survives a refresh; a missing
+  // hashed `/assets/*` chunk 404s. Reserved prefixes fall through to Nest's router, so API paths
+  // 404 as JSON. Keep RESERVED in step with the client router in apps/web/src/router.tsx.
+  const webFallback = join(repoRoot(), 'apps', 'web', 'dist')
+  app.use((req: IncomingMessage, res: ServerResponse, next: (err?: unknown) => void) => {
+    const path = (req.url ?? '/').split('?', 1)[0]
+    if (RESERVED.test(path) || devRequest(req)) return next()
+    if (!serveWebApp(dataPath(), webFallback, req, res, path)) next()
+  })
 
   // Single-origin: no cross-origin calls in dev or prod, so no CORS needed.
   // The default lives in loopback-guard.ts, next to the guard that probes it - see the note there
@@ -178,7 +268,7 @@ async function bootstrap(): Promise<void> {
         else socket.destroy()
         return
       }
-      if (devProxy?.upgrade) devProxy.upgrade(req, socket as import('node:net').Socket, head)
+      if (devProxy?.upgrade && devRequest(req)) devProxy.upgrade(req, socket as import('node:net').Socket, head)
       else socket.destroy()
     })
   }
@@ -216,9 +306,11 @@ async function bootstrap(): Promise<void> {
   if (INTERNAL_PORT !== undefined) console.log(`  Builder: http://localhost:${publicPort}/builder`)
   console.log(`  tRPC:  http://localhost:${publicPort}/trpc   (signalsData, inboxData, …)`)
   console.log(
-    viteDevUrl
-      ? `  SPA:   proxied to Vite dev server at ${viteDevUrl} (HMR)`
-      : `  SPA:   served from apps/web/dist`,
+    configuredViteUrl
+      ? `  SPA:   proxied to Vite dev server at ${configuredViteUrl} (HMR)`
+      : dualMode
+        ? `  SPA:   promoted release from data/web; Builder Preview through Vite while a session runs`
+        : `  SPA:   promoted release from data/web`,
   )
 }
 

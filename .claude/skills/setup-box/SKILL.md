@@ -30,8 +30,9 @@ version, which you may paraphrase:
   `features/<id>/` into the Box, and registers it as a feature. The result is owned and adapted by
   the team; there is no package download, one-click install, or registry adoption.
 - Every Box also has a **mobile app** (`apps/mobile`, Flutter, optional). With core alone it is an
-  empty shell with sign-in and Settings; recipes with a mobile module (chat, notifications) add
-  their screens when the team chooses to include them. See `docs/MOBILE.md`.
+  empty shell with sign-in and Settings; recipes with a `mobile` powerup (chat, planning,
+  notifications, artifacts) add their screens when the team chooses to include them. See
+  `docs/MOBILE.md`.
 - A Box is **one team's instance**: a checkout plus its own ignored `data/`, always beside the
   code. A second Box, or a throwaway, is a second checkout.
 
@@ -145,17 +146,19 @@ quest is complete too. Otherwise finish provider sign-in or configuration before
 change the Box.
 
 Now ask which working surface the team wants. Core alone is supported. The onboarding dashboard
-lists every recipe from `recipes/*/RECIPE.md`; **Adapt recipe** opens Builder with a draft brief the
+recommends a few recipes and links the Recipe Gallery (Work menu, `/recipes`), which lists every
+recipe from `recipes/*/RECIPE.md`; **Adapt recipe** opens Builder with a draft brief the
 owner reviews and sends. Whether it starts there or here, the adaptation follows `$adapt`: read
 `recipes/<id>/`, check `box stack where` and run `box stack fetch` for the implementation, adapt
 `features/<id>/{core,server,web}`, update maintained registration and exports, install actual
-imports, and run `box verify`. If `box stack fetch` cannot reach the Stack (it is private until it
+imports, run `box verify`, and record the recipe in the `recipes` ledger of `box.json`. If `box stack fetch` cannot reach the Stack (it is private until it
 becomes public), ask the owner for access or for a local checkout path to put in `box.local.json`
 as `stack.source`. Migrations are the hard boundary: back up first and preserve every shipped
 identity and body byte-for-byte.
 
-When a recipe has a mobile module (a `## Mobile` section in its `RECIPE.md`), ask whether they
-want it in the mobile app; the adapt skill covers the steps. If they want the app at all, mention
+When a recipe has powerups (folders under `recipes/<id>/powerups/`, such as `mobile`), ask which
+they want now; each can be added later, and the adapt skill covers the steps, including recording each verified
+powerup in the ledger. If they want the app at all, mention
 that it needs the Flutter SDK to build and its own identity (bundle id, name, icon) before anyone
 installs it, and point at `docs/MOBILE.md`. Core alone is a valid answer here too.
 

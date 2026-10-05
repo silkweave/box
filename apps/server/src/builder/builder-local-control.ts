@@ -9,6 +9,8 @@ export interface BuilderLocalControls {
   restart: () => Promise<SupervisedApplicationStatus>
   restartFrontend: () => Promise<SupervisedFrontendStatus>
   refresh: () => Promise<void>
+  /** Typecheck, build and publish the web release everyone outside Builder loads (built mode). */
+  promote?: () => Promise<{ version: string; createdAt: string; sourceSha: string | null; dirty: boolean }>
 }
 
 const failureStatus = (error: unknown): number => {
@@ -19,7 +21,7 @@ const failureStatus = (error: unknown): number => {
 /** Historical filename retained so a newly updated CLI can still refresh an older supervisor. */
 export const builderLocalControlPath = (instance: string): string => join(instance, 'builder', 'ui-refresh.sock')
 
-/** A bounded host-local capability: status, editable-app and frontend restart, and Builder UI refresh only. */
+/** A bounded host-local capability: status, editable-app and frontend restart, web promote and Builder UI refresh only. */
 export async function startBuilderLocalControl(instance: string, controls: BuilderLocalControls) {
   const path = builderLocalControlPath(instance)
   if (existsSync(path)) {
@@ -42,12 +44,16 @@ export async function startBuilderLocalControl(instance: string, controls: Build
         ? controls.restartFrontend
         : req.method === 'POST' && req.url === '/refresh-ui'
           ? controls.refresh
-          : undefined
+          : req.method === 'POST' && req.url === '/web-promote'
+            ? controls.promote
+            : undefined
     if (!operation) { res.writeHead(404); res.end(JSON.stringify({ message: 'Unknown local supervisor control' })); return }
     req.resume()
     void operation().then(result => {
       if (req.url === '/app-restart') {
         res.end(JSON.stringify({ ok: true, application: result, message: 'Application restarted. The supervisor and Builder session stayed running.' }))
+      } else if (req.url === '/web-promote') {
+        res.end(JSON.stringify({ ok: true, release: result, message: 'Web release promoted. Open tabs outside Builder are offered a reload.' }))
       } else if (req.url === '/frontend-restart') {
         res.end(JSON.stringify({ ok: true, frontend: result, message: 'Frontend dev server restarted. Reload the preview; the application and Builder session stayed running.' }))
       } else {

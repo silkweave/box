@@ -254,6 +254,33 @@
         }
       }
     },
+    "recipes": {
+      "type": "object",
+      "description": "The recipe ledger: every recipe this Box has adapted and validated, keyed by recipe id, with the powerups added and verified for it. The agent that adapts a recipe or adds a powerup records it here once its validation passes, and removes the entry when it is taken out. The Recipe Gallery reads it to show adapted recipes and to unlock powerups. Keep it in box.json (tracked), not box.local.json.",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": {
+          "^_": {}
+        },
+        "properties": {
+          "powerups": {
+            "type": "array",
+            "description": "Ids of the powerups (folders under recipes/<id>/powerups/) added to this recipe.",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "uniqueItems": true,
+            "default": []
+          }
+        }
+      },
+      "default": {}
+    },
     "features": {
       "type": "object",
       "additionalProperties": {

@@ -2,6 +2,7 @@ import { diagnostic, errorKind } from '../diagnostics/runtime.js'
 import { spawn as nodeSpawn } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
+import { currentWebRelease } from '../web/web-release.js'
 
 export type SupervisedApplicationStatus = {
   status: 'starting' | 'running' | 'stopped' | 'failed'
@@ -10,12 +11,17 @@ export type SupervisedApplicationStatus = {
 
 /**
  * How the web frontend is served, so agents can check instead of guessing. `box dev` runs a Vite
- * child the supervisor can restart; `box start` serves the built bundle in apps/web/dist, which
- * only changes when it is rebuilt.
+ * child the supervisor can restart and serves everything through it; `box start` serves the
+ * promoted release in data/web to everyone and runs Vite only for the Builder Preview while a
+ * Builder session is active (`preview`).
  */
 export type SupervisedFrontendStatus =
   | { mode: 'dev'; server: 'vite'; status: 'running' | 'stopped' | 'failed'; port: number; message?: string }
-  | { mode: 'built'; server: 'bundle'; status: 'built' | 'missing'; path: string; builtAt?: string }
+  | {
+      mode: 'built'; server: 'release'; status: 'built' | 'missing'; path: string; builtAt?: string
+      version?: string; sourceSha?: string | null; dirty?: boolean
+      preview: { status: 'running' | 'stopped' | 'failed'; port: number; message?: string }
+    }
 
 /** Refused operation with an HTTP status the local control socket passes through. */
 export class FrontendControlError extends Error {
@@ -23,8 +29,9 @@ export class FrontendControlError extends Error {
 }
 
 export const BUILT_FRONTEND_RESTART_MESSAGE =
-  'This Box serves the built web bundle (box start), so there is no Vite dev server to restart. '
-  + 'Rebuild with box build, then reload the preview; backend changes still need box app restart.'
+  'This Box serves the promoted web release (box start) and runs Vite only for the Builder Preview '
+  + 'while a Builder session is active; none is running now. Publish web changes to everyone with '
+  + 'box app promote; backend changes still need box app restart.'
 
 export interface SupervisedChild {
   readonly pid?: number
@@ -41,6 +48,8 @@ export interface SupervisedApplicationOptions {
   internalPort: number
   vitePort: number
   dev?: boolean
+  /** Instance directory holding the promoted web release (built mode). */
+  instanceDir?: string
   probe?: (url: string) => Promise<boolean>
   probeVite?: (url: string) => Promise<boolean>
   readinessTimeoutMs?: number
@@ -67,12 +76,13 @@ const exitMessage = (code: number | null, signal: NodeJS.Signals | null): string
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** Owns the editable Box server and its stable, independent Vite process. */
+/** Owns the editable Box server and its independent Vite process (always in dev, on demand in built mode). */
 export class SupervisedApplication {
   readonly #repoRoot: string
   readonly #internalPort: number
   readonly #vitePort: number
   readonly #dev: boolean
+  readonly #instanceDir: string | undefined
   readonly #probe: (url: string) => Promise<boolean>
   readonly #probeVite: (url: string) => Promise<boolean>
   readonly #readinessTimeoutMs: number
@@ -110,6 +120,7 @@ export class SupervisedApplication {
     this.#internalPort = options.internalPort
     this.#vitePort = options.vitePort
     this.#dev = options.dev ?? true
+    this.#instanceDir = options.instanceDir
     this.#probe = options.probe ?? (async (url) => {
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), Math.min(1_000, readinessTimeoutMs))
@@ -135,23 +146,39 @@ export class SupervisedApplication {
   get status(): SupervisedApplicationStatus { return { ...this.#status } }
   get dev(): boolean { return this.#dev }
 
-  /** Live frontend state: probes Vite in dev mode, inspects the served bundle otherwise. */
+  get viteRunning(): boolean { return this.#viteStarted }
+
+  /** Live frontend state: probes Vite in dev mode, reports the promoted release otherwise. */
   async frontendStatus(): Promise<SupervisedFrontendStatus> {
+    const vite = await this.#viteState()
     if (!this.#dev) {
+      const preview = { ...vite, port: this.#vitePort }
+      const release = this.#instanceDir ? currentWebRelease(this.#instanceDir) : undefined
+      if (release) {
+        return { mode: 'built', server: 'release', status: 'built', path: join(release.dir, 'index.html'), builtAt: release.createdAt,
+          version: release.version, sourceSha: release.sourceSha, dirty: release.dirty, preview }
+      }
+      // Before the first release, the server falls back to apps/web/dist.
       const path = join(this.#repoRoot, 'apps', 'web', 'dist', 'index.html')
-      try { return { mode: 'built', server: 'bundle', status: 'built', path, builtAt: statSync(path).mtime.toISOString() } }
-      catch { return { mode: 'built', server: 'bundle', status: 'missing', path } }
+      try { return { mode: 'built', server: 'release', status: 'built', path, builtAt: statSync(path).mtime.toISOString(), preview } }
+      catch { return { mode: 'built', server: 'release', status: 'missing', path, preview } }
     }
-    const base = { mode: 'dev', server: 'vite', port: this.#vitePort } as const
-    if (!this.#viteStarted) return this.#viteFailure ? { ...base, status: 'failed', message: this.#viteFailure } : { ...base, status: 'stopped' }
-    let answering = false
-    try { answering = await this.#probeVite(`http://127.0.0.1:${this.#vitePort}/`) } catch { /* reported below */ }
-    return answering ? { ...base, status: 'running' } : { ...base, status: 'failed', message: `Vite is not answering on port ${this.#vitePort}` }
+    return { mode: 'dev', server: 'vite', port: this.#vitePort, ...vite }
   }
 
-  /** Restart only the Vite dev server. Built mode has none and is refused with the supported path. */
+  async #viteState(): Promise<{ status: 'running' | 'stopped' | 'failed'; message?: string }> {
+    if (!this.#viteStarted) return this.#viteFailure ? { status: 'failed', message: this.#viteFailure } : { status: 'stopped' }
+    let answering = false
+    try { answering = await this.#probeVite(`http://127.0.0.1:${this.#vitePort}/`) } catch { /* reported below */ }
+    return answering ? { status: 'running' } : { status: 'failed', message: `Vite is not answering on port ${this.#vitePort}` }
+  }
+
+  /**
+   * Restart only the Vite dev server. In built mode Vite exists only for a Builder session's
+   * Preview; without one the restart is refused with the supported path.
+   */
   async restartFrontend(): Promise<SupervisedFrontendStatus> {
-    if (!this.#dev) throw new FrontendControlError(409, BUILT_FRONTEND_RESTART_MESSAGE)
+    if (!this.#dev && !this.#viteStarted && !this.#viteFailure) throw new FrontendControlError(409, BUILT_FRONTEND_RESTART_MESSAGE)
     diagnostic('lifecycle', 'vite.restart', { childPid: this.#viteChild?.pid })
     await this.restartVite()
     return this.frontendStatus()
@@ -218,7 +245,7 @@ export class SupervisedApplication {
   }
 
   async startVite(): Promise<void> {
-    if (!this.#dev || this.#viteStarted) return
+    if (this.#viteStarted) return
     this.#viteFailure = undefined
     if (this.#startViteCallback) {
       try { await this.#startViteCallback() }
@@ -263,7 +290,7 @@ export class SupervisedApplication {
   }
 
   async closeVite(): Promise<void> {
-    if (!this.#viteStarted || (!this.#closeViteCallback && !this.#viteChild)) return
+    if (!this.#viteStarted || (!this.#closeViteCallback && !this.#viteChild)) { this.#viteFailure = undefined; return }
     if (this.#closeViteCallback) {
       await this.#closeViteCallback()
       this.#viteStarted = false

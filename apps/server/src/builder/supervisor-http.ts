@@ -6,6 +6,8 @@ export function applicationHeaders(req: Pick<IncomingMessage, 'headers' | 'socke
   const headers = { ...req.headers }
   delete headers.forwarded
   delete headers['x-real-ip']
+  // Only the supervisor decides which requests reach the Vite dev server.
+  delete headers['x-box-frontend']
   headers['x-forwarded-for'] = clientIp(req)
   headers['x-forwarded-proto'] = requestIsSecure(req) ? 'https' : 'http'
   return headers

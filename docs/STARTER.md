@@ -13,7 +13,7 @@ Recipe adaptation is agent-driven; record the actual source revision used.
    `packages/ui`, `packages/provider-kit`, `apps/server`, `apps/web`, `packages/cli`, the mobile
    framework and app (`packages/mobile`, `apps/mobile`), workspace configuration, core docs, public assets, and their actual package manifests.
    Copy `recipes/` whole: every recipe's documentation and screenshots ship with core, so the
-   onboarding recipe catalog and adapting agents can read them in the Box.
+   Recipe Gallery and adapting agents can read them in the Box.
 4. Exclude every reference implementation folder under `features/`, the stack's independent `box/`
    directory, development `data/`, node_modules, build and dist output, Turbo state, `.git`, and
    Flutter build state plus per-team mobile files (`pubspec.lock`, signing, Firebase configuration,
@@ -69,7 +69,7 @@ Recipe adaptation is agent-driven; record the actual source revision used.
     anything. Identify the feature's imports and install the latest packages those imports require
     in the Box workspace.
 15. Copy and adapt the implementation's `core`, `server`, `web` and `skills` source into the Box's
-    `features/<id>/`, plus `mobile` when the recipe has a mobile module and the owner wants it. Rewrite imports, paths, routes, styles, and package boundaries for the actual
+    `features/<id>/`, plus the source of the powerups the owner wants (such as `mobile`). Rewrite imports, paths, routes, styles, and package boundaries for the actual
     Box. Update core exports and all maintained registration files by hand.
 16. Stage migration code and the minimum runner and registration required to execute it. Before
     applying a migration, take a named backup and record its path and restore command in

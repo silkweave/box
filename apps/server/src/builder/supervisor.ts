@@ -1,7 +1,9 @@
 import { createBoxStatusStream } from './box-status-stream.js'
 import { applicationUpgrade } from './application-upgrade.js'
 import { diagnostic, errorKind, requestId, runtimeHeartbeat, setDiagnosticSink, traceHttp, traceSocket } from '../diagnostics/runtime.js'
-import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
+import { execFileSync } from 'node:child_process'
+import { createServer, request as httpRequest, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from 'node:http'
+import { createGzip } from 'node:zlib'
 import { createServer as createNetServer } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +22,20 @@ import { applicationHeaders, previewResponseHeaders } from './supervisor-http.js
 import { SupervisedApplication } from './supervised-application.js'
 import { builderUiVersion, currentBuilderUi, prepareBuilderUi, runBuilderCommand, serveBuilderUi, stopBuilderCommands } from './builder-ui-snapshot.js'
 import { DevView, parseDevLogLevel } from './dev-view.js'
+import { createDevAccessCache, FRONTEND_HEADER, isPreviewDocument, isViteOnlyRequest, isViteSocket, shouldCompressDevResponse } from './frontend-routing.js'
+import { currentWebRelease, prepareWebRelease, serveWebAsset, type WebRelease } from '../web/web-release.js'
+
+// Keep in step with RESERVED in main.ts: these never reach Vite.
+const APP_RESERVED = /^\/(api|trpc|mcp|agent)(\/|$)/
+
+/** The checkout's revision and whether it has uncommitted work, recorded on each web release. */
+function sourceState(root: string): { sha: string | null; dirty: boolean } {
+  try {
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+    const dirty = execFileSync('git', ['status', '--porcelain=v1', '--untracked-files=no'], { cwd: root, encoding: 'utf8' }).trim().length > 0
+    return { sha, dirty }
+  } catch { return { sha: null, dirty: true } }
+}
 
 async function freePort(): Promise<number> {
   const server = createNetServer()
@@ -39,7 +55,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const internalPort = await freePort()
   const appUrl = `http://127.0.0.1:${internalPort}`
   const app = new SupervisedApplication({
-    repoRoot: root, internalPort, vitePort: config.server.vitePort, dev: process.argv.includes('--dev'),
+    repoRoot: root, instanceDir: paths.instanceDir, internalPort, vitePort: config.server.vitePort, dev: process.argv.includes('--dev'),
     ...(options.devView && { onOutput: (source: 'app' | 'vite', level: 'info' | 'warn', line: string) => options.devView!.child(source, level, line) }),
   })
   const report = (level: 'info' | 'warn' | 'error', message: string): void => {
@@ -74,7 +90,10 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   diagnostic('supervisor', 'boot.host.start')
   const host = await createBuilderHost(paths)
   diagnostic('supervisor', 'boot.host.ready')
-  const statusStream = createBoxStatusStream(builderControlPath(paths), () => readBuilderControl(paths))
+  const statusStream = createBoxStatusStream(builderControlPath(paths), () => ({
+    maintenance: readBuilderControl(paths).maintenance,
+    release: app.dev ? null : currentWebRelease(paths.instanceDir)?.version ?? null,
+  }))
   let stopping = false
   let operations = Promise.resolve()
   let operationSequence = 0
@@ -133,10 +152,53 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     try { return await app.restart(readBuilderControl(paths).maintenance) }
     finally { busy = false; diagnostic('supervisor', 'local-app-restart.finish') }
   })
+  // Built mode: the release everyone outside Builder loads changes only here.
+  let webPromoting = false
+  let webError: string | null = null
+  async function promoteWeb(options: { check: boolean }): Promise<WebRelease> {
+    if (app.dev) throw new BuilderLifecycleError(409, 'box dev serves every page through Vite; promote applies to box start')
+    const started = performance.now()
+    diagnostic('supervisor', 'web-promote.start', { check: options.check })
+    webPromoting = true
+    webError = null
+    try {
+      if (options.check) await runCommand(root, ['run', 'typecheck'])
+      const release = await prepareWebRelease(root, paths.instanceDir, { build: runCommand, source: sourceState(root) })
+      statusStream.refresh()
+      report('info', `Web release ${release.version.slice(0, 8)} promoted`)
+      return release
+    } catch (error) {
+      webError = error instanceof Error ? error.message : 'Web release build failed'
+      throw error
+    } finally {
+      webPromoting = false
+      diagnostic('supervisor', 'web-promote.finish', { durationMs: Math.round(performance.now() - started), failed: webError !== null })
+    }
+  }
+  const promoteLocal = () => mutate(() => promoteWeb({ check: true }))
+  const devAccess = createDevAccessCache(async cookie => (await auth.authenticate(cookie)).ok)
+  // Vite exists in built mode only for a Builder session's Preview.
+  const startPreviewVite = async (): Promise<void> => {
+    if (app.dev) return
+    await app.startVite().catch(error => report('error', `Builder Preview frontend needs repair: ${String(error)}`))
+  }
+  const stopPreviewVite = async (): Promise<void> => {
+    if (app.dev) return
+    devAccess.clear()
+    await app.closeVite().catch(error => report('error', `Builder Preview frontend did not stop cleanly: ${String(error)}`))
+  }
+  /** Built mode: may this request see the live Vite graph? Admin, active session, Vite up. */
+  const devAllowed = async (req: IncomingMessage): Promise<boolean> =>
+    !app.dev && app.viteRunning && readBuilderControl(paths).session !== null && await devAccess.allowed(req.headers.cookie)
   async function state(principal: BuilderSupervisorPrincipal) {
     const current = readBuilderControl(paths)
     const session = current.session ? await host.session(current.session.id) : null
-    return { ...current, session, unavailableSession: current.session && !session ? current.session : null, application: app.status, ui: { version: builderUiVersion(ui), building: uiBuilding, error: uiError }, principal, profiles: await host.availableProfiles(principal.id) }
+    const release = app.dev ? null : currentWebRelease(paths.instanceDir)
+    const web = app.dev ? { mode: 'dev' as const } : {
+      mode: 'built' as const, promoting: webPromoting, error: webError,
+      release: release ? { version: release.version, createdAt: release.createdAt, sourceSha: release.sourceSha, dirty: release.dirty } : null,
+    }
+    return { ...current, session, unavailableSession: current.session && !session ? current.session : null, application: app.status, ui: { version: builderUiVersion(ui), building: uiBuilding, error: uiError }, web, principal, profiles: await host.availableProfiles(principal.id) }
   }
   async function requireIdle(): Promise<void> {
     const current = readBuilderControl(paths)
@@ -176,6 +238,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
               const session = await host.create(principal.id, body.engine as string | undefined)
               id = session.id
               await recordBuilderSession({ id, startedAt: new Date().toISOString() }, lifecycle)
+              await startPreviewVite()
             } catch (error) {
               if (id) host.worker.registry.get(id)?.close('server')
               await stopBuilder(lifecycle)
@@ -223,8 +286,16 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
               host.clearPending(current.session.id)
             }
             await stopBuilder(lifecycle)
+            await stopPreviewVite()
+            // The integrated work was verified; publish it to everyone outside Builder. A failed
+            // build keeps the previous release and is reported in Builder state, not as a failed finish.
+            if (!app.dev) await promoteWeb({ check: false }).catch(error => report('error', `Web release after Finish failed: ${String(error)}`))
             break
           }
+          case '/promote':
+            if (body.check !== undefined && typeof body.check !== 'boolean') throw new BuilderLifecycleError(400, 'Expected check boolean')
+            await promoteWeb({ check: body.check !== false })
+            break
           case '/refresh-ui': await refreshUi(); break
           case '/restart':
             if (body.check !== false) {
@@ -242,6 +313,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
               host.clearPending(current.session.id)
             }
             await stopBuilder(lifecycle)
+            await stopPreviewVite()
             if (current.maintenance) await app.restart(false)
             break
           default: throw new BuilderLifecycleError(404, 'Unknown Builder control')
@@ -251,12 +323,24 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     await operation
     json(res, 200, { ok: true })
   }
-  function proxy(req: IncomingMessage, res: ServerResponse): void {
+  function proxy(req: IncomingMessage, res: ServerResponse, frontend: { dev: boolean; compress: boolean }): void {
     const started = performance.now()
-    const upstream = httpRequest(`${appUrl}${req.url ?? '/'}`, { method: req.method, headers: { ...applicationHeaders(req), 'x-box-request-id': requestId(req) } }, response => {
+    const headers: OutgoingHttpHeaders = { ...applicationHeaders(req), 'x-box-request-id': requestId(req) }
+    if (frontend.dev) headers[FRONTEND_HEADER] = 'dev'
+    const upstream = httpRequest(`${appUrl}${req.url ?? '/'}`, { method: req.method, headers }, response => {
       diagnostic('supervisor', 'proxy.headers', { requestId: requestId(req), durationMs: Math.round(performance.now() - started), status: response.statusCode })
       response.once('aborted', () => diagnostic('supervisor', 'proxy.response-aborted', { requestId: requestId(req) }))
-      res.writeHead(response.statusCode ?? 502, previewResponseHeaders(response.headers))
+      const outgoing = previewResponseHeaders(response.headers)
+      if (frontend.compress && shouldCompressDevResponse({ acceptEncoding: req.headers['accept-encoding'], clientIp: clientIp(req), status: response.statusCode, headers: outgoing })) {
+        const compressed: OutgoingHttpHeaders = { ...outgoing, 'content-encoding': 'gzip', vary: 'Accept-Encoding' }
+        delete compressed['content-length']
+        res.writeHead(200, compressed)
+        const gzip = createGzip({ level: 4 })
+        gzip.once('error', () => res.destroy())
+        response.pipe(gzip).pipe(res)
+        return
+      }
+      res.writeHead(response.statusCode ?? 502, outgoing)
       response.pipe(res)
     })
     upstream.on('error', error => { diagnostic('supervisor', 'proxy.error', { requestId: requestId(req), error: errorKind(error) }); if (!res.headersSent) json(res, 503, { message: 'The Box application is restarting or needs repair. Admins can open /builder.' }); else res.destroy() })
@@ -265,8 +349,15 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     req.pipe(upstream)
   }
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    setSecurityHeaders(res, { csp: !process.argv.includes('--dev'), hsts: requestIsSecure(req) })
     const url = new URL(req.url ?? '/', 'http://local')
+    // Built mode routes per request: the Builder Preview (an admin's framed document plus Vite's own
+    // module paths) reaches Vite while a session runs; everyone else gets the promoted release.
+    let devRoute = false
+    if (!app.dev && (isViteOnlyRequest(url) || isPreviewDocument(req))) {
+      devRoute = await devAllowed(req)
+      if (!devRoute && isViteOnlyRequest(url)) { setSecurityHeaders(res, { csp: true, hsts: requestIsSecure(req) }); res.writeHead(404, { 'cache-control': 'no-store' }); res.end(); return }
+    }
+    setSecurityHeaders(res, { csp: !app.dev && !devRoute, hsts: requestIsSecure(req) })
     if (/^\/(api|builder-agent)(\/|$)/.test(url.pathname) && !rateLimit(`supervisor:${clientIp(req)}`, 1200, 60_000)) { json(res, 429, { message: 'Too many requests' }); return }
     if (url.pathname === '/api/box-status/events' && req.method === 'GET') { statusStream.open(res); return }
     if (url.pathname === '/api/box-status' && req.method === 'GET') { json(res, 200, { maintenance: readBuilderControl(paths).maintenance }); return }
@@ -297,7 +388,11 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
         return
       }
     }
-    proxy(req, res)
+    // Hashed release assets skip the app hop: precompressed, immutable, and served even while the
+    // app restarts.
+    if (!app.dev && !devRoute && (req.method === 'GET' || req.method === 'HEAD') && url.pathname.startsWith('/assets/') && serveWebAsset(paths.instanceDir, req, res, url.pathname)) return
+    const viteResponse = app.dev ? !APP_RESERVED.test(url.pathname) : devRoute
+    proxy(req, res, { dev: devRoute, compress: viteResponse })
   }
   const publicSockets = new Set<Duplex>()
   const server = createServer((req, res) => { traceHttp('supervisor', req, res); void handle(req, res).catch(error => {
@@ -311,7 +406,12 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     if (path === '/builder-browser') { await browser.upgrade(req, socket, head); return }
     if (path.startsWith('/builder-agent/')) { await gateway.upgrade(req, socket, head); return }
     if (readBuilderControl(paths).maintenance && !(await auth.authenticate(req.headers.cookie)).ok) { socket.destroy(); return }
-    const upstream = applicationUpgrade(`${appUrl}${req.url ?? '/'}`, { ...applicationHeaders(req), 'x-box-request-id': requestId(req) })
+    const upgradeHeaders: OutgoingHttpHeaders = { ...applicationHeaders(req), 'x-box-request-id': requestId(req) }
+    if (!app.dev && isViteSocket(req.headers)) {
+      if (!(await devAllowed(req))) { socket.destroy(); return }
+      upgradeHeaders[FRONTEND_HEADER] = 'dev'
+    }
+    const upstream = applicationUpgrade(`${appUrl}${req.url ?? '/'}`, upgradeHeaders)
     upstream.on('upgrade', (response, connection, extra) => {
       diagnostic('supervisor', 'ws.upgraded', { requestId: requestId(req), status: response.statusCode })
       connection.once('end', () => diagnostic('supervisor', 'ws.upstream-ended', { requestId: requestId(req) }))
@@ -348,11 +448,23 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       restart: restartApplication,
       restartFrontend,
       refresh: () => mutate(refreshUi),
+      promote: promoteLocal,
     })
     if (closing) throw new Error('Box supervisor is stopping')
-    await app.startVite().catch(error => report('error', `Box frontend needs repair: ${String(error)}`))
+    if (app.dev) await app.startVite().catch(error => report('error', `Box frontend needs repair: ${String(error)}`))
+    else if (readBuilderControl(paths).session) await startPreviewVite()
     if (closing) throw new Error('Box supervisor is stopping')
     await app.start(readBuilderControl(paths).maintenance).catch(error => report('error', `Box app needs repair: ${String(error)}`))
+    // Outside a Builder session the checkout is the integrated state: publish it when the current
+    // release was built from something else. During a session the checkout holds unpromoted work,
+    // so the last release (or apps/web/dist before the first one) stays.
+    if (!app.dev && !readBuilderControl(paths).session) {
+      const source = sourceState(root)
+      const release = currentWebRelease(paths.instanceDir)
+      if (!release || release.dirty || source.dirty || release.sourceSha !== source.sha) {
+        void mutate(() => promoteWeb({ check: false })).catch(error => report('error', `Box web release needs repair: ${String(error)}`))
+      }
+    }
   } catch (error) {
     await close()
     throw error

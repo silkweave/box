@@ -2,6 +2,7 @@ import * as React from 'react'
 import {
   ChevronDown,
   Hammer,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   PanelRightClose,
@@ -11,6 +12,7 @@ import {
   TriangleAlert,
   WifiOff,
 } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
 import { SessionPanel } from '@workerdeck/ui'
 import { cn } from '@/lib/utils'
 import {
@@ -329,13 +331,16 @@ export function useAgentFullscreen(): boolean {
   return open && fullscreen && config?.enabled === true
 }
 
-/** Work opens Assistant; the adjacent dropdown exposes admin workspace actions. */
+/** Work opens Assistant; the adjacent dropdown exposes admin workspace actions: Build and the Recipe Gallery. */
 export function AgentToggle() {
   const { config, open, sessionId, session } = useAgent()
   const { principal } = useAuth()
   const canBuild = principal?.role === 'admin'
   if (!config?.enabled && !canBuild) return null
+  const navigate = useNavigate()
+  const [menuOpen, setMenuOpen] = React.useState(false)
   const pending = (session?.pendingPermissionCount ?? 0) > 0
+  const openGallery = (): void => { setMenuOpen(false); void navigate({ to: '/recipes' }) }
   const openBuilder = (): void => {
     const preview = window.location.pathname + window.location.search + window.location.hash
     window.location.assign(`/builder?preview=${encodeURIComponent(preview)}`)
@@ -358,12 +363,13 @@ export function AgentToggle() {
         )}
       </Button>
       {canBuild && (
-        <Popover>
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
           <PopoverTrigger render={<Button variant='ghost' size='sm' className='rounded-l-none border-l border-border px-2' aria-label='More work options' />}>
             <ChevronDown className='size-3.5' />
           </PopoverTrigger>
-          <PopoverContent align='end' className='w-40 p-1'>
+          <PopoverContent align='end' className='w-44 p-1'>
             <MenuRow onClick={openBuilder}><Hammer className='size-4' /><span>Build</span></MenuRow>
+            <MenuRow onClick={openGallery}><LayoutGrid className='size-4' /><span>Recipe Gallery</span></MenuRow>
           </PopoverContent>
         </Popover>
       )}

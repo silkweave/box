@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   Bot,
@@ -13,13 +13,13 @@ import {
 } from 'lucide-react'
 import { Badge, Button, PageContainer, PageHeader } from '@silkweave/box-ui'
 import { RouteChrome } from '../lib/routeShell.tsx'
-import { WEB_FEATURE_LIST } from '../generated/features.ts'
 import { builderReadiness, loadBuilderControlState, type BuilderControlState } from '../lib/builderStore.ts'
 import { openBuilderWithBrief } from '../lib/builderBrief.ts'
 import { RECIPES } from '../lib/recipes.ts'
+import { recipeBook } from '../lib/recipeLedger.ts'
 import { useAuth } from '../lib/useAuth.tsx'
 import { slotComponents } from '../lib/slots.ts'
-import { RecipeCatalog } from '../components/recipes/RecipeCatalog.tsx'
+import { RecommendedRecipes } from '../components/recipes/RecommendedRecipes.tsx'
 
 const FIRST_RECIPE_PROMPT = `Adapt a useful first recipe from Silkweave Stack into this Box. Start by recommending Reminders unless another small, dependency-free recipe better fits my needs. Read the recipe docs in recipes/ and follow the adapt skill. Preserve this Box's local decisions, record the source SHA and intended scope, back up before migrations, adapt registration and dependencies, run the complete validation chain, and let me review the result before finishing.`
 
@@ -45,9 +45,7 @@ export function HomeView() {
 function OnboardingView() {
   const { principal } = useAuth()
   const isAdmin = principal?.role === 'admin'
-  const installed = useMemo(() => WEB_FEATURE_LIST.filter(feature => feature.id !== 'artifacts'), [])
-  const installedIds = useMemo(() => new Set(installed.map(feature => feature.id)), [installed])
-  const recipeTitle = (id: string): string => RECIPES.find(recipe => recipe.id === id)?.title ?? id
+  const installed = RECIPES.filter(recipe => recipeBook.adapted(recipe.id))
   const [builder, setBuilder] = useState<BuilderControlState>()
   const [builderError, setBuilderError] = useState<string>()
   const [copied, setCopied] = useState<'feature' | 'dashboard'>()
@@ -77,7 +75,7 @@ function OnboardingView() {
     : !providerReady
       ? { title: 'Connect Codex or Claude', detail: 'Builder needs one signed-in provider profile before it can change this Box.', action: null, prompt: null }
       : !featureReady
-        ? { title: 'Adapt your first recipe', detail: 'Pick a recipe below, or let Builder recommend a small one from the Stack.', action: 'Open Builder', prompt: FIRST_RECIPE_PROMPT }
+        ? { title: 'Adapt your first recipe', detail: 'Pick one of the recipes below, browse the Recipe Gallery, or let Builder recommend a small one from the Stack.', action: 'Open Builder', prompt: FIRST_RECIPE_PROMPT }
         : { title: 'Make the dashboard yours', detail: 'Ask Builder to replace this onboarding surface with the decisions and work that matter to you.', action: 'Open Builder', prompt: DASHBOARD_PROMPT }
 
   const copyPrompt = async (kind: 'feature' | 'dashboard', prompt: string): Promise<void> => {
@@ -126,8 +124,8 @@ function OnboardingView() {
               <Quest complete={providerReady} active={isAdmin && !providerReady} icon={<Bot />} title='Connect a Builder provider' description={providerDescription(readiness, builderError)}>
                 {isAdmin && !providerReady && <ProviderSetup />}
               </Quest>
-              <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Adapt and use a recipe' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'recipe is' : 'recipes are'} adapted: ${installed.map(feature => recipeTitle(feature.id)).join(', ')}.` : 'Choose a recipe, then let Builder adapt and verify its source.'}>
-                {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => document.getElementById('recipes')?.scrollIntoView({ behavior: 'smooth' })}><Layers3 />Browse recipes</Button>}
+              <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Adapt and use a recipe' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'recipe is' : 'recipes are'} adapted: ${installed.map(recipe => recipe.title).join(', ')}.` : 'Choose a recipe, then let Builder adapt and verify its source.'}>
+                {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => document.getElementById('recipes')?.scrollIntoView({ behavior: 'smooth' })}><Layers3 />Choose a recipe</Button>}
               </Quest>
               <Quest active={isAdmin && providerReady && featureReady} icon={<Sparkles />} title='Make the dashboard yours' description='Replace onboarding with a dashboard shaped around your adapted recipes and daily decisions.'>
                 {isAdmin && providerReady && featureReady && <Button className='mt-4' size='sm' onClick={() => openBuilderWithBrief(DASHBOARD_PROMPT)}><Hammer />Design with Builder</Button>}
@@ -153,7 +151,7 @@ function OnboardingView() {
           </aside>
         </div>
 
-        <RecipeCatalog installed={installedIds} canAdapt={isAdmin} />
+        <RecommendedRecipes canAdapt={isAdmin} />
       </PageContainer>
     </RouteChrome>
   )

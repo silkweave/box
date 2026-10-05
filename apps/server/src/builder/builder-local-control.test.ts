@@ -39,7 +39,7 @@ async function start(frontend: () => Promise<SupervisedFrontendStatus>, restartF
 
 describe('Builder local control frontend operations', () => {
   it('reports the frontend mode and state beside the application status', async () => {
-    const built: SupervisedFrontendStatus = { mode: 'built', server: 'bundle', status: 'built', path: '/box/apps/web/dist/index.html', builtAt: '2026-09-29T00:00:00.000Z' }
+    const built: SupervisedFrontendStatus = { mode: 'built', server: 'release', status: 'built', path: '/box/data/web/releases/x/index.html', builtAt: '2026-09-29T00:00:00.000Z', preview: { status: 'stopped', port: 5191 } }
     const { socket, close } = await start(async () => built, async () => built)
     try {
       await expect(call(socket, 'GET', '/app-status')).resolves.toEqual({ status: 200, body: { ok: true, application: { status: 'running' }, frontend: built } })

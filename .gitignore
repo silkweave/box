@@ -50,3 +50,6 @@ box.local.json
 
 # Stack source cache written by box stack fetch.
 /.stack/
+
+# Cloudflare wrangler local state and build output (artifacts public-sharing powerup)
+.wrangler/

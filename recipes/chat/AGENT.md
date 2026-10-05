@@ -17,7 +17,7 @@ Chat has a private SQLite ledger keyed by migration object name and stores no ch
 ### Mobile module
 
 When the owner wants chat in the mobile app, integrate `features/chat/mobile/` as described in
-[INSTALL.md](./INSTALL.md#mobile-module-optional). It adds the Chat tab (order 10), the
+the [Mobile app powerup](./powerups/mobile/INSTALL.md). It adds the Chat tab (order 10), the
 `chat/room/<slug>` link, the `box_chat` Android channel (which must equal `channel_id` in the
 notifications feature's `fcm.ts`) and foreground notifications for messages in other rooms. Its
 tab label, icon and order live in the module declaration in `features/chat/mobile/lib/`.

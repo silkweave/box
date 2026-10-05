@@ -103,10 +103,11 @@ database operations, target selection, Stack source commands and MCP tools. Thes
 MCP tool names. **box verify** preserves flags and exit status from the selected checkout's runner.
 
 `box app status` reads the editable application's state from the owner-only local supervisor
-socket, plus the run mode and the frontend's state: **dev** (`box dev`, the frontend is a Vite dev
-server the supervisor owns, and the command probes it) or **built** (`box start`, the frontend is the
-`apps/web/dist` bundle, and the command reports when it was built or that it is missing). In built
-mode there is no Vite: web changes appear only after `box build`. `--json` prints the raw
+socket, plus the run mode and the frontend's state: **dev** (`box dev`, every page is served by a
+Vite dev server the supervisor owns, and the command probes it) or **built** (`box start`, everyone
+loads the promoted web release; the command names the release, its source revision and when it was
+built, and whether the Builder Preview's Vite is running). In built mode web changes reach other
+users only through a promotion. `--json` prints the raw
 `{ application, frontend }` document for agents. `box app restart` asks that already-running supervisor to restart only its editable
 application child and waits for the normal health check. It preserves the supervisor, Vite and the
 Builder WorkerDeck host, including the active Builder session. It does not run validation; run
@@ -115,8 +116,11 @@ Builder WorkerDeck host, including the active Builder session. It does not run v
 `box app restart --frontend` restarts only the Vite dev server, the same operation as the `f` key in
 the `box dev` view, and waits until Vite answers. Use it after a `box.json` brand edit or when Vite is
 down or holds stale module state. The application, supervisor and Builder session keep running. In
-built mode it is refused with the supported path (`box build`, then reload), because there is no dev
-server to restart.
+built mode it restarts the Builder Preview's Vite, and is refused when no Builder session runs one.
+
+`box app promote` asks the supervisor to typecheck, then build and publish a new web release, the
+same operation as **Promote** in Builder. Open tabs outside Builder are offered a reload. It is
+refused in `box dev`, where every page already comes from Vite.
 
 Do not stop, signal or relaunch `box dev` from a Builder turn, and do not start a second Box against
 the same instance. If `box app status` or `box app restart` cannot reach the supervisor, stop and ask
@@ -132,9 +136,9 @@ redirected and non-interactive output never waits. Sign-in URLs use `/login/<gra
 
 Both development and production starts enter the Box supervisor. The supervisor owns the stable
 Builder/recovery surface at **/builder**, its **/builder-assets/** snapshot assets and the
-editable application lifecycle. **box dev** still supplies the development web experience; after
-**box build**, **box start --prod** runs the production application under the same supervisor
-boundary. Builder control actions are authenticated Box operations and do not start a provider
+editable application lifecycle. **box dev** serves every page through Vite; **box start** (or
+**box start --prod**) serves the promoted web release to everyone and Vite only to the Builder
+Preview, see [SERVER.md](SERVER.md#built-mode-one-release-for-everyone-vite-for-the-builder-preview). Builder control actions are authenticated Box operations and do not start a provider
 turn implicitly.
 
 ## Stack source

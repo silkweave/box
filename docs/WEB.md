@@ -30,8 +30,9 @@ from that port itself, and `apps/server/src/main.ts` registers a reverse proxy a
 router that forwards every path NOT matching
 `/^\/(api|trpc|mcp|agent)(\/|$)/` to Vite, HMR websockets included. So the SPA is same-origin with
 the API in dev and in prod alike: the tRPC client uses relative URLs, there is no `VITE_API_URL` and
-no CORS anywhere. In prod there is no `--dev` flag, so Nest's `ServeStaticModule` serves the built
-bundle (`box build` -> `apps/web/dist`) beside `/trpc` and `/mcp` on the one port.
+no CORS anywhere. Under `box start` there is no `--dev` flag: everyone gets the promoted release from
+`data/web`, and only an administrator's Builder Preview is proxied to Vite, see
+[SERVER.md](SERVER.md#built-mode-one-release-for-everyone-vite-for-the-builder-preview).
 
 Hitting the bare Vite port still works - `apps/web/vite.config.ts` carries a reciprocal proxy for
 `/trpc`, `/mcp` and `/api` back to the server - but it is a fallback, not the supported path.
@@ -101,8 +102,13 @@ Tailwind scans this app's sources.
 | `src/lib/routeShell.tsx` | `shellGroup` route metadata and the `RouteChrome` writer used by section layouts |
 | `src/lib/nav.ts` | the sidebar groups, `navEntries()`, `useGroupNav()` |
 | `src/lib/shell.tsx` | this app's `ShellExtensions` value: top-bar slots, user menu, agent panel |
-| `src/views/HomeView.tsx` | the Dashboard placeholder at `/`, with the onboarding recipe catalog |
-| `src/lib/recipes.ts` | the recipe catalog, parsed at build time from `recipes/*/RECIPE.md` and `screenshots/` |
+| `src/views/HomeView.tsx` | the Dashboard placeholder at `/`, with onboarding's recommended recipes and a link to the Recipe Gallery |
+| `src/views/RecipeGalleryView.tsx` | the Recipe Gallery at `/recipes`: search, filter and every recipe card |
+| `src/components/recipes/RecipeCard.tsx` | the recipe card and detail dialog shared by the gallery |
+| `src/components/recipes/RecommendedRecipes.tsx` | onboarding's three recommendations and the gallery callout |
+| `src/lib/recipes.ts` | the recipe catalog, parsed at build time from `recipes/*/RECIPE.md`, `POWERUP.md` and `screenshots/`, plus `RECOMMENDED_RECIPES` |
+| `src/lib/recipeLedger.ts` | `recipeBook`: the `recipes` ledger of `box.json` combined with the registered features |
+| `apps/web/recipeLedger.ts` | the Vite plugin behind the `virtual:box-recipes` module that carries the ledger into the build |
 | `src/lib/builderBrief.ts` | the draft-brief handoff from the app to the Builder composer |
 | `src/views/SettingsView.tsx` | the Settings shell and core's two sections |
 
@@ -134,7 +140,7 @@ prevents a publication loop. Descriptor React nodes render under the shell host,
 context-dependent controls use the existing portals or receive their state explicitly. The routed
 body still unmounts normally; the persistent shell does not cache inactive routes.
 
-`router.tsx` owns the dashboard, the Builder boundary, and legacy Settings redirects; features
+`router.tsx` owns the dashboard, the Recipe Gallery route `/recipes`, the Builder boundary, and legacy Settings redirects; features
 contribute `WEB_ROUTES`. Application pages use browser history and survive refresh through the
 server's `index.html` fallback. Settings uses the hash so the application page stays mounted.
 
@@ -168,19 +174,36 @@ administrator through provider setup, adapting a first recipe and replacement of
 view with the Box's real dashboard. Progress is derived from live state rather than stored as an
 onboarding ledger. Members see the adapted state but not Builder actions.
 
-The dashboard's recipe catalog lists every recipe in `recipes/*/RECIPE.md`. Vite bundles those files
-and their `screenshots/*.{png,jpg,jpeg,webp,svg}` at build time, in filename order, so the catalog
-works in a core-only Box that has none of the implementation. It offers search over titles,
-summaries and highlights, and a detail dialog with the summary, highlights, screenshots and the
-recipes it builds on. A recipe whose id is a registered web feature is marked as adapted; there is
-no stored flag; an adapted recipe offers **Update recipe** instead. For administrators, **Adapt recipe** calls `openBuilderWithBrief`: outside Builder
+The onboarding dashboard does not show the whole catalog. It shows three recommended recipes that are
+not yet adapted (`RECOMMENDED_RECIPES` in `src/lib/recipes.ts`, topped up from other recipes whose
+`## Builds on` are met), asks which one Builder should adapt first, and below them a callout that
+opens the Recipe Gallery. A Box's own dashboard later replaces the onboarding view; the gallery stays.
+
+The **Recipe Gallery** is the core route `/recipes`, linked as "Recipe Gallery" below "Build" in the
+top-right Work menu (an administrator menu; the route itself renders for members too, without the
+adapt and add buttons). It lists every recipe in `recipes/*/RECIPE.md`. Vite bundles those files, the
+`POWERUP.md` files and the `screenshots/*.{png,jpg,jpeg,webp,svg}` at build time, in filename order, so
+the gallery works in a core-only Box that has none of the implementation. It offers search over
+titles, summaries, highlights and powerups, a filter of All, Available and Adapted with counts, and
+recipe cards that list each powerup as a row: Added, Available (administrators get **Add**), or
+Locked with the reason, such as "Adapt Chat first" or "Requires Mobile app". The detail dialog shows
+the same, with the summary, highlights, screenshots and the recipes it builds on.
+
+The ledger reaches the browser at build time through the `virtual:box-recipes` module; in development
+it reloads when `box.json` or `box.local.json` change. A recipe counts as adapted when it is in the
+`recipes` ledger of `box.json` or is registered as a web feature, so older Boxes still show their
+recipes. A registered recipe that is not in the ledger carries a "Not recorded" badge, and
+administrators get a **Record with Builder** brief that backfills it. A powerup's added state comes
+only from the ledger, and it is locked until its recipe is adapted and every `## Requires` entry in its
+`POWERUP.md` is met. An adapted recipe offers **Update recipe** instead of **Adapt recipe**. For administrators, **Adapt recipe** calls `openBuilderWithBrief`: outside Builder
 it stores a draft brief in session storage and navigates to `/builder`, and inside the Builder
 Preview it posts the draft to the containing Builder window. Builder inserts the draft into the
 composer once a session is open, and the owner reviews and sends it. Nothing is sent
-automatically. See [RECIPES.md](RECIPES.md#the-onboarding-recipe-catalog) and
+automatically. See [RECIPES.md](RECIPES.md#onboarding-and-the-recipe-gallery) and
 [BUILDER.md](BUILDER.md#draft-briefs-from-the-app).
-Artifacts is a web-only placeholder feature at `/artifacts`. Accounts is the display name for the
-CRM workspace; its `/crm` routes, feature identity and stored records retain their existing names.
+The artifacts gallery is the client route `/artifacts`; the pages themselves, `/artifacts/<slug>/`,
+are served by the server through a path mount and must be linked with a plain `<a href>`, never a
+router `Link`. Accounts is the display name for the CRM workspace; its `/crm` routes, feature identity and stored records retain their existing names.
 
 Navigation reads the generated registry inside component calls, never at module scope, because
 feature views participate in a registry import cycle (`docs/core/SEAM.md` § 5.4).
@@ -222,11 +245,12 @@ Deep links are plain paths: `http://localhost:8190/crm/acme`, `/chat/general`,
 Moving to `createBrowserHistory()` needed **no server change and no SSR**, because the SPA fallback
 both topologies need already existed:
 
-- **Prod:** `ServeStaticModule` (`apps/server/src/app.module.ts`) registers express-static plus a
-  `{*any}` catch-all that sends `index.html`. Its `exclude` list is the contract - `/api`, `/trpc`,
-  `/mcp`, `/agent` so they 404 as JSON, and `/assets/{*path}` so a **stale hashed chunk** requested
-  by a tab loaded before a deploy 404s honestly instead of coming back as `index.html` with
-  `content-type: text/html` (which the browser reports as an unreadable module parse error).
+- **Built:** the release middleware in `main.ts` (`serveWebApp`, `apps/server/src/web/web-release.ts`)
+  serves release files and sends `index.html` for every other path. `RESERVED` is the contract -
+  `/api`, `/trpc`, `/mcp`, `/agent` fall through so they 404 as JSON - and a missing `/assets/*`
+  chunk 404s so a **stale hashed chunk** requested by a tab loaded before a promotion fails honestly
+  instead of coming back as `index.html` with `content-type: text/html` (which the browser reports as
+  an unreadable module parse error). Retained releases make that rare.
 - **Dev:** `main.ts` proxies every non-`RESERVED` path to Vite, whose `appType: 'spa'` default
   serves `index.html` for unknown paths. HMR is unaffected.
 

@@ -27,6 +27,7 @@ refreshed with core. Replace it with the target revision's `recipes/` rather tha
 keep Box-specific findings in `docs/GOTCHAS.md`, not under `recipes/`. An upgrade does not adapt
 recipe changes into the Box's `features/`: when the target's `recipes/<id>/` or `features/<id>/`
 changed for a recipe this Box has adapted, record that and update it separately with `$adapt`,
+updating exactly the recipes and powerups recorded in the `recipes` ledger of `box.json`,
 reading the implementation from `box stack fetch --ref <target SHA>`. Keep `stack.source` in
 `box.json` and any `box.local.json` override as the owner configured them.
 

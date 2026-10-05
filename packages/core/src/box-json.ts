@@ -89,6 +89,18 @@ export function stackSourceKind(source: string): 'path' | 'git' | 'github' | nul
   return null
 }
 
+/**
+ * One entry of the `recipes` ledger: a recipe this Box has adapted and validated, and the ids of its
+ * powerups that have been added and verified. The agent that adapts a recipe or adds a powerup
+ * records it here; the Recipe Gallery reads it to show what is adapted and which powerups unlock.
+ */
+export interface BoxRecipe {
+  powerups: string[]
+}
+
+/** Recipe and powerup ids: lowercase slugs, the same strings as their `recipes/` folders. */
+export const RECIPE_ID_PATTERN = /^[a-z][a-z0-9-]*$/
+
 export interface BoxJson {
   agent: BoxAgent
   brand: BoxBrand
@@ -99,6 +111,7 @@ export interface BoxJson {
   mcp: BoxMcp
   http: BoxHttp
   stack: BoxStack
+  recipes: Record<string, BoxRecipe>
   features: Record<string, Record<string, unknown>>
   workerdeck: Record<string, unknown> | null
   workerdeckTokens: Record<string, string>
@@ -142,6 +155,7 @@ export function defaultBoxJson(): BoxJson {
     mcp: { url: null, token: null },
     http: { userAgent: 'Silkweave Box' },
     stack: { source: 'silkweave/stack' },
+    recipes: {},
     features: {}, workerdeck: null, workerdeckTokens: {}, accounts: {}, credentials: {}, agentProfiles: {},
   }
 }
@@ -229,7 +243,7 @@ export function parseBoxAgent(raw: unknown, where: string): BoxAgent {
 export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   if (!isRecord(raw)) return refuse(where, 'must contain a JSON object')
   const defaults = defaultBoxJson()
-  onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'features', 'workerdeck', 'workerdeckTokens', 'accounts', 'credentials', 'agentProfiles'], where)
+  onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'recipes', 'features', 'workerdeck', 'workerdeckTokens', 'accounts', 'credentials', 'agentProfiles'], where)
 
   const agent = raw['agent'] === undefined ? defaults.agent : parseBoxAgent(raw['agent'], where)
 
@@ -287,6 +301,22 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     for (const name of Object.keys(v)) if (name === '__proto__' || name === 'constructor' || name === 'prototype') refuse(`${where} ${key}`, `unsafe key ${JSON.stringify(name)}`)
     return v
   }
+  const recipes: Record<string, BoxRecipe> = {}
+  for (const [name, value] of Object.entries(map('recipes'))) {
+    const at = `${where} recipes`
+    if (!RECIPE_ID_PATTERN.test(name)) refuse(at, `${JSON.stringify(name)} is not a recipe id (lowercase slug)`)
+    if (!isRecord(value)) refuse(at, `${name} must be an object`)
+    const entry = value as Record<string, unknown>
+    onlyKeys(entry, ['powerups'], `${at} ${name}`)
+    const list = entry['powerups'] ?? []
+    if (!Array.isArray(list)) refuse(at, `${name}.powerups must be an array of powerup ids`)
+    const powerups: string[] = []
+    for (const id of list as unknown[]) {
+      if (typeof id !== 'string' || !RECIPE_ID_PATTERN.test(id)) refuse(at, `${name}.powerups: ${JSON.stringify(id)} is not a powerup id (lowercase slug)`)
+      if (!powerups.includes(id as string)) powerups.push(id as string)
+    }
+    recipes[name] = { powerups }
+  }
   const features: Record<string, Record<string, unknown>> = {}
   for (const [name, value] of Object.entries(map('features'))) { if (!isRecord(value)) refuse(`${where} features`, `${name} must be an object`); features[name] = value as Record<string, unknown> }
   const workerdeckRaw = raw.workerdeck
@@ -318,7 +348,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     agentProfiles[user] = entry
   }
 
-  return { agent, brand, server, backup, background, auth, mcp, http, stack, features, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, workerdeckTokens, accounts, credentials, agentProfiles }
+  return { agent, brand, server, backup, background, auth, mcp, http, stack, recipes, features, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, workerdeckTokens, accounts, credentials, agentProfiles }
 }
 
 /** Parse a file's text, naming the file in the one error JSON.parse would otherwise leave vague. */

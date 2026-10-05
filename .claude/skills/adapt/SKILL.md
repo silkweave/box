@@ -7,7 +7,8 @@ description: Adapt a Stack recipe into a Silkweave Box - read its recipe docs, f
 
 Use this skill to adapt, update or maintain one recipe in a Box. A recipe is something the Stack
 offers; adapting it puts its code into the Box's `features/<id>/` and registers it, after which it
-is a feature of this Box. The recipe id and the feature id are the same.
+is a feature of this Box. The recipe id and the feature id are the same (the Mobile app recipe,
+`recipes/mobile/`, is the exception: its code ships with core and it has no feature to register).
 
 ## 1. Read the recipe and the Box's records
 
@@ -33,12 +34,15 @@ local path source is never modified and only warns when its `HEAD` differs from 
 case, either check out the wanted revision there yourself with the owner's agreement, or record
 the revision you actually read. Never guess a SHA.
 
-## 3. Ask about the mobile module, then record the plan
+## 3. Ask about powerups, then record the plan
 
-If `RECIPE.md` has a `## Mobile` section, the recipe also has a module for the Box's mobile app at
-`features/<id>/mobile/`. Ask the owner, before editing, whether to include it: summarise what the
-section lists and mention any native setup its README requires (push, for example, needs Firebase).
-Do not decide for them. Record the answer with the plan.
+A recipe's optional capabilities are powerups, one folder each under `recipes/<id>/powerups/`
+(`POWERUP.md`, `INSTALL.md`); the mobile module is the `mobile` powerup. Before editing, ask the
+owner which to add now: summarise each `POWERUP.md` and its `## Needs` (push, for example, needs
+Firebase; public artifacts need Cloudflare). Do not decide for them; each can be added later. When
+updating, update the powerups recorded for the recipe in the `recipes` ledger of `box.json`, and
+run each one's `## Detect` to confirm the Box (and to backfill a ledger that predates it). Record
+the answers with the plan.
 
 
 Write the intended scope, source commits, current local state, and planned backup to
@@ -58,11 +62,11 @@ the Box's `features/<id>/`, adapt imports and runtime wiring, add packages requi
 to the workspace package, and update maintained registration in `src/generated/features.ts` and
 exports in `packages/core/src/generated/exports.ts`.
 
-When the owner wants the mobile module, copy and adapt `features/<id>/mobile/` too, add its path
-dependency to the feature-module block of `apps/mobile/pubspec.yaml`, register it in
-`apps/mobile/lib/generated/modules.dart`, and apply its README's native requirements to
-`apps/mobile/ios` and `android`. Follow `docs/MOBILE.md` ("Adding a module to the app"). A module
-builds on the same recipes as its feature; add their modules first when it imports them.
+After the base recipe validates, add each chosen powerup by following its `INSTALL.md` in order:
+`## Detect`, `## Requires`, `## Owner decisions`, `## Owner-only steps` (ask for them when they are
+needed and wait), `## Steps`, `## Verify`. Generate shared secrets yourself, keep them in
+`box.local.json`, and never print them. Record each powerup and its source revision in
+`docs/UPSTREAM.md`.
 
 Use the latest available dependency versions. If a package must remain pinned, record the exact pin
 and its reason in `docs/GOTCHAS.md`.
@@ -87,7 +91,10 @@ module, run `bun run test:mobile` and the app against the disposable Box; say pl
 is not installed and the mobile check only reported a skip. Record source SHAs,
 paths, preserved customizations, migration identities, backup location, validation, and remaining
 work in `docs/INTEGRATION.md` and `docs/UPSTREAM.md`. Do not record a completed source SHA until the
-full validation chain and boot check pass.
+full validation chain and boot check pass. Then record the outcome in the `recipes` ledger of
+`box.json`: add the recipe once the chain passes, and append each powerup id to
+`recipes.<recipe>.powerups` once its `## Verify` steps and the chain pass. Keep the ledger in
+`box.json`, not `box.local.json`; it is a record, not an install mechanism.
 
 When working inside Builder, `box dev` is the stable supervisor that owns the current agent
 session. Never stop, kill, replace, or relaunch it, and never start a second Box against the same

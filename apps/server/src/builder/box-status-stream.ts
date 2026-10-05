@@ -2,12 +2,15 @@ import { watchFile, unwatchFile } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 
 /** One file watcher and heartbeat for all tabs, owned by the stable supervisor. */
-export function createBoxStatusStream(file: string, read: () => { maintenance: boolean }) {
+export function createBoxStatusStream(file: string, read: () => { maintenance: boolean; release?: string | null }) {
   const clients = new Set<ServerResponse>()
   let watching = false
   let heartbeat: ReturnType<typeof setInterval> | undefined
   let last: string | undefined
-  const encode = () => `data: ${JSON.stringify({ maintenance: read().maintenance })}\n\n`
+  const encode = () => {
+    const { maintenance, release } = read()
+    return `data: ${JSON.stringify(release === undefined ? { maintenance } : { maintenance, release })}\n\n`
+  }
   function stop() {
     if (watching) unwatchFile(file, refresh)
     watching = false
@@ -55,6 +58,8 @@ export function createBoxStatusStream(file: string, read: () => { maintenance: b
       send(res, `retry: 3000\n\n${snapshot}`)
       last = snapshot
     },
+    /** Push a change that did not come from the control file, such as a promoted web release. */
+    refresh(): void { if (clients.size) refresh() },
     close,
   }
 }

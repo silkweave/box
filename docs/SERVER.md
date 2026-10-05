@@ -133,6 +133,14 @@ controller; put it on any new one.
   express - admin-only when a particular *field* is set.
 - **CSRF**: a cookie-authed state-changing request must carry the `x-box-csrf` header. `SameSite=Lax`
   already blocks cross-site cookie sends on those methods; the header is the second layer.
+- **Path mounts** (`registerPathMount`, `packages/core/src/path-mounts.ts`) are served by plain
+  middleware in `main.ts`, ahead of the agent mount, the dev proxy and the release SPA fallback, so a feature-owned prefix behaves the same in both topologies. That middleware resolves
+  the principal itself (bearer token, then session cookie) before the handler runs: a mount is never
+  public. A signed-out browser asking for HTML is redirected to `/?next=<path>` and the SPA returns it
+  there after sign-in (`apps/web/src/lib/returnPath.ts`); anything else gets a 401. Bearer requests
+  share the API rate limit. Mounted responses carry `setTrustedContentHeaders` instead of the strict
+  CSP, for trusted feature-served content such as artifacts. Mount prefixes may not shadow core's
+  reserved roots (`/api`, `/trpc`, `/mcp`, `/agent`, `/builder*`, `/login`, `/assets`, `/settings`, Vite's).
   Bearer-authed clients carry no ambient cookie and are exempt by construction. The authorization
   check runs *before* the CSRF check deliberately, so a member calling an admin route hears "admin
   only" rather than a header complaint that suggests one more header would have worked.
@@ -143,7 +151,7 @@ controller; put it on any new one.
 
 `main.ts` also sets strict security headers on every response and applies a coarse per-IP rate limit
 to `/api`, `/trpc`, `/mcp` and `/agent`. CSP and HSTS are production-only (a strict CSP breaks Vite's
-HMR client), keyed off whether the dev proxy is on. Static asset loads are not rate-limited.
+HMR client), keyed per request off whether it is served by Vite. Static asset loads are not rate-limited.
 
 In development the dev proxy puts Vite, a file server, on the Box origin before anyone signs in,
 because the login page is the SPA and loads the whole dashboard module graph anonymously. Two
@@ -367,8 +375,9 @@ active turn survives application restart.
 ```bash
 box dev          # start the supervisor with the editable dev app and Vite (:5190)
 box build        # core (tsdown → build/) + web (vite → dist/) + server (swc → dist/)
-box start        # start the supervisor and managed editable app
-box start --prod # start the supervisor without Vite; Bun runs server source, SPA uses built assets
+box start        # built mode: promoted web release for everyone, Vite only for a Builder Preview
+box start --prod # the same supervisor; kept as the production spelling
+box app promote  # typecheck, build and publish a new web release (built mode)
 box verify       # the full check chain - see the root AGENTS.md
 ```
 
@@ -389,9 +398,11 @@ The browser still talks to one origin; the process boundary is internal to the B
 - **dev:** **box dev** starts the supervisor, Vite and the editable Nest application. The
   supervisor owns the public port, serves **/builder** and **/builder-assets/**, and proxies
   ordinary application traffic to the managed internal port.
-- **prod:** after **box build**, **box start --prod** starts the same supervisor boundary with
-  the production application build. The Builder snapshot and control plane remain available when
-  the editable application is restarting or needs repair.
+- **built (box start, box start --prod):** the same supervisor boundary without `--dev`. Everyone
+  loads the promoted web release; Vite runs only for the Builder Preview while a Builder session
+  is open. See [Built mode](#built-mode-one-release-for-everyone-vite-for-the-builder-preview).
+  The Builder snapshot and control plane remain available when the editable application is
+  restarting or needs repair.
 - **Upgrades:** WorkerDeck Builder sockets terminate at the supervisor. Application WebSocket
   traffic is proxied only to the managed application while it is available.
 - **Routing:** **/api**, **/trpc**, **/mcp** and **/builder-control** are control-plane routes;
@@ -406,6 +417,53 @@ The browser still talks to one origin; the process boundary is internal to the B
   the mobile app gets the HTTPS address ([MOBILE.md](MOBILE.md)). Binding `server.host` to `0.0.0.0` and using
   `http://<machine>.<tailnet>.ts.net:<port>` also works but is plain HTTP. The supervisor forwards
   managed application traffic internally; Vite host checks apply only to its development child.
+
+### Built mode: one release for everyone, Vite for the Builder Preview
+
+Vite's dev server sends hundreds of unminified modules per page load (tens of megabytes), which is
+fine on a LAN and unusable over a remote link. Built mode keeps everyone on a compact release while
+an administrator still edits with hot reload in Builder.
+
+- **One application process.** The Builder edits the live checkout in place, and the Nest process
+  always runs that source, so backend changes reach every user on `box app restart`, in either mode.
+  Only the web frontend is split. Between promotions the release talks to whatever backend was last
+  restarted; additive API changes are harmless, breaking ones show until the next promotion.
+- **Releases.** `data/web/releases/<uuid>/` holds each published build, `data/web/current` names
+  the live one, and `release.json` records the source revision and whether the checkout had
+  uncommitted changes. A release is built with `vite build --mode=release` (the application entry
+  only), gets a `box-web-release` meta tag, and is precompressed once (brotli quality 9 and gzip) so
+  serving costs no CPU. The five newest releases are kept, and a hashed `/assets/*` request falls
+  back through them, so a tab opened before a promotion still loads its lazy chunks. `apps/web/dist`
+  is never served once a release exists, because Builder's checked restart rebuilds it.
+- **Serving.** The supervisor answers `/assets/*` from the releases directly (`immutable`, negotiated
+  `br`/`gzip`, `Vary: Accept-Encoding`), so assets load even while the application restarts. Nest
+  serves the SPA fallback (`index.html` with `no-cache`, other release files, a 404 for a missing
+  hashed chunk) from plain middleware in `main.ts`; reserved prefixes and path mounts take
+  precedence as before.
+- **Per-request routing.** The supervisor strips any client `x-box-frontend` header and sets
+  `x-box-frontend: dev` only when a signed-in administrator has a Builder session open, Vite is
+  running, and the request is either a framed document load (`Sec-Fetch-Dest: iframe`, which only the
+  Builder Preview produces) or one of Vite's own paths (`/@vite/`, `/@fs/`, `/@id/`, `/src/`,
+  `/node_modules/`, `/@react-refresh`, `?html-proxy`, and the `vite-hmr` socket). Nest proxies those
+  to Vite and serves everything else from the release. Vite paths are a 404 for anyone else, so in
+  built mode Vite is never reachable anonymously. A browser without Fetch Metadata gets the release
+  in the Preview, which is safe. The admin decision is cached for ten seconds per session cookie, so
+  a Preview load costs one `/api/auth/me` call rather than hundreds.
+- **Vite lifecycle.** Vite starts with a Builder session (and at boot when one is open) and stops
+  when the session ends or finishes, so an idle Box runs only the supervisor and Nest.
+- **Promotion.** Builder's **Promote** control and `box app promote` typecheck, then build and
+  publish a release. **Finish** in Wrap Up promotes after integration without a second typecheck,
+  because verification already passed. A failed build keeps the previous release. At boot outside a
+  Builder session the checkout is the integrated state: the supervisor builds a release when none
+  exists or the current one does not match a clean `HEAD`. During a session it keeps the last
+  release. Open tabs learn about a new release through `/api/box-status/events` and offer a reload;
+  nothing reloads by force.
+- **Compression in development.** Vite responses (JavaScript, CSS, HTML, JSON, SVG) are gzipped on
+  the way out for non-loopback clients, in `box dev` and for the Builder Preview alike. `/api`,
+  `/trpc`, `/mcp` and `/agent` are left alone, so event streams are never buffered.
+- **Dependency pre-bundling.** `optimizeDeps.entries` scans every feature's web source and the UI
+  library at startup. Otherwise a dependency first met in a lazily loaded view is optimized mid
+  session, and Vite answers with a full reload of every open Preview.
 
 **Boot a throwaway Box** without touching your real data. The instance directory is always
 `<checkout>/data` and no variable moves it, so a throwaway is a SECOND CHECKOUT of the repo. In it,

@@ -204,11 +204,11 @@ describe('SupervisedApplication', () => {
 })
 
 describe('SupervisedApplication frontend status', () => {
-  it('reports built mode with the bundle time, or a missing bundle', async () => {
+  it('reports built mode with the bundle time, or a missing bundle, before the first release', async () => {
     const root = mkdtempSync(join(tmpdir(), 'box-frontend-status-'))
     try {
-      const app = new SupervisedApplication({ repoRoot: root, internalPort: 8191, vitePort: 5191, dev: false })
-      await expect(app.frontendStatus()).resolves.toMatchObject({ mode: 'built', server: 'bundle', status: 'missing' })
+      const app = new SupervisedApplication({ repoRoot: root, instanceDir: join(root, 'data'), internalPort: 8191, vitePort: 5191, dev: false })
+      await expect(app.frontendStatus()).resolves.toMatchObject({ mode: 'built', server: 'release', status: 'missing', preview: { status: 'stopped', port: 5191 } })
       mkdirSync(join(root, 'apps/web/dist'), { recursive: true })
       writeFileSync(join(root, 'apps/web/dist/index.html'), '<!doctype html>')
       const status = await app.frontendStatus()
@@ -217,7 +217,29 @@ describe('SupervisedApplication frontend status', () => {
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
-  it('refuses a frontend restart in built mode with the supported path', async () => {
+  it('reports the promoted release and the Preview Vite state in built mode', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'box-frontend-release-'))
+    try {
+      const version = '00000000-0000-4000-8000-000000000001'
+      const dir = join(root, 'data/web/releases', version)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'index.html'), '<!doctype html>')
+      writeFileSync(join(dir, 'release.json'), JSON.stringify({ version, createdAt: '2026-10-05T00:00:00.000Z', sourceSha: 'abc', dirty: false }))
+      writeFileSync(join(root, 'data/web/current'), version)
+      let starts = 0
+      const app = new SupervisedApplication({ repoRoot: root, instanceDir: join(root, 'data'), internalPort: 8191, vitePort: 5191, dev: false,
+        probeVite: async () => true, startVite: () => { starts += 1 }, closeVite: () => undefined })
+      await expect(app.frontendStatus()).resolves.toMatchObject({ mode: 'built', server: 'release', status: 'built', version, sourceSha: 'abc', preview: { status: 'stopped' } })
+      await app.startVite()
+      expect(starts).toBe(1)
+      expect(app.viteRunning).toBe(true)
+      await expect(app.frontendStatus()).resolves.toMatchObject({ preview: { status: 'running', port: 5191 } })
+      await expect(app.restartFrontend()).resolves.toMatchObject({ mode: 'built' })
+      expect(starts).toBe(2)
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+
+  it('refuses a frontend restart in built mode without a Preview Vite, with the supported path', async () => {
     const app = new SupervisedApplication({ repoRoot: '/box', internalPort: 8191, vitePort: 5191, dev: false })
     await expect(app.restartFrontend()).rejects.toMatchObject({ statusCode: 409, message: BUILT_FRONTEND_RESTART_MESSAGE })
   })

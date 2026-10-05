@@ -4,6 +4,8 @@ import { CenteredNote } from '@silkweave/box-ui'
 import { rootRoute, installRootLayout } from './router-root.tsx'
 import { WEB_ROUTES } from './generated/features.ts'
 import { HomeView } from './views/HomeView.tsx'
+import { RecipeGalleryView } from './views/RecipeGalleryView.tsx'
+import { captureReturnPath } from './lib/returnPath.ts'
 
 // The route tree is core's routes plus whatever the present features contribute. Every path
 // segment is real (`/crm/$id`, `/sink/$file`) so links are shareable and the back button
@@ -15,6 +17,14 @@ const indexRoute = createRoute({
   path: '/',
   component: HomeView,
   staticData: { shellGroup: 'home' },
+})
+
+// The Recipe Gallery (Work menu). Core-owned, so it outlives the onboarding dashboard.
+const recipesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/recipes',
+  component: RecipeGalleryView,
+  staticData: { shellGroup: 'recipes' },
 })
 
 // Preserve bookmarked settings URLs as dialog links over the dashboard.
@@ -47,6 +57,7 @@ rootRoute.update({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  recipesRoute,
   builderRoute,
   settingsRoute.addChildren([settingsSectionRoute]),
   ...WEB_ROUTES,
@@ -80,6 +91,9 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// A server path mount's sign-in return (lib/returnPath.ts); must run before history snapshots.
+captureReturnPath()
+
 // Browser history, not hash: deep links are real paths (`/crm/acme`, `/chat/general`). It costs no
 // server work because both topologies already fall back to index.html - Nest's ServeStaticModule
 // catch-all in prod (app.module.ts, whose `exclude` list is the contract) and Vite's SPA fallback
@@ -90,9 +104,12 @@ if (typeof window !== 'undefined') {
 //   - a real file the SPA ships: /assets/* and everything under apps/web/public (/manifest.webmanifest,
 //     /push-icon.png, /apple-touch-icon.png, /app-icon-512.png);
 //   - what Vite owns in dev: /src, /node_modules, /@vite, /@fs, /@id.
+//   - a server path mount's subtree (core path-mounts.ts): `/artifacts/<slug>/` is served by the
+//     server, so only the bare `/artifacts` may be a client route.
 // Checked by hand on 2026-09-14 against every feature's routes.tsx (alerts, automation, chat,
 // content, crm, signals, boards, engagement, initiatives, sprints, sink) plus core's /settings:
-// no collision. A feature that adds a top-level route must re-check; nothing in `box verify` does.
+// no collision. Core's /recipes (2026-10-02) is not a served path either: recipes/ reaches the SPA
+// only through import.meta.glob. A feature that adds a top-level route must re-check; nothing in `box verify` does.
 export const router = createRouter({ routeTree, history: createBrowserHistory() })
 
 declare module '@tanstack/react-router' {

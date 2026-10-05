@@ -46,10 +46,11 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box build                                  build workspace packages and the application
   box app status [--json]                     app state, mode (dev or built) and frontend state
   box app restart                             restart the app; preserve supervisor and Builder
-  box app restart --frontend                  restart the Vite dev server (box dev only)
+  box app restart --frontend                  restart the Vite dev server (box dev, or a Builder session)
+  box app promote                             typecheck, build and publish the web release (box start)
   box builder refresh                        refresh Builder UI without restarting its session
   box builder browser --session <session-id> <operation> [JSON object]
-  box start                                  start the Box from source with built web assets
+  box start                                  start the Box: promoted web release, Vite for Builder Preview
   box start --prod                           start the production build
   box verify [--plain|--verbose]              run the complete visual validation chain
   box auth token <id> [--name "Full Name"] [--create] [--rotate] [--admin] [--quiet]

@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react'
 import { whilePageActive } from './pageLifecycle.ts'
 
-/** Existing member tabs enter maintenance too, without depending on the restarting app's feeds. */
-export function useMaintenance(signedIn: boolean): boolean {
+/** The web release this document was served from; absent under Vite and before the first release. */
+const loadedRelease = (): string | null =>
+  document.querySelector<HTMLMetaElement>('meta[name="box-web-release"]')?.content || null
+
+/**
+ * The supervisor's status stream. Existing member tabs enter maintenance too, without depending on
+ * the restarting app's feeds, and a tab served from a release learns when a newer one is promoted.
+ */
+export function useBoxStatus(signedIn: boolean): { maintenance: boolean; updateAvailable: boolean } {
   const [maintenance, setMaintenance] = useState(false)
+  const [updateAvailable, setUpdateAvailable] = useState(false)
   useEffect(() => {
     if (!signedIn) { setMaintenance(false); return }
+    const loaded = loadedRelease()
     return whilePageActive(() => {
       let disposed = false
       let revision = 0
@@ -13,8 +22,9 @@ export function useMaintenance(signedIn: boolean): boolean {
       const events = new EventSource('/api/box-status/events')
       const apply = async (data: string, current: number): Promise<void> => {
         try {
-          const status = JSON.parse(data) as { maintenance?: boolean }
+          const status = JSON.parse(data) as { maintenance?: boolean; release?: string | null }
           if (typeof status.maintenance !== 'boolean') return
+          if (loaded && typeof status.release === 'string' && !disposed) setUpdateAvailable(status.release !== loaded)
           let blocked = status.maintenance
           if (blocked) {
             const identity = await fetch('/api/auth/me', { signal: AbortSignal.timeout(3_000), cache: 'no-store' })
@@ -34,5 +44,5 @@ export function useMaintenance(signedIn: boolean): boolean {
       return () => { disposed = true; if (retry) clearTimeout(retry); events.close() }
     })
   }, [signedIn])
-  return maintenance
+  return { maintenance, updateAvailable }
 }

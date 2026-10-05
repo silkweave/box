@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { AlertCircle, Check, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Square } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, Rocket, ShieldCheck, Square } from 'lucide-react'
 import { ContextDialog, ModelSelect, PermissionModeSelect, ProgressRing, SessionPanel, UsageDialog, formatTokens, type SessionControls, type SessionVitals } from '@workerdeck/ui'
 import type { UsageWindowRow } from '@workerdeck/protocol'
 import { BuilderFiles } from '../components/builder/BuilderFiles.tsx'
@@ -14,6 +14,7 @@ import {
   builderClient,
   loadBuilderControlState,
   loadBuilderPendingChanges,
+  promoteBuilderWeb,
   restoreBuilder,
   restartBuilder,
   sendBuilderMessage,
@@ -75,6 +76,7 @@ function BuilderStatus({ state }: { state: BuilderControlState }) {
           <dt className='text-fg-3'>Application</dt><dd className='text-right text-fg-1'>{applicationCopy[state.application.status]}</dd>
           <dt className='text-fg-3'>Branch</dt><dd className='truncate text-right font-mono text-fg-2' title={state.branch ?? 'Not reported'}>{state.branch ?? 'Not reported'}</dd>
           <dt className='text-fg-3'>Base</dt><dd className='truncate text-right font-mono text-fg-2' title={state.baseRevision ?? 'Not reported'}>{state.baseRevision?.slice(0, 12) ?? 'Not reported'}</dd>
+          {state.web.mode === 'built' && <><dt className='text-fg-3'>Live release</dt><dd className='truncate text-right font-mono text-fg-2' title={state.web.release ? `${state.web.release.version} · ${new Date(state.web.release.createdAt).toLocaleString()}` : 'Not promoted yet'}>{state.web.promoting ? 'Promoting…' : state.web.release ? `${state.web.release.sourceSha?.slice(0, 12) ?? state.web.release.version.slice(0, 8)}${state.web.release.dirty ? ' + changes' : ''}` : 'Not promoted yet'}</dd></>}
           <dt className='text-fg-3'>Latest backup</dt><dd className='truncate text-right text-fg-2'>{state.backups[0] ? new Date(state.backups[0].createdAt).toLocaleString() : 'None'}</dd>
         </dl>
       </PopoverContent>
@@ -330,6 +332,10 @@ export function BuilderView() {
     if (!await confirm({ title: 'End without integrating?', message: 'Changes and the Builder branch remain on disk. Use Wrap Up to verify and integrate completed work.', confirmLabel: 'End session', danger: true })) return
     await run('stop', stopBuilder)
   }
+  const promote = async (): Promise<void> => {
+    if (!await confirm({ title: 'Promote to everyone?', message: 'Checks types, then builds the current web source and publishes it to everyone outside Builder. Open tabs are offered a reload. Backend changes go live with each application restart, not here.', confirmLabel: 'Promote' })) return
+    await run('promote', () => promoteBuilderWeb(true))
+  }
   const restore = async (id: string): Promise<void> => {
     if (!await confirm({ title: 'Restore instance data?', message: 'The selected backup replaces current data and configuration. Source must be clean at the matching revision; a safety backup is created first.', confirmLabel: 'Restore', danger: true })) return
     await run('restore', () => restoreBuilder(id))
@@ -367,6 +373,7 @@ export function BuilderView() {
               </div>
             })}
           </nav>
+          {state.web.mode === 'built' && <Button variant='outline' size='sm' disabled={busy || unsaved || state.web.promoting} onClick={() => void promote()} title='Publish the current web source to everyone outside Builder'><Rocket />{state.web.promoting || action === 'promote' ? 'Promoting…' : 'Promote'}</Button>}
           <Button size='sm' disabled={!state.session} onClick={() => setWrapUp(true)} title='Review, verify and commit this session'><Check />Wrap Up</Button>
         </div>
       </header>
@@ -385,6 +392,7 @@ export function BuilderView() {
       <div className='flex shrink-0 flex-wrap items-center gap-2 px-2 pb-2 text-label' role='status'>
         {state.ui.building ? <span>Refreshing Builder UI…</span> : state.ui.version && state.ui.version !== loadedUiVersion ? <Button variant='secondary' size='sm' disabled={unsaved} onClick={() => location.reload()}>Builder updated · Reload</Button> : null}
         {state.ui.error && <span className='text-danger'>Refresh failed; previous UI retained.</span>}
+        {state.web.mode === 'built' && state.web.error && <span className='text-danger' title={state.web.error}>Promote failed; everyone keeps the previous release.</span>}
       </div>
       {state.session ? <>
         <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />

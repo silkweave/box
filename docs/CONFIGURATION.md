@@ -30,9 +30,31 @@ when no `--server` is given; see [MOBILE.md](MOBILE.md). Brand changes require a
 Keep automation and agent hosts disabled in runtime tests.
 
 Core sections include `agent`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
-`stack`, `accounts`, `credentials`, `agentProfiles`, `workerdeck` and `workerdeckTokens`. Feature
+`stack`, `recipes`, `accounts`, `credentials`, `agentProfiles`, `workerdeck` and `workerdeckTokens`. Feature
 settings live under `features.<id>`, keyed by the feature id, and are described in the
 documentation of the recipe the feature came from (`recipes/<id>/`).
+
+## Recipe ledger
+
+`recipes` in `box.json` records which recipes this Box has adapted and which of their powerups it has
+added. Keys are recipe ids (lowercase slugs); `powerups` lists ids of folders under
+`recipes/<id>/powerups/`.
+
+```json
+{
+  "recipes": {
+    "chat": { "powerups": ["mobile"] },
+    "mobile": { "powerups": [] },
+    "reminders": { "powerups": [] }
+  }
+}
+```
+
+The agent that adapts a recipe adds its entry once the validation chain passes, and the agent that
+adds a powerup appends its id once the powerup's Verify steps and the validation chain pass.
+Removing a recipe or powerup removes the entry or id. Keep it in `box.json`, not `box.local.json`:
+it is shared, reviewable state. It is a record, not a lock or an install mechanism: nothing
+installs from it and no script polices it. See [RECIPES.md](RECIPES.md#the-recipe-ledger).
 
 ## Stack source
 

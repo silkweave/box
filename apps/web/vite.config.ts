@@ -1,4 +1,5 @@
 import { boxJsonPath, brandingPlugin } from './branding.ts'
+import { recipeLedgerPlugin } from './recipeLedger.ts'
 import { defineConfig, defaultClientConditions } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 import tailwindcss from '@tailwindcss/vite'
@@ -47,7 +48,7 @@ export default defineConfig(({ mode }) => ({
   root,
   envDir: false,
   base: '/',
-  plugins: [react(), tailwindcss(), themeKey, brandingPlugin(box.brand)],
+  plugins: [react(), tailwindcss(), themeKey, brandingPlugin(box.brand), recipeLedgerPlugin(boxJsonPath)],
   resolve: {
     // Local WorkerDeck packages must share the dashboard's React instance.
     dedupe: ['react', 'react-dom'],
@@ -95,10 +96,17 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     target: 'es2022',
-    rollupOptions: { input: mode === 'builder' ? fileURLToPath(new URL('./builder.html', import.meta.url)) : { app: fileURLToPath(new URL('./index.html', import.meta.url)), builder: fileURLToPath(new URL('./builder.html', import.meta.url)) } },
+    rollupOptions: { input: mode === 'builder' ? fileURLToPath(new URL('./builder.html', import.meta.url)) : mode === 'release' ? fileURLToPath(new URL('./index.html', import.meta.url)) : { app: fileURLToPath(new URL('./index.html', import.meta.url)), builder: fileURLToPath(new URL('./builder.html', import.meta.url)) } },
     // This full-featured Box ships a ~2.3 MB dashboard chunk. Keep a 3 MB budget
     // for meaningful growth warnings without splitting modules solely for size.
     chunkSizeWarningLimit: 3000,
   },
-  optimizeDeps: { exclude: ['monaco-editor'] },
+  optimizeDeps: {
+    exclude: ['monaco-editor'],
+    // Scan every feature's web source up front, not only what the HTML entries reach statically. A
+    // dependency first met in a lazily loaded view is otherwise optimized mid-session, and Vite
+    // answers that with a full page reload in every open Preview - over a remote link, a full
+    // re-download of the module graph.
+    entries: ['index.html', 'builder.html', '../../features/*/web/**/*.{ts,tsx}', '../../packages/ui/src/**/*.{ts,tsx}', '!**/*.test.{ts,tsx}'],
+  },
 }))

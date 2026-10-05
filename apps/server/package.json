@@ -6,7 +6,7 @@
   "description": "Silkweave Box front door: NestJS serving REST + tRPC + MCP from one set of controllers over a DuckDB warehouse, plus the in-process agent host and the ops kernel.",
   "scripts": {
     "dev": "bun --no-env-file --conditions=@silkweave/box-source src/main.ts --dev",
-    "build": "rimraf dist && cd ../.. && swc apps/server/src features -d apps/server/dist --config-file apps/server/.swcrc --ignore \"**/core/**,**/web/**,**/*.test.ts\"",
+    "build": "rimraf dist && cd ../.. && swc apps/server/src features -d apps/server/dist --config-file apps/server/.swcrc --ignore \"**/core/**,**/web/**,**/toolbar/**,**/*.test.ts\"",
     "start": "bun --no-env-file --conditions=@silkweave/box-source src/main.ts",
     "start:prod": "bun --no-env-file --conditions=@silkweave/box-source dist/apps/server/src/main.js",
     "typecheck": "tsgo -p tsconfig.json",
@@ -16,7 +16,6 @@
     "@nestjs/common": "^12.0.4",
     "@nestjs/core": "^12.0.4",
     "@nestjs/platform-express": "^12.0.4",
-    "@nestjs/serve-static": "^12.0.0",
     "@nestjs/swagger": "^12.0.1",
     "@openai/codex": "~0.149.0",
     "@silkweave/box-core": "workspace:*",

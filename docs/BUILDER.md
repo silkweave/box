@@ -12,7 +12,8 @@ controls. Members are blocked from the Builder navigation and control APIs.
 
 ## Start and use a session
 
-Start the Box with **box dev**, sign in as an administrator, and choose **Work → Build**. The supervisor
+Start the Box with **box dev** or **box start**, sign in as an administrator, and choose
+**Work → Build**. The supervisor
 reports provider readiness and the application state. A missing provider profile or provider
 sign-in is shown as a repairable readiness state; Builder does not silently choose another
 administrator's credentials.
@@ -46,7 +47,7 @@ Closing the Builder panel returns to the previewed page without ending the share
 ## Draft briefs from the app
 
 The onboarding dashboard can hand Builder a draft brief, for example when the owner chooses
-**Adapt recipe** in the recipe catalog. The brief is text for the composer and nothing more. It
+**Adapt recipe** in the Recipe Gallery or on an onboarding recommendation. The brief is text for the composer and nothing more. It
 never starts a session and is never sent automatically.
 
 Outside Builder, the dashboard stores the draft in the tab's session storage and navigates to
@@ -54,7 +55,7 @@ Builder. Inside the Builder Preview, it posts the draft to the containing Builde
 Builder accepts only a bounded, non-empty draft from the same origin, and a stored draft expires
 after an hour. When no session is open, Builder shows the waiting draft in the start panel with a
 **Discard** control. Once a session is open, Builder inserts the draft into the composer. The owner
-reviews, edits and sends it like any other turn. See [RECIPES.md](RECIPES.md#the-onboarding-recipe-catalog).
+reviews, edits and sends it like any other turn. See [RECIPES.md](RECIPES.md#onboarding-and-the-recipe-gallery).
 
 All administrators can send turns and respond to requests in the shared conversation. The shared
 session keeps one provider profile, credential and billing context while multiple browsers can
@@ -83,14 +84,14 @@ session id supplied by Builder can use the owner-local CLI:
 Builder supplies this tool guidance once through WorkerDeck session instructions. It is not
 appended to each administrator message and does not appear as repeated user content.
 
-Those instructions also identify `box dev` as the stable supervisor and provide `box app status`,
-`box app restart` and `box app restart --frontend`. The agent checks `box app status` first to learn
-whether the Box runs in dev mode (Vite, hot reload) or built mode (`box start`, the `apps/web/dist`
-bundle, web changes need `box build`) instead of inferring it from preview behaviour. An agent must
-use `box app restart` after verified backend or registration changes and `--frontend` only in dev
-mode when Vite is down or stale;
-it must never stop, kill, replace or relaunch `box dev`, because that process owns the Builder host
-and the agent's own session.
+Those instructions also identify the supervisor (`box dev` or `box start`) as stable and provide
+`box app status`, `box app restart` and `box app restart --frontend`. The agent checks
+`box app status` first to learn whether the Box runs in dev mode (every page through Vite) or built
+mode (the Preview through Vite, everyone else on the promoted release) instead of inferring it from
+preview behaviour. An agent must use `box app restart` after verified backend or registration
+changes and `--frontend` when the Preview's Vite is down or stale. It runs `box app promote` only
+when the owner asks; it must never stop, kill, replace or relaunch the supervisor, because that
+process owns the Builder host and the agent's own session.
 
 ```sh
 box builder browser --session <session-id> snapshot
@@ -140,6 +141,18 @@ The supervisor exposes the current application state and these administrator act
   an idle Builder runner and a clean Box at the matching source revision. It stops the editable
   process before restoring and rejects the operation when those preconditions are not met.
 
+## Preview and Promote under box start
+
+Under **box start** the Builder Preview loads the live source through Vite, with hot reload, while
+everyone else (members, and administrators outside Builder) keeps the promoted web release. Vite
+starts with the Builder session and stops when it ends. **Promote**, beside **Wrap Up**, checks types
+and then publishes the current web source as a new release; open tabs are offered a reload. Promote
+works at any point in a session, so finished front-end work can go live before the session is
+integrated. **Finish** promotes automatically after integrating. Backend changes are different:
+every user shares the one application process, so they go live with each application restart. The
+status popover shows the live release. See
+[SERVER.md](SERVER.md#built-mode-one-release-for-everyone-vite-for-the-builder-preview).
+
 ## Wrap Up
 
 Wrap Up is a server-backed gate over the current Git state, presented as three steps:
@@ -167,7 +180,9 @@ Builder lifecycle; unrelated movement or divergence is rejected.
 
 After the local fast-forward, the supervisor restarts the editable application and requires a
 healthy result. It then checks that the reviewed live revision and integration target are unchanged
-and switches the checkout to the integrated target branch. A failed restart leaves the Builder live
+and switches the checkout to the integrated target branch. Under **box start** it then publishes the
+integrated web source as a new release; a failed build keeps the previous release and is reported
+in Builder. A failed restart leaves the Builder live
 branch and shared session available for repair. Finish never pushes to a remote.
 
 Recovery is bounded to existing administrators. The stable supervisor should remain reachable

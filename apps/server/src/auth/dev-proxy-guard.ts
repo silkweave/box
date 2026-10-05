@@ -24,7 +24,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 
 /** Directories under the checkout root that the dev server may serve to anyone: what the browser
  *  module graph reaches through `/@fs/` (measured on the login page, 2026-09-23: packages/,
- *  features/ and the Bun store), plus apps/web itself and recipes/ (docs-only RECIPE.md files and
+ *  features/ and the Bun store), plus apps/web itself and recipes/ (docs-only RECIPE.md and POWERUP.md files and
  *  screenshots the onboarding catalog imports). The same list as `server.fs.allow` in
  *  apps/web/vite.config.ts; nothing in the browser graph imports apps/server, and that is the
  *  side that reads instance state. The `.stack/` source cache stays outside. Change both files

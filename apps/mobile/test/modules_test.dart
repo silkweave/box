@@ -18,7 +18,9 @@ void main() {
       )
       // The same for planning.
       ..on('GET /api/planning/initiatives', (_) => {'initiatives': <Object>[]})
-      ..on('GET /api/planning/kinds', (_) => {'kinds': <Object>[]});
+      ..on('GET /api/planning/kinds', (_) => {'kinds': <Object>[]})
+      // And for artifacts.
+      ..on('GET /api/artifacts/gallery', (_) => {'artifacts': <Object>[]});
     final app = await pumpBoxApp(tester, server: server, modules: mobileModules);
     expect(app.session, isNotNull);
     final tabs = [for (final m in mobileModules) ...m.tabs];

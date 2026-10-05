@@ -60,7 +60,9 @@ The answer's shape depends on the operator:
 **Read the installed feature set before you route anything.** A Box starts with core and gains
 features by adapting recipes from the Stack. A feature is present when its registered source is in
 the Box; do not assume every recipe is adapted. The recipe documents in `recipes/<id>/` ship with
-core and exist for every recipe, so their presence says nothing about what is installed.
+core and exist for every recipe, so their presence says nothing about what is installed. The `recipes` ledger in `box.json` records
+what the Box adapted and which powerups it added; confirm against registered features and a
+powerup's `## Detect`.
 Routing someone to a flow their Box does not have is worse than saying "not installed", because
 they will go looking for it.
 
@@ -73,7 +75,7 @@ they will go looking for it.
 Then route against this table. **The `Needs` column is a gate, not a note**: skip any row whose
 feature this Box does not have, and if the person asked for exactly that, say it is not installed
 and route them to the recipe: its `recipes/<id>/RECIPE.md`, the **Adapt recipe** action in the
-onboarding recipe catalog, or `$adapt`, described in `docs/RECIPES.md`. Do not invent a package or
+Recipe Gallery (Work menu, `/recipes`) or onboarding's recommendations, or `$adapt`, described in `docs/RECIPES.md`. Do not invent a package or
 registry workflow.
 Rows with `-` are core and are always there.
 
@@ -95,7 +97,7 @@ non-trivial.
 | "lost my token / my MCP config needs it" | - | Users/auth | an admin reveals it (Settings → Users → **View access token**, or `box auth reveal <id>` on the host). NEVER `user-invite` - that rotates. Read Step 2a first | `docs/AUTH.md` § First run |
 | "my MCP won't connect / no `box` tools / everything 401s" | - | Access | diagnose with Step 2b before anything else | `docs/SERVER.md` § 7 (running and serving) |
 | "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `recipes/automation/SPEC.md` + `recipes/alerts/SPEC.md` |
-| "add / install something this Box lacks" | - | Adapt a recipe | pick it in the dashboard recipe catalog (**Adapt recipe** drafts a Builder brief the owner sends), or run `$adapt`: read `recipes/<id>/`, `box stack fetch` the implementation, integrate it, update registration, then run the validation chain | `../../../docs/RECIPES.md`, `recipes/README.md` |
+| "add / install something this Box lacks" | - | Adapt a recipe | pick it in the Recipe Gallery (Work menu, `/recipes`; **Adapt recipe** drafts a Builder brief the owner sends), or run `$adapt`: read `recipes/<id>/`, `box stack fetch` the implementation, integrate it, update registration, run the validation chain, then record it in the `recipes` ledger of `box.json` | `../../../docs/RECIPES.md`, `recipes/README.md` |
 | "how does the whole thing work" | - | Orientation | this skill's Step 4 output, plus the SPEC of each INSTALLED feature | `../../../docs/RECIPES.md`, then `recipes/<id>/SPEC.md` |
 
 Multiple intents in one question is normal - answer each, but keep ONE primary next action.

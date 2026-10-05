@@ -5,6 +5,11 @@ a welcome page. Each recipe that has a mobile module can add its screens to it, 
 recipe's `web` code adds routes to the dashboard. Chat, for example, adds a Chat tab with rooms,
 threads, direct messages and the agent's activity; notifications adds push.
 
+Setting the app up for a Box is the Mobile app recipe (`recipes/mobile/`): the app code ships with
+core, and the recipe makes it the Box's own, proves it runs and is recorded in the `recipes` ledger
+of `box.json`. The feature screens are each recipe's `mobile` powerup, which requires the Mobile app
+recipe. See [RECIPES.md](RECIPES.md#powerups).
+
 The app is Flutter. The Flutter SDK is optional for a Box: without it everything else works, and
 `box verify` reports the mobile check as skipped.
 
@@ -124,7 +129,7 @@ What a module can contribute, all optional except `id` and `title`:
 
 - **Ids.** The module id is the feature id and the recipe id. It is the first segment of every
   link the module owns and the namespace of `session.storage(id)`. Tab ids are unique across the
-  app. Core leaves gaps of 10 in tab `order`; chat takes 10 and planning 20.
+  app. Core leaves gaps of 10 in tab `order`; chat takes 10, planning 20 and artifacts 30.
 - **API calls** are an extension or a thin wrapper over `BoxApi`, never a second HTTP client. The
   Box's REST mirror under `/api` is the surface (see [SERVER.md](SERVER.md)); `postJson` is also
   how the Box reads with structured input; `subscribe('<procedure>')` reads a tRPC subscription
@@ -175,8 +180,8 @@ mirrored from `core/types.ts`, read the server source by relative path so drift 
 
 ## Adding a module to the app
 
-When a recipe with a mobile module is adapted, the owner is asked whether to include the module
-(see [RECIPES.md](RECIPES.md)). Including it means:
+A recipe's mobile module is its `mobile` powerup (`recipes/<id>/powerups/mobile/`), offered when the
+recipe is adapted or later (see [RECIPES.md](RECIPES.md), "Powerups"). Adding it means:
 
 1. Copy `<fetched stack>/features/<id>/mobile/` into the Box's `features/<id>/mobile/`, adapting it
    with the rest of the recipe.

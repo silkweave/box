@@ -68,7 +68,8 @@ describe('Builder host command dispatch', () => {
     const instructions = config.instructions({ sessionId: 'session-42' })
     expect(instructions).toContain('box builder browser --session session-42 snapshot')
     expect(instructions).toContain('box app restart')
-    expect(instructions).toContain('Never stop, kill, replace, or relaunch box dev')
+    expect(instructions).toContain('Never stop, kill, replace, or relaunch it')
+    expect(instructions).toContain('box app promote only when the owner asks')
   })
 
   it('starts in auto mode when available and falls back to accept edits', async () => {

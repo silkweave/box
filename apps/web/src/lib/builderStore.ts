@@ -52,9 +52,16 @@ export interface BuilderControlState {
   backups: BuilderBackup[]
   application: BuilderApplication
   ui: { version: string | null; building: boolean; error: string | null }
+  web: BuilderWebState
   principal: { id: string; display: string; role: 'admin' | 'member' }
   profiles: BuilderProfile[]
 }
+
+export interface BuilderWebRelease { version: string; createdAt: string; sourceSha: string | null; dirty: boolean }
+/** `dev`: box dev serves every page through Vite. `built`: everyone else loads the promoted release. */
+export type BuilderWebState =
+  | { mode: 'dev' }
+  | { mode: 'built'; promoting: boolean; error: string | null; release: BuilderWebRelease | null }
 
 export interface BuilderReadiness {
   provider: BuilderProviderState
@@ -68,6 +75,14 @@ const asText = (value: unknown): string | undefined => (typeof value === 'string
 
 const asApplicationStatus = (value: unknown): BuilderApplicationStatus =>
   value === 'starting' || value === 'running' || value === 'stopped' || value === 'failed' ? value : 'stopped'
+
+const normalizeWeb = (raw: unknown): BuilderWebState => {
+  if (!isRecord(raw) || raw.mode !== 'built') return { mode: 'dev' }
+  const release = isRecord(raw.release) && typeof raw.release.version === 'string' && typeof raw.release.createdAt === 'string'
+    ? { version: raw.release.version, createdAt: raw.release.createdAt, sourceSha: asText(raw.release.sourceSha) ?? null, dirty: raw.release.dirty === true }
+    : null
+  return { mode: 'built', promoting: raw.promoting === true, error: asText(raw.error) ?? null, release }
+}
 
 const normalizeState = (raw: unknown): BuilderControlState => {
   const body = isRecord(raw) && isRecord(raw.state) ? raw.state : isRecord(raw) ? raw : {}
@@ -98,6 +113,7 @@ const normalizeState = (raw: unknown): BuilderControlState => {
   return {
     session,
     ui: { version: isRecord(body.ui) ? asText(body.ui.version) ?? null : null, building: isRecord(body.ui) && body.ui.building === true, error: isRecord(body.ui) ? asText(body.ui.error) ?? null : null },
+    web: normalizeWeb(body.web),
     unavailableSession,
     maintenance: body.maintenance === true,
     branch: asText(body.branch) ?? null,
@@ -161,6 +177,11 @@ export function takeBuilderBackup(): Promise<void> {
 
 export function restartBuilder(check = true): Promise<void> {
   return request('/restart', { method: 'POST', body: JSON.stringify({ check }) }).then(() => undefined)
+}
+
+/** Typecheck and publish the current web source to everyone outside Builder (box start only). */
+export function promoteBuilderWeb(check = true): Promise<void> {
+  return request('/promote', { method: 'POST', body: JSON.stringify({ check }) }).then(() => undefined)
 }
 
 export function restoreBuilder(id: string): Promise<void> {

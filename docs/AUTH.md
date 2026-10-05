@@ -22,6 +22,9 @@ A request is resolved to a principal by the first of these that yields one
 | 2 | the `box_session` cookie | `session` | the SPA |
 | 3 | *(none)* | - | the five `@Public()` routes on `AuthController` only |
 
+Path mounts (`/artifacts/<slug>/`, see SERVER.md) resolve the same two credentials in `main.ts`
+before their handler runs; they are never public.
+
 `Principal` is `{ id, display, role }` (`packages/core/src/auth/principal.ts`). The credential kind
 is recorded alongside it, because one route family has to tell a person at a browser from an API
 client: chat's destructive operations key their approval gate on it.

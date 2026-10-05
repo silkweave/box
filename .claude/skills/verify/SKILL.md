@@ -9,7 +9,10 @@ Read `docs/UPSTREAM.md`, `docs/INTEGRATION.md`, and `docs/GOTCHAS.md` first. Est
 revision, local changes, migration state, backup location, and unresolved work. Do not call a
 partial check a verified Box.
 
-Establish which recipes are adapted: a recipe is adapted when its id is registered as a feature.
+Establish which recipes are adapted: a recipe is adapted when its id is registered as a feature or
+recorded in the `recipes` ledger of `box.json`. Check that the ledger matches the registered features
+(the Mobile app recipe has no feature and is known only from the ledger) and that each recorded
+powerup's `## Detect` holds; report a mismatch rather than silently editing the ledger.
 Check each adapted feature against its `recipes/<id>/SPEC.md` and `GOTCHAS.md`, and confirm that the
 revision recorded for it in `docs/UPSTREAM.md` is the one whose implementation was read.
 

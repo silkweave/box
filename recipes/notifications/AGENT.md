@@ -16,7 +16,7 @@ No feature-owned migrations. Chat migrations remain in chat's private chain. Bac
 ### Mobile module
 
 When the owner wants push on the phone, integrate `features/notifications/mobile/` as described in
-[INSTALL.md](./INSTALL.md#mobile-module-optional). It registers the device with
+the [Mobile app powerup](./powerups/mobile/INSTALL.md). It registers the device with
 `POST /api/notifications/device/register`, unregisters on sign-out and opens tapped pushes through
 the module that claims them. Push works only once Firebase is configured for the app's identity;
 until then the Settings row says "Not set up".

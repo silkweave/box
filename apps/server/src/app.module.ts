@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common'
 import { join } from 'node:path'
 import { authenticatePrincipal, boxBrand, repoRoot } from '@silkweave/box-core'
-import { ServeStaticModule } from '@nestjs/serve-static'
 import { SilkweaveModule } from '@silkweave/nestjs'
 import { mcp } from '@silkweave/nestjs/mcp'
 import { trpc } from '@silkweave/nestjs/trpc'
@@ -15,34 +14,8 @@ import { ChangesModule } from './changes/changes.module.js'
 
 @Module({
   imports: [
-    // Prod: serve the built SPA (apps/web/dist) on the same port as /api + /trpc + /mcp. In dev the
-    // dev-proxy middleware in main.ts fully handles non-API routes (proxied to Vite) BEFORE this ever
-    // runs, and a missing dist just serves nothing - so this is safe to always register. Path is
-    // resolved from repoRoot (AGENTS.md marker) so it holds regardless of cwd. API base paths are
-    // excluded from the static catch-all so they 404 as JSON, not index.html.
-    //
-    // That catch-all IS the SPA fallback the router depends on since it moved off hash routing
-    // (2026-09-14): any unmatched path serves index.html, so `/crm/acme` and `/chat/general`
-    // survive a refresh with no SSR and no second service. The exclude list is therefore the
-    // server's half of the shared URL namespace (the client's half is in apps/web/src/router.tsx;
-    // keep the two in step with RESERVED in main.ts). `/assets` is excluded for the opposite reason
-    // - a stale hashed chunk requested by a tab loaded before a deploy must 404, not come back as
-    // index.html with `content-type: text/html`, which the browser reports as an inscrutable module
-    // parse error instead of the missing file it is.
-    ServeStaticModule.forRoot({
-      rootPath: join(repoRoot(), 'apps', 'web', 'dist'),
-      exclude: [
-        '/api',
-        '/api/{*path}',
-        '/trpc',
-        '/trpc/{*path}',
-        '/mcp',
-        '/mcp/{*path}',
-        '/agent',
-        '/agent/{*path}',
-        '/assets/{*path}',
-      ],
-    }),
+    // The SPA is not a module: main.ts serves the promoted release (and, in dev, proxies Vite) as
+    // plain middleware ahead of Nest's router. See web/web-release.ts.
     // Core: what every Box has. Everything else arrives through the feature registry below.
     AuthModule,
     UsersModule,

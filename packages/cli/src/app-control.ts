@@ -6,17 +6,23 @@ import { isMain, repoRoot } from './repo.ts'
 type ApplicationStatus = { status: 'starting' | 'running' | 'stopped' | 'failed'; message?: string }
 export type FrontendStatus =
   | { mode: 'dev'; server: 'vite'; status: 'running' | 'stopped' | 'failed'; port: number; message?: string }
-  | { mode: 'built'; server: 'bundle'; status: 'built' | 'missing'; path: string; builtAt?: string }
-type ControlResult = { ok?: boolean; message?: string; application?: ApplicationStatus; frontend?: FrontendStatus }
-export type ControlAction = 'status' | 'restart' | 'restart-frontend'
+  | {
+      mode: 'built'; server: 'release'; status: 'built' | 'missing'; path: string; builtAt?: string
+      version?: string; sourceSha?: string | null; dirty?: boolean
+      preview: { status: 'running' | 'stopped' | 'failed'; port: number; message?: string }
+    }
+type WebRelease = { version: string; createdAt: string; sourceSha: string | null; dirty: boolean }
+type ControlResult = { ok?: boolean; message?: string; application?: ApplicationStatus; frontend?: FrontendStatus; release?: WebRelease }
+export type ControlAction = 'status' | 'restart' | 'restart-frontend' | 'promote'
 
 const socketPath = join(repoRoot, 'data', 'builder', 'ui-refresh.sock')
 const endpoints: Record<ControlAction, { method: 'GET' | 'POST'; path: string }> = {
   status: { method: 'GET', path: '/app-status' },
   restart: { method: 'POST', path: '/app-restart' },
   'restart-frontend': { method: 'POST', path: '/frontend-restart' },
+  promote: { method: 'POST', path: '/web-promote' },
 }
-const USAGE = 'Expected: box app status [--json], box app restart, or box app restart --frontend'
+const USAGE = 'Expected: box app status [--json], box app restart, box app restart --frontend, or box app promote'
 
 export function requestApplicationControl(socket: string, action: ControlAction): Promise<ControlResult> {
   const { method, path } = endpoints[action]
@@ -53,11 +59,19 @@ export function describeFrontend(frontend: FrontendStatus | undefined): { health
     const state = frontend.status === 'failed' ? 'Frontend failed' : 'Frontend is stopped'
     return { healthy: false, lines: [mode, `${state}${frontend.message ? `: ${frontend.message}` : ''}. Run box app restart --frontend`] }
   }
-  const mode = `Mode: built (box start); the frontend is the bundle in ${frontend.path.replace(/[/\\]index\.html$/, '')}, there is no Vite`
+  const release = frontend.version
+    ? `release ${frontend.version.slice(0, 8)}${frontend.sourceSha ? ` from ${frontend.sourceSha.slice(0, 12)}${frontend.dirty ? ' with uncommitted changes' : ''}` : ''}`
+    : `the bundle in ${frontend.path.replace(/[/\\]index\.html$/, '')} (no release promoted yet)`
+  const mode = `Mode: built (box start); everyone outside Builder loads ${release}`
+  const preview = frontend.preview.status === 'running'
+    ? `Builder Preview runs Vite on port ${frontend.preview.port}: web edits hot-reload there only. box app promote publishes them to everyone`
+    : frontend.preview.status === 'failed'
+      ? `Builder Preview Vite failed${frontend.preview.message ? `: ${frontend.preview.message}` : ''}. Run box app restart --frontend`
+      : 'No Builder Preview Vite (it runs only during a Builder session). box app promote publishes web changes to everyone'
   if (frontend.status === 'built') {
-    return { healthy: true, lines: [mode, `Frontend bundle built ${frontend.builtAt ?? 'at an unknown time'}. Web changes appear only after box build`] }
+    return { healthy: frontend.preview.status !== 'failed', lines: [mode, `Frontend built ${frontend.builtAt ?? 'at an unknown time'}`, preview] }
   }
-  return { healthy: false, lines: [mode, 'Frontend bundle is missing. Run box build'] }
+  return { healthy: false, lines: [mode, 'Frontend bundle is missing. Run box app promote', preview] }
 }
 
 export function parseAppArgs(args: string[]): { action: ControlAction; json: boolean } | undefined {
@@ -67,6 +81,7 @@ export function parseAppArgs(args: string[]): { action: ControlAction; json: boo
   if (flags.some(flag => flag !== '--json' && flag !== '--frontend')) return undefined
   if (verb === 'status' && !frontend) return { action: 'status', json }
   if (verb === 'restart') return { action: frontend ? 'restart-frontend' : 'restart', json }
+  if (verb === 'promote' && !frontend) return { action: 'promote', json }
   return undefined
 }
 
@@ -84,6 +99,7 @@ async function main(args: string[]): Promise<void> {
     commandHeader(action === 'restart-frontend' ? 'app restart --frontend' : `app ${action}`)
     if (action === 'restart') { commandSuccess(result.message ?? 'Application restarted; supervisor preserved'); return }
     if (action === 'restart-frontend') { commandSuccess(result.message ?? 'Frontend restarted; application and supervisor preserved'); return }
+    if (action === 'promote') { commandSuccess(`${result.message ?? 'Web release promoted'}${result.release ? ` (${result.release.version.slice(0, 8)})` : ''}`); return }
     const status = result.application?.status
     if (status === 'running') commandSuccess('Application is running under the stable supervisor')
     else commandWarning(`Application is ${status ?? 'in an unknown state'}${result.application?.message ? `: ${result.application.message}` : ''}`)

@@ -16,7 +16,7 @@ Preserve the existing 001-sprint-tasks identity and body exactly. New schema beh
 ### Mobile module
 
 When the owner wants planning in the mobile app, integrate `features/planning/mobile/` as described
-in [INSTALL.md](./INSTALL.md#mobile-module-optional). It adds the Plan tab (order 20) and the
+in the [Mobile app powerup](./powerups/mobile/INSTALL.md). It adds the Plan tab (order 20) and the
 `planning/initiative/<id>` and `planning/task/<initiative>/<task>` links. Its wire models mirror
 `planning.controller.ts`; a change that renames or removes a field the app reads breaks every
 installed build (docs/MOBILE.md, "Version skew"). Its tab label, icon and order live in the module
