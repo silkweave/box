@@ -518,6 +518,9 @@ No bucket is the normal case, not an error: the run is local-only and says so. S
 credential, never a key in the warehouse. `assertGcsBucketReachable` fails fast with the `gsutil mb`
 recipe rather than letting a scheduled run report success against nothing. An upload failure after a
 successful local copy raises an error that names the local path, so nothing is silently lost.
+The reachability check runs before the local copy, so a configured bucket that has become
+unreachable stops `box db backup` from taking any copy at all. Restore the bucket access or remove
+`backup.gcsBucket`; until then the Box has no fresh manual restore point.
 
 **A warehouse backup inherits the sensitivity of whatever features are installed.** With `crm`
 present the file holds names, emails and correspondence, so the bucket's access list is part of the
