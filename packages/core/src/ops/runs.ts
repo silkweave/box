@@ -35,18 +35,19 @@ export function newRunId(): string {
 
 export async function insertRun(run: {
   id: string
-  schedule_id: string | null
   action_id: string
   trigger: RunTrigger
+  trigger_id?: string | null
+  event_id?: string | null
   triggered_by: string | null
   status?: RunStatus
 }): Promise<void> {
   await ensureSchema()
   await withWrite(async (conn) => {
     await conn.run(
-      `INSERT INTO automation_runs (id, schedule_id, action_id, trigger, triggered_by, status, started_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?::TIMESTAMP)`,
-      [run.id, run.schedule_id, run.action_id, run.trigger, run.triggered_by, run.status ?? 'queued', utcNow()],
+      `INSERT INTO automation_runs (id, action_id, trigger, trigger_id, event_id, triggered_by, status, started_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?::TIMESTAMP)`,
+      [run.id, run.action_id, run.trigger, run.trigger_id ?? null, run.event_id ?? null, run.triggered_by, run.status ?? 'queued', utcNow()],
     )
   })
 }
@@ -76,16 +77,19 @@ export async function finalizeRun(
   })
 }
 
-/** Record a scheduled fire that was skipped because its action was already queued/running. */
-export async function insertSkippedRun(scheduleId: string, actionId: string, reason: string): Promise<void> {
+/** Record a trigger fire that was skipped (its action already queued/running, a guard said no). */
+export async function insertSkippedRun(
+  run: { trigger: RunTrigger; triggerId: string; eventId?: string | null; actionId: string },
+  reason: string,
+): Promise<void> {
   const id = newRunId()
   await ensureSchema()
   const now = utcNow()
   await withWrite(async (conn) => {
     await conn.run(
-      `INSERT INTO automation_runs (id, schedule_id, action_id, trigger, triggered_by, status, started_at, finished_at, error)
-       VALUES (?, ?, ?, 'schedule', NULL, 'skipped', ?::TIMESTAMP, ?::TIMESTAMP, ?)`,
-      [id, scheduleId, actionId, now, now, reason],
+      `INSERT INTO automation_runs (id, action_id, trigger, trigger_id, event_id, triggered_by, status, started_at, finished_at, error)
+       VALUES (?, ?, ?, ?, ?, NULL, 'skipped', ?::TIMESTAMP, ?::TIMESTAMP, ?)`,
+      [id, run.actionId, run.trigger, run.triggerId, run.eventId ?? null, now, now, reason],
     )
   })
 }

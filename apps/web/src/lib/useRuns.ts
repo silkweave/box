@@ -24,7 +24,9 @@ export interface Run {
   id: string
   schedule_id: string | null
   action_id: string
-  trigger: 'schedule' | 'manual'
+  trigger: 'time' | 'event' | 'webhook' | 'manual' | 'schedule'
+  trigger_id: string | null
+  event_id: string | null
   triggered_by: string | null
   status: RunStatus
   started_at: string
@@ -108,12 +110,12 @@ export interface ProgressChunk {
 export function runNow(
   actionId: string,
   handlers: { onData: (p: ProgressChunk) => void; onError: (e: { message: string }) => void; onComplete?: () => void },
-  opts: { scheduleId?: string; date?: string; params?: Record<string, string> } = {},
+  opts: { triggerId?: string; date?: string; params?: Record<string, string> } = {},
 ): { unsubscribe: () => void } {
   const sub = trpc.opsRunNow.subscribe(
     {
       action_id: actionId,
-      schedule_id: opts.scheduleId,
+      trigger_id: opts.triggerId,
       triggered_by: getActiveUserId() ?? undefined,
       date: opts.date,
       // Parameterized actions (source-sync, pod-engagement-verify) carry their args as a JSON

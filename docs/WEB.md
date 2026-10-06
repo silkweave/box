@@ -221,7 +221,7 @@ Sections receive the remaining path as `render(params: string[])`. Examples:
 
 - `/initiatives#settings/initiative-kinds`
 - `/initiatives#settings/users/new` or `#settings/users/<id>`
-- `#settings/automation/schedules`, `#settings/automation/actions`, `#settings/automation/runs/<id>`
+- `#settings/automation/triggers`, `#settings/automation/actions`, `#settings/automation/runs/<id>`
 - `#settings/alerts/rules` and `#settings/alerts/feed`
 
 Section and sub-page navigation participates in browser history. Closing clears the hash with a
@@ -301,7 +301,7 @@ tuples infers `unknown[]` and every typed `<Link to=...>` in the app goes dark.
 | `routes` | `router.tsx` | `sink`: `routes.tsx` builds `/sink` with a `$file` child off `rootRoute` and exports `sinkRoutes` |
 | `nav` | `lib/nav.ts` | `planning` contributes two groups: Initiatives (order 200) and Sprints (210) |
 | `settings` | `views/SettingsView.tsx` | `automation`: `{ id: 'automation', label: 'Automation', order: 800, render: (params) => <AutomationSettings params={params} /> }` |
-| `shell.topbar` | `lib/shell.tsx` | `automation`'s `RestartRequiredButton` at order 100, `notifications`' `NotificationBell` at 200 |
+| `shell.topbar` | `lib/shell.tsx` | `notifications`' `NotificationBell` at order 200 |
 | `onSession` | `App.tsx`'s auth gate | `notifications` starts its poller and returns `listenPushNavigate(...)` as the teardown |
 | `slots` | `lib/slots.ts` | `engagement` contributes `PodEngagementPanel` to content's `content.piece.panel` slot |
 | `docs` | `lib/useDoc.ts` | `sink` provides kind `sink`; `planning` provides `initiative` and `task` |

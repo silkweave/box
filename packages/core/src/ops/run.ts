@@ -31,7 +31,7 @@ export interface RunOutcome {
   actionId: string
   status: 'success' | 'error'
   trigger: RunTrigger
-  scheduleId: string | null
+  triggerId: string | null
   summary?: string
   error?: string
 }
@@ -82,7 +82,12 @@ function acquireSlot(): { turn: Promise<void>; release: () => void } {
 
 export interface RunMeta {
   trigger: RunTrigger
-  scheduleId?: string
+  /** The automation trigger this run belongs to (links it in history). */
+  triggerId?: string
+  /** The event that fired the trigger. */
+  eventId?: string
+  /** A run id the caller allocated with newRunId(), so it can hand the id back before the run ends. */
+  runId?: string
   /** users.id for attributed manual runs. */
   triggeredBy?: string | null
   /** Snapshot date override, plugin actions only. */
@@ -100,12 +105,13 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
   const runner = resolveRunner(actionId, { date: meta.date, params: meta.params })
   if (!runner) throw new Error(`unknown automation action "${actionId}" (see listAutomationActions)`)
 
-  const runId = newRunId()
+  const runId = meta.runId ?? newRunId()
   await insertRun({
     id: runId,
-    schedule_id: meta.scheduleId ?? null,
     action_id: actionId,
     trigger: meta.trigger,
+    trigger_id: meta.triggerId ?? null,
+    event_id: meta.eventId ?? null,
     triggered_by: meta.triggeredBy ?? null,
   })
   const entry: ActiveRun = { runId, actionId, state: 'queued' }
@@ -142,13 +148,13 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
     }
     await finalizeRun(runId, { status: 'success', summary, log })
     finalized = true
-    await notifyOutcome({ runId, actionId, status: 'success', trigger: meta.trigger, scheduleId: meta.scheduleId ?? null, summary })
+    await notifyOutcome({ runId, actionId, status: 'success', trigger: meta.trigger, triggerId: meta.triggerId ?? null, summary })
   } catch (err) {
     const message = String((err as Error)?.message ?? err)
     push({ channel: actionId, phase: 'done', message: `error: ${message}` })
     await finalizeRun(runId, { status: 'error', error: message, log })
     finalized = true
-    await notifyOutcome({ runId, actionId, status: 'error', trigger: meta.trigger, scheduleId: meta.scheduleId ?? null, error: message })
+    await notifyOutcome({ runId, actionId, status: 'error', trigger: meta.trigger, triggerId: meta.triggerId ?? null, error: message })
     throw err
   } finally {
     // Safety net: a consumer that returns the generator early aborts the run with it - neither

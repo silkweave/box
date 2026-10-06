@@ -94,7 +94,7 @@ the body: a member may edit their own profile fields, may not create a user (tha
 a second identity), and may not set `tailscale_login` on any row.
 
 **In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: data's signal definitions
-and sources, automation's schedules and restart, content's channel profiles, planning's initiative
+and sources, automation's triggers and restart, content's channel profiles, planning's initiative
 kinds, engagement's pod membership, and chat's `moderate` flag on `chat-message-delete` - the last
 through `assertAdmin(req, ...)`, for a branch a decorator cannot express.
 

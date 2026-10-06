@@ -45,4 +45,18 @@ export const CORE_MIGRATIONS: readonly Migration[] = [
     name: '003-users-link-watermark',
     statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS link_watermark BIGINT`],
   },
+  {
+    // Triggers (2026-10-06): a run records the automation trigger that started it. Runs recorded
+    // before triggers carry their schedule id, and every imported schedule kept its id as the
+    // trigger id, so the backfill links old history to the trigger that replaced the schedule.
+    name: '004-runs-trigger-id',
+    statements: [
+      `ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS trigger_id VARCHAR`,
+      `UPDATE automation_runs SET trigger_id = schedule_id WHERE trigger_id IS NULL AND schedule_id IS NOT NULL`,
+    ],
+  },
+  {
+    name: '005-runs-event-id',
+    statements: [`ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS event_id VARCHAR`],
+  },
 ]

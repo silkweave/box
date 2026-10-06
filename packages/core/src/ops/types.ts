@@ -66,7 +66,9 @@ export type AutomationActionInfo = ActionInfo
 export const RUN_STATUSES = ['queued', 'running', 'success', 'error', 'skipped'] as const
 export type RunStatus = (typeof RUN_STATUSES)[number]
 
-export type RunTrigger = 'schedule' | 'manual'
+/** How a run started. `schedule` is legacy (config schedules, before triggers): read, never written. */
+export const RUN_TRIGGERS = ['time', 'event', 'webhook', 'manual', 'schedule'] as const
+export type RunTrigger = (typeof RUN_TRIGGERS)[number]
 
 /** One buffered progress line of a run's log (an IngestProgress chunk + timestamp). */
 export interface RunLogLine {
@@ -79,9 +81,14 @@ export interface RunLogLine {
 /** One run, as stored in `automation_runs`. `log` is only loaded by readRun(). */
 export interface AutomationRun {
   id: string
+  /** Legacy schedule id (runs recorded before triggers); new runs use trigger_id. */
   schedule_id: string | null
   action_id: string
   trigger: RunTrigger
+  /** The automation trigger that started the run, when one did. */
+  trigger_id: string | null
+  /** The event that fired an event trigger. */
+  event_id: string | null
   /** users.id that clicked Run Now, or null (scheduled / unattributed agent runs). */
   triggered_by: string | null
   status: RunStatus

@@ -179,7 +179,7 @@ warehouse should fail at boot, loudly, rather than at the first request.
 ## 4. The ops kernel and the run funnel
 
 Core owns the kernel (`packages/core/src/ops/`) and its server surface
-(`apps/server/src/ops/ops.controller.ts`). The cron scheduler over the same registry is the
+(`apps/server/src/ops/ops.controller.ts`). The trigger scheduler over the same registry is the
 `automation` feature, outside core. The Stack carries it as a recipe; consumers adapt it
 separately. See `recipes/automation/SPEC.md`.
 

@@ -3,7 +3,7 @@
 
 import type { ModelSpec } from './model.js'
 import { USER_ROLES, USER_STATUSES } from '../users/types.js'
-import { RUN_STATUSES } from '../ops/types.js'
+import { RUN_STATUSES, RUN_TRIGGERS } from '../ops/types.js'
 
 /** The people directory - every principal. docs/AUTH.md. */
 export const USERS: ModelSpec = {
@@ -61,9 +61,14 @@ export const AUTOMATION_RUNS: ModelSpec = {
   pk: ['id'],
   columns: {
     id: { kind: 'text' },
+    /** Legacy: the config schedule a run belonged to, before schedules became triggers. */
     schedule_id: { kind: 'text', nullable: true },
     action_id: { kind: 'text' },
-    trigger: { kind: 'text', enum: ['schedule', 'manual'] },
+    trigger: { kind: 'text', enum: RUN_TRIGGERS },
+    /** The automation trigger that started the run (null for a bare manual or agent run). */
+    trigger_id: { kind: 'text', nullable: true },
+    /** The event (events.id) that fired an event trigger. */
+    event_id: { kind: 'text', nullable: true },
     triggered_by: { kind: 'text', nullable: true },
     status: { kind: 'text', default: "'queued'", enum: RUN_STATUSES },
     started_at: { kind: 'timestamp', default: 'now()' },

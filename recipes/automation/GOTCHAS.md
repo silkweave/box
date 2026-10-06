@@ -1,6 +1,6 @@
 # automation gotchas
 
-Schedules are read at boot and `background.automation` must be `true` in `box.json` to arm them. A config edit needs a supervised restart; do not arm timers against production data during integration.
+Triggers live in the `triggers` table and `background.automation` must be `true` in `box.json` to arm them. Edits apply at once; do not arm timers against production data during integration.
 
 The feature id (`automation`, the same as the recipe id) is part of runtime registration and migration identity. Keep it stable. Existing
 migrations are byte-exact source: preserve names, order, evaluated SQL, and callback behavior.
@@ -10,12 +10,12 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 
 ## Recipe-specific operational details
 
-- **Config edits never hot-reload.** `SchedulerService` reads `box.json features.automation.schedules` once in
-  `onApplicationBootstrap` and keeps the snapshot. An edit only flips `restartRequired` (a canonical
-  comparison that ignores key order and entry order, so a reformat is not a change). Restart to
-  apply - and a restart on a dev checkout run under `box dev` does not come back: the
-  implementation is `process.exit(86)` and it expects a supervisor with
-  `KeepAlive.SuccessfulExit=false` to respawn it.
+- **`features.automation.schedules` is imported once, then ignored.** Migration
+  `automation:001-import-schedules` copies it into `triggers` on the first boot with triggers. Edits
+  to the key afterwards do nothing; the boot log warns while it is present. Remove it.
+- **Imported triggers have no owner.** The first admin to edit one becomes its owner.
+- **Cron is evaluated in the trigger's zone.** Empty means the server's zone, which on a launchd
+  host is the machine's; set the zone explicitly when the team and the host differ.
 - **`service-restart` restarts nothing by itself, and this template ships no supervisor.** The
   implementation is `process.exit(86)`; something outside the process has to respawn it (a launchd
   KeepAlive agent, a systemd `Restart=on-failure`, a container policy). The docstring named a
@@ -28,17 +28,16 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **A busy action is skipped, not queued.** On fire, the scheduler checks `isActionBusy()` and, if
   the action is already queued or running, writes a `skipped` run row instead of stacking a second
   execution. Core's funnel is FIFO with concurrency 1 (the warehouse is single-writer).
-- **Scheduled runs are attributed to the `nova` system principal** (`systemUserId()`), not to null -
-  otherwise the "who ran this" column in the run list is blank.
-- **Invalid entries are surfaced, not fatal.** At boot, `scheduleProblem()` checks each entry softly:
-  a bad cron or an unknown action logs a warning and leaves that one unarmed. The upsert mutation is
-  the loud half - it throws with the reason.
+- **Timed runs are attributed to the system principal** (`systemUserId()`) and to their trigger
+  (`trigger_id`), not to the owner: nobody pressed Run.
+- **Invalid triggers are surfaced, not fatal.** On each load, `triggerProblem()` checks every row
+  softly: an action that disappeared with its feature logs a warning and leaves that one unarmed,
+  listed as invalid. The upsert is the loud half - it throws with the reason.
 - **`background.automation` must be the boolean `true`.** It defaults to `false`; any other type fails configuration loading.
-- **Schedule writes and `service-restart` are admin-only, and now really are** - `@Admin()`, read
-  by `AuthGuard`, on 2026-09-13. Between 2026-09-10 and then the docstrings claimed it and nothing
-  enforced it, so any signed-in principal could restart the service. The agent can reach these when
-  its configured role is admin (the fresh-Box default). Choose member in host config to restore
-  that boundary; see [the role contract](../../docs/AUTH.md#agent-identity-and-role).
+- **Trigger writes, `trigger-run` and `service-restart` are admin-only** (`@Admin()`, read by
+  `AuthGuard`). The agent reaches them when its configured role is admin (the fresh-Box default) and
+  must name the admin it acts for in `owner`. Choose member in host config to restore that boundary;
+  see [the role contract](../../docs/AUTH.md#agent-identity-and-role).
 - **`index.tsx` sits on the web feature-registry import cycle.** Never read a registry binding at
   module scope there, and load the app in a browser after touching it (`AGENTS.md`) - `box verify`
   has no runtime step.

@@ -3,7 +3,7 @@ import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { z } from 'zod/v4'
-import { listAutomationActions, readRun, readRuns, startDetachedRun, type IngestProgress } from '@silkweave/box-core'
+import { RUN_TRIGGERS, listAutomationActions, readRun, readRuns, startDetachedRun, type IngestProgress } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { type PrincipalRequest } from '../auth/auth.decorators.js'
 
@@ -23,7 +23,9 @@ const runsOutput = z.object({
     id: z.string(),
     schedule_id: z.string().nullable(),
     action_id: z.string(),
-    trigger: z.enum(['schedule', 'manual']),
+    trigger: z.enum(RUN_TRIGGERS),
+    trigger_id: z.string().nullable(),
+    event_id: z.string().nullable(),
     triggered_by: z.string().nullable(),
     status: z.enum(['queued', 'running', 'success', 'error', 'skipped']),
     started_at: z.string(),
@@ -37,7 +39,9 @@ const runOutput = z.object({
   id: z.string(),
   schedule_id: z.string().nullable(),
   action_id: z.string(),
-  trigger: z.enum(['schedule', 'manual']),
+  trigger: z.enum(RUN_TRIGGERS),
+  trigger_id: z.string().nullable(),
+  event_id: z.string().nullable(),
   triggered_by: z.string().nullable(),
   status: z.enum(['queued', 'running', 'success', 'error', 'skipped']),
   started_at: z.string(),
@@ -88,7 +92,9 @@ class RunDto {
   @ApiProperty() id!: string
   @ApiProperty({ required: false, nullable: true }) schedule_id!: string | null
   @ApiProperty() action_id!: string
-  @ApiProperty({ enum: ['schedule', 'manual'] }) trigger!: string
+  @ApiProperty({ enum: RUN_TRIGGERS }) trigger!: string
+  @ApiProperty({ required: false, nullable: true, description: 'The automation trigger that started the run' }) trigger_id!: string | null
+  @ApiProperty({ required: false, nullable: true, description: 'The event that fired an event trigger' }) event_id!: string | null
   @ApiProperty({ required: false, nullable: true, description: 'users.id for attributed manual runs' })
   triggered_by!: string | null
   @ApiProperty({ enum: ['queued', 'running', 'success', 'error', 'skipped'] }) status!: string
@@ -114,8 +120,8 @@ class RunsDto {
 
 class RunNowDto {
   @ApiProperty({ description: 'Automation action id (see automationActions)' }) @IsString() action_id!: string
-  @ApiProperty({ required: false, description: 'Schedule this run belongs to (links it in history)' })
-  @IsOptional() @IsString() schedule_id?: string
+  @ApiProperty({ required: false, description: 'Automation trigger this run belongs to (links it in history)' })
+  @IsOptional() @IsString() trigger_id?: string
   @ApiProperty({ required: false, description: 'users.id triggering the run (audit attribution; defaults to the authenticated principal)' })
   @IsOptional() @IsString() triggered_by?: string
   @ApiProperty({ required: false, description: 'Snapshot date YYYY-MM-DD (plugin actions only)' })
@@ -175,7 +181,7 @@ export class OpsController {
   async *runNow(@Body() body: RunNowDto, @Req() req: PrincipalRequest): AsyncGenerator<IngestProgress> {
     const run = startDetachedRun(body.action_id, {
       trigger: 'manual',
-      scheduleId: body.schedule_id,
+      triggerId: body.trigger_id,
       triggeredBy: body.triggered_by ?? req.principal?.id ?? null,
       date: body.date,
       params: body.params ? (JSON.parse(body.params) as Record<string, string>) : undefined,
