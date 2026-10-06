@@ -72,8 +72,9 @@ box dev
 - `http://localhost:8190/signals` - the channel sidebar renders one entry per base channel with a
   signal count, and the grid shows cards. An empty Box shows an empty grid, which is fine: the
   registry is allowed to be empty and a definition may exist with no points at all.
-- `http://localhost:8190/boards` - the boards index. Create one, open it, drag a signal onto the
-  canvas; the position autosaves (~2s debounce) into `signal_boards.nodes`, so a reload puts it
+- `http://localhost:8190/boards` - the boards index. Create one, open it, add a node from "Add
+  nodes" (signals; with planning also goals and initiatives), click it and use "Add connected";
+  drag it and the position autosaves (~2s debounce) into `signal_boards.nodes`, so a reload puts it
   back where you left it. Positions are TEAM state, never localStorage.
 - `http://localhost:8190/settings` → **Signal owners** and **Data sources**. Creating a source
   writes a `disabled` row; its credential presence booleans show whether
@@ -89,6 +90,7 @@ bun run cli signal-series                 # read that signal's numbers back
 bun run cli providers-list                # the provider catalogue
 bun run cli data-sources                  # the sources and their health
 bun run cli boards-list
+bun run cli board-get                     # one board resolved: cards, edges, neighbours
 bun run cli presets
 ```
 

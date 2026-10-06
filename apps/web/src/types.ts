@@ -30,23 +30,6 @@ export const SIGNAL_DIRECTIONS: SignalDirection[] = ['up', 'down']
 export type DataSourceStatus = 'enabled' | 'disabled'
 export type SyncStatus = 'success' | 'error'
 
-/** The signal's own standing goal (distinct from an initiative's campaign target). */
-export interface SignalTarget {
-  value: number
-  by_date?: string
-  baseline?: number
-  /** When the baseline was observed (stamped server-side) - the anchor of the linear-pace check. */
-  since?: string
-}
-
-/**
- * Where a signal stands against its own target, computed server-side (core signalHealth) so the
- * cards, the circuit board and any future alert rule read ONE implementation. `no_target` is the
- * common case and is not a failure; `off_track` means something OBSERVED says so (deadline passed,
- * pace behind, or moving away from the baseline).
- */
-export type SignalHealth = 'no_target' | 'no_data' | 'on_track' | 'off_track' | 'met'
-
 /**
  * Period aggregates, computed server-side over the FULL point store - deliberately not derivable
  * from `points[]`, which is windowed to the trailing 90 days for sub-daily signals. Semantics per
@@ -80,10 +63,6 @@ export interface Signal {
   direction: SignalDirection
   description: string
   depends_on: string[]
-  target: SignalTarget | null
-  health: SignalHealth
-  /** The bucket health was judged on (increment signals skip the still-filling one); null = no data. */
-  health_at: string | null
   /** The data source whose sync owns this signal's live points; null = not connected. Both this
    *  and `measure_key` are set together - connectedness IS `data_source_id != null`. */
   data_source_id: string | null

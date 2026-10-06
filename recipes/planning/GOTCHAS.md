@@ -24,6 +24,21 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   loudly on a collision, but pick a scoped name if you add another doc tool.
 - **A sprint delete releases tasks, it does not delete them.** Anything you add that removes a
   window over work must do the same.
+- **A reach baseline is the level entering the window, not the bucket containing the start.** For a
+  monthly signal and a window starting 2026-10-01 that is September's value; reading October's
+  bucket would hand the goal its end-of-October level as the starting point. Set `baseline` on the
+  goal only to override this deliberately.
+- **An `increment` goal compares against the pace through yesterday.** Today's bucket is still
+  filling, so counting it against a full day of pace would make every goal look behind each morning.
+  A hold goal likewise skips the bucket still filling.
+- **A window that cuts through weekly or monthly buckets counts by bucket start.** A straddling
+  bucket is counted wholly or not at all, never prorated; the reading's `alignment` says so. Align
+  the window to the signal's interval when the number matters.
+- **Deleting a signal leaves its goals in place.** They report a missing signal (no reading) rather
+  than disappearing; data's delete report names them as `goal:<id>`. Re-point with `goal-upsert
+  signal_id`, or delete the goals. A signal rename re-points them for you.
+- **Health suggests, people record.** Nothing sets `goals.outcome` automatically, and the alerts
+  `goal.ended` event only carries a `suggested_outcome`.
 - **`index.tsx` sits on the web feature-registry import cycle.** Never read a registry binding at
   module scope there, and load the app in a browser after touching it - `box verify` has no runtime
   step (`AGENTS.md`).

@@ -1,13 +1,14 @@
 # `data` - signals, their sources and pulls, circuit boards, presets
 
 The foundation. A **signal** is a named number with a history: a registry row in `signals` that
-carries its own identity, vocabulary, owner, target and causal edges, plus points in two stores
+carries its own identity, vocabulary, owner and causal edges, plus points in two stores
 (`signal_points` at the signal's own grain, and the legacy `legacy_signal_points` rows a channel
 deriver rebuilds from raw `snapshots`). Around that sit the three ways points arrive - in-process
 **pulls** (GitHub, X, Reddit, LinkedIn, npm, blog RSS, Hacker News, Substack), **data sources**
 (user-created instances of a code-shipped `Provider`, each syncing the measures its bound signals
-subscribe to), and hand entry - plus **circuit boards** (user-named canvases that place signals and
-render `depends_on` as edges) and **presets** (the team's named lenses on the boards other features
+subscribe to), and hand entry - plus **circuit boards** (user-named canvases that place nodes of any
+registered kind - signals here, goals and initiatives through planning - and draw the edges the
+objects themselves declare) and **presets** (the team's named lenses on the boards other features
 own). Almost everything a team looks at is downstream of this feature.
 
 - **dependsOn**: nothing. `data` is the root of the dependency graph.
@@ -16,22 +17,23 @@ own). Almost everything a team looks at is downstream of this feature.
   That is every feature in the Box except `chat`, `automation` and `sink`.
 - **Removal**: removing `data` means removing eight of the eleven features. Its runtime dependency
   graph names the direct dependents. What breaks if you force it: the signal pickers and charts every
-  other view uses, the `latest_signals` view `alerts` reads its targets from, the hooks port
+  other view uses, the `latest_signals` view `alerts` reads, the day-grain reads (`signals/series.ts`) planning's goals are measured with, the hooks port
   `planning`/`content`/`alerts` register into at boot, the LinkedIn post source `content` feeds,
   the preset bars on the Content / CRM / Initiatives boards, and 19 of the run funnel's actions.
 
 ## Tables
 
-Six models, all in `features/data/core/models.ts`. No migrations (`migrations: []`) -
-every table is at its baseline shape.
+Six models, all in `features/data/core/models.ts`. One migration, `001-drop-signal-target`
+(2026-10-06): a signal no longer carries a standing target; targets are planning **goals** (a signal,
+a target and a window). Every table is otherwise at its baseline shape.
 
 | table | pk | what it holds |
 |---|---|---|
 | `snapshots` | `channel`, `snapshot_date` | raw verbatim pulls, one row per (channel, date), `payload` kept as-is. Also the audit trail a data-source sync writes (`data_sources.id` doubles as a snapshot channel). |
 | `legacy_signal_points` | `signal_id`, `date` | the tidy long-format daily rows a channel deriver writes. `source` is `live` (wholesale-replaced on every re-derive) or `backfill` (gap filler). Identity is denormalized onto every row, which is why the registry lives elsewhere. |
-| `signals` | `id` | the signal REGISTRY - one row per first-class signal: `label`, `signal_group`, `unit`, `channel`, `source` (`derived`\|`manual`), `interval`, `accumulation`, `direction`, `owner`, `description`, `depends_on` (JSON), `target` (JSON), `sort`, and the provider binding `data_source_id` + `measure_key`. Timestamps + audit. |
+| `signals` | `id` | the signal REGISTRY - one row per first-class signal: `label`, `signal_group`, `unit`, `channel`, `source` (`derived`\|`manual`), `interval`, `accumulation`, `direction`, `owner`, `description`, `depends_on` (JSON), `sort`, and the provider binding `data_source_id` + `measure_key`. Timestamps + audit. |
 | `signal_points` | `signal_id`, `bucket`, `source` | the point store at the signal's own grain. `bucket` is the naive-UTC interval start (`floorSignalBucket`, ISO weeks, Monday start). `source` (`manual`\|`live`) is part of the PK so a live write can never destroy a hand-entered point. Timestamps + audit. |
-| `signal_boards` | `id` | a circuit board: slug, label, description, `nodes` JSON (`[{signal_id, x, y}]`) written whole on every autosave, `sort`. Edges are NOT here - they are `signals.depends_on`. Timestamps + audit. |
+| `signal_boards` | `id` | a circuit board: slug, label, description, `nodes` JSON (`[{kind, ref, x, y}]`; rows from before node kinds hold `{signal_id, x, y}` and read as kind `signal`) written whole on every autosave, `sort`. Edges are NOT here - they are derived from the objects. Timestamps + audit. |
 | `data_sources` | `id` | a user-created instance of a provider: `provider`, `label`, `config` JSON (non-secret settings only), `status` (`enabled`\|`disabled`, born disabled), `notes`, and the four denormalized `last_sync_*` health stamps. Timestamps + audit. **No secrets** - those stay in the gitignored `box.local.json credentials`. |
 
 `data_sources.id` is deliberately three keys at once: the row key, the credentials account key
@@ -48,7 +50,20 @@ SELECT channel, signal_id, label, signal_group, unit,
 FROM legacy_signal_points GROUP BY 1, 2, 3, 4, 5
 ```
 
-`alerts/targets.ts` reads it; it is the only cross-feature consumer in the tree.
+`alerts` reads it for its signal rules (`signals.ts`); it is the only cross-feature consumer in the tree.
+
+## Reading a series
+
+`features/data/core/signals/series.ts` holds the pure, day-grain reads over a signal's FULL merged
+history (never the windowed chart array): `valueAsOf`, `levelEntering`, `totalBetween`,
+`dailySeries`, `windowAlignment` and `isObservationStale`. Its header states the conventions once. A
+day is a UTC date. A bucket belongs to the window containing its start, with no proration (a weekly
+or monthly bucket straddling a window edge counts wholly or not at all, and `windowAlignment`
+reports it). As-of reads carry the latest bucket started on or before the day forward over gaps,
+never interpolated, and return the bucket with the value. The level entering a window is the latest
+bucket that ENDED on or before the first day. An `increment` running total sums the buckets that
+started in the window (a window with no history answers null). Staleness is a `snapshot` question
+only. Planning's goals are built on these; the signals UI carries no health or target of its own.
 
 ## Ports this feature owns
 
@@ -66,7 +81,7 @@ registration per feature id (registering twice throws). Four optional members:
 | `references?: (signalId) => Promise<string[]>` | ids of your objects still referencing the signal, for the delete report. |
 
 Registered today by `planning` (`PLANNING_SIGNAL_HOOKS` - all four members: PR rows on the github
-channel, an OSS-PR derive step, initiative re-pointing and initiative references), `content` (`derive: deriveContentSignals`) and `alerts`
+channel, an OSS-PR derive step, goal re-pointing on a rename and goal references), `content` (`derive: deriveContentSignals`) and `alerts`
 (`onRename: repointAlertRuleSignals`, `references: alertRulesReferencingSignal`).
 
 **`registerLinkedinPostSource(source)`** - `features/data/core/pulls/linkedin.ts`.
@@ -96,11 +111,11 @@ PascalCased (`signal-upsert` appears as `SignalUpsert`), while `bun run cli` tak
 
 | tRPC | MCP | what |
 |---|---|---|
-| `signalsData` (query) | - | the full cross-channel payload in one round-trip: every definition, both point stores merged per bucket (live over manual), period aggregates, health, and the data sources for resolving `data_source_id`. Sub-daily buckets are windowed to `SUBDAILY_WINDOW_DAYS`. |
+| `signalsData` (query) | - | the full cross-channel payload in one round-trip: every definition, both point stores merged per bucket (live over manual), period aggregates, and the data sources for resolving `data_source_id`. Sub-daily buckets are windowed to `SUBDAILY_WINDOW_DAYS`. |
 | `signalsList` (query) | `signals-list` | the registry rows alone, no points |
 | `signalsUpsert` (mutation) | `signal-upsert` | create or partially update a definition; the domain refuses unknown `depends_on` ids, cycles, half a provider binding and out-of-enum values |
-| `signalsRename` (mutation) | `signal-rename` | re-key an id, cascading to initiatives, alert rules, `depends_on`, the owners file and the rows. Refused for `source: 'derived'` - the deriver would re-create the old id. |
-| `signalsDelete` (mutation) | `signal-delete` | remove a definition; prunes `depends_on` edges and board placements, reports bound initiatives, never deletes points |
+| `signalsRename` (mutation) | `signal-rename` | re-key an id, cascading to goals (via planning's hook), alert rules, `depends_on`, the owners file and the rows. Refused for `source: 'derived'` - the deriver would re-create the old id. |
+| `signalsDelete` (mutation) | `signal-delete` | remove a definition; prunes `depends_on` edges and board placements, reports what still references it (goals as `goal:<id>`, alert rules; left in place, listed in `bound_initiatives`), never deletes points |
 | `signalsOwners` (query) | `signal-owners` | the `box.json features.data.signalOwners` map (channel defaults + per-signal overrides) |
 | `signalsOwnersSave` (mutation) | `signal-owner-set` | set/unset one mapping; applies at the next read, no restart |
 | `signalsSeries` (mutation) | `signal-series` | ONE signal's full merged history, windowable. The read path for agents. |
@@ -119,14 +134,16 @@ PascalCased (`signal-upsert` appears as `SignalUpsert`), while `bun run cli` tak
 | `sourcesUpsert` (mutation) | `data-source-upsert` | create or partially update a source; `config` travels as a JSON object string |
 | `sourcesDelete` (mutation) | `data-source-delete` | remove a source. Bound signals are REPORTED, never unbound - they keep their points and stop refreshing. |
 
-`BoardsController` (`@Controller('boards')`) - 4 procedures, 4 tools:
+`BoardsController` (`@Controller('boards')`) - 6 procedures, 6 tools:
 
 | tRPC | MCP | what |
 |---|---|---|
-| `boardsList` (query) | `boards-list` | every board with its full node list (boards are few and small - there is no per-board read) |
+| `boardsList` (query) | `boards-list` | every board with its stored node list |
+| `boardsView` (mutation, a read with input) | `board-get` | one board resolved: each node's card (title, value, badge, progress, sparkline, footer, link, details) and `neighbors` (keys of every linked object, on the board or not), the edges between placed nodes, placements that no longer resolve, and the change-feed scopes to watch |
+| `boardsCandidates` (query) | `board-candidates` | everything a board could place, per installed kind |
 | `boardsUpsert` (mutation) | `board-upsert` | a board's METADATA only; it deliberately does not accept `nodes`, so a label edit cannot race the position autosave |
 | `boardsDelete` (mutation) | `board-delete` | remove a board; nothing cascades, no soft delete |
-| `boardsNodesSet` (mutation) | `board-nodes-set` | replace the whole membership + position list (the SPA's ~2s debounced autosave); refuses bad shapes, non-finite coordinates, unknown or duplicated signal ids |
+| `boardsNodesSet` (mutation) | `board-nodes-set` | replace the whole membership + position list (the SPA's ~2s debounced autosave); refuses bad shapes, non-finite coordinates, unknown kinds or refs and duplicates; a node the board already held is kept even if its object or kind is gone |
 
 `PresetsController` (`@Controller('presets')`) - 6 procedures, 6 tools:
 
@@ -261,7 +278,22 @@ others.
   `useBoardsData` on `table:signal_boards` only (deliberately separate from the heavy signals
   payload). `lib/presets.ts` has no change-feed topic - presets are a config file, so the store
   reloads after a local write and picks up someone else's on the next page load.
-- The React Flow canvas is lazy (`components/board/CircuitBoardFlowLazy.tsx`).
+- The React Flow canvas is lazy (`components/board/CircuitBoardFlowLazy.tsx`). `BoardView` reads
+  `boardsView` through `useBoardView`, which refetches on the scopes the server names in `watch`.
+  The canvas is kind-agnostic: it draws the server's cards, traces the path through a clicked node,
+  shows a detail panel with "Add connected", and "Arrange" lays nodes out in rows by kind layer
+  (initiatives, goals, signals, drivers below what they drive).
+
+### Board node kinds (port)
+
+`core/signals/board-kinds.ts` is the port: `registerBoardNodeKind({ kind, label, layer, watch,
+exists, resolve, candidates, edges })`. Data registers `SIGNAL_BOARD_KIND` (layer 2, edges from
+`depends_on`, driver -> signal) from its server module; planning registers `goal` (layer 1, goal ->
+its signal) and `initiative` (layer 0, initiative -> each goal). `resolve` returns a generic card, so
+no feature contributes web code to the board. An owner of a kind keeps placements pointing at real
+objects by calling `renameBoardRef(kind, old, new)` and `pruneBoardRef(kind, ref)` from its own
+rename and delete. A Box without planning has signal-only boards; placements of a kind that is not
+installed are kept and reported as missing.
 
 ## Settings
 

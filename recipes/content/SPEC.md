@@ -32,10 +32,10 @@ six agent skills that do the actual writing (`features/content/skills/`).
 
 | table | pk | holds |
 |---|---|---|
-| `content_topics` | `id` | the parent idea: `title`, `brief`, `status` (enum = `PLANNING_STATUSES`), `owner`, `target_channels` (json), `doc_path`, `signal_ids` (json), `tags` (json), `due_date`, `sort`. Timestamps + audit columns. |
+| `content_topics` | `id` | the parent idea: `title`, `brief`, `status` (enum = `PLANNING_STATUSES`), `owner`, `target_channels` (json), `doc_path`, `tags` (json), `due_date`, `sort`. Timestamps + audit columns. |
 | `content_pieces` | `id` (`<topic>/<channel>`) | the idea on one channel: `topic_id`, `channel`, `kind` (enum `CONTENT_KINDS`), `source_id`, `status` (enum `CONTENT_STATUSES`), `title`, `body_path`, `verify` (json verdict), `review` (json human sign-off), `metadata` (json bag: subreddit, flair, assets, post_urn, send_email…), `published_at` / `published_url` / `published_by`, `scheduled_at`. Timestamps + audit columns. |
 
-`migrations: []`, and the manifest declares no `baseline` DDL - both tables are created from their
+One migration, `001-drop-topic-signal-ids` (2026-10-06: what a topic is meant to move is said by planning goals, not a column on the topic). The manifest declares no `baseline` DDL - both tables are created from their
 `ModelSpec` by the boot-time `CREATE TABLE IF NOT EXISTS`.
 
 **Files on disk** (not tables, but state the feature addresses by convention):

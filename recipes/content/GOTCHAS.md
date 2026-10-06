@@ -20,7 +20,7 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **Verify findings are positional.** A re-verify replaces the array and every tick resets with it.
   That is intended - findings regenerated against an edited draft are new findings.
 - **`@Mcp()` inputs must be scalars or arrays with a concrete JSON-schema type**, so lists travel
-  comma-separated (`target_channels`, `signal_ids`, `tags`, `requires`) and `metadata` / `findings`
+  comma-separated (`target_channels`, `tags`, `requires`) and `metadata` / `findings`
   travel as a JSON string. Both controllers carry a note where this bites.
 - **`metadata` deep-merges** on `content-upsert`. Passing only `{"flair": "x"}` keeps `subreddit`
   and `assets`; a key whose value is `null` is deleted.

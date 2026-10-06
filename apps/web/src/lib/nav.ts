@@ -24,7 +24,7 @@ export function navEntries(): NavEntry[] {
 const SIDEBAR_SECTIONS = [
   { label: 'Workspace', ids: ['home', 'chat', 'artifacts', 'sink'] },
   { label: 'Reporting', ids: ['signals', 'boards'] },
-  { label: 'Operations', ids: ['initiatives', 'sprints', 'reminders'] },
+  { label: 'Operations', ids: ['goals', 'initiatives', 'sprints', 'reminders'] },
   { label: 'Sales', ids: ['crm'] },
   { label: 'Marketing', ids: ['content', 'engagement'] },
 ]

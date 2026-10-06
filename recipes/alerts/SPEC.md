@@ -21,17 +21,17 @@ ships a port for.
 | `data` | `computeXEngagementRows` / `X_ENGAGEMENT_KINDS`, `autoRegisterDefinitions`, `deriveSignalIncrements` / `SIGNAL_INCREMENT_KIND` - the policy re-materializes event-derived signals before it matches rules | `evaluate.ts` |
 | `data` | `readSignalOwnersFile` / `resolveSignalOwner` - resolves a signal rule's `owner` route to a person | `signals.ts` |
 | `data` | `browserIdentity`, `connectCDP` / `detach` / `firstContext`, `linkedinGet` - the two LinkedIn fetch paths | `linkedin.ts` |
-| `data` | its tables, read raw: `legacy_signal_points` (the two latest snapshots per signal), `latest_signals` | `signals.ts`, `targets.ts` |
+| `data` | its tables, read raw: `legacy_signal_points` (the two latest snapshots per signal), `latest_signals` | `signals.ts` |
 | `data` | `registerSignalHooks` - alerts registers `onRename` + `references` so a signal rename re-points every rule's `signal_id` | `AlertsModule.onModuleInit` |
-| `planning` | `INITIATIVES` model + the `Initiative` type - the initiative-target evaluator | `targets.ts` |
+| `planning` | `readMeasuredGoals` - every goal with its reading, for the goal evaluator | `goal-events.ts` |
 | `content` | `readContentPieces` + the `ContentPiece` type - published LinkedIn pieces carrying `metadata.post_urn` are the comment-poll targets | `linkedin.ts` |
 | `engagement` | `inboxDeepLink` + `dashboardUrl` from `inbox/inbox-map.ts` - the "Open in dashboard" button on a Lark card lands on the exact tactical-Inbox item the event created | `cards.ts` |
 | `data` (web) | `SignalPicker`, `signalLabel` / `signalMap`, `useSignalsData` - the rule dialog's signal field | `views/AlertsSections.tsx` |
 
 What breaks without it: `notifications` stops compiling (it imports `alerts` directly);
 the events spine keeps recording but nothing reacts to a fresh event; the five `alerts-*` actions
-leave the run funnel and any schedule pointing at them; `initiatives.target` goes back to being a
-column nothing acts on; `run.error` stops paging anyone.
+leave the run funnel and any schedule pointing at them; goals keep their reading but nothing
+records `goal.*` events; `run.error` stops paging anyone.
 
 ## Tables
 
@@ -91,12 +91,28 @@ subscribers. The design rule:
 Alerts subscribes to **every** kind (one listener, filtering by rule), so the interesting list is
 what it emits and acts on: `reddit.inbox`, `github.notification`, `linkedin.comment`,
 `traction.spike`, `digest.daily`, `run.error`, `signal.increase` / `signal.threshold`,
-`initiative.target_reached` / `initiative.target_missed`, plus the `x.*` and `github.*` kinds other
+`goal.met` / `goal.off_track` / `goal.ended`, plus the `x.*` and `github.*` kinds other
 features record.
 
 It also subscribes to core's run funnel with `onRunOutcome` from the same `onModuleInit`: a
 **success** (from any action that is not itself `alerts-*`) triggers `evaluateSignalRules()` +
-`evaluateInitiativeTargets()`; a **failure** ingests a `run.error` event keyed on the run id.
+`evaluateGoals()`; a **failure** ingests a `run.error` event keyed on the run id.
+
+### Goal events
+
+`evaluateGoals()` (`features/alerts/core/goal-events.ts`) reads every **open** goal (no recorded
+outcome) through planning's `readMeasuredGoals`, the one measurement everything else uses, and puts
+what changed on the spine. It never records an outcome and never throws into the run funnel.
+
+| kind | when | deduped per |
+|---|---|---|
+| `goal.met` | the reading says `met` | goal and target |
+| `goal.off_track` | the reading is `off_track` (a hold goal outside its bound included) | goal and day |
+| `goal.ended` | the window has closed with no outcome recorded; carries `suggested_outcome` (`met` or `missed`) so the team is prompted to record one | goal and end date |
+
+Each event carries the goal id, title, signal, kind, target, actual, expected, health and window as
+fields, and the goal id as its subject. A rule in `box.json features.alerts.rules` matches these
+kinds for delivery; without a rule they still land durably in `events`.
 
 ## Procedures and tools
 
@@ -192,7 +208,7 @@ account>, 'GH_TOKEN')`), not from an environment variable.
 ## A naming collision to know about
 
 `docs/core/SEAM.md` section 8 flags it: alerts' `evaluate.ts` / `evaluateSignalRules` /
-`evaluateInitiativeTargets` / `evaluateTraction` share the words `verify` and `evaluate` with
+`evaluateGoals` / `evaluateTraction` share the words `verify` and `evaluate` with
 `content`'s publishing gate (`content/verify`) and `engagement`'s browser verification of
 engagements (`pods/verify`). Nothing is broken - the modules live in different features - but "the
 verify step" and "the evaluator" are ambiguous in conversation and in search. The open point

@@ -11,13 +11,14 @@ The recipe documents ship with core at `recipes/planning/`; the reference implem
 
 Copy or adapt `<fetched stack>/features/planning/` into the Box's `features/planning/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
-Preserve the existing 001-sprint-tasks identity and body exactly. New schema behavior gets a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
+Preserve the existing 001-sprint-tasks, 002-drop-initiative-target and 003-drop-initiative-signal-ids identities and bodies exactly. Planning builds on data's `signals/series.ts` and its signal hooks, and expects data's `001-drop-signal-target` migration to be present. New schema behavior gets a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
 ### Mobile module
 
 When the owner wants planning in the mobile app, integrate `features/planning/mobile/` as described
 in the [Mobile app powerup](./powerups/mobile/INSTALL.md). It adds the Plan tab (order 20) and the
-`planning/initiative/<id>` and `planning/task/<initiative>/<task>` links. Its wire models mirror
+`planning/initiative/<id>` and `planning/task/<initiative>/<task>` links. An initiative carries its
+`goalIds` (read-only here); goals themselves are web and MCP only. Its wire models mirror
 `planning.controller.ts`; a change that renames or removes a field the app reads breaks every
 installed build (docs/MOBILE.md, "Version skew"). Its tab label, icon and order live in the module
 declaration in `features/planning/mobile/lib/`.
@@ -60,7 +61,13 @@ the manifest's `migrations` at it.
    the Board renders.
 8. **Nav and settings** - `features/planning/web/index.tsx`: labels, icons and order
    (band 200-299). Retitle "Initiatives" to whatever this team calls a body of work.
-9. **The derived signal** - `SILKWEAVE_PRS_SIGNAL_ID` and `computeSilkweavePrRows` in
+9. **Goals** - `GOAL_KINDS`, `GOAL_COMPARATORS`, `GOAL_OUTCOMES`, `GOAL_HEALTHS` and
+   `CYCLE_STATUSES` in `features/planning/core/types.ts` are stored enums; changing one needs a
+   migration. How goals are judged lives in `features/planning/core/goals.ts` (`measureGoal`); the
+   one tunable that needs no code is `box.json features.planning.goalTolerance` (a share from 0 to
+   1, default 0.1). Goal labels and health tones are in `features/planning/web/`. Start by
+   creating a cycle and a goal on a real signal in `/goals`; a goal cannot exist without one.
+10. **The derived signal** - `SILKWEAVE_PRS_SIGNAL_ID` and `computeSilkweavePrRows` in
    `features/planning/core/state.ts` hard-code `github.silkweave_prs_merged` over the
    `oss-pr` kind. A team that does not do OSS PRs should either repoint this at their own
    kind + signal or delete the hook from `PLANNING_SIGNAL_HOOKS` (and with it the
@@ -75,10 +82,13 @@ box dev
 ```
 
 Open `http://localhost:8190/initiatives`: the grid renders (empty is fine). Create an initiative,
-give it a kind and at least one bound signal, add a task, drag it to reorder, and open the task at
+give it a kind, add a task, drag it to reorder, and open the task at
 `http://localhost:8190/initiatives/<initiative>/<task>`. Type into the doc editor - it autosaves,
 and the one-line summary under the title on the board becomes the doc's first paragraph. Check
 `data/docs/initiatives/<initiative>/<task>.md` on disk: the file is really there.
+
+Then `http://localhost:8190/goals`: create a goal on a real signal (a target and a window), link the
+initiative to it from the initiative's page, and check the goal card shows a health reading.
 
 Then `http://localhost:8190/sprints`: create a sprint, set its dates and per-person availability
 on the **design** tab, slot tasks onto days on **planning**, and try to move it to `planned` while a
@@ -102,7 +112,8 @@ bun run cli sprint-upsert
 bun run cli initiative-kinds
 ```
 
-(19 tools in all - see SPEC.md for the full list.)
+Goals and cycles add `goals-get`, `goal-upsert`, `goal-initiatives-set`, `cycles-get` and
+`cycle-upsert` among others. See SPEC.md for the full list.
 
 ## 4. Adapt or remove
 

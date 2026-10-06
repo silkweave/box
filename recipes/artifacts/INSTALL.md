@@ -55,6 +55,8 @@ Adapt and validate the recipe first; each powerup can be added then or later.
 2. Make sure every teammate is a Box user. Dry-run first:
    `box artifact-import --from <data dir> --users luna=<agent id>,toby=<id> --dryRun`. Unmapped
    roster ids that are not Box users fall to the system principal and are listed as warnings.
+   Annotations that carry only a display name (no roster id) match a Box user's full name or
+   nickname; map any other name explicitly (`--users "Tobias Strebitzer=toby"`).
 3. Run it without `--dryRun`. It is idempotent per slug (`--replace` overwrites). It re-stamps every
    entry document for `/artifacts/<slug>/` and keeps public state, so a reused Worker keeps serving.
 4. Point the old host's URLs at `/artifacts/<slug>/` on the Box (a redirect at the old host's proxy),

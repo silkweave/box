@@ -1,11 +1,12 @@
-# `planning` - initiatives, tasks and sprints
+# `planning` - goals, initiatives, tasks and sprints
 
-The body of work and the argument for it. An **initiative** is a signals-bound body of work: it
-carries a kind, a status, value and priority ratings, a dependency edge list and - the contract that
-makes it planning rather than a todo list - the `signal_ids` it is meant to move. A **task** is a
+The body of work and the argument for it. A **goal** is one signal, a target and a window: the
+number the team wants to move and by when. A **cycle** groups goals into a period. An **initiative**
+is a body of work: it carries a kind, a status, value and priority ratings, a dependency edge list
+and - the contract that makes it planning rather than a todo list - the goals it contributes to. A **task** is a
 unit under one initiative, keyed by the slug path `<initiative>/<task>`, sized in whole hours. A
 **sprint** is a window of days with real per-person capacity that tasks are scoped and slotted into,
-with a daily stand-up check-in recorded against it. Structured state lives in four warehouse tables;
+with a daily stand-up check-in recorded against it. Structured state lives in seven warehouse tables;
 the long-form rationale lives in markdown on disk, and the row's one-line `summary` is derived from
 that doc rather than typed.
 
@@ -14,32 +15,42 @@ that doc rather than typed.
   (`features/data/core/signals/hooks.ts`); the server module registers `PLANNING_SIGNAL_HOOKS` into
   data's `registerSignalHooks` port from `onModuleInit`. Web-side, `InitiativeKindsSection` imports
   data's `components/board/presetIcons.tsx` so a kind picks from the same closed icon vocabulary a
-  preset does. Initiatives also *reference* `signals.signal_id` values in `signal_ids` and
-  `target.signal_id`, but as strings - there is no FK.
+  preset does. Goals *reference* a `signals.id` in `goals.signal_id`, but as a string - there is no
+  FK. Core-side, goals read data's `signals/series.ts` (day-grain reads over a merged history),
+  `readSignalDefinition(s)` and `readSignalPoints`. Circuit boards: `core/board-kinds.ts` defines
+  `GOAL_BOARD_KIND` (layer 1, edge goal -> its signal) and `INITIATIVE_BOARD_KIND` (layer 0, edge
+  initiative -> each goal; card shows status, open tasks and open estimated hours), registered into
+  data's `registerBoardNodeKind` port from `onModuleInit`; goal and initiative rename/delete call
+  data's `renameBoardRef` / `pruneBoardRef` so placements follow.
 - **Depended on by**: `content` (`dependsOn: ['data', 'planning']` - it reuses `PLANNING_STATUSES`
   and `PlanningStatus` in its own models and types, and its web views reuse planning's
   `StatusSelect` / `StatusLabel`) and `alerts` (`dependsOn: ['data', 'planning', 'content',
-  'engagement']` - `targets.ts` reads the `INITIATIVES` model and the `Initiative` type).
+  'engagement']` - `goal-events.ts` imports planning's `readMeasuredGoals`).
   `engagement` depends on `content`, and `notifications` on `alerts`, so both sit downstream.
 - **Removal**: remove planning only after adapting or removing `content`, `engagement`, `alerts`,
   and `notifications`. Without planning, data keeps
-  working but loses the `github.silkweave_prs_merged` outcome signal, the re-pointing of initiative
-  bindings on a signal rename, and the "what references this signal" answer that guards a rename.
+  working but loses the `github.silkweave_prs_merged` outcome signal, the re-pointing of goals on a
+  signal rename, and the "what references this signal" answer (`goal:<id>`) that guards a rename and
+  a delete.
 
 ## Tables
 
-Four, all `timestamps: true` and `audit: true` (so every row carries `created_at` / `updated_at` /
+Seven, all `timestamps: true` and `audit: true` (so every row carries `created_at` / `updated_at` /
 `created_by` / `updated_by`).
 
 | table | pk | what it holds |
 |---|---|---|
-| `initiatives` | `id` | slug id, title, derived `summary`, `status` (enum `PLANNING_STATUSES`), `kind` (enum from `box.json features.planning.initiativeKinds`), `owner`, `signal_ids` JSON, `target` JSON, `value_customer` / `value_company` (enum `VALUE_LEVELS`), `priority` 1-3, `blocked_by` JSON edge list, `tags` JSON, `doc_path`, `due_date`, `sort` |
+| `initiatives` | `id` | slug id, title, derived `summary`, `status` (enum `PLANNING_STATUSES`), `kind` (enum from `box.json features.planning.initiativeKinds`), `owner`, `value_customer` / `value_company` (enum `VALUE_LEVELS`), `priority` 1-3, `blocked_by` JSON edge list, `tags` JSON, `doc_path`, `due_date`, `sort` |
 | `tasks` | `id` (`<initiative>/<task>`) | `initiative_id` (NULL = a **sprint task**, see below), title, derived `summary`, `status`, `rank`, `score`, `priority` 1-3, `estimate_hours` 1-8, `tags`, `url`, `assignee`, `metadata` JSON, `due_date`, `sprint_id`, `slot_date`, `done_at` |
 | `sprints` | `id` | title, `goal`, `status` (enum `SPRINT_STATUSES`), `start_date` / `end_date` (DATE, not timestamp), `availability` JSON (`users.id` -> `{ hours, hours_by_date }`), `started_at`, `done_at` |
 | `sprint_checkins` | `sprint_id` + `date` | one stand-up day: `ticks` JSON, a SET of `<users.id>:<bucket>` strings, plus `completed_at` / `completed_by` |
+| `cycles` | `id` | slug id, `title`, `status` (enum `CYCLE_STATUSES`), `start_date` / `end_date` (DATE), `doc_path`, `sort` |
+| `goals` | `id` | slug id, `title`, derived `summary`, `signal_id` (string, no FK), `kind` (enum `GOAL_KINDS`), `target` float, `comparator` (`hold` only), `start_date` / `end_date` (DATE, inclusive), `baseline` (reach override, NULL = read from the signal), `cycle_id`, `owner`, `outcome` (enum `GOAL_OUTCOMES`, NULL while open), `tags`, `doc_path`, `sort` |
+| `goal_initiatives` | `goal_id` + `initiative_id` | which initiatives contribute to which goals; many to many, no weight |
 
-One migration (`001-sprint-tasks`, 2026-09-14: `tasks.initiative_id` stops being NOT NULL), no
-`baseline`, no `actions`. The four `ModelSpec`s are baselined with `CREATE TABLE IF NOT EXISTS` on
+Three migrations (`001-sprint-tasks`, 2026-09-14: `tasks.initiative_id` stops being NOT NULL;
+`002-drop-initiative-target` and `003-drop-initiative-signal-ids`, 2026-10-06: the columns goals
+replaced), no `baseline`, no `actions`. The seven `ModelSpec`s are baselined with `CREATE TABLE IF NOT EXISTS` on
 every boot, so a fresh Box gets the current shape in one shot and the migration only exists for a
 Box that already booted on the old one.
 
@@ -73,10 +84,12 @@ for it, and NULL is the whole marker - there is no `kind` column.
 
 ## Docs on disk
 
-`data/docs/initiatives/`, from core's `docsDir()`:
+`data/docs/`, from core's `docsDir()`. Doc kinds are `initiative`, `task`, `goal` and `cycle`:
 
 - initiative `silkweave-pr-targets` -> `docs/initiatives/silkweave-pr-targets.md`
 - task `silkweave-pr-targets/invoicerr` -> `docs/initiatives/silkweave-pr-targets/invoicerr.md`
+- goal `mrr-12k` -> `docs/goals/mrr-12k.md`
+- cycle `2026-q4` -> `docs/cycles/2026-q4.md`
 
 The path is a pure function of the id. Every segment must match `^[a-z0-9][a-z0-9-]*$`, a task id
 must be exactly two segments, and the resolved absolute path is re-checked to start with the base
@@ -96,14 +109,14 @@ chars). It never CREATES a row - a doc may be written for an id whose row does n
 ## Procedures and tools
 
 `PlanningController` (`@Controller('planning')`, class-level `@UseGuards(AuthGuard)`): 24 tRPC
-procedures, 20 of them also MCP tools. Every tRPC name is `planning`-prefixed on the wire (the
+procedures, 20 of them also MCP tools. `GoalsController` and `CyclesController` follow below. Every tRPC name is `planning`-prefixed on the wire (the
 controller's own doc comments drop the prefix; `apps/web/src/generated/appRouter.d.ts` is the truth).
 
 | tRPC | MCP | what |
 |---|---|---|
 | `planningInitiatives` (query) | - | every initiative with its tasks nested |
 | `planningInitiativesGet` (mutation) | `initiatives-get` | the same, all or one by `id` - the read entry point for a remote session |
-| `planningInitiativeUpsert` (mutation) | `initiative-upsert` | create or partially update one; `''` clears the target, `''` clears a value dimension |
+| `planningInitiativeUpsert` (mutation) | `initiative-upsert` | create or partially update one; `goal_ids` replaces the goals it contributes to, `''` clears a value dimension |
 | `planningInitiativeDelete` (mutation) | `initiative-delete` | remove it and its tasks, prune dangling `blocked_by` edges |
 | `planningTaskUpsert` (mutation) | `task-upsert` | create or partially update a task; `0` clears `priority` / `estimate_hours` |
 | `planningTaskSetStatus` (mutation) | `task-set-status` | the quick action |
@@ -116,7 +129,7 @@ controller's own doc comments drop the prefix; `apps/web/src/generated/appRouter
 | `planningKinds` (query) | `initiative-kinds` | the team's kind list, by label, each with its initiative count |
 | `planningKindSave` (mutation) | `initiative-kind-save` | create a lane or edit its label/icon; the id is never rewritten |
 | `planningKindDelete` (mutation) | `initiative-kind-delete` | remove a lane; refused while any initiative sits in it |
-| `planningDoc` (mutation) | `doc-read` | read an initiative/task markdown doc (empty when none yet) |
+| `planningDoc` (mutation) | `doc-read` | read an initiative, task, goal or cycle markdown doc (empty when none yet) |
 | `planningDocSave` (mutation) | `doc-save` | write it, and refresh the row's derived `summary` |
 | `planningSprints` (query) | - | every sprint, newest window first; no tasks, no capacity grid |
 | `planningSprintGet` (mutation) | `sprint-get` | one sprint with its tasks, the inferred initiatives and the computed capacity grid |
@@ -126,11 +139,28 @@ controller's own doc comments drop the prefix; `apps/web/src/generated/appRouter
 | `planningSprintCheckinComplete` (mutation) | - | close the day out; idempotent |
 | `planningSprintDelete` (mutation) | `sprint-delete` | remove the sprint; its tasks are RELEASED, never deleted - its sprint tasks are deleted |
 
+`GoalsController` (`@Controller('goals')`) and `CyclesController` (`@Controller('cycles')`), both
+behind `AuthGuard`:
+
+| tRPC | MCP | what |
+|---|---|---|
+| `goalsList` (query) | - | every goal with its reading, no daily series |
+| `goalsGet` (mutation) | `goals-get` | all goals or one by `id`, each with health; the daily series is included for one goal, opt-in for all |
+| `goalsUpsert` (mutation) | `goal-upsert` | create or partially update; `signal_id`, `target` and a window (or a `cycle_id`) are required on create; `initiative_ids` replaces the links; `outcome` `''` reopens; `clear_baseline` drops the override |
+| `goalsDelete` (mutation) | `goal-delete` | remove a goal, its links and its doc |
+| `goalsRename` (mutation) | `goal-rename` | change the slug; links and the doc follow |
+| `goalsInitiativesSet` (mutation) | `goal-initiatives-set` | set the complete list of contributing initiatives |
+| `goalsCarryForward` (mutation) | `goal-carry-forward` | continue an open goal in another cycle (see Goals) |
+| `cyclesList` (query) | `cycles-get` | every cycle, newest window first |
+| `cyclesUpsert` (mutation) | `cycle-upsert` | create or partially update; `start_date` / `end_date` are required on create |
+| `cyclesDelete` (mutation) | `cycle-delete` | remove a cycle; its goals stay, outside any cycle, dates intact |
+
 The two `doc-*` tools and `initiatives-get` / `sprint-get` are mutations because they carry an input
 body and an input-less query is the only shape that reflects cleanly - the same call `sink` makes.
 The check-in pair is tRPC-only: it is a dashboard interaction, not an agent one.
 
-Refusals that come from the domain and surface as `400`s with the message intact: a dependency
+Refusals that come from the domain and surface as `400`s with the message intact: a goal whose signal is not registered, whose
+`end_date` is before `start_date`, or that has no window and no cycle; a dependency
 cycle or an unknown `blocked_by` id; an out-of-enum value; a title over the max (`assertTitleLength`
 - "put the detail in the doc body, not the title"); `end_date` before `start_date`; any status past
 `pending` without both dates; `planned` while any day is provably over capacity (the message names
@@ -147,14 +177,75 @@ PLANNING_SIGNAL_HOOKS = {
   id: 'planning',
   channelRows: { github: computeSilkweavePrRows },   // task-ledger rows on the github channel
   derive:      deriveOssPrSignals,                    // re-derives github.silkweave_prs_merged
-  onRename:    repointInitiativeBindings,             // signal rename -> signal_ids + target.signal_id
-  references:  initiativesReferencingSignal,          // "initiative:<id>" list, guards a rename
+  onRename:    repointGoalSignals,                    // signal rename -> goals.signal_id
+  references:  goalsReferencingSignal,                // "goal:<id>" list, guards a rename and a delete
 }
 ```
 
 `github.silkweave_prs_merged` is the cumulative count of `done` tasks across `oss-pr` initiatives,
 dated by `done_at`, extended flat to today. Every task mutation, delete, move and rename calls
 `deriveOssPrSignals()`, so the signal is never fabricated.
+
+## Goals
+
+A goal measures **one registered signal** (checked on write) over an inclusive window, against a
+target. Initiatives link to goals through `goal_initiatives`; an initiative "somehow contributes",
+with no weight. `goals.ts` (`measureGoal`) is pure and is the one implementation the Goals page, the
+board, MCP and the alerts evaluator all read; `goal-state.ts` is the warehouse side
+(`readMeasuredGoals` is the measured view).
+
+**Kinds.** The default comes from the signal's accumulation on create (`increment` -> `accumulate`,
+otherwise `reach`).
+
+- `reach`: move a level. Actual is the level as of today; expected is a line from the **baseline**
+  to the target across the window. Direction comes from target versus baseline, not from the signal.
+- `accumulate`: sum in the window. Actual is the running total of buckets that started inside it;
+  expected is a line from 0 to the target across the window's days.
+- `hold`: stay inside a bound. Every bucket that started inside the window is checked against the
+  target with a `comparator` (`lte` stay at or under, the default; `gte` stay at or over). There is
+  no pace line.
+
+**Baseline.** Reach reads the level *entering* the window: the latest bucket that ended on or before
+the window's first day (a monthly signal starting 2026-10-01 baselines on September). Failing that,
+the first value inside the window. `baseline` on the goal overrides both. The reading says where the
+baseline came from.
+
+**Health** is a reading, never a verdict: `upcoming` (window not started), `no_data`, `on_track`,
+`at_risk`, `off_track`, `met`. A goal is `met` when the target is reached (reach, accumulate); a hold
+goal is `met` only once its window has ended without a breach. Otherwise it compares actual to the
+pace. Trailing the pace is `at_risk` within the **tolerance** and `off_track` beyond it. Tolerance is
+a share of the distance to target (reach), of the target (accumulate, hold). Accumulate compares
+against the pace through *yesterday*, because today's bucket is still filling. Hold is `off_track`
+when the latest value is outside the bound by more than the tolerance, `at_risk` when it is outside
+by less or any earlier bucket breached. A snapshot signal whose latest observation is old enough that
+"now" is a carried value reports `stale`. When the window has ended, a goal carries a
+`suggested_outcome` (`met` or `missed`).
+
+**Outcomes are soft.** Nothing closes a goal automatically. A person records `outcome` (`met`,
+`missed` or `dropped`; `''` reopens). Health only suggests.
+
+**Windows and buckets.** A bucket belongs to the window containing its start, with no proration. A
+window that cuts through weekly or monthly buckets counts a straddling bucket wholly or not at all;
+the reading carries an `alignment` so the UI can say so.
+
+**Cycles** group goals into a period: `planned`, `active`, `review`, `closed`, each step moved by a
+person. Choosing a cycle on a goal fills its missing dates from the cycle; after that the goal's
+dates stand alone and a cycle edit never moves its goals. In `review` the Goals page lists the
+cycle's goals with their suggested outcomes so the team records each one, and **carry forward**
+(`goal-carry-forward`) continues an open goal in another cycle: a new goal with the same signal,
+kind, target, comparator, owner, tags and links, the new cycle's dates and a fresh baseline, while
+the old goal is closed with the outcome given (default `missed`). The new id defaults to the old id
+with its cycle suffix swapped for the new cycle's.
+
+**Gaps.** The Goals page lists open initiatives that contribute to no goal, and open goals with no
+initiative, so unconnected work and unowned targets are visible rather than silent.
+
+**Signal changes.** A signal rename re-points its goals through the hooks above. A signal delete is
+not blocked by goals: data's delete report names them (`goal:<id>`), and a goal whose signal is gone
+stays and reports a missing signal (no reading).
+
+**Cascades.** Renaming or deleting an initiative updates or removes its `goal_initiatives` rows;
+deleting a user clears the owner on their goals.
 
 ## Why the shapes are what they are
 
@@ -195,7 +286,10 @@ dated by `done_at`, extended flat to today. Every task mutation, delete, move an
 
 ## UI
 
-- **Routes** (both direct children of `rootRoute`):
+- **Routes** (all direct children of `rootRoute`):
+  - `/goals` - the overview: health counts, a review panel while a cycle is in `review`, goal cards
+    by cycle and the two gap lists. `/goals/cycles/$cycleId` is one cycle, `/goals/$id` is
+    `GoalDetailView` (the reading, the pace chart, the contributing initiatives and the doc).
   - `/initiatives` - `InitiativesLayout` (shell + initiative sidebar); `/` is `InitiativesGrid`,
     `$id` is a pass-through `Outlet` whose `/` is `InitiativeDetailView` and whose `$taskSlug` is
     `TaskDetailView`. So a task is `/initiatives/<initiative>/<task>`.
@@ -203,8 +297,11 @@ dated by `done_at`, extended flat to today. Every task mutation, delete, move an
     is an `Outlet` whose `/` and whose `$tab` are both `SprintDetailView`. `$tab` is
     `design|planning|board`; when the URL names none, the tab that opens is chosen from the
     sprint's status.
-- **Nav**: two entries in band **200-299** - `Initiatives` (icon `Target`, order 200) and `Sprints`
-  (icon `CalendarRange`, order 210). Sprints is its own group rather than a tab inside Initiatives
+- **Nav**: three entries in band **200-299** - `Goals` (icon `Goal`, order 200), `Initiatives`
+  (icon `Target`, order 205) and `Sprints` (icon `CalendarRange`, order 210). Goals sits in the
+  sidebar's Operations group. The initiatives grid has a `goals` column (the legacy `signal` key is
+  mapped to it), and the initiative detail shows "Contributes to" goal cards with a picker and
+  "New goal". Sprints is its own group rather than a tab inside Initiatives
   because a sprint has its own lifecycle and the board is a daily-driver surface.
 - **Settings**: one section, `initiative-kinds` - "Initiative kinds", icon `Tags`, order 200,
   rendering `InitiativeKindsSection`.
@@ -224,14 +321,17 @@ dated by `done_at`, extended flat to today. Every task mutation, delete, move an
   `sprintTasks`, since the board store it otherwise reads holds only initiative tasks - labelled
   "Sprint task · no initiative" and without "Open full page", because it has no task page to open.
 - **Stores**: `usePlanningData` reloads on `table:initiatives`, `table:tasks` and `docs:initiatives`;
+  `useGoalsData` on the goal, cycle and link tables;
   `useSprintsData` on `table:sprints` (the per-sprint detail is not a `createDataStore` because it
   is parameterised by id). The kind list is config, not a table, so it has no change-feed topic - it
   reloads after a local write and otherwise on the next page load.
 
 ## Settings
 
-None. `features/planning/server/index.ts` is `defineServerFeature({ id, module })`, and the
-feature reads no environment variables.
+One, in `box.json`: `features.planning.goalTolerance`, a share from 0 to 1 (default `0.1`, that is
+10%). It is how far a goal may trail its pace and still read `at_risk` rather than `off_track`; a
+value that is not a number in range falls back to the default. The feature reads no environment
+variables. Initiative kinds are config too (see below).
 
 ## Admin-only
 
@@ -278,5 +378,8 @@ tasks, sprints and docs are a member's.
 - **Check-in buckets** - `CHECKIN_BUCKETS = ['done', 'today', 'slipping']`, declared twice on
   purpose (`features/planning/core/state.ts` and
   `features/planning/web/sprint-types.ts`); change both.
+- **Goal vocabulary** - `GoalKind` (`reach`, `accumulate`, `hold`), `GoalComparator`, `GoalOutcome`
+  (`met`, `missed`, `dropped`), `GoalHealth` and `CycleStatus` in `features/planning/core/types.ts`,
+  and `goalTolerance` (see Settings). Stored enums need a migration to change.
 - **Nav labels and order** (band 200-299) and the settings section's label, in
   `features/planning/web/index.tsx`.

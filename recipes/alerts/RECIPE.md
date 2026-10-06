@@ -8,7 +8,7 @@ Declarative rules that turn events into deduplicated alerts and deliver them in 
 - A deduplicated alert ledger and an alerts feed in the dashboard
 - Debounced, batched delivery through Lark cards or any registered transport
 - Polling actions for Reddit, GitHub and LinkedIn, hourly traction checks and a daily digest
-- Signal and initiative target rules
+- Signal rules, and events when a goal is met, goes off track or ends
 
 ## Builds on
 
