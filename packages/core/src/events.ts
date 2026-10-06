@@ -12,6 +12,7 @@
 // through the record layer (warehouse/model.ts + the EVENTS spec). Aggregate queries stay raw.
 // Raw writes stamp their own UTC-naive timestamps (never SQL now(), which is local wall time).
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { ensureSchema, withRead, withWrite } from './warehouse/db.js'
 import { readRecords, toNaiveUtc } from './warehouse/model.js'
 import { EVENTS } from './warehouse/core-models.js'
@@ -53,6 +54,36 @@ export interface EventRecord {
 /** UTC-naive "now" for raw writes - the same stamp convention the record layer uses. */
 const utcNow = (): string => toNaiveUtc(new Date().toISOString())
 
+// --- event chain depth ---------------------------------------------------------------------------
+// A run that an event trigger started can emit events of its own, which can fire triggers again.
+// The automation dispatcher runs such work inside withEventDepth(depth + 1), and recordEvent
+// stamps that depth on every event recorded inside it as `fields.depth` (unless the producer set
+// one), so a chain of triggers stops at its max depth instead of looping. Work outside any chain
+// (a timed pull, a person's request) records no depth, which reads as 0.
+
+const chain = new AsyncLocalStorage<{ depth: number }>()
+
+/** Run `work` as part of an event chain: events recorded inside carry `fields.depth = depth`. */
+export function withEventDepth<T>(depth: number, work: () => T): T {
+  return chain.run({ depth }, work)
+}
+
+/** Run `work` outside any event chain (long-lived timers must not inherit the depth of whoever armed them). */
+export function outsideEventChain<T>(work: () => T): T {
+  return chain.exit(work)
+}
+
+/** The event chain depth of the current async context, or undefined outside a chain. */
+export function currentEventDepth(): number | undefined {
+  return chain.getStore()?.depth
+}
+
+/** An event's chain depth: its `fields.depth`, 0 when absent or not a number. */
+export function eventDepth(event: Pick<EventInput, 'fields'>): number {
+  const n = Number(event.fields?.['depth'])
+  return Number.isInteger(n) && n > 0 ? n : 0
+}
+
 // --- subscribers ---------------------------------------------------------------------------------
 // Best-effort, in-process, fresh-only. A listener that throws is logged and never propagates into
 // the producer (the same contract emitChange has). There is no outbox and no replay across
@@ -86,7 +117,10 @@ async function fanOut(event: EventInput): Promise<void> {
  * committed, and are awaited before this resolves so a caller that chains on "fresh" sees their
  * side effects settled.
  */
-export async function recordEvent(event: EventInput): Promise<boolean> {
+export async function recordEvent(input: EventInput): Promise<boolean> {
+  const depth = currentEventDepth()
+  const event: EventInput =
+    depth !== undefined && input.fields?.['depth'] === undefined ? { ...input, fields: { ...input.fields, depth: String(depth) } } : input
   await ensureSchema()
   const fresh = await withWrite(async (conn) => {
     const res = await conn.runAndReadAll(
@@ -122,6 +156,18 @@ export async function listEvents(kinds: string[], sinceIso: string, limit = 500)
     params: [...kinds, toNaiveUtc(sinceIso)],
     orderBy: `COALESCE(event_at, received_at) DESC LIMIT ${Number(limit)}`,
   })
+}
+
+/** The kinds recorded since `sinceIso`, most frequent first - what an event trigger can listen for. */
+export async function recentEventKinds(sinceIso: string, limit = 200): Promise<{ kind: string; count: number }[]> {
+  await ensureSchema()
+  const rows = await withRead<{ kind: string; n: unknown }>(
+    `SELECT kind, count(*) AS n FROM events
+      WHERE COALESCE(event_at, received_at) >= ?::TIMESTAMP
+      GROUP BY kind ORDER BY n DESC, kind LIMIT ${Number(limit)}`,
+    [toNaiveUtc(sinceIso)],
+  )
+  return rows.map((r) => ({ kind: r.kind, count: Number(r.n) }))
 }
 
 /**

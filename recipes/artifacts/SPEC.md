@@ -172,4 +172,4 @@ set; they are read on each request, so no restart is needed.
 ## What a team customises
 
 The `kind` vocabulary (`core/rules.ts`), reserved slugs, the toolbar's controls, upload limits, the
-public Worker's domain, and alerts rules for comment events.
+public Worker's domain, and deliver triggers for comment events.

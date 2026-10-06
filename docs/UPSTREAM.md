@@ -11,6 +11,9 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
+Latest core refresh: Stack commit `9cc9bfb983e33cdfa48228d1ab5d5e7683617f8e` (2026-10-07), materialized
+with `box:build`/`box:reset`; `box verify` passed 11/11.
+
 The target includes Stack commits `1679963573056b98046b8c5dc2bf2434452197a9` for the reviewed
 dependency and documentation cleanup and `bc9cf70f076ed1d505b380fd2389d51dc2d37a4b` for first-run
 owner guidance and the contextual onboarding dashboard. Stack commit

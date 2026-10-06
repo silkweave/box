@@ -7,7 +7,7 @@ Box, what to change afterwards, and how to arm it without setting a laptop firin
 
 The recipe documents ship with core at `recipes/automation/`; the reference implementation lives in the Stack at `features/automation/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
 
-**Builds on:** core only. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** core, and the server's agent host for agent triggers (`box.json` `workerdeck`; without it, agent triggers are refused and the rest works). Resolve imports from the Box's source tree and root workspace dependencies.
 
 Copy or adapt `<fetched stack>/features/automation/` into the Box's `features/automation/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
@@ -30,7 +30,25 @@ read, and the boot log warns while it is present.
 3. **Which actions to arm** - the catalog is every `ActionSpec` the installed features contribute,
    plus core's `warehouse-backup` (Settings -> Automation -> Actions). An unknown `action_id` is
    refused; a `parameterized` action needs `params` on the trigger.
-4. **Labels and order** - `features/automation/web/index.tsx`, band 800.
+4. **Agent triggers** - a prompt that runs unattended as a WorkerDeck job under an admin's agent
+   profile (`run_as`), in a directory inside `workerdeck.cwdRoots`, optionally with a success marker
+   line. The unattended permission mode (`workerdeck.queue.permissionMode`) is `auto` by default:
+   the engine's classifier decides each tool call, and denials land in the run's permission report.
+   `dontAsk` (Claude only) runs only what the run_as profile's settings allow. Either way, check the
+   profile's settings and MCP servers before moving a job in. Tune the
+   queue in `box.json` `workerdeck.queue` (SPEC.md, "Settings").
+5. **Event triggers** - When = a Box event: an exact kind (`content.published`) or a family
+   (`signal.*`); `triggers-list` returns `eventKinds`, the kinds recorded in the last 30 days.
+   Narrow with filters (`fields.<name>` or `actor`, `subject`, ...; one of equals, regex, in; all
+   must match). Action params and agent prompts take `{{fields.name}}` placeholders; an agent
+   prompt also gets the event as JSON. `daily_cap` (default 50 for agent prompts, none for actions)
+   and `max_depth` (default 2) keep a chatty kind or a loop of triggers in check. An agent prompt
+   can ask a cheap gate first (`gate_prompt`, `gate_model`, `gate_marker`).
+6. **Deliveries** - with the `alerts` recipe installed, an event trigger can deliver a message
+   instead (Do = "Deliver a message": `route`, `message`, `notify`, `cooldown_min`,
+   `debounce_sec`). Alerts registers the runner through automation's port; without it the option is
+   greyed out and a stored delivery is listed invalid (recipes/alerts/SPEC.md).
+7. **Labels and order** - `features/automation/web/index.tsx`, band 800.
 
 ## 3. Prove it
 
@@ -45,22 +63,33 @@ armed. **Run now** on a card streams the action inline through core's `opsRunNow
 id and lands a `manual` run in **Runs** showing who ran it and the trigger id. A member sees the
 cards and Run now, but no create, edit or delete.
 
+For an agent trigger, create one with Do = "Run an agent prompt" and a harmless prompt ending in a
+marker line (`Reply with the word READY on its own line.`, marker `READY`). **Run now** links the
+run; it goes `queued` -> `running` -> `success`, with the session id as the first log line and the
+final text as the summary. Remove the marker from the reply to see the run fail on it.
+
+For an event trigger, pick When = "When a Box event arrives", a kind from the suggestions and a
+filter, Do = an action. **Run now** opens a sample event; the reply says whether the filters match
+it, and the run shows the event's values in its params. With `background.automation` on, a real
+event of that kind lands a run with `trigger = event` and the event id in Run detail. A loop (two
+triggers feeding each other) stops at the max depth.
+
 Agent-side:
 
 ```bash
 box triggers-list                     # every trigger, valid or not, next fire
 box trigger-upsert                    # create/update one (admin; params as a JSON string)
 box trigger-delete                    # remove one (admin)
-box trigger-run                       # run one now, returns the run id (admin)
+box trigger-run                       # run one now, returns the run id (admin; optional sample event JSON)
 box run-get                           # core's - one run with its full log
 box service-restart                   # restart under a supervisor (refuses mid-turn without force)
 ```
 
 **Arming it deliberately.** Set `background.automation` to `true` in that checkout's
-`box.local.json` and restart. The boot log says `armed N/M time trigger(s)`; afterwards every edit
-re-arms at once.
+`box.local.json` and restart. The boot log says `armed N/M time trigger(s)` and `listening with N
+event trigger(s)`; afterwards every edit re-arms at once.
 
-Do **not** do this on a dev checkout seeded from production: armed timers there fire the real
+Do **not** do this on a dev checkout seeded from production: armed timers and listening event triggers there fire the real
 pulls, backups and publishes beside the production Box. If you must watch the scheduler arm, use a
 throwaway second checkout with its own `data/` ("Boot a throwaway Box" in `docs/SERVER.md`),
 `background.automation` true, `background.chatAgent` false, a trigger pointing at something

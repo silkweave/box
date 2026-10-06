@@ -13,6 +13,6 @@ describe('settings deep links', () => {
   })
   test('old section names still reach their configuration surfaces', () => {
     expect(parseSettingsHash('#settings/schedules')).toEqual({ section: 'automation', params: ['schedules'] })
-    expect(parseSettingsHash('#settings/rules')).toEqual({ section: 'alerts', params: ['rules'] })
+    expect(parseSettingsHash('#settings/rules')).toEqual({ section: 'automation', params: ['triggers'] })
   })
 })

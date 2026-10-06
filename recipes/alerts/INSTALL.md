@@ -10,7 +10,7 @@ at `recipes/alerts/`. The reference implementation does not: it lives in the Sta
 ## Prerequisites
 
 - Existing Box backup and a recorded restore path for both data and matching application source.
-- Core, plus every recipe this one builds on already adapted and registered in the target Box. Builds on: **data, planning, content, engagement**.
+- Core, plus every recipe this one builds on already adapted and registered in the target Box. Builds on: **automation, data, planning, content, engagement**.
 - Feature-specific package imports include: `playwright-core` (core). Install latest into the root workspace package; record any necessary compatibility pin and its reason in the Box gotchas. Also declare shared framework/UI packages imported directly by this feature: dependencies declared only under apps/server or apps/web do not resolve from the shared feature tree.
 - A recorded source SHA in docs/UPSTREAM.md, and an integration entry with scope, target SHA,
   intended changes, and state in _docs/INTEGRATION.md.
@@ -33,7 +33,12 @@ ledgers before replaying an operation.
 3. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record
    path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Advance
    the completed upstream SHA in docs/UPSTREAM.md only after the full validation and boot pass.
-4. No shipped migrations. Preserve the feature id if migrations are added.
+4. Migration `alerts:001-import-rules` imports `features.alerts.rules` into automation's
+   `triggers` table as deliver triggers (it runs after automation's migrations, through
+   `dependsOn`). After the live boot, compare `triggers-list` with the old rules, then remove
+   `features.alerts.rules`, `features.alerts.routing` and `features.alerts.larkCli` from the config
+   files. Install `notifications` for delivery (the `chat` and `dm` transports) and create the
+   alerts room (`features.alerts.channelRoom`, default `automations`).
 5. For migrations, stage the runner, registration, and minimum code first. Test against a restored
    backup in isolation, confirm completion and boot compatibility, then continue with unrelated
    changes. Never edit or rename an applied migration.

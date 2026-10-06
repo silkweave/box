@@ -355,9 +355,23 @@ read side core ships: `listEvents(kinds, since, limit)`, `dailyKindCounts(kinds)
 day, ascending, days with no events absent - callers zero-fill), and `subjectActivity(kinds, since)`
 (per-subject counts plus a representative latest row).
 
-**Why the alert POLICY is a subscriber and not part of the spine.** The spine is core; alerting is a
-feature. `alerts`' server module registers one `onEvent` listener that calls `applyAlertPolicy`, and
-core does not know it exists. That split is what lets a Box run with `alerts` removed and still have
+**A listener that starts work must not await it.** `recordEvent` is often called from inside a
+funnel run (a pull, a publish), and the funnel has one slot: a listener that awaited a second funnel
+run would wait on that slot forever. Queue the work and return, as the automation dispatcher does.
+
+**Event chain depth.** Work that an event started can record events of its own. Run that work
+inside `withEventDepth(depth, work)` and every event recorded inside it gets `fields.depth` (unless
+the producer set one); `eventDepth(event)` reads it back, 0 when absent. The automation recipe's
+event triggers use it to stop a loop of triggers at their max depth. The depth travels in an
+`AsyncLocalStorage`, so a long-lived timer armed inside a chain would inherit it: arm those inside
+`outsideEventChain(...)`. Events an agent records through Box MCP tool calls carry no depth (the
+call does not say which run made it). `recentEventKinds(since)` lists the kinds recorded since a
+time, most frequent first.
+
+**Why reacting to events is a subscriber and not part of the spine.** The spine is core; triggers
+and alerting are features. `automation`'s event dispatcher registers one `onEvent` listener that
+matches event triggers (deliveries among them, through alerts' runner), and core does not know it
+exists. That split is what lets a Box run with `automation` or `alerts` removed and still have
 content publishing, the run funnel and every other producer emit normally: the events are recorded,
 nothing reacts. Fold the policy into `recordEvent` and the spine grows a dependency on a feature,
 which is the one thing the seam forbids (`docs/core/SEAM.md` § 1). It also keeps
@@ -373,7 +387,7 @@ Two seams, different jobs. Do not blur them.
 | Payload | a scope string, never row data | a typed record with fields |
 | Durability | none, in-memory, resets on restart | a warehouse table |
 | Delivery | fire-and-forget to SSE clients | idempotent insert, then in-process fan-out |
-| Consumers | the SPA's data stores | alert policy, pod automation, digests, derived signals |
+| Consumers | the SPA's data stores | event triggers (deliveries included), pod automation, digests, derived signals |
 
 [`changes.ts`](../packages/core/src/changes.ts) is the **UI-invalidation** bus. A write path emits a
 scope (`table:<name>`, `docs:<section>`, `config:<file>`, or the generic `warehouse`); the server's

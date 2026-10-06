@@ -17,7 +17,7 @@
     "@nestjs/core": "^12.0.4",
     "@nestjs/platform-express": "^12.0.4",
     "@nestjs/swagger": "^12.0.1",
-    "@openai/codex": "~0.149.0",
+    "@openai/codex": "~0.158.0",
     "@silkweave/box-core": "workspace:*",
     "@silkweave/nestjs": "^5.2.1",
     "@silkweave/trpc": "^5.2.1",

@@ -48,7 +48,11 @@ export function onRunOutcome(listener: RunOutcomeListener): () => void {
   }
 }
 
-async function notifyOutcome(outcome: RunOutcome): Promise<void> {
+/**
+ * Tell the run-outcome subscribers about a run finalized outside the funnel (an agent trigger's
+ * WorkerDeck job). The funnel calls it for its own runs.
+ */
+export async function notifyRunOutcome(outcome: RunOutcome): Promise<void> {
   for (const listener of outcomeListeners) {
     try {
       await listener(outcome)
@@ -148,13 +152,13 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
     }
     await finalizeRun(runId, { status: 'success', summary, log })
     finalized = true
-    await notifyOutcome({ runId, actionId, status: 'success', trigger: meta.trigger, triggerId: meta.triggerId ?? null, summary })
+    await notifyRunOutcome({ runId, actionId, status: 'success', trigger: meta.trigger, triggerId: meta.triggerId ?? null, summary })
   } catch (err) {
     const message = String((err as Error)?.message ?? err)
     push({ channel: actionId, phase: 'done', message: `error: ${message}` })
     await finalizeRun(runId, { status: 'error', error: message, log })
     finalized = true
-    await notifyOutcome({ runId, actionId, status: 'error', trigger: meta.trigger, triggerId: meta.triggerId ?? null, error: message })
+    await notifyRunOutcome({ runId, actionId, status: 'error', trigger: meta.trigger, triggerId: meta.triggerId ?? null, error: message })
     throw err
   } finally {
     // Safety net: a consumer that returns the generator early aborts the run with it - neither

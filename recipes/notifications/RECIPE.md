@@ -6,7 +6,7 @@ One bell for everything that needs attention, merging chat mentions and messages
 
 - A top-bar bell that merges chat mentions, messages and alerts into one list
 - Web push and FCM device push delivery
-- A chat transport so alert rules can post into a chat room
+- Chat transports so alerts post into a chat room or arrive as a direct message from the agent
 - No tables of its own
 
 ## Builds on

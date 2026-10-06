@@ -3,9 +3,9 @@ import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import type { IncomingMessage } from 'node:http'
 import { createFileSessionStore, createWorkerServer, type WorkerServer, type WorkerServerOptions } from '@workerdeck/server'
-import type { ProfileInfo, SessionInfo } from '@workerdeck/protocol'
+import type { CreateJobRequest, JobEvent, JobInfo, ProfileInfo, SessionEvent, SessionInfo } from '@workerdeck/protocol'
 import { agentSessionAccess, boxJson, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
-import { parkedDir, readWorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
+import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
 import { revokeBuilderControl, trackBuilderControl } from './builder-control.js'
 
 /**
@@ -155,6 +155,75 @@ export interface WorkerdeckHost {
   url: string
   key: string
   profiles: ProfileInfo[]
+  config: WorkerdeckConfig
+}
+
+const jobListeners = new Set<(event: JobEvent) => void>()
+
+/**
+ * Observe every job event of the queue (agent triggers follow their runs here). Returns the
+ * unsubscribe. Listeners are best-effort: one that throws never affects the queue or the others.
+ */
+export function onJobEvent(listener: (event: JobEvent) => void): () => void {
+  jobListeners.add(listener)
+  return () => {
+    jobListeners.delete(listener)
+  }
+}
+
+function emitJobEvent(event: JobEvent): void {
+  for (const listener of jobListeners) {
+    try {
+      listener(event)
+    } catch (err) {
+      console.error(`  agent: job listener failed - ${String((err as Error)?.message ?? err)}`)
+    }
+  }
+}
+
+/** The unattended permission mode: box.json `workerdeck.queue.permissionMode` (default `auto`). */
+export function unattendedPermissionMode(): UnattendedPermissionMode {
+  return host?.config.queue.permissionMode ?? DEFAULT_QUEUE.permissionMode
+}
+
+/**
+ * Answer a pending approval on a live session with a denial (an unattended run has nobody to ask).
+ * False when the session or the request is gone.
+ */
+export function denyAgentPermission(sessionId: string, requestId: string, message: string): boolean {
+  return host?.worker.registry.get(sessionId)?.resolvePermission(requestId, { behavior: 'deny', message }) ?? false
+}
+
+/**
+ * Follow one live session's events, replayed from its start. The queue relays only its own job
+ * events; what the engine reports beside them (a tool call the auto-mode classifier denied, as an
+ * `sdk_event`) is read here. Null when the session is not live on this worker.
+ */
+export function onSessionEvent(sessionId: string, listener: (event: SessionEvent) => void): (() => void) | null {
+  const runner = host?.worker.registry.get(sessionId)
+  return runner ? runner.subscribe(listener, 0) : null
+}
+
+/**
+ * Submit an unattended agent job. It goes through the loopback listener's `POST /v1/jobs` as the
+ * host principal, so the worker vets it like any session create (profile, cwd inside cwdRoots,
+ * permission mode) instead of this process handing the queue an unchecked request.
+ */
+export async function submitAgentJob(request: CreateJobRequest): Promise<JobInfo> {
+  if (!host) throw new Error('the agent surface is not running (box.json workerdeck)')
+  const res = await fetch(`${host.url}/v1/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${host.key}` },
+    body: JSON.stringify(request),
+  })
+  const body = (await res.json().catch(() => ({}))) as { job?: JobInfo; error?: string }
+  if (!res.ok || !body.job) throw new Error(`job refused (${res.status}): ${body.error ?? 'no detail'}`)
+  return body.job
+}
+
+/** Cancel a queued or running job. Null when the queue does not know it. */
+export async function cancelAgentJob(id: string): Promise<JobInfo | null> {
+  return (await host?.worker.queue?.cancel(id)) ?? null
 }
 
 let host: WorkerdeckHost | undefined
@@ -227,6 +296,17 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
     // than defaulted so it cannot drift onto workerdeck's own cwd-relative `.workerdeck/parked`,
     // which a second Box on this machine would also want.
     parking: { store: createFileSessionStore({ dir: parkedDir(deployment) }) },
+    // The job queue runs agent triggers unattended (features/automation). In-memory: a restart
+    // loses queued and running jobs, and the Box marks their runs orphaned at boot. Only the
+    // loopback listener can submit (agent.mount.ts refuses /jobs and /queue from browsers).
+    queue: {
+      maxConcurrency: deployment.queue.maxConcurrency,
+      ...(deployment.queue.sessionTokenLimit !== null ? { sessionTokenLimit: deployment.queue.sessionTokenLimit } : {}),
+      ...(deployment.queue.dailyTokenLimit !== null ? { dailyTokenLimit: deployment.queue.dailyTokenLimit } : {}),
+      maxJobDurationMs: deployment.queue.maxJobDurationMs,
+      retention: { maxAgeMs: deployment.queue.retentionMs },
+      onEvent: emitJobEvent,
+    },
     authenticate: (req: IncomingMessage): AgentAuth | null => {
       // Two doors, one authenticator. Browser traffic arrives through the Box's own express stack,
       // which resolves the Box principal and stashes an AgentAuth under AGENT_AUTH before emitting
@@ -336,7 +416,7 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
   }
 
   const { port } = await worker.listen(0, '127.0.0.1')
-  host = { worker, url: `http://127.0.0.1:${port}`, key: BOOT_KEY, profiles }
+  host = { worker, url: `http://127.0.0.1:${port}`, key: BOOT_KEY, profiles, config: deployment }
   console.log(`  agent: workerdeck in-process on 127.0.0.1:${port}`)
   console.log(`         profiles: ${deployment.profiles.map((p) => p.name).join(', ')}`)
   return host

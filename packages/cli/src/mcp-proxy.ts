@@ -26,12 +26,50 @@ const retryingFetch: typeof fetch = async (input, init) => {
   for (let attempt = 0; attempt < 10; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 1_000))
     try {
-      return await fetch(input, init)
+      const res = await fetch(input, init)
+      return typeof init?.body === 'string' && init.body.includes('"tools/list"') ? withPlainNullables(res) : res
     } catch (err) {
       lastErr = err
     }
   }
   throw lastErr
+}
+
+// A nullable input (`nullable: true` on the DTO, e.g. a trigger's `cooldown_min`) is published as
+// `anyOf: [{type}, {type: 'null'}]`. @silkweave/mcp 5.2.1's proxy builds an option per property from
+// its `type` and throws on one without, which takes down every `box <tool>` command, not just that
+// tool. Present such a property as its non-null branch: the option takes a value, and clearing it
+// stays with the web UI and MCP clients, which send null.
+type SchemaProp = { anyOf?: SchemaProp[]; type?: string; description?: string }
+function plainNullables(message: { result?: { tools?: { inputSchema?: { properties?: Record<string, SchemaProp> } }[] } }) {
+  for (const tool of message.result?.tools ?? []) {
+    const props = tool.inputSchema?.properties ?? {}
+    for (const [key, prop] of Object.entries(props)) {
+      const branches = prop.anyOf?.filter((b) => b.type !== 'null')
+      if (prop.type || !branches || branches.length !== 1) continue
+      const { anyOf: _, ...rest } = prop
+      props[key] = { ...branches[0], ...rest }
+    }
+  }
+  return message
+}
+async function withPlainNullables(res: Response): Promise<Response> {
+  if (!res.ok) return res
+  const text = await res.text()
+  const rewrite = (json: string) => {
+    try {
+      return JSON.stringify(plainNullables(JSON.parse(json)))
+    } catch {
+      return json
+    }
+  }
+  const body = (res.headers.get('content-type') ?? '').includes('text/event-stream')
+    ? text.replace(/^data: (.*)$/gm, (_, json: string) => `data: ${rewrite(json)}`)
+    : rewrite(text)
+  const headers = new Headers(res.headers)
+  headers.delete('content-length')
+  headers.delete('content-encoding')
+  return new Response(body, { status: res.status, statusText: res.statusText, headers })
 }
 
 // A refused tool call (validation, a write the record layer rejects) comes back as an error result

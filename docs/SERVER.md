@@ -250,7 +250,9 @@ is idempotent on `(kind, dedup_key)` and returns whether the event was **fresh**
 subscribes to fresh events only, after the row is committed, awaited before `recordEvent` resolves.
 Best-effort, in-process, no outbox, no replay across restarts - a subscriber that needs
 at-least-once semantics reads the `events` table instead. Features register their listeners from a
-server module's `onModuleInit`. The spine itself, and the table, are the warehouse doc's:
+server module's `onModuleInit`; a listener that starts funnel work queues it and returns, never
+awaits it. `withEventDepth` / `outsideEventChain` carry an event chain's depth onto the events its
+work records. The spine itself, and the table, are the warehouse doc's:
 [`WAREHOUSE.md`](./WAREHOUSE.md).
 
 ## 6. The agent host
@@ -290,7 +292,8 @@ cookie-authed mutations).
   alone and a roots change would otherwise publish the checkout to every signed-in user. It is a
   separate list from `UNSTAMPED_WRITE` because the exposure is a `GET`, and a write-only gate on a
   read hole is the wrong shape. Anything added to the worker that can start work, or read a file,
-  belongs in one of those lists.
+  belongs in one of those lists. The job queue is on (agent triggers use it, see
+  `recipes/automation/SPEC.md`), and only the loopback listener's host principal submits to it.
 - **Layer B** lives *inside* workerdeck, driven by the `AgentAuth` the mount stashes on the request
   under a module-private **symbol**. A signed-in principal is handed their own `allowedProfiles`,
   `scope: { user }`, `operator: false`, `canManageProfiles: false` and an `authorizeSession`.

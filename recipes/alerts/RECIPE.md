@@ -1,17 +1,18 @@
 # Alerts
 
-Declarative rules that turn events into deduplicated alerts and deliver them in batches to the people who should know. It also brings its own event sources that watch Reddit, GitHub and LinkedIn and recap the quiet activity daily.
+Triggers that deliver: when an event matches, a deduplicated alert goes out in a batch to the people or chat rooms that should know. It also brings its own event sources that watch Reddit, GitHub and LinkedIn and recap the quiet activity daily.
 
 ## Highlights
 
-- Rules matched against core's events spine, with routing to people or channels
-- A deduplicated alert ledger and an alerts feed in the dashboard
-- Debounced, batched delivery through Lark cards or any registered transport
+- Deliver triggers (Automation > Triggers) on any event kind, with filters, routing to people or rooms
+- A deduplicated alert ledger and an alert history in Settings
+- Debounced, batched delivery through any registered transport (Team Box chat: rooms and direct messages)
 - Polling actions for Reddit, GitHub and LinkedIn, hourly traction checks and a daily digest
-- Signal rules, and events when a goal is met, goes off track or ends
+- Signal increase and threshold events, and events when a goal is met, goes off track or ends
 
 ## Builds on
 
+- [Automation](../automation/RECIPE.md)
 - [Data](../data/RECIPE.md)
 - [Planning](../planning/RECIPE.md)
 - [Content](../content/RECIPE.md)

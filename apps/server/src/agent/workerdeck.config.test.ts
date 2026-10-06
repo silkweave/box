@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseWorkerdeckConfig } from './workerdeck.config.js'
+import { DEFAULT_QUEUE, parseWorkerdeckConfig } from './workerdeck.config.js'
 
 const ctx = (existing: string[] = []) => ({
   repoRoot: '/repo',
@@ -22,6 +22,7 @@ describe('parseWorkerdeckConfig', () => {
     expect(config.cwdRoots).toEqual(['/repo'])
     expect(config.stateDir).toMatch(/agent$/)
     expect(config.claudeTokens).toBe(false)
+    expect(config.queue).toEqual(DEFAULT_QUEUE)
   })
 
   it('splits a profile whose home does not exist into `pending` rather than refusing', () => {
@@ -87,8 +88,23 @@ describe('parseWorkerdeckConfig', () => {
     ['a non-object defaults', { profiles: [profile({ defaults: 'acceptEdits' })] }],
     ['a non-string cwdRoots entry', { profiles: [profile()], cwdRoots: [1] }],
     ['a non-boolean claudeTokens', { profiles: [profile()], claudeTokens: 'yes' }],
+    ['a non-object queue', { profiles: [profile()], queue: 2 }],
+    ['an unknown queue key', { profiles: [profile()], queue: { maxConcurency: 2 } }],
+    ['a zero queue concurrency', { profiles: [profile()], queue: { maxConcurrency: 0 } }],
+    ['a fractional token limit', { profiles: [profile()], queue: { sessionTokenLimit: 1.5 } }],
+    ['bypassPermissions for unattended runs', { profiles: [profile()], queue: { permissionMode: 'bypassPermissions' } }],
+    ['an unattended mode other than auto or dontAsk', { profiles: [profile()], queue: { permissionMode: 'acceptEdits' } }],
   ])('refuses %s', (_why, raw) => {
     expect(() => parseWorkerdeckConfig(raw, ctx(['/home/alice/.claude']))).toThrow(/box\.json workerdeck/)
+  })
+
+  it('reads the job queue settings, keeping defaults for what is not named', () => {
+    const config = parseWorkerdeckConfig(
+      { profiles: [profile()], queue: { maxConcurrency: 2, dailyTokenLimit: 5_000_000, sessionTokenLimit: null, permissionMode: 'dontAsk' } },
+      ctx(['/home/alice/.claude']),
+    )
+    expect(config.queue).toEqual({ ...DEFAULT_QUEUE, maxConcurrency: 2, dailyTokenLimit: 5_000_000, permissionMode: 'dontAsk' })
+    expect(DEFAULT_QUEUE.permissionMode).toBe('auto')
   })
 
   it('refuses a duplicate profile name', () => {

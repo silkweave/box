@@ -28,6 +28,44 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **A busy action is skipped, not queued.** On fire, the scheduler checks `isActionBusy()` and, if
   the action is already queued or running, writes a `skipped` run row instead of stacking a second
   execution. Core's funnel is FIFO with concurrency 1 (the warehouse is single-writer).
+- **An event listener never awaits the work.** `recordEvent` awaits its listeners and is often
+  called from inside a funnel run; awaiting a second funnel run there would wait on the single slot
+  forever. The dispatcher queues the event and starts the run detached.
+- **An action trigger does not fire on its own action's events.** While the action runs, it is
+  busy, so an event it records skips the trigger (a `skipped` row). A loop through two actions is
+  stopped by the chain depth instead.
+- **Agent MCP calls carry no chain depth.** Events an agent run records through Box MCP tools have
+  no `fields.depth`, so a loop through an agent prompt is only stopped by the daily cap (default 50
+  a day). Keep agent event triggers narrow (filters, a gate) and their caps low.
+- **The daily cap counts UTC days**, whatever the trigger's zone, and only stops event fires.
+  At the cap one `skipped` row is recorded per trigger and day; later events leave no row. Gate
+  declines count toward it (they spent a job), guard skips do not.
+- **Timers are armed outside the event chain** (`outsideEventChain`). Any long-lived timer a
+  feature arms from inside a run should do the same, or it inherits that run's chain depth.
+- **Deliveries run inside the listener.** A deliver trigger is handed to the registered runner
+  while `recordEvent` awaits its listeners (it only records an alert row, never a funnel run), so a
+  poll that records a batch finds every alert recorded before it flushes. Everything else is
+  queued.
+- **Ports are registered at module init.** `registerDeliverRunner` and `registerTriggerCheck` are
+  called from a dependent's `onModuleInit`; a CLI or test that never boots that module sees no
+  runner, so deliveries are listed invalid there. That is expected.
+- **A sample event bypasses the guards.** `trigger-run` with `event` runs regardless of kind,
+  filters, cap or busy state, and only reports whether the filters would have matched.
+- **Agent runs do not queue behind actions.** They are WorkerDeck jobs with their own queue
+  (`workerdeck.queue.maxConcurrency`, default 1), not funnel runs, so a long agent job never holds
+  the single action slot. A time fire while the trigger's previous run is in flight is skipped.
+- **An approval request on an agent run is denied, not waited on.** Nobody can answer it, so the
+  dispatcher denies that call, reports it, and the run carries on. Under `auto` the classifier
+  escalates risky calls this way (seen for `rm -rf` outside the project). Only a request that cannot
+  be answered cancels the run. Allow needed tools in the run_as profile's settings.
+- **A denied tool call does not fail the run.** Under `auto` the classifier can refuse a call and the
+  model carries on; the run's status still comes from the success marker. Read the run's
+  "Permission denials" panel (or the `agent.permission_denied` diagnostics) after moving a job in,
+  and give important jobs a marker the prompt only prints when the work is really done.
+- **A restart loses agent jobs.** The job queue is in-memory; the boot sweep marks their runs
+  `orphaned by server restart`. `service-restart` refuses while a job session is mid-turn.
+- **`run_as` is checked at fire time too.** A user demoted from admin since the trigger was saved
+  makes the run fail to start (manual Run now answers 400; a timed fire logs it).
 - **Timed runs are attributed to the system principal** (`systemUserId()`) and to their trigger
   (`trigger_id`), not to the owner: nobody pressed Run.
 - **Invalid triggers are surfaced, not fatal.** On each load, `triggerProblem()` checks every row

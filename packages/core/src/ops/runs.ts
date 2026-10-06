@@ -65,7 +65,7 @@ export async function markRunning(id: string): Promise<void> {
 /** Terminal update - status/summary/error plus the whole buffered log, written once. */
 export async function finalizeRun(
   id: string,
-  outcome: { status: 'success' | 'error'; summary?: string; error?: string; log: RunLogLine[] },
+  outcome: { status: 'success' | 'error' | 'skipped'; summary?: string; error?: string; log: RunLogLine[] },
 ): Promise<void> {
   await withWrite(async (conn) => {
     await conn.run(
@@ -92,6 +92,27 @@ export async function insertSkippedRun(
       [id, run.actionId, run.trigger, run.triggerId, run.eventId ?? null, now, now, reason],
     )
   })
+}
+
+/**
+ * Error text of a run an agent trigger's gate declined (status `skipped`). Unlike the other skips,
+ * a declined gate spent a job, so it counts toward the trigger's daily cap.
+ */
+export const GATE_DECLINED_PREFIX = 'gate declined'
+
+/**
+ * How many runs of a trigger started since `sinceIso` count toward its daily cap: every run that
+ * was started, plus the ones its gate declined; skips by a guard (busy, cap) do not count.
+ */
+export async function countTriggerRunsSince(triggerId: string, sinceIso: string): Promise<number> {
+  await ensureSchema()
+  const rows = await withRead<{ n: unknown }>(
+    `SELECT count(*) AS n FROM automation_runs
+      WHERE trigger_id = ? AND started_at >= ?::TIMESTAMP
+        AND (status <> 'skipped' OR starts_with(COALESCE(error, ''), ?))`,
+    [triggerId, toNaiveUtc(sinceIso), GATE_DECLINED_PREFIX],
+  )
+  return Number(rows[0]?.n ?? 0)
 }
 
 /** Runs left queued/running by a previous server process can never finish - mark them at boot. */

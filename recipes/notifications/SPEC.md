@@ -2,14 +2,15 @@
 
 **A glue feature** (`docs/core/SEAM.md` § 4.2), and the one the pattern was invented for. `chat` is
 useful alone: rooms, mentions, the agent's seat, its own sidebar unread badges. `alerts` is useful
-alone: rules over the events spine, the alert ledger, the `/alerts` feed, Lark as its native sink.
+alone: deliveries for triggers, the alert ledger, the alert history. It has no sink of its own.
 The *together*-part is this third feature, and it is two things pointing in opposite directions -
 a top-bar **bell** that merges chat mentions and messages with warehouse alerts into one list, and
-a **chat transport registered into alerts** so a rule routed `chat:<slug>` lands as a post in a
-room. Delete it and both halves keep working, minus exactly those two things: chat has no bell (the
-chat sidebar still counts unread), and an alert routed `chat:standup` matches no transport and
-falls back to alerts' own Lark routing - it stays in the feed and the ledger either way. Both true,
-both fine. That is the whole argument for glue.
+**two transports registered into alerts**: a delivery routed `chat:<slug>` (or `channel` /
+`owner`, which alerts resolves to its alerts room) lands as a post in that room, and one routed
+`user:<id>` lands as a direct message from the agent, pushed to that person's devices. Delete it
+and both halves keep working, minus exactly those things: chat has no bell (the chat sidebar still
+counts unread), and an alert matches no transport, so it records a delivery `error` - it stays in
+the history and the ledger either way. That is the whole argument for glue.
 
 - **dependsOn**: `chat`, `alerts`. From **chat** it takes `chatStore()` (mentions, recent messages,
   the notification watermark and dismissal tables, push subscriptions, device tokens, room lookup,
@@ -58,6 +59,7 @@ providers at all - the chat SQLite handle belongs to `ChatModule`:
 | `registerWebPushTransport()` | its own delivery seam (`delivery.ts`) | web push; returns `false` and does nothing when VAPID is unconfigured |
 | `registerFcmTransport()` | the same seam | FCM/APNs device push; `false` when the service account is unconfigured |
 | `registerAlertTransport(CHAT_ALERT_TRANSPORT)` | **alerts'** port (`features/alerts/core/transports.ts`) | routes `chat:<slug>` to a chat room post |
+| `registerAlertTransport(directAlertTransport(notifyDirectMessage))` | the same port | routes `user:<id>` to the agent's direct message with that person, then pushes it as kind `dm` |
 
 **The direction rule**: the dependent registers into the dependency, never the reverse. `alerts`
 owns the `AlertTransport` port and has no idea chat exists; `notifications` - which depends on both
@@ -69,12 +71,18 @@ own `registerNotificationTransport` replaces by name instead, so a hot reload ca
 The alert-to-chat side lives in **core**, not the server
 (`features/notifications/core/alerts-chat.ts`): it is a store write, and core cannot
 import the server. `chatRouteSlug` accepts `chat:<slug>` only, refusing `chat:dm:...` (`:` is the
-DM namespace) and anything the chat controller would refuse; every non-`chat:` route falls through
-to alerts' own routing untouched. One post per pass carries the whole batch, the sender is the
+DM namespace) and anything the chat controller would refuse; `userRouteId` accepts `user:<id>`.
+The body is alerts' `alertChatBody` (one alert is its message, several one line each, with an
+"Open in dashboard" link when one maps). One post per pass carries the whole batch, the sender is the
 agent (core's `systemUserId()`, display resolved through the user directory so a rename in Settings
 travels), and **no mentions are ever emitted** so an alert cannot trigger the chat agent's mention
 loop. A missing room throws on purpose: the alert row records the error and stays visible in
-history rather than vanishing into a room nobody created.
+history rather than vanishing into a room nobody created. The `dm` transport opens the DM when it
+does not exist yet and throws for an unknown or revoked user and for the agent itself. The chat bus
+listener never pushes the agent's own DM messages (its chat answers start as a streamed
+placeholder), so the transport pushes an alert DM itself through `notifyDirectMessage`, once,
+after the post commits. It must not run inside an enclosing chat transaction (`openDirect` and
+`post` refuse); the alerts flusher holds none.
 
 ## Delivery: what pushes, and what does not
 

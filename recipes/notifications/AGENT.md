@@ -34,12 +34,13 @@ until then the Settings row says "Not set up".
    service-account document (Project settings -> Service accounts -> Generate new private key)
    pasted as a single JSON **string** with the `private_key` newlines escaped as `\n`. Skip it
    unless this team runs `apps/mobile`. APNs is configured in the Firebase console, not here.
-3. **Decide which alerts route to which room.** Settings -> Rules, the `route` field on an alert
-   rule. `chat:<slug>` is the vocabulary this feature adds - `chat:standup`, `chat:go-to-market`.
-   The room must already exist (delivery throws otherwise, and the alert row records the error
-   rather than disappearing), the slug must be a plain room - `chat:dm:...` is refused on purpose -
-   and everything else (`owner`, `user:<id>`, `channel`) keeps going to alerts' Lark routing
-   untouched. The rule dialog's placeholder does not mention `chat:` yet; it still works.
+3. **Decide which alerts route where.** Settings -> Automation -> Triggers, the "Deliver to" field
+   of a delivery. `chat:<slug>` posts into a room (`chat:standup`, `chat:go-to-market`); the room
+   must already exist (delivery throws otherwise, and the alert row records the error rather than
+   disappearing), and the slug must be a plain room - `chat:dm:...` is refused on purpose.
+   `user:<id>` is a direct message from the agent, pushed to that person. `channel` and an
+   unresolved `owner` post into alerts' room (`features.alerts.channelRoom`, default
+   `automations`), so create it.
    Rule of thumb from the code's own comment: page a person for what needs answering now, route to
    a room what wants a durable line people read later.
 4. **The copy and the badge**, if the team disagrees with them.
@@ -76,10 +77,11 @@ End to end, four checks that exercise the whole feature:
    frame feed.
 2. **Bell, alerts half** - any alert row landing in the warehouse shows up as a `Siren` item; the
    `table:alerts` change invalidation refreshes the bell.
-3. **The glue, the other direction** - create an alert rule routed `chat:<an existing room>`, let
-   a matching alert fire and be delivered, and the rendered message appears in that room as a post
-   from the agent (`nova`), with no mentions in it. A burst arrives as one post with a bulleted
-   line per alert, not one post each.
+3. **The glue, the other direction** - create a delivery routed `chat:<an existing room>` and use
+   its Run now with a sample event: the rendered message appears in that room as a post from the
+   agent (`nova`), with no mentions in it. A burst arrives as one post with a bulleted line per
+   alert, not one post each. Route one at `user:<you>`: it lands in your DM with the agent and
+   pushes.
 4. **Push**, if configured - flip the footer toggle to **On** (the browser prompts; permission
    must come from that click), then trigger a mention from another session while this tab is
    *not* focused on that room. A desktop notification appears with the sender's rounded avatar;

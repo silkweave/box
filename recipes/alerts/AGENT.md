@@ -7,57 +7,50 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/alerts/`; the reference implementation lives in the Stack at `features/alerts/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
 
-**Builds on:** data, planning, content, engagement. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** automation, data, planning, content, engagement. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
 
 Copy or adapt `<fetched stack>/features/alerts/` into the Box's `features/alerts/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
-No shipped migrations currently. If one is added, preserve the feature id and append a new identity. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
+One shipped migration: `alerts:001-import-rules` (2026-10-06) imports `features.alerts.rules` into automation's `triggers` table as deliver triggers (SPEC.md, "Migration"). Back up the warehouse and the config files first, stage the runner and registration, and rehearse on a disposable restored instance: compare `triggers-list` with the old rule set (ids, routes, messages, enabled, signal filters) and confirm boot. Then remove `features.alerts.rules`, `features.alerts.routing` and `features.alerts.larkCli` from the config files. A `signal.threshold` event's dedup key now carries the threshold, so a crossing that is still the latest pair can deliver once more after the upgrade.
 
 ## 2. Customise for the team
 
-1. **The rules are the main thing.** Everything else is plumbing. Create
-   `box.json features.alerts.rules`:
+1. **The deliver triggers are the main thing.** Everything else is plumbing. Create them in
+   Settings > Automation > Triggers (When: a Box event, Do: deliver a message) or with
+   `trigger-upsert`:
 
    ```json
-   {
-     "_readme": "route: owner | channel | user:<id> | chat:<room-slug>",
-     "rules": [
-       { "id": "reddit-replies", "event": "reddit.inbox", "route": "owner",
-         "message": "u/{author} replied in r/{subreddit}: {summary}", "enabled": true },
-       { "id": "run-failures", "event": "run.error", "route": "channel", "cooldown_min": 30,
-         "message": "{action_id} failed: {error}", "enabled": true },
-       { "id": "stars", "event": "github.star", "route": "channel", "notify": "digest",
-         "message": "new star", "enabled": true },
-       { "id": "daily-digest", "event": "digest.daily", "route": "channel",
-         "message": "{summary}", "enabled": true }
-     ]
-   }
+   { "id": "run-failures", "name": "Run failures", "when_kind": "event", "event_kind": "run.error",
+     "do_kind": "deliver", "route": "channel", "cooldown_min": 30,
+     "message": "{action_id} failed: {error}" }
    ```
 
-   `{token}`s are filled from the event's flat `fields`; unknown tokens are left intact, which is
-   how you discover the real field names. `notify: "digest"` records the event and **no** alert row
-   - the daily digest and traction detection read it from `events` instead. Rule ids are
-   kebab-case; the route grammar is enforced. Editing through Settings -> Rules writes the same
-   file, and the file is re-read per evaluation, so no restart either way.
+   `{token}`s are filled from the event's flat `fields` (and `{{fields.name}}` / `{{actor}}`);
+   unknown tokens are left intact, which is how you discover the real field names. Routes:
+   `user:<id>` (a direct message from the agent), `chat:<room-slug>`, `channel` (the alerts room),
+   `owner` (a signal's owner on a signal event, else the alerts room). Filters narrow the kind
+   (`fields.repo = silkweave/box`). `notify: digest` sends nothing per event; the daily digest counts
+   it where its route points, and a trigger on `digest.daily` with route `{{fields.route}}` sends
+   the recap. A trigger on `signal.increase` / `signal.threshold` names its signal with the filter
+   `fields.signal_id` and its threshold with `fields.threshold`.
 
-2. **Routing.** `box.json features.alerts.routing`: `{ "routes": { "channel": {...},
-   "user:alice": {...} }, "fallback": "channel" }`, each target a `{ receive_id, type }`. A route
-   with no mapping and no transport records a delivery `error`. If the team lives in the Box's own
-   chat instead of Lark, install `notifications` and route rules at `chat:<room-slug>` - that
-   transport bypasses Lark entirely and needs no routing file.
+2. **The alerts room.** `box.json features.alerts.channelRoom` (default `automations`) is where
+   `channel` and an unresolved `owner` land; create that room in chat. Delivery needs
+   `notifications` installed: it registers the `chat` and `dm` transports. A route nothing claims
+   records a delivery `error`.
 
-3. **Which evaluators run.** Schedule the `alerts-*` actions through `automation` (fast tier for
-   `alerts-reddit` / `alerts-github`, ~15 min for `alerts-traction`, daily for `alerts-digest`).
-   `alerts-github` needs a `github` account with a `GH_TOKEN` credential; `alerts-linkedin` needs
-   published LinkedIn pieces and, for member posts, the author's Chrome in `box.json features.data.browsers`.
-   An evaluator with no matching rule short-circuits, so an unused one costs nothing.
+3. **Which evaluators run.** Trigger the `alerts-*` actions on a time through `automation` (fast
+   tier for `alerts-reddit` / `alerts-github`, ~15 min for `alerts-traction`, daily for
+   `alerts-digest`). `alerts-github` needs a `github` account with a `GH_TOKEN` credential;
+   `alerts-linkedin` needs published LinkedIn pieces and, for member posts, the author's Chrome in
+   `box.json features.data.browsers`. An evaluator nobody listens to short-circuits, so an unused
+   one costs nothing. `features.alerts.tractionTiers` sets the traction ladder.
 
-4. **The vocabularies.** `cards.ts` `titleFor()` and the header colours, `traction.ts`
-   `ENGAGEMENT_KINDS` / `DEFAULT_TIERS` / the 60-minute window, `digest.ts` `KIND_LINE`,
-   `flush.ts` `DEFAULT_DEBOUNCE_SEC`. These nouns are inherited from the predecessor; change them to the team's.
+4. **The vocabularies.** `traction.ts` `ENGAGEMENT_KINDS` / `DEFAULT_TIERS` / the 60-minute window,
+   `digest.ts` `KIND_LINE`, `flush.ts` `DEFAULT_DEBOUNCE_SEC`. These nouns are inherited from the
+   predecessor; change them to the team's.
 
-5. **Labels and order.** Nav `Alerts` at band 810 and the settings section `Rules` at 810, both in
-   `features/alerts/web/index.tsx`.
+5. **Labels and order.** The settings section `Alerts` at 810 in `features/alerts/web/index.tsx`.
 
 ## 3. Prove it
 
@@ -65,20 +58,21 @@ No shipped migrations currently. If one is added, preserve the feature id and ap
 box dev
 ```
 
-Open `http://localhost:8190/alerts`: the feed renders (empty is fine) with a status badge per
-row. Settings -> Rules lists the rules grouped by event kind; adding one there rewrites
-`box.json features.alerts.rules` on disk - check the file, that is the whole contract.
+Open Settings > Alerts: the history renders (empty is fine) with a status badge per row. Settings >
+Automation > Triggers offers "Deliver a message" on an event trigger; save one and it is listed
+with its route.
 
-Agent-side the same surface is MCP: `bun run cli alerts-rules`, `bun run cli alerts-list`,
-`bun run cli alert-rule-save`, `bun run cli alert-rule-delete`.
+Agent-side: `box triggers-list`, `box trigger-upsert`, `box trigger-run`, `box alerts-list`.
 
-To fire a test alert without waiting for anything real, use the cheapest source - a failed run.
-With a rule on `run.error` enabled, run an action that will fail (an `alerts-github` with no
-credential configured will do) from the Automation view or `bun run cli run-now`. The funnel records
-the failure, `onRunOutcome` ingests a `run.error` event, the policy records a `pending` row, and
-the feed shows it within its 10s poll; it flips to `delivered`, `suppressed` or `error` when the
-debounced flush (default 300s) lands. `error` with `no Lark route mapping for "..."` means the
-whole path worked and only `lark-routing.json` is missing.
+To fire a test alert without waiting for anything real, use Run now on the deliver trigger (the
+play button): it asks for a sample event and delivers it at once, answering `delivered to
+chat:automations`, `suppressed: ...` or `delivery to ... failed: ...`. The live path: with
+`background.automation` true and a trigger on `run.error`, run an action that will fail (an
+`alerts-github` with no credential configured will do). The funnel records the failure,
+`onRunOutcome` records a `run.error` event, the trigger records a `pending` row, and the history
+shows it within its 10s poll; it flips to `delivered`, `suppressed` or `error` when the debounced
+flush (default 300s) lands. `error` with `no alert transport handles route` means the whole path
+worked and the route is wrong or `notifications` is missing.
 
 ## 4. Adapt or remove
 

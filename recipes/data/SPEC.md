@@ -114,8 +114,8 @@ PascalCased (`signal-upsert` appears as `SignalUpsert`), while `bun run cli` tak
 | `signalsData` (query) | - | the full cross-channel payload in one round-trip: every definition, both point stores merged per bucket (live over manual), period aggregates, and the data sources for resolving `data_source_id`. Sub-daily buckets are windowed to `SUBDAILY_WINDOW_DAYS`. |
 | `signalsList` (query) | `signals-list` | the registry rows alone, no points |
 | `signalsUpsert` (mutation) | `signal-upsert` | create or partially update a definition; the domain refuses unknown `depends_on` ids, cycles, half a provider binding and out-of-enum values |
-| `signalsRename` (mutation) | `signal-rename` | re-key an id, cascading to goals (via planning's hook), alert rules, `depends_on`, the owners file and the rows. Refused for `source: 'derived'` - the deriver would re-create the old id. |
-| `signalsDelete` (mutation) | `signal-delete` | remove a definition; prunes `depends_on` edges and board placements, reports what still references it (goals as `goal:<id>`, alert rules; left in place, listed in `bound_initiatives`), never deletes points |
+| `signalsRename` (mutation) | `signal-rename` | re-key an id, cascading to goals (via planning's hook), trigger filters on `fields.signal_id` (via alerts' hook), `depends_on`, the owners file and the rows. Refused for `source: 'derived'` - the deriver would re-create the old id. |
+| `signalsDelete` (mutation) | `signal-delete` | remove a definition; prunes `depends_on` edges and board placements, reports what still references it (goals as `goal:<id>`, triggers as `trigger:<id>`; left in place, listed in `bound_initiatives`), never deletes points |
 | `signalsOwners` (query) | `signal-owners` | the `box.json features.data.signalOwners` map (channel defaults + per-signal overrides) |
 | `signalsOwnersSave` (mutation) | `signal-owner-set` | set/unset one mapping; applies at the next read, no restart |
 | `signalsSeries` (mutation) | `signal-series` | ONE signal's full merged history, windowable. The read path for agents. |

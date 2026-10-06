@@ -64,6 +64,77 @@ export interface WorkerdeckConfig {
   stateDir: string
   /** Whether to expect `CLAUDE_TOKEN_<PERSON>` in boxJson().workerdeckTokens and say who is missing. */
   claudeTokens: boolean
+  /** The job queue that runs agent triggers unattended (always on when the agent surface is). */
+  queue: WorkerdeckQueueConfig
+}
+
+/**
+ * box.json `workerdeck.queue`: WorkerDeck's job queue, which runs agent triggers. Every key is
+ * optional; the defaults below keep one unattended run at a time with a one-hour watchdog.
+ */
+export interface WorkerdeckQueueConfig {
+  /** Concurrent job sessions. */
+  maxConcurrency: number
+  /** Token cap per job run (input + output + cache); exceeding it fails the run. Null is off. */
+  sessionTokenLimit: number | null
+  /** Token budget per UTC day across all jobs; queued jobs wait for the next day. Null is off. */
+  dailyTokenLimit: number | null
+  /** Wall-clock cap per job run. */
+  maxJobDurationMs: number
+  /** How long finished jobs stay listed in the queue (the Box keeps its own run records). */
+  retentionMs: number
+  /**
+   * The permission mode of an unattended run; nobody can answer an approval prompt.
+   * - `auto` (default): the engine's classifier decides each tool call. Denials are reported on the
+   *   run and as a runtime diagnostic, so the owner can allow the tool in the profile's settings.
+   * - `dontAsk` (Claude only): runs what the profile's settings allow and denies everything else.
+   * A run that still raises an approval is cancelled with the tool named.
+   */
+  permissionMode: UnattendedPermissionMode
+}
+
+export const UNATTENDED_PERMISSION_MODES = ['auto', 'dontAsk'] as const
+export type UnattendedPermissionMode = (typeof UNATTENDED_PERMISSION_MODES)[number]
+
+export const DEFAULT_QUEUE: WorkerdeckQueueConfig = {
+  maxConcurrency: 1,
+  sessionTokenLimit: null,
+  dailyTokenLimit: null,
+  maxJobDurationMs: 60 * 60_000,
+  retentionMs: 7 * 24 * 60 * 60_000,
+  permissionMode: 'auto',
+}
+
+function parseQueue(raw: unknown): WorkerdeckQueueConfig {
+  if (raw === undefined) return { ...DEFAULT_QUEUE }
+  if (!isRecord(raw)) return refuse('`queue` must be an object')
+  const keys = ['maxConcurrency', 'sessionTokenLimit', 'dailyTokenLimit', 'maxJobDurationMs', 'retentionMs', 'permissionMode']
+  for (const key of Object.keys(raw)) {
+    if (!isNote(key) && !keys.includes(key)) refuse(`queue has unknown key ${JSON.stringify(key)}`)
+  }
+  const positive = (key: string, nullable: boolean): number | null | undefined => {
+    const v = raw[key]
+    if (v === undefined) return undefined
+    if (v === null && nullable) return null
+    if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) return refuse(`queue.${key} must be a positive integer${nullable ? ' or null' : ''}`)
+    return v
+  }
+  const queue = { ...DEFAULT_QUEUE }
+  queue.maxConcurrency = positive('maxConcurrency', false) ?? queue.maxConcurrency
+  const session = positive('sessionTokenLimit', true)
+  if (session !== undefined) queue.sessionTokenLimit = session
+  const daily = positive('dailyTokenLimit', true)
+  if (daily !== undefined) queue.dailyTokenLimit = daily
+  queue.maxJobDurationMs = positive('maxJobDurationMs', false) ?? queue.maxJobDurationMs
+  queue.retentionMs = positive('retentionMs', false) ?? queue.retentionMs
+  const mode = raw['permissionMode']
+  if (mode !== undefined) {
+    if (!UNATTENDED_PERMISSION_MODES.includes(mode as UnattendedPermissionMode)) {
+      return refuse(`queue.permissionMode must be "auto" or "dontAsk" (got ${JSON.stringify(mode)})`)
+    }
+    queue.permissionMode = mode as UnattendedPermissionMode
+  }
+  return queue
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -171,6 +242,7 @@ export function parseWorkerdeckConfig(
     cwdRoots,
     stateDir,
     claudeTokens,
+    queue: parseQueue(raw['queue']),
   }
 }
 

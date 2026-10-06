@@ -222,12 +222,13 @@ Sections receive the remaining path as `render(params: string[])`. Examples:
 - `/initiatives#settings/initiative-kinds`
 - `/initiatives#settings/users/new` or `#settings/users/<id>`
 - `#settings/automation/triggers`, `#settings/automation/actions`, `#settings/automation/runs/<id>`
-- `#settings/alerts/rules` and `#settings/alerts/feed`
+- `#settings/alerts` (the alert history)
 
 Section and sub-page navigation participates in browser history. Closing clears the hash with a
 replace navigation; the page behind the dialog stays mounted. Legacy `/settings/<section>`,
 `/automation/...`, and `/alerts` URLs redirect to the corresponding dialog over Dashboard.
-Old `schedules` and `rules` Settings identifiers remain valid aliases.
+Old `schedules` and `rules` Settings identifiers remain valid aliases (`rules`, and `alerts/rules`,
+open Automation > Triggers, where the alert rules live as deliver triggers).
 
 Settings wraps its content in the UI library's `InlineDialogScope`. Editors use `InlineDialog`,
 `InlineDialogContent`, `InlineDialogTitle`, and `InlineDialogDescription`: they replace the pane

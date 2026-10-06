@@ -49,6 +49,7 @@ export * from './components/SearchInput.tsx'
 export * from './components/SegmentedControl.tsx'
 export * from './components/Select.tsx'
 export * from './components/SplitPane.tsx'
+export * from './components/TabNav.tsx'
 export * from './components/TokenPicker.tsx'
 export * from './components/UrlInput.tsx'
 

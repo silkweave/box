@@ -3,7 +3,8 @@ export function parseSettingsHash(hash: string) {
   if (raw !== 'settings' && !raw.startsWith('settings/')) return undefined
   const [, section = 'profile', ...params] = raw.split('/')
   if (section === 'schedules') return { section: 'automation', params: ['schedules', ...params] }
-  if (section === 'rules') return { section: 'alerts', params: ['rules', ...params] }
+  // The alert rules are deliver triggers now.
+  if (section === 'rules') return { section: 'automation', params: ['triggers'] }
   return { section: section || 'profile', params }
 }
 
