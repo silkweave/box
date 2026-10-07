@@ -29,9 +29,9 @@
         "@nestjs/swagger": "^12.0.1",
         "@openai/codex": "~0.158.0",
         "@silkweave/box-core": "workspace:*",
-        "@silkweave/nestjs": "^5.2.1",
-        "@silkweave/trpc": "^5.2.1",
-        "@silkweave/typegen": "^5.2.1",
+        "@silkweave/nestjs": "^5.2.2",
+        "@silkweave/trpc": "^5.2.2",
+        "@silkweave/typegen": "^5.2.2",
         "@trpc/server": "^11.19.0",
         "@workerdeck/core": "^3.4.0",
         "@workerdeck/protocol": "^3.4.0",
@@ -92,8 +92,8 @@
       "version": "0.1.0",
       "dependencies": {
         "@clack/prompts": "^1.8.1",
-        "@silkweave/core": "^5.2.1",
-        "@silkweave/mcp": "^5.2.1",
+        "@silkweave/core": "^5.2.2",
+        "@silkweave/mcp": "^5.2.2",
         "commander": "^15.0.0",
       },
       "devDependencies": {
@@ -644,7 +644,7 @@
 
     "@shikijs/vscode-textmate": ["@shikijs/vscode-textmate@10.0.2", "", {}, "sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg=="],
 
-    "@silkweave/auth": ["@silkweave/auth@5.2.1", "", { "dependencies": { "@silkweave/core": "5.2.1", "jose": "^6.2.8" } }, "sha512-wA3igqKjumtZWqhMGD9nfoDa8i2Y8BtxIAn6mSKDNfrQeVlkaXfECM7/3sbV65haLZ6LX5REv0hDXdYK4Z0w7A=="],
+    "@silkweave/auth": ["@silkweave/auth@5.2.2", "", { "dependencies": { "@silkweave/core": "5.2.2", "jose": "^6.2.8" } }, "sha512-AGhUi0iHbW+7V9fa3sRELzPPQK8e+rGW6ytH3APKj44RaUnVxjUW17ev4VL4lkkAqllX9ohVcVqa2YeXSGXv+A=="],
 
     "@silkweave/box-cli": ["@silkweave/box-cli@workspace:packages/cli"],
 
@@ -658,15 +658,15 @@
 
     "@silkweave/box-web": ["@silkweave/box-web@workspace:apps/web"],
 
-    "@silkweave/core": ["@silkweave/core@5.2.1", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-puvt/fV8GENIAAUAQquoi8JuKiHoX5mezYa/mFHgo8pO7qMC7hgDMBuJMgpG6e03gd4biXO8iV/sl2jAusnnvA=="],
+    "@silkweave/core": ["@silkweave/core@5.2.2", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-SdopzuavwTljR3+u3kd91rD4D+aVIUdj4RAeHFxY99kanuVE9iSG2YEAKlC021NBwNSGqR+3zrpbLngl/wI6Pg=="],
 
-    "@silkweave/mcp": ["@silkweave/mcp@5.2.1", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.30.0", "@silkweave/auth": "5.2.1", "@silkweave/core": "5.2.1", "change-case": "^5.4.4", "zod": "^3.25.0 || ^4.0.0" }, "peerDependencies": { "@silkweave/skills": "^5.2.1", "commander": "^13.1.0 || ^14.0.0 || ^15.0.0", "cors": "^2.8.5", "express": "^5.0.0" }, "optionalPeers": ["@silkweave/skills", "commander", "cors", "express"] }, "sha512-vun88jUmoaSgdAFkYtc/POZ/CvBdF5zd3ubgCtDuc8KVoMMgcyWcr8aM+nmRe23eZsqxnoczZR8j3iwHf8+v8w=="],
+    "@silkweave/mcp": ["@silkweave/mcp@5.2.2", "", { "dependencies": { "@modelcontextprotocol/sdk": "^1.30.0", "@silkweave/auth": "5.2.2", "@silkweave/core": "5.2.2", "change-case": "^5.4.4", "zod": "^3.25.0 || ^4.0.0" }, "peerDependencies": { "@silkweave/skills": "^5.2.2", "commander": "^13.1.0 || ^14.0.0 || ^15.0.0", "cors": "^2.8.5", "express": "^5.0.0" }, "optionalPeers": ["@silkweave/skills", "commander", "cors", "express"] }, "sha512-pYL7Eh8aITMjSuOrP2BqlLM5lvU1msrBQjlIM+g6aIxUTdTtZzQjSAVHk2JV6XMrvtHEGt1l1DNLubLIZsCXDQ=="],
 
-    "@silkweave/nestjs": ["@silkweave/nestjs@5.2.1", "", { "dependencies": { "@silkweave/core": "5.2.1", "change-case": "^5.4.4", "cors": "^2.8.6", "express": "^5.2.1", "zod": "^3.25.0 || ^4.0.0" }, "peerDependencies": { "@nestjs/common": "^10.0.0 || ^11.0.0", "@nestjs/core": "^10.0.0 || ^11.0.0", "@nestjs/swagger": "^7.0.0 || ^8.0.0 || ^11.0.0", "@silkweave/mcp": "^5.2.1", "@silkweave/trpc": "^5.2.1", "@silkweave/typegen": "^5.2.1", "@trpc/server": "^11.7.1", "class-validator": "^0.14.0 || ^0.15.0", "rxjs": "^7.0.0" }, "optionalPeers": ["@nestjs/swagger", "@silkweave/mcp", "@silkweave/trpc", "@silkweave/typegen", "@trpc/server", "class-validator"] }, "sha512-ec/2NaB2GEMQ+8FxdZ+QWtqQBXnPmLBNEvb3dJvjvE11KTHbQKFHuv6U2BXdUZxDo4XEkj1GQi+8ZVzHfY9Wdw=="],
+    "@silkweave/nestjs": ["@silkweave/nestjs@5.2.2", "", { "dependencies": { "@silkweave/core": "5.2.2", "change-case": "^5.4.4", "cors": "^2.8.6", "express": "^5.2.1", "zod": "^3.25.0 || ^4.0.0" }, "peerDependencies": { "@nestjs/common": "^10.0.0 || ^11.0.0", "@nestjs/core": "^10.0.0 || ^11.0.0", "@nestjs/swagger": "^7.0.0 || ^8.0.0 || ^11.0.0", "@silkweave/mcp": "^5.2.2", "@silkweave/trpc": "^5.2.2", "@silkweave/typegen": "^5.2.2", "@trpc/server": "^11.7.1", "class-validator": "^0.14.0 || ^0.15.0", "rxjs": "^7.0.0" }, "optionalPeers": ["@nestjs/swagger", "@silkweave/mcp", "@silkweave/trpc", "@silkweave/typegen", "@trpc/server", "class-validator"] }, "sha512-l9IaKXkbKGZ92kcWbF1oMUJoXGobK2GYsiIXwS3gjB2zdIhUqFgj8+QaI4ZowVvU74Bt3mMc6qQ2pvSLASAuYA=="],
 
-    "@silkweave/trpc": ["@silkweave/trpc@5.2.1", "", { "dependencies": { "@silkweave/auth": "5.2.1", "@silkweave/core": "5.2.1", "@trpc/server": "^11.18.0", "change-case": "^5.4.4", "cors": "^2.8.6", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-PtL04tumKP8+Q59XdnTFaA2PbV34TgrDKZ4G6xkEy3wlGs98GRzxUP6m91kqG6042+jHDe0dAnX1ml79CyU6Vw=="],
+    "@silkweave/trpc": ["@silkweave/trpc@5.2.2", "", { "dependencies": { "@silkweave/auth": "5.2.2", "@silkweave/core": "5.2.2", "@trpc/server": "^11.18.0", "change-case": "^5.4.4", "cors": "^2.8.6", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-QNRLxTU/9G0O2uDBNiLsYaMTW2Fhb35wPm4PEutcW/17MBDYZwZurGXXf74mYF2mo0uXCV0Zr9pfz5rxuRkrmA=="],
 
-    "@silkweave/typegen": ["@silkweave/typegen@5.2.1", "", { "dependencies": { "@silkweave/core": "5.2.1", "change-case": "^5.4.4", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-sv3xPAuEYgBtW9XbPT3UWcMrtEAXczJe8YWWf5U6dJT49Y+eOPLq29/YNOZgNlkcmGP9v6wzgmK7yDDMIbHtYw=="],
+    "@silkweave/typegen": ["@silkweave/typegen@5.2.2", "", { "dependencies": { "@silkweave/core": "5.2.2", "change-case": "^5.4.4", "zod": "^3.25.0 || ^4.0.0" } }, "sha512-vGJ3Cpn0yN3AsMEcLuk2O5SNPMq7hfMKIH0PPdnFIKBAlat782hcVjb6EYARH71XR3FUfDjsR86tqV2l9kK3/w=="],
 
     "@sindresorhus/is": ["@sindresorhus/is@7.2.0", "", {}, "sha512-P1Cz1dWaFfR4IR+U13mqqiGsLFf1KbayybWwdd2vfctdV6hDpUkgCY0nKOLLTMSoRd/jJNjtbqzf13K8DCCXQw=="],
 

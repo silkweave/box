@@ -84,3 +84,15 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **`docs/AUTOMATION.md` is gone (2026-09-13).** It described `packages/core/src/automation/` and
   `apps/server/src/automation/`, paths the feature split replaced, and the durable half of it now
   lives in this recipe's `SPEC.md` (`recipes/automation/SPEC.md`). The two comments in this feature that cited it point there.
+- **One Box per relay Worker.** The Worker keeps one connection; a second client closes the first
+  with code 4000, and the displaced Box waits five minutes before trying again. A dev checkout or a
+  restored copy of a production Box keeps `background.relay` false.
+- **Rotating `HOOK_KEY` changes every hook URL.** Every sender has to be updated; rotate the client
+  token instead when only the Box's credential leaked.
+- **The relay never validates payloads.** It stores raw bytes and headers (minus `authorization`,
+  cookies and transport headers). A sender's signature is checked on the Box by its provider, so a
+  provider that signs must see the exact bytes: never re-encode a body before `verify`.
+- **Delivery is at least once.** A crash between recording and the ack replays the envelope; the
+  ledger row (keyed by envelope id) acks the replay without work, and the events table dedups by
+  `dedup_key`. A provider takes the dedup key from the sender's own event or delivery id, never the
+  envelope id, so a sender's retry is not a second event.

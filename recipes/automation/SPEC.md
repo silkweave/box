@@ -219,6 +219,46 @@ like any agent session.
 The registry, the run history and Run Now are core's `opsActions` / `opsRuns` / `opsRun` (`run-get`)
 / `opsRunNow` (`run-now`, which takes `trigger_id` to link a manual run to a trigger).
 
+`WebhooksController` (same module, `@Controller('automation')`, admin-only because hook URLs carry
+the hook key; the relay powerup below):
+
+| tRPC | MCP | what |
+|---|---|---|
+| `webhooksStatus` (query) | `webhooks-status` | `armed` (`background.relay`), `url`, config `problems`, the client's `relay` state (`off`, `unconfigured`, `connecting`, `connected`, `waiting`, with `detail`, `connectedSince`, the Worker's queue at the last hello), `sources` (provider, `hasSecret`, `hookUrl`, `problem`), registered `providers`, and the newest 100 `deliveries` |
+| `webhooksDelivery` (mutation) | `webhook-delivery` | one ledger row with its stored envelope |
+| `webhooksTest` (mutation) | `webhook-test` | post a `custom` event (`kind`, default `test`) to a custom source's hook URL through the real Worker, signed when the source has a secret |
+| `webhooksReconnect` (mutation) | `relay-reconnect` | reread the config and reconnect |
+
+## Webhooks (relay powerup)
+
+`recipes/automation/powerups/relay/`. A Cloudflare Worker (`features/automation/cloudflare/`, one
+per Box) takes webhooks at `/hook/<source>/<hook key>`, stores them raw, and pushes them down a
+WebSocket the Box dials out to; the Box acks each one after it has its ledger row, and the Worker
+replays anything unacked on connect (7 days, 10,000 envelopes). The wire types are
+`core/relay-protocol.ts`, shared by the Worker and the Box.
+
+- **Client** (`server/automation/relay-client.service.ts`): armed by `background.relay` (false in
+  maintenance), connects when `features.automation.relay` has a `url` and `clientToken`; text `ping`
+  every 30 s (answered by the Worker runtime), reconnect with backoff 1-60 s, and a five-minute wait
+  after another client took the Worker over (close 4000). Envelopes are processed one at a time.
+- **Processing** (`core/webhooks.ts` `processEnvelope`): source from
+  `features.automation.relay.sources` -> provider -> `verify` (the sender's signature) -> `parse` (the
+  sender's schema, to `EventInput[]`) -> `recordEvent` each, `source: push:<source>` -> one row in
+  `webhook_deliveries` (`recorded`, `duplicate` when every dedup key was known, `rejected` with the
+  reason, `failed` when the warehouse refused; `failed` is not acked, so the Worker replays it). A
+  replay of a settled envelope is acked without work. Rows and their envelopes are kept 30 days.
+- **Providers** (`registerWebhookProvider`, the dependent registers into automation like the deliver
+  runner): `custom` is built in. Its body is strict JSON `{kind, fields?, dedup_key?, actor?,
+  subject?, url?, event_at?}` (fields are scalars, stringified) recorded as `<source>.<kind>`; without
+  `dedup_key` every delivery is new; with a source secret it requires `X-Box-Signature:
+  sha256=<hex>` over the raw body.
+- Webhook events are ordinary events: an event trigger on `<source>.<kind>` with filters handles
+  them. `when_kind: webhook` stays reserved and refused.
+
+Table `webhook_deliveries` (no migration; the baseline creates it): `id` (envelope id, pk),
+`source`, `provider`, `received_at`, `processed_at`, `status`, `reason`, `kinds` (json),
+`event_count`, `attempts`, `envelope` (json).
+
 ## Actions
 
 **None.** The feature schedules what other features (and core's `warehouse-backup`) contribute.
@@ -234,7 +274,9 @@ least 1, `max_depth` 0-5. A gate needs an agent trigger, a prompt and a one-line
 
 - **Settings**: `Automation`, icon `CalendarClock`, order 800. Sub-pages
   `#settings/automation/triggers` (the default; the old `schedules` id opens it),
-  `#settings/automation/runs` (`/runs/<runId>` for detail) and `#settings/automation/actions`.
+  `#settings/automation/runs` (`/runs/<runId>` for detail), `#settings/automation/actions` and
+  `#settings/automation/webhooks` (relay state, sources with a copyable hook URL, the delivery ledger
+  with each envelope, Send test, Reconnect; admins).
 - **Triggers**: one card per trigger (When, Do, next fire, owner, problem). A delivery's Do reads
   "deliver to <route>" (or "count in the daily digest for") with the start of its message, and its
   When shows the cooldown and debounce instead of a daily cap. An event trigger's When
@@ -276,6 +318,11 @@ same credentials; armed timers would fire real pulls, backups and publishes besi
 | `maxJobDurationMs` | 3600000 | wall-clock watchdog per run |
 | `retentionMs` | 604800000 | how long finished jobs stay in the queue (run rows are kept regardless) |
 | `permissionMode` | `auto` | the unattended mode, `auto` or `dontAsk`. `auto`: the engine's classifier decides each tool call; denials are reported (above). `dontAsk` (Claude only; a Codex agent trigger is refused on write under it): runs what the run_as profile's settings allow and denies the rest. Any other value fails the boot of the agent surface |
+
+`features.automation.relay` (the relay powerup): `url` (the Worker origin) and `sources`
+(`{"<source>": {"provider": "custom"}}`) in `box.json`; `clientToken`, `hookKey` and a source's
+`secret` in `box.local.json`. `background.relay` arms the client; keep it false everywhere except the
+one Box that owns the Worker.
 
 ## Admin-only
 

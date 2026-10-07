@@ -9,8 +9,8 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
-    "@silkweave/core": "^5.2.1",
-    "@silkweave/mcp": "^5.2.1",
+    "@silkweave/core": "^5.2.2",
+    "@silkweave/mcp": "^5.2.2",
     "commander": "^15.0.0"
   },
   "devDependencies": {

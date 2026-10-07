@@ -29,6 +29,11 @@ development server also accepts requests for its host, and the mobile app script
 when no `--server` is given; see [MOBILE.md](MOBILE.md). Brand changes require a frontend rebuild.
 Keep automation and agent hosts disabled in runtime tests.
 
+`background` arms work that runs without a request: `automation` (time and event triggers),
+`chatAgent` (agent replies in chat) and `relay` (the automation recipe's webhook relay connection,
+see `recipes/automation/powerups/relay/`). All default to false and are forced off in maintenance.
+Arm `relay` on exactly one Box per relay Worker: a second connection takes the Worker over.
+
 Core sections include `agent`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
 `stack`, `recipes`, `accounts`, `credentials`, `agentProfiles`, `workerdeck` and `workerdeckTokens`. Feature
 settings live under `features.<id>`, keyed by the feature id, and are described in the

@@ -53,3 +53,7 @@ box.local.json
 
 # Cloudflare wrangler local state and build output (artifacts public-sharing powerup)
 .wrangler/
+
+# Wrangler local secrets (box-relay and any other Worker)
+.dev.vars
+.dev.vars.*

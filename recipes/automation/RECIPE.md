@@ -10,5 +10,6 @@ Triggers that run the Box's work without anyone pressing Run: when a time comes 
 - Deliveries: with the Alerts recipe, an event trigger posts a rendered message to a person or chat room (the alert rules)
 - A Triggers editor in Settings with human-readable cron descriptions; edits apply at once
 - Admin-owned triggers: every trigger records the admin it belongs to, and an agent trigger names who it runs as
+- Webhooks (Webhook relay powerup): a Cloudflare Worker per Box takes webhooks and the Box collects them over a connection it dials out to, so it never has to be reachable; each delivery is validated per sender and recorded as an event for triggers
 - Run history and action pages in Settings
 - An in-process scheduler with skip and orphan bookkeeping for missed or interrupted runs
