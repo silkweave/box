@@ -48,8 +48,10 @@ export interface WorkerdeckProfile {
   /** Shown in the profile picker. */
   description?: string
   /**
-   * A `KEY=value` file of MCP bearer tokens merged into THIS profile's session env (codex only).
-   * Read at session-create time and never loaded into the server's own environment.
+   * A `KEY=value` file of MCP bearer tokens merged into THIS profile's session env, any engine.
+   * Read at session-create time and never loaded into the server's own environment. Codex names a
+   * variable with `bearer_token_env_var`; Claude Code expands `${VAR}` in an MCP server's headers
+   * (`.claude.json`), so neither profile config needs a copied token.
    */
   mcpTokensPath?: string
 }

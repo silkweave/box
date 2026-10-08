@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
-import { IsOptional, IsString } from 'class-validator'
+import { IsInt, IsOptional, IsString, Min } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { z } from 'zod/v4'
 import { RUN_TRIGGERS, listAutomationActions, readRun, readRuns, startDetachedRun, type IngestProgress } from '@silkweave/box-core'
@@ -54,6 +54,7 @@ const runOutput = z.object({
     channel: z.string(),
     phase: z.string(),
     message: z.string(),
+    seq: z.number().optional(),
   })),
 })
 
@@ -84,8 +85,12 @@ class ActionsDto {
   @ApiProperty({ type: [AutomationActionDto] }) actions!: AutomationActionDto[]
 }
 
-class IdDto {
+class RunGetDto {
   @ApiProperty() @IsString() id!: string
+  @ApiProperty({ required: false, description: 'Only log lines with a greater seq (poll a running run with the last seq you saw)' })
+  @IsOptional() @IsInt() @Min(-1) after?: number
+  @ApiProperty({ required: false, description: 'Only the last n log lines' })
+  @IsOptional() @IsInt() @Min(0) tail?: number
 }
 
 class RunDto {
@@ -109,6 +114,7 @@ class RunLogLineDto {
   @ApiProperty() channel!: string
   @ApiProperty() phase!: string
   @ApiProperty() message!: string
+  @ApiProperty({ required: false, description: 'Per-run line sequence, for `after`' }) seq?: number
 }
 class RunWithLogDto extends RunDto {
   @ApiProperty({ type: [RunLogLineDto] }) log!: RunLogLineDto[]
@@ -157,15 +163,16 @@ export class OpsController {
   }
 
   /**
-   * tRPC mutation `opsRun` / MCP `run-get` - one run including its full log. Modeled as a
-   * mutation because it carries an input (repo convention for input-carrying reads).
+   * tRPC mutation `opsRun` / MCP `run-get` - one run including its log. A queued or running run
+   * returns its log so far; poll it with `after` (the last seq seen) for only the new lines.
+   * Modeled as a mutation because it carries an input (repo convention for input-carrying reads).
    */
   @Post('run')
   @ApiOkResponse({ type: RunWithLogDto })
   @Trpc({ kind: 'mutation', output: runOutput })
   @Mcp({ name: 'run-get' })
-  async run(@Body() body: IdDto): Promise<RunWithLogDto> {
-    const run = await readRun(body.id)
+  async run(@Body() body: RunGetDto): Promise<RunWithLogDto> {
+    const run = await readRun(body.id, { after: body.after, tail: body.tail })
     if (!run) throw new Error(`no run "${body.id}"`)
     return run as RunWithLogDto
   }

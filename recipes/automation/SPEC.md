@@ -84,8 +84,15 @@ Three of core's run semantics make a trigger safe to point at any action (`packa
   triggers firing in the same minute serialize.
 - **A time fire whose action is already queued or running records a `skipped` row** rather than
   queueing (`isActionBusy()` -> `insertSkippedRun()`). Manual runs always queue.
-- **A run's log is written once at finalization** (the last 2000 lines), so a triggered run's log is
-  readable only after it finishes. Nothing prunes `automation_runs`.
+- **A run's log is live** (core `ops/run-log.ts`, the last 2000 lines). While a run is queued or
+  running, `run-get` / `opsRun` return its log so far from memory; each line carries a per-run `seq`,
+  and `run-get` takes `after` (the last seq seen, for polling) and `tail` (the last n lines). The
+  lines are flushed to the row at most every 5 seconds while it runs and written in full at
+  finalization. Run detail refreshes an active run every 2 seconds. Nothing prunes
+  `automation_runs`.
+- **Every signed-in principal can read every run and its log**, whoever owns the trigger or runs it
+  (team trust, owner decision 2026-10-09). A trigger owner watches a run that runs as someone else
+  in Run detail; only the run_as user's Work panel shows the session itself.
 
 A timed run is attributed to the system principal (`triggered_by`) and to its trigger (`trigger_id`).
 
@@ -218,7 +225,8 @@ a bypass trigger and shows the mode of every agent trigger.
 
 A time fire while the trigger's previous run is still in flight records a `skipped` row. The queue is
 in-memory: a restart loses queued and running jobs, and the boot sweep (`markOrphanedRuns`) marks
-their rows `orphaned by server restart`. `service-restart` refuses while a job session is mid-turn,
+their rows `orphaned by server restart`, keeping the log flushed until then and closing it with a
+line saying where it stops. `service-restart` refuses while a job session is mid-turn,
 like any agent session.
 
 ## Procedures and tools

@@ -198,8 +198,11 @@ is untrusted; Reply-To and the envelope sender are never considered.
 People can act on untrusted agent mail in Mail:
 
 - **Trust sender** (tRPC `emailTrustSender`): adds the bare From address (never the domain) as a
-  `trusted_sender` rule. Existing rows are unchanged and nothing is woken; future mail from it is
-  trusted with DMARC pass.
+  `trusted_sender` rule; future mail from it is trusted with DMARC pass. The message it was made
+  from is also released to the agent (as **Release to agent** below, `released_by` the person)
+  when its own DMARC passed, since that is what a trusted arrival would have been. A failing or
+  missing DMARC leaves it stored, and releasing it stays an explicit decision. Other existing rows
+  are unchanged. Mail confirms which of the two happened.
 - **Release to agent** (tRPC `emailRelease`): records `email.received` with `trusted` `true`,
   `released` `true`, `released_by` and the real `dmarc`; dedup `<id>:release:<ms>`; stamps
   `released_by`/`released_at`. The UI asks for confirmation, with a forgery warning when DMARC did

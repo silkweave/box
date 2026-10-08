@@ -89,7 +89,7 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   older one refuses the submit and the run ends `error` with `job refused`. Nobody can type into a
   job session while it is in bypass.
 - **A restart loses agent jobs.** The job queue is in-memory; the boot sweep marks their runs
-  `orphaned by server restart`. `service-restart` refuses while a job session is mid-turn.
+  `orphaned by server restart`. Their log survives up to the last flush (at most 5 seconds old). `service-restart` refuses while a job session is mid-turn.
 - **`run_as` is checked at fire time too.** A user demoted from admin since the trigger was saved
   makes the run fail to start (manual Run now answers 400; a timed fire logs it).
 - **Timed runs are attributed to the system principal** (`systemUserId()`) and to their trigger

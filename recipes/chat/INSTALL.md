@@ -38,9 +38,35 @@ ledgers before replaying an operation.
    backup in isolation, confirm completion and boot compatibility, then continue with unrelated
    changes. Never edit or rename an applied migration.
 
+## The agent's Box MCP server
+
+The chat agent reaches the Box through its own MCP surface, as the agent principal.
+
+- **Claude profile:** nothing to configure. The session carries the `box` server, its auto-approval
+  and the floor (SPEC.md "The agent's Box MCP server"). Leave any other MCP servers the agent should
+  have (a wiki, WhatsApp reads) in the profile's own `.claude.json`, and their allow rules in its
+  `settings.json`. A `box` entry there is replaced for chat sessions; drop it rather than keep a
+  second copy of the agent's token.
+- **Codex profile:** Codex takes no per-session MCP servers, so the profile's `config.toml` declares
+  it, with the same floor as `CHAT_AGENT_BOX_MCP_FLOOR`:
+  ```toml
+  [mcp_servers.box]
+  url = "http://127.0.0.1:<server.port>/mcp"
+  bearer_token_env_var = "BOX_MCP_TOKEN"
+  # Unattended: without this every Box call asks a question nobody can answer and the turn stalls.
+  default_tools_approval_mode = "approve"
+  disabled_tools = ["ServiceRestart", "UserDelete", "UserSetRole", "UserAccessRevoke"]
+  ```
+  The token comes from the profile's `mcpTokensPath` env file (`BOX_MCP_TOKEN=<token>`, mode 0600)
+  in the `workerdeck` section of `box.json`. The owner writes it with the agent's token from
+  `box auth token <agent id> --quiet`; never print it into a transcript. `mcpTokensPath` applies to
+  Claude profiles too: their `.claude.json` headers may use `${VAR}` instead of a copied token.
+
 ## Validation
 
 Run the target Box's normal build, typecheck, tests, lint, and schema:check commands, then boot a
-disposable instance and exercise this feature's documented surface. Record actual commands and
+disposable instance and exercise this feature's documented surface. With the agent armed, mention
+it with a question only a Box tool answers (for example "which triggers are enabled?"): the answer
+should come from an `mcp__box__*` call, with no approval card and no shell command. Record actual commands and
 results. Do not describe a migration, latest-dependency check, or consumer rehearsal as complete
 until it has actually run.

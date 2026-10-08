@@ -56,7 +56,7 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
       const env = { ...process.env }
       for (const name of Object.keys(env)) if (name.startsWith('CLAUDE_TOKEN_') || ['WORKERDECK_AUTH_KEY', 'AGENT_PROXY_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'].includes(name)) delete env[name]
       const profile = deployment?.profiles.find(p => p.name === req.profile)
-      if (profile?.engine === 'codex' && profile.mcpTokensPath) {
+      if (profile?.mcpTokensPath) {
         for (const line of readFileSync(profile.mcpTokensPath, 'utf8').split('\n')) {
           const match = /^([A-Za-z_][A-Za-z_0-9]*)=(.*)$/.exec(line.trim())
           if (match) env[match[1]] = match[2]

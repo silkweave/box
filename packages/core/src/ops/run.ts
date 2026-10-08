@@ -1,7 +1,7 @@
 // The ops funnel - EVERY run of an action (cron fire, dashboard Run Now, MCP/agent, CLI) goes
 // through executeRecorded(), which wraps the action's generator with an automation_runs row:
-// queued → running → success/error, buffering the progress stream as the run's log (written once
-// at finalization - one warehouse write per run, not per line).
+// queued → running → success/error, with the progress stream as the run's live log (run-log.ts:
+// readable while it runs, flushed every few seconds, written in full at finalization).
 //
 // Core knows nothing about what should happen AFTER a run: features subscribe with
 // onRunOutcome() (alerts re-evaluates signal rules on success and records a `run.error` event on
@@ -12,10 +12,9 @@
 // isActionBusy() first and record a 'skipped' row via insertSkippedRun().
 
 import { resolveRunner } from './registry.js'
+import { appendRunLog, closeRunLog } from './run-log.js'
 import { finalizeRun, insertRun, markRunning, newRunId } from './runs.js'
 import type { IngestProgress, RunLogLine, RunTrigger } from './types.js'
-
-const LOG_CAP = 2000 // keep the last N lines per run (backfills can stream thousands)
 
 interface ActiveRun {
   runId: string
@@ -122,10 +121,12 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
   active.set(runId, entry)
 
   const { turn, release } = acquireSlot()
-  const log: RunLogLine[] = []
   const push = (chunk: IngestProgress): void => {
-    log.push({ ts: new Date().toISOString(), channel: chunk.channel, phase: chunk.phase, message: chunk.message })
-    if (log.length > LOG_CAP) log.splice(0, log.length - LOG_CAP)
+    appendRunLog(runId, { channel: chunk.channel, phase: chunk.phase, message: chunk.message })
+  }
+  const finalize = async (outcome: { status: 'success' | 'error'; summary?: string; error?: string }): Promise<void> => {
+    const log: RunLogLine[] = await closeRunLog(runId)
+    await finalizeRun(runId, { ...outcome, log })
   }
   let finalized = false
 
@@ -150,13 +151,13 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
       if (chunk.result?.summary) summary = chunk.result.summary
       yield chunk
     }
-    await finalizeRun(runId, { status: 'success', summary, log })
+    await finalize({ status: 'success', summary })
     finalized = true
     await notifyRunOutcome({ runId, actionId, status: 'success', trigger: meta.trigger, triggerId: meta.triggerId ?? null, summary })
   } catch (err) {
     const message = String((err as Error)?.message ?? err)
     push({ channel: actionId, phase: 'done', message: `error: ${message}` })
-    await finalizeRun(runId, { status: 'error', error: message, log })
+    await finalize({ status: 'error', error: message })
     finalized = true
     await notifyRunOutcome({ runId, actionId, status: 'error', trigger: meta.trigger, triggerId: meta.triggerId ?? null, error: message })
     throw err
@@ -166,7 +167,7 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
     // orphan sweep. (Dashboard/MCP runs no longer hit this - startDetachedRun() is the only
     // executeRecorded consumer there and it always drains to completion.)
     if (!finalized) {
-      await finalizeRun(runId, { status: 'error', error: 'stream disconnected before the run finished', log })
+      await finalize({ status: 'error', error: 'stream disconnected before the run finished' })
     }
     active.delete(runId)
     release()

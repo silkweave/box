@@ -117,8 +117,8 @@ dev" does not also arm every production schedule.
 agent already owns; any message in a DM with nova. In a named room the answer goes in a thread rooted
 on the question (a long turn must not interleave through a room people are using); in a DM it goes at
 top level. `parseAgentDirective` recognises exactly one non-turn directive - `stop` or `cancel`, with
-an optional trailing `.`/`!` - and it never counts against the budget. Budget: `AGENT_TURN_BUDGET = 12`
-turns per room per `AGENT_BUDGET_WINDOW_MS` (1h). A turn is seeded with `AGENT_SEED_HISTORY = 10`
+an optional trailing `.`/`!` - and it never counts against the budget. Budget: `AGENT_TURN_BUDGET = 25`
+(or `features.chat.agentTurnsPerHour`) turns per room per `AGENT_BUDGET_WINDOW_MS` (1h). A turn is seeded with `AGENT_SEED_HISTORY = 10`
 recent messages plus whatever is new since the session last looked; `chat-history` over MCP is how it
 reaches further back.
 
@@ -126,11 +126,21 @@ reaches further back.
 `agentWorkerUrl()` with `hostAuth`, under the agent's default profile (`users.agent_profile`, set on
 its user detail; unset means Claude first among its `agentProfiles`), resolved as
 `agentProfileFor(agent, preferredAgentEngine(agent))` (no profile = the turn throws). A room's live
-session is retired between turns when that default changes. Per engine (`CHAT_AGENT_TUNING`): Codex
-`gpt-5.6-luna`, Claude `sonnet`, reasoning effort `medium`, each probed against the profile's
-catalogue first and **omitted if the profile does not declare it** rather than failing. Sessions close after
+session is retired between turns when that default changes. Per engine
+(`CHAT_AGENT_TUNING_DEFAULTS` in `core/agent-tuning.ts`, overridable in `features.chat.agentModels`):
+Codex `gpt-5.6-luna`, Claude `sonnet`, reasoning effort `medium`, each probed against the profile's
+catalogue first and **omitted if the profile does not declare it** rather than failing (logged). Sessions close after
 `SESSION_IDLE_TTL_MS` (1h idle); a turn that emits nothing for `TURN_SILENCE_LIMIT_MS` (10min) is
 interrupted, with the watchdog standing down while the turn is legitimately blocked on an approval.
+**The agent's Box MCP server.** On an engine that takes per-session MCP servers (Claude; the
+profile's `capabilities.sessionMcpServers`), the session is created with the Box's own MCP server as
+`box` (`http://127.0.0.1:<server.port>/mcp`, Bearer the agent's token: revealed, issued only when the
+agent has none), `allowedTools: ["mcp__box"]` and the floor `CHAT_AGENT_BOX_MCP_FLOOR` (`ServiceRestart`,
+`UserDelete`, `UserSetRole`, `UserAccessRevoke`) as `mcp__box__<Tool>` in `disallowedTools`. A
+`box` entry in the profile's own config is replaced for that session, not run beside it. Codex takes
+no per-session servers: its profile's `config.toml` carries `box`, the auto-approval and the same
+floor (INSTALL.md "The agent's Box MCP server"). Without the server a Claude agent has no Box tools and
+falls back to the shell, which raises an approval card per command.
 Text is assembled by `AgentTurnText` from `stream_delta`s and `assistant_message` blocks and
 checkpointed into the room's placeholder message roughly twice a second.
 
@@ -146,8 +156,10 @@ a dev machine's agent write to production.
   a permission request. A request that settles inside `APPROVAL_HOLD_MS` (3s) never reaches the room;
   past that it becomes a real message anyone who can read the room may approve or deny, capped at
   `APPROVAL_CARDS_PER_TURN` (8) per turn, with the worker's own timeout at `APPROVAL_TIMEOUT_MS`
-  (30min). `CHAT_AGENT_DISALLOWED_TOOLS` is the hard floor and is **empty on purpose** - the seam
-  exists so adding a name later is one line. `AskUserQuestion` is still `deny`: a binary card cannot
+  (30min). `CHAT_AGENT_DISALLOWED_TOOLS` is the hard floor for the engine's own tools and is
+  **empty on purpose** - the seam exists so adding a name later is one line. Box MCP tools are
+  auto-approved instead, above `CHAT_AGENT_BOX_MCP_FLOOR` (system and user-lifecycle tools), which
+  no card can unlock. `AskUserQuestion` is still `deny`: a binary card cannot
   carry an answer form.
 - *Chat-op approvals* (`chat-op-approvals.ts`, core rule + server registry) - a DESTRUCTIVE chat
   operation asked for by an API client. `chatOpNeedsApproval` keys on **how the principal
@@ -158,8 +170,8 @@ a dev machine's agent write to production.
 
 **Safety posture, as the code states it**: MCP authenticates as `nova`, an admin, and reach is full by
 decision - anyone who can mention `@nova` effectively wields nova's whole MCP surface. What bounds it is
-the permission mode, the in-channel approvals, `canReadRoom` on every read, and the disallowed-tools
-floor. Chat bodies are untrusted input to an admin-credentialed loop: bounded, not solved.
+the permission mode, the in-channel approvals, `canReadRoom` on every read, and the two floors
+(engine tools, Box MCP tools). Chat bodies are untrusted input to an admin-credentialed loop: bounded, not solved.
 
 ## Procedures and tools
 
@@ -226,6 +238,8 @@ It is in core's action registry, so `automation` can schedule it and every invoc
 | setting | doc |
 |---|---|
 | `background.chatAgent` (core, `box.json`) | `true` arms the chat agent (nova answers in rooms); `false`, the default, leaves it off |
+| `features.chat.agentModels` (`box.json`) | Per engine `{ "model", "reasoningEffort" }` over the defaults, field by field, e.g. `{"claude": {"model": "haiku"}}`. Engines `claude`, `codex`; values are catalogue names (`sonnet`, `haiku`, `gpt-5.6-luna`). Invalid entries are logged and ignored. Takes effect for new sessions after a server restart |
+| `features.chat.agentTurnsPerHour` (`box.json`) | Agent turns per room per rolling hour, a whole number of at least 1; default 25 (`AGENT_TURN_BUDGET`). Read on every mention, no restart needed |
 
 The feature reads no environment variables. The agent seat additionally depends on the
 `workerdeck` section of `box.json` (which is what makes `agentWorkerUrl()` non-undefined) and on
@@ -248,16 +262,17 @@ Everything else in chat is a member's, rooms included: a room is a conversation,
    created by a person (or by `chat-room-create`) after the Box boots. A team that wants `#general`
    day one creates it.
 2. **The agent's identity** - select it in the `agent` block of the root `box.json` before first boot.
-   Core seeds the matching user; changing the ID later is unsupported. The agent also needs an entry in `agentProfiles` mapping it to a real workerdeck profile, and a
-   token for its MCP client. Its default profile (Settings > Users, the agent's detail) picks the
-   engine; `CHAT_AGENT_TUNING` in `features/chat/server/chat-agent.ts` sets the model and effort per
-   engine, and both degrade rather than fail if the profile does not declare them.
+   Core seeds the matching user; changing the ID later is unsupported. The agent also needs an entry in `agentProfiles` mapping it to a real workerdeck profile.
+   A Claude profile gets the Box MCP server from the session; a Codex profile needs it in its
+   `config.toml` with the agent's token (INSTALL.md). Its default profile (Settings > Users, the agent's detail) picks the
+   engine; `features.chat.agentModels` in `box.json` sets the model and effort per engine (see
+   Settings), and both degrade rather than fail if the profile does not declare them.
 3. **Labels and order** - the nav entry's `label` and `order` in
    `features/chat/web/index.tsx`. Band 500 puts chat mid-sidebar.
 4. **Vocabulary** - `CHAT_ROOM_ICONS` (69 curated lucide names) and `CHAT_REACTION_EMOJI` (12, in UI
    order, first six on the hover bar) in `types.ts` / `reactions.ts`. Both lists exist in the Flutter
    client too; add to one and check the other.
-5. **The agent's bounds** - `CHAT_AGENT_DISALLOWED_TOOLS` (empty by design),
+5. **The agent's bounds** - `CHAT_AGENT_DISALLOWED_TOOLS` (empty by design), `CHAT_AGENT_BOX_MCP_FLOOR`,
    `CHAT_AGENT_PERMISSION_MODE`, `AGENT_TURN_BUDGET`, `SESSION_IDLE_TTL_MS`,
    `TURN_SILENCE_LIMIT_MS`, `APPROVAL_*`. Shape these from watched usage, not from a guess.
 6. **Attachment policy** - `ATTACHMENT_MAX_BYTES` and `ATTACHMENT_ALLOWED_MIME` in

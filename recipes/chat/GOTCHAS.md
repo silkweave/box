@@ -14,6 +14,11 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   configuration loading). It defaults to `false`. And the flag is only half of it:
   `agentWorkerUrl()` must also resolve, which means core's workerdeck host booted, which means the
   `workerdeck` section of `box.json` declares a profile for the agent's own account.
+- **An agent with no Box MCP greps instead.** Observed on a team Box 2026-10-08: the agent's
+  Claude profile had no MCP servers, so it answered Box questions through the shell, one approval
+  card per command. Claude sessions now carry `box` themselves; a Codex profile still needs it in
+  its `config.toml` (INSTALL.md). If the agent's answers start with file searches, check which
+  tools its session lists.
 - **The agent host is core's, the seat is chat's.** `chat-agent.ts` resolves the worker URL registered
   by core's workerdeck host; chat does not own a worker. The per-user agent SIDEBAR is a different
   thing entirely - browser-initiated, per-task, through the `/agent` proxy. The two share nothing

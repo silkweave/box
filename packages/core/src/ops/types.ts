@@ -76,6 +76,8 @@ export interface RunLogLine {
   channel: string
   phase: string
   message: string
+  /** Per-run sequence (0, 1, ...), kept when the cap drops old lines; rows stored before it read as their index. */
+  seq?: number
 }
 
 /** One run, as stored in `automation_runs`. `log` is only loaded by readRun(). */

@@ -400,10 +400,20 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
       delete env.CLAUDE_CODE_OAUTH_TOKEN
       for (const key of Object.keys(env)) if (key.startsWith('CLAUDE_TOKEN_')) delete env[key]
       const profile = typeof req.profile === 'string' ? byName.get(req.profile) : undefined
-      if (profile?.engine === 'codex' && profile.mcpTokensPath) {
+      if (profile?.mcpTokensPath) {
         Object.assign(env, readEnvFile(profile.mcpTokensPath))
       }
-      return { ...req, env } as ReturnType<NonNullable<WorkerServerOptions['buildRunnerConfig']>>
+      // A browser user's Claude session (Work, Builder) loads the checkout's CLAUDE.md / AGENTS.md
+      // and project skills. WorkerDeck refuses `settingSources` NAMED by a non-operator (it loads
+      // hooks and settings from the host), but this hook runs after that vet, so the host adds it
+      // here. Safe to own: cwd is already confined to allowedCwdRoots, which the Box controls.
+      // Operator sessions (the chat agent, jobs) keep whatever they asked for, as before.
+      const createdByOperator = (req as { createdByOperator?: boolean }).createdByOperator === true
+      const settingSources =
+        req.settingSources ?? (profile?.engine === 'claude' && !createdByOperator ? (['user', 'project'] as const) : undefined)
+      return { ...req, env, ...(settingSources ? { settingSources: [...settingSources] } : {}) } as ReturnType<
+        NonNullable<WorkerServerOptions['buildRunnerConfig']>
+      >
     },
   }
 

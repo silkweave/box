@@ -104,6 +104,10 @@ new table, created on boot.
 ## Validation
 
 1. Run `box verify`, then boot a disposable instance and load `/mail` and Settings > Email.
+   The `box email-*` commands below need a CLI token: a fresh Box has none, so ask the owner to set
+   `mcp.token` in `box.local.json` to an admin's token (`box auth token <admin id> --quiet`, never
+   printed into the transcript). The agent session that adapted the recipe does not list the new
+   `email-*` MCP tools until it restarts; use the CLI.
 2. `box email-status`: `accountOk: true`, `keyPresent: true`, `sending.on: true`, no `configProblems`.
 3. Approval: `box email-send` to an address outside `allowedRecipients` answers with `status:
    "pending_approval"` and a `notice`, and sends nothing. In Mail > Awaiting approval, a person at a

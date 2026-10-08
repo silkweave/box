@@ -134,6 +134,9 @@ the validation chain passes, and each powerup once its Verify steps pass. The mo
 
 In a live Builder session, the agent then runs `box app restart` to activate server and
 registration changes without stopping the stable supervisor, and validates the refreshed Preview.
+An agent session lists the Box's MCP tools once, when it starts, so a recipe's new tools (`email-*`,
+say) do not appear in the session that adapted it; use the `box <tool>` CLI there, or a new
+session, to exercise them.
 Record durable local findings in the Box's `docs/GOTCHAS.md`.
 
 Migrations are the carve-out. Preserve existing names and bodies byte-for-byte. Back up before

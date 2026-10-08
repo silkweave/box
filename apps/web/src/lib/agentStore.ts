@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { WorkerDeckClient } from '@workerdeck/client'
-import type { EngineCapabilities, PermissionMode, SessionInfo } from '@workerdeck/protocol'
+import type { PermissionMode, SessionInfo } from '@workerdeck/protocol'
 import { getActiveUserId } from './useActiveUser.ts'
 import { readStored, writeStored } from './usePersistedState.ts'
 import { appKey } from './storage.ts'
@@ -112,38 +112,6 @@ export const agentClient = new WorkerDeckClient({
 })
 
 let configPromise: Promise<AgentConfig> | null = null
-type CapabilityMap = Record<string, EngineCapabilities | undefined>
-let capabilitiesPromise: Promise<CapabilityMap> | null = null
-
-/**
- * profile name → what that profile's engine can actually do, straight from the worker.
- *
- * Needed because the worker **400s on a field the chosen engine forswears** rather than ignoring
- * it: `settingSources` is a Claude concept, and sending it to a codex session fails the create
- * outright with "the codex engine does not load settingSources". Read from the capability record
- * rather than branching on the engine name - that record is the documented seam for exactly this,
- * and it means the next field that diverges (budgets, slashCommands, sessionMcpServers …) does not
- * become another failed start.
- *
- * A failed lookup is not cached: the profiles call and the create go to the same worker, so a
- * transient failure here should be retried on the next start rather than pinned for the session.
- */
-function loadEngineCapabilities(): Promise<CapabilityMap> {
-  const pending =
-    capabilitiesPromise ??
-    agentClient
-      .listProfiles()
-      .then(
-        (res): CapabilityMap =>
-          Object.fromEntries(res.profiles.map((profile) => [profile.name, profile.capabilities])),
-      )
-      .catch((): CapabilityMap => {
-        capabilitiesPromise = null
-        return {}
-      })
-  capabilitiesPromise = pending
-  return pending
-}
 
 /** Fetch (once) the server-owned session policy: enabled flag, cwd, defaults, principal. */
 export function loadAgentConfig(): Promise<AgentConfig> {
@@ -229,10 +197,6 @@ async function createSession(prompt: string | undefined): Promise<void> {
   update({ starting: true, error: null })
   try {
     const uid = agentUserId()
-    // Only the fields THIS engine accepts. Unknown capabilities (the profiles call failed) means
-    // omitting the gated ones: a Claude session that misses `settingSources` loads fewer settings,
-    // which is a degraded start - a create rejected with a 400 is no start at all.
-    const capabilities = (await loadEngineCapabilities())[agentProfileForEngine(config, state.engine) ?? '']
     // No `profile` here on purpose: the /agent proxy resolves it from the authenticated identity
     // and stamps it onto the body (like meta.user) - the browser never names a config dir.
     const session = await agentClient.createSession({
@@ -244,7 +208,9 @@ async function createSession(prompt: string | undefined): Promise<void> {
       // and stamps it. Model stays unset so the worker's own per-profile default applies - which
       // is what puts a codex session on gpt-5.6-luna without the Box hard-coding a model id.
       ...(state.engine ? { engine: state.engine } : {}),
-      ...(capabilities?.settingSources ? { settingSources: ['user', 'project'] as const } : {}),
+      // No `settingSources`: WorkerDeck reserves it to operators (it loads hooks and settings from
+      // the host), and a browser user reaches the worker as a scoped non-operator, so naming it
+      // fails the create with a 403-style refusal.
       questionBehavior: 'ask',
       meta: { app: AGENT_SESSION_APP, ...(uid ? { user: uid } : {}) },
     })
@@ -262,7 +228,6 @@ async function createSession(prompt: string | undefined): Promise<void> {
     // The profile gate answers 403 - the mapping changed under us (config is read per call).
     if (err instanceof Error && err.message === 'agent_profile_unmapped') {
       configPromise = null
-      capabilitiesPromise = null
       await loadAgentConfig()
       update({ starting: false, error: 'No agent profile is mapped to your account.' })
       return
@@ -270,7 +235,6 @@ async function createSession(prompt: string | undefined): Promise<void> {
     // Mapped, but not for the engine that was asked for - usually a pending `codex <you> login`.
     if (err instanceof Error && err.message === 'agent_engine_unmapped') {
       configPromise = null
-      capabilitiesPromise = null
       const config = await loadAgentConfig()
       update({
         starting: false,

@@ -85,7 +85,7 @@ box triggers-list                     # every trigger, valid or not, next fire
 box trigger-upsert                    # create/update one (admin; params as a JSON string)
 box trigger-delete                    # remove one (admin)
 box trigger-run                       # run one now, returns the run id (admin; optional sample event JSON)
-box run-get                           # core's - one run with its full log
+box run-get                           # core's - one run with its log (live while running; --after <seq>, --tail <n>)
 box service-restart                   # restart under a supervisor (refuses mid-turn without force)
 ```
 

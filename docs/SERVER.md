@@ -196,9 +196,11 @@ manifest** (`defineCoreFeature`) - nothing outside the feature is edited.
 
 **The funnel** is `ops/run.ts`. Every execution - a cron fire, a dashboard "Run now", an MCP call
 from an agent, the CLI - goes through `executeRecorded()`, which wraps the generator in an
-`automation_runs` row (`queued` → `running` → `success`/`error`) and buffers the progress stream as
-the run's log, written once at finalization so a run costs one warehouse write rather than one per
-line (capped at the last 2000 lines - backfills stream thousands). The queue is in-process FIFO with
+`automation_runs` row (`queued` → `running` → `success`/`error`) and keeps the progress stream as
+the run's live log (`ops/run-log.ts`, shared with agent trigger runs): `readRun` serves it from
+memory while the run is active, a throttled flush writes it to the row at most every 5 seconds
+(never per line: the warehouse is single-writer), and finalization writes it in full (capped at the
+last 2000 lines - backfills stream thousands; each line has a per-run `seq`). The queue is in-process FIFO with
 concurrency 1, because the warehouse is single-writer. A caller that wants skip-instead-of-queue
 checks `isActionBusy()` first and records a `skipped` row.
 
@@ -217,7 +219,7 @@ The controller's four procedures, present in every Box:
 |---|---|
 | `opsActions` (query) | the catalogue: every action this Box has, minus the runner |
 | `opsRuns` (query) | the latest 100 runs, no logs |
-| `opsRun` (mutation, MCP `run-get`) | one run including its full log |
+| `opsRun` (mutation, MCP `run-get`) | one run including its log, live while it runs; `after` (seq) and `tail` (n) narrow the log |
 | `opsRunNow` (subscription, MCP `run-now`) | run any action now, streaming, recorded as `trigger: 'manual'` and attributed to the authenticated principal unless the caller names someone |
 
 ## 5. Changes and events

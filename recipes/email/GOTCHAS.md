@@ -35,6 +35,11 @@ operation state in _docs/INTEGRATION.md.
   present; To/Cc are a fallback only without it. A forward to `finance@in.example.com` whose To also
   names the agent stays in the shared mailbox; reading To first would let any sender pull shared
   mail onto the agent's trust and wake path.
+- **Resend sends every `email.received` to every enabled webhook.** Receiving is per Resend
+  account, not per domain or Box, so two Boxes whose webhooks sit on one Resend account (a
+  development Box and the team Box, each behind its own relay) both fetch and store every inbound
+  message, and both may wake their agent. Keep one enabled `email.received` webhook per Resend
+  account, or give each Box its own Resend account; disable the others in the Resend dashboard.
 - **Forwarded mail fails SPF and often DMARC.** A Workspace forward to the Resend inbound alias
   re-sends from Google, so shared mail commonly shows `spf: fail` and `dmarc: fail`. Harmless (shared
   mail is never trusted); the Mail view shows its badges neutrally.

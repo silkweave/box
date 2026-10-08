@@ -80,6 +80,12 @@ The value is one of:
 - A filesystem path: `.`, `..`, `~`, or a value starting with `/`, `./`, `../` or `~/`. Relative
   paths resolve against the Box root and `~` expands to the home directory.
 
+On a host that authenticates to GitHub with an SSH key only, the HTTPS URL behind the shorthand
+fails with "could not read Username". Override the value in `box.local.json` with the scp-like form,
+`{ "stack": { "source": "git@github.com:silkweave/stack.git" } }`, and delete a `.stack/` cache
+cloned from the HTTPS URL (it refuses a different origin). A failed HTTPS GitHub fetch prints this
+hint.
+
 To read a local Stack checkout on one machine, override the value in `box.local.json`, for example
 `{ "stack": { "source": "../stack" } }`. When the development Box's `box.local.json` has no `stack`
 key, `bun run box:build` writes one pointing at the Stack checkout it was built from: a relative

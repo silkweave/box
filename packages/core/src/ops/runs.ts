@@ -11,6 +11,7 @@
 import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
 import { readRecord, readRecords, toNaiveUtc } from '../warehouse/model.js'
 import { AUTOMATION_RUNS } from '../warehouse/core-models.js'
+import { liveRunLog, sliceRunLog } from './run-log.js'
 import type { AutomationRun, AutomationRunWithLog, RunLogLine, RunStatus, RunTrigger } from './types.js'
 
 /** The record-layer row shape: every column (parsed `log` included), before duration_ms exists. */
@@ -115,22 +116,47 @@ export async function countTriggerRunsSince(triggerId: string, sinceIso: string)
   return Number(rows[0]?.n ?? 0)
 }
 
-/** Runs left queued/running by a previous server process can never finish - mark them at boot. */
+/**
+ * Runs left queued/running by a previous server process can never finish - mark them at boot. The
+ * log flushed while they ran is kept, closed with a line saying where it stops.
+ */
 export async function markOrphanedRuns(): Promise<number> {
   await ensureSchema()
-  const orphans = await withRead<{ id: string }>(
-    `SELECT id FROM automation_runs WHERE status IN ('queued', 'running')`,
+  const orphans = await withRead<{ id: string; log: string | null }>(
+    `SELECT id, CAST(log AS VARCHAR) AS log FROM automation_runs WHERE status IN ('queued', 'running')`,
   )
   if (orphans.length === 0) return 0
+  const now = new Date().toISOString()
   await withWrite(async (conn) => {
-    await conn.run(
-      `UPDATE automation_runs
-          SET status = 'error', finished_at = ?::TIMESTAMP, error = 'orphaned by server restart'
-        WHERE status IN ('queued', 'running')`,
-      [utcNow()],
-    )
+    for (const orphan of orphans) {
+      const lines = sliceRunLog(parseLog(orphan.log))
+      const last = lines.at(-1)
+      lines.push({
+        ts: now,
+        channel: last?.channel ?? 'ops',
+        phase: 'done',
+        message: `error: orphaned by server restart; the log stops at ${last ? last.ts : 'its start'}`,
+        seq: (last?.seq ?? -1) + 1,
+      })
+      await conn.run(
+        `UPDATE automation_runs
+            SET status = 'error', finished_at = ?::TIMESTAMP, error = 'orphaned by server restart', log = ?::JSON
+          WHERE id = ? AND status IN ('queued', 'running')`,
+        [utcNow(), JSON.stringify(lines), orphan.id],
+      )
+    }
   })
   return orphans.length
+}
+
+const parseLog = (raw: string | null): RunLogLine[] => {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as RunLogLine[]) : []
+  } catch {
+    return []
+  }
 }
 
 /** Latest runs, newest first, without the log (dropped after the read - kept light for the list). */
@@ -141,9 +167,14 @@ export async function readRuns(limit = 100): Promise<AutomationRun[]> {
   return rows.map(withDuration)
 }
 
-/** One run with its full log, or null. */
-export async function readRun(id: string): Promise<AutomationRunWithLog | null> {
+/**
+ * One run with its log, or null. An active run in this process reads its live lines (fresher than
+ * the last flush). `after` returns only lines with a greater seq; `tail` keeps the last n.
+ */
+export async function readRun(id: string, opts: { after?: number; tail?: number } = {}): Promise<AutomationRunWithLog | null> {
   const rec = await readRecord<RunRecord>(AUTOMATION_RUNS, { id })
   if (!rec) return null
-  return { ...withDuration(rec), log: rec.log ?? [] }
+  const active = rec.status === 'queued' || rec.status === 'running'
+  const lines = (active ? liveRunLog(id) : null) ?? rec.log ?? []
+  return { ...withDuration(rec), log: sliceRunLog(lines, opts) }
 }

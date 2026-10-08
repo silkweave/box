@@ -41,6 +41,7 @@ export interface RunLogLine {
   channel: string
   phase: string
   message: string
+  seq?: number
 }
 
 export interface RunWithLog extends Run {

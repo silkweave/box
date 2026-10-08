@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fetchStack, formatWhere, parseStackArgs, stackInfo } from '../stack.ts'
+import { fetchStack, formatWhere, httpsFetchHint, parseStackArgs, stackInfo } from '../stack.ts'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -114,4 +114,10 @@ test('a git source is cloned into .stack/, refreshed, detached at a ref, and a f
   rmSync(join(other, '.stack'), { recursive: true })
   git(other, 'clone', '--quiet', url, '.stack')
   assert.throws(() => fetchStack(other), /is a checkout of .*, not file:\/\/\/somewhere\/else.*delete it/)
+})
+
+test('a failed HTTPS GitHub fetch points at the SSH source; other URLs get no hint', () => {
+  assert.match(httpsFetchHint('https://github.com/silkweave/stack.git') ?? '', /"source": "git@github.com:silkweave\/stack.git".*box.local.json.*\.stack\//)
+  assert.equal(httpsFetchHint('git@github.com:silkweave/stack.git'), undefined)
+  assert.equal(httpsFetchHint('https://example.com/o/r.git'), undefined)
 })

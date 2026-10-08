@@ -173,9 +173,23 @@ function fetchGit(root: string, url: string, ref?: string): FetchResult {
   return { path: cache, commit, warnings: [] }
 }
 
+/** Hint for a failed HTTPS GitHub fetch: hosts that only hold an SSH key cannot answer the credential prompt. */
+export function httpsFetchHint(url: string): string | undefined {
+  const github = /^https:\/\/github\.com\/(.+)$/.exec(url)
+  if (!github) return undefined
+  return `If this host authenticates to GitHub over SSH only, set "stack": { "source": "git@github.com:${github[1]}" } in box.local.json and delete the .stack/ cache`
+}
+
 export function fetchStack(root: string, ref?: string): FetchResult {
   const location = resolveStackSource(readBoxConfig(root).stack.source, root)
-  return location.kind === 'path' ? fetchPath(location.path, ref) : fetchGit(root, location.url, ref)
+  if (location.kind === 'path') return fetchPath(location.path, ref)
+  try {
+    return fetchGit(root, location.url, ref)
+  } catch (error) {
+    const hint = httpsFetchHint(location.url)
+    if (!hint || !(error instanceof Error) || !error.message.startsWith('git ')) throw error
+    throw new Error(`${error.message}. ${hint}`, { cause: error })
+  }
 }
 
 export function main(argv: readonly string[], root: string = repoRoot): number {
