@@ -35,6 +35,10 @@ export interface TopBarContent {
   actions?: React.ReactNode
 }
 
+// A view's actions may outgrow a phone's bar; they scroll sideways rather than push the account and
+// Work controls off the edge.
+const actionsCls = 'flex min-w-0 items-center gap-1.5 max-sm:overflow-x-auto max-sm:[scrollbar-width:none] [&>*]:shrink-0'
+
 // Single top bar (ported from claudepad): breadcrumbs on the left, app actions on
 // the right; app-chrome (mobile menu, appearance) injected via leading/trailing.
 //
@@ -68,8 +72,8 @@ export function TopBar({
           ref={centerSlotRef}
           className='pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-1.5 empty:hidden [&>*]:pointer-events-auto'
         />
-        {content?.actions && <div className='flex items-center gap-1.5'>{content.actions}</div>}
-        <div ref={slotRef} className='flex items-center gap-1.5 empty:hidden' />
+        {content?.actions && <div className={actionsCls}>{content.actions}</div>}
+        <div ref={slotRef} className={cn(actionsCls, 'empty:hidden')} />
         {trailing}
       </div>
     </header>
@@ -78,7 +82,11 @@ export function TopBar({
 
 function Breadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
   return (
-    <nav aria-label='Breadcrumb' className='flex min-w-0 items-center gap-1.5 text-body-sm'>
+    // On a phone only the last crumb shows, truncated, and it keeps its room ahead of a view's actions
+    // (which scroll instead): a nav that overflows its box paints over the controls beside it.
+    <nav
+      aria-label='Breadcrumb'
+      className='flex min-w-0 items-center gap-1.5 overflow-hidden text-body-sm max-sm:max-w-[35%] max-sm:shrink-0 max-sm:[&>:not(:last-child)]:hidden'>
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
         return (

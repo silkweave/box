@@ -3,7 +3,7 @@ import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { DEFAULT_AGENT_ENGINE, agentEnginesFor, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, repoRoot, type Principal } from '@silkweave/box-core'
 import { CurrentPrincipal } from '../auth/auth.decorators.js'
 import { AuthGuard } from '../auth/auth.guard.js'
-import { agentWorkerUrl } from './workerdeck.host.js'
+import { agentAccountProfiles, agentWorkerUrl } from './workerdeck.host.js'
 
 class AgentUserDto {
   @ApiProperty() id!: string
@@ -48,6 +48,28 @@ class AgentConfigDto {
   @ApiProperty({ description: 'Engine used when the client names none.' }) defaultEngine!: string
 }
 
+class AgentAccountDto {
+  @ApiProperty() connectedAt!: string
+  @ApiProperty() expiresAt!: string
+}
+
+class AgentAccountProfileDto {
+  @ApiProperty({ description: 'WorkerDeck profile name, e.g. toby:claude.' }) name!: string
+  @ApiProperty({ description: 'Box user the profile belongs to.' }) person!: string
+  @ApiProperty({ enum: ['claude', 'codex'] }) engine!: 'claude' | 'codex'
+  @ApiProperty({ nullable: true, type: String }) description!: string | null
+  @ApiProperty({ description: 'Whether Settings can connect an account for it (Claude only for now).' }) connectable!: boolean
+  @ApiProperty({ nullable: true, type: AgentAccountDto, description: 'The connected account; null = none (the profile uses its config dir login).' })
+  account!: AgentAccountDto | null
+  @ApiProperty({ nullable: true, type: Boolean, description: 'Credential probe result; null = not probed yet.' }) available!: boolean | null
+  @ApiProperty({ nullable: true, type: String }) unavailableReason!: string | null
+}
+
+class AgentAccountsDto {
+  @ApiProperty({ description: 'False when the agent surface is not running (box.json workerdeck).' }) enabled!: boolean
+  @ApiProperty({ type: [AgentAccountProfileDto] }) profiles!: AgentAccountProfileDto[]
+}
+
 /**
  * Session-creation policy for the agent sidebar: the browser never invents paths or defaults, it
  * asks here (docs/SERVER.md §3). Any signed-in principal, member or admin: an agent session is the
@@ -83,6 +105,24 @@ export class AgentController {
       profileRequired: agentProfilesConfigured(),
       engines: engines.map((id) => ({ id, profile: byEngine[id]! })),
       defaultEngine: principal ? preferredAgentEngine(principal.id) : DEFAULT_AGENT_ENGINE,
+    }
+  }
+
+  /**
+   * Settings > Agent accounts: the profiles this principal may connect. A person sees their own
+   * (by `person` or their agentProfiles map); an admin sees everyone's (D3). Connect and disconnect
+   * themselves go to WorkerDeck's own routes through the /agent mount, where `accounts.canConnect`
+   * applies the same rule (workerdeck.host.ts).
+   */
+  @Get('accounts')
+  @ApiOkResponse({ type: AgentAccountsDto })
+  async accounts(@CurrentPrincipal() principal: Principal | null): Promise<AgentAccountsDto> {
+    if (!principal || agentWorkerUrl() === undefined) return { enabled: false, profiles: [] }
+    const own = new Set(Object.values(agentProfileMapFor(principal.id)))
+    const all = await agentAccountProfiles()
+    return {
+      enabled: true,
+      profiles: principal.role === 'admin' ? all : all.filter((p) => p.person === principal.id || own.has(p.name)),
     }
   }
 }

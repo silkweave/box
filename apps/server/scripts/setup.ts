@@ -113,7 +113,7 @@ export function setupProfilePatch(
   }
 
   return {
-    workerdeck: { ...rawWorkerdeck, profiles, claudeTokens: rawWorkerdeck['claudeTokens'] ?? false },
+    workerdeck: { ...rawWorkerdeck, profiles },
     agentProfiles: { [ownerId]: ownerMap },
   }
 }

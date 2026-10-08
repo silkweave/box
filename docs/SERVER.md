@@ -315,6 +315,21 @@ reads, so the browser never invents a cwd or names a config dir; `permissionMode
 returned as `null` on purpose, because the worker owns the per-profile default and naming one here
 would override it for whichever engine the session lands on.
 
+**Agent accounts.** The profiles from `box.json` `workerdeck.profiles` reach WorkerDeck as a
+memory profile store rebuilt on every boot, not as declared profiles, because WorkerDeck refuses
+account connect for declared ones. `allowedConfigDirRoots` is the set of each config dir's parent.
+No principal may manage profiles over the API, so `box.json` stays the only place they are defined.
+Every profile carries `connectors: false` (claude.ai connectors never run in Box sessions).
+Settings > Agent accounts lists profiles from `GET /api/agent/accounts` (own profiles; an admin
+sees all) and connects them with WorkerDeck's `AccountConnectDialog` over the mount:
+`POST /agent/v1/profiles/<name>/account/connect` and `.../complete`, `DELETE .../account`.
+WorkerDeck runs the official `claude setup-token` in a PTY (`@lydell/node-pty`, else 501), keeps
+the one-year token in `<configDir>/workerdeck-account.json` (0600) and injects it as
+`CLAUDE_CODE_OAUTH_TOKEN` into that profile's sessions, the Builder gateway's included. Its
+`accounts.canConnect` allows a Box principal on their own profiles and an admin on anyone's; the
+mount lifts an admin's profile pin on exactly these account routes. Codex profiles still sign in on
+the host (`codex login`) until WorkerDeck ships device sign-in. `requireApiKey` must stay off.
+
 **`agentSessionAccess` is core's, and it is a port** (`packages/core/src/agent-session.ts`, tested).
 Core knows exactly one rule - **ownership is `scope.user` and nothing else** - which is the only rule
 a featureless Box needs. Anything that *widens* access beyond the owner is a rule a feature

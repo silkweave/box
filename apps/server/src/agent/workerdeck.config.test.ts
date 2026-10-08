@@ -21,7 +21,6 @@ describe('parseWorkerdeckConfig', () => {
     expect(config.pending).toEqual([])
     expect(config.cwdRoots).toEqual(['/repo'])
     expect(config.stateDir).toMatch(/agent$/)
-    expect(config.claudeTokens).toBe(false)
     expect(config.queue).toEqual(DEFAULT_QUEUE)
   })
 
@@ -63,14 +62,13 @@ describe('parseWorkerdeckConfig', () => {
     expect(config.profiles[0]?.mcpTokensPath).toBe('/home/alice/.codex/mcp-tokens.env')
   })
 
-  it('honours explicit cwdRoots, stateDir and claudeTokens', () => {
+  it('honours explicit cwdRoots and stateDir', () => {
     const config = parseWorkerdeckConfig(
-      { profiles: [profile()], cwdRoots: ['/srv/box'], stateDir: '/srv/state', claudeTokens: true },
+      { profiles: [profile()], cwdRoots: ['/srv/box'], stateDir: '/srv/state' },
       ctx(['/home/alice/.claude']),
     )
     expect(config.cwdRoots).toEqual(['/srv/box'])
     expect(config.stateDir).toBe('/srv/state')
-    expect(config.claudeTokens).toBe(true)
   })
 
   // Every case below is the file's load-bearing property: a mistake here must be a FAILED BOOT of
@@ -87,7 +85,7 @@ describe('parseWorkerdeckConfig', () => {
     ['an unknown key (a typo must not be silently dropped)', { profiles: [profile({ hoem: '/x' })] }],
     ['a non-object defaults', { profiles: [profile({ defaults: 'acceptEdits' })] }],
     ['a non-string cwdRoots entry', { profiles: [profile()], cwdRoots: [1] }],
-    ['a non-boolean claudeTokens', { profiles: [profile()], claudeTokens: 'yes' }],
+    ['the removed claudeTokens key', { profiles: [profile()], claudeTokens: false }],
     ['a non-object queue', { profiles: [profile()], queue: 2 }],
     ['an unknown queue key', { profiles: [profile()], queue: { maxConcurency: 2 } }],
     ['a zero queue concurrency', { profiles: [profile()], queue: { maxConcurrency: 0 } }],

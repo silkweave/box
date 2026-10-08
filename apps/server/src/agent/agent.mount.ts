@@ -91,6 +91,8 @@ const READ_METHODS = new Set(['GET', 'HEAD'])
 
 /** The attach socket, on the normalized path. The one URL layer A parses on the upgrade path, and only to choose the relay - a miss falls through to the worker, which refuses a non-owner. */
 const ATTACH_PATH = /^\/agent\/v1\/sessions\/([^/]+)\/ws$/
+/** WorkerDeck's account routes: POST .../account/connect, POST .../account/complete, DELETE .../account. */
+const ACCOUNT_PATH = /^\/agent\/v1\/profiles\/[^/]+\/account(\/(connect|complete))?$/
 
 /** Attach query parameters the relay carries upstream. A whitelist: the upstream URL carries the boot key, and nothing a browser chose belongs next to it. */
 const ATTACH_PARAMS = ['afterSeq', 'truncateResults', 'imageRefs'] as const
@@ -340,8 +342,15 @@ export function createAgentMount(): AgentMount | undefined {
       respond(res, rejection.status, { error: rejection.error })
       return
     }
-    const auth = agentAuthFor(principal, READ_METHODS.has(method))
     const gated = gatePath(path)
+    let auth = agentAuthFor(principal, READ_METHODS.has(method))
+    // An admin may connect or disconnect anyone's agent account (Settings > Agent accounts, D3), so
+    // their profile pin is lifted on exactly these routes. WorkerDeck's `accounts.canConnect` still
+    // decides (workerdeck.host.ts); a member keeps their pin and reaches only their own profiles.
+    if (auth.via === 'box' && auth.admin === true && ACCOUNT_PATH.test(gated)) {
+      const { allowedProfiles: _pin, ...unpinned } = auth
+      auth = unpinned
+    }
     // The job queue is not part of the sidebar's surface and a job body carries its OWN `session`
     // (profile and cwd included), which gateCreate never sees - so the day a queue is configured on
     // the worker it would be an unstamped way to run as anyone. Refuse the writes now rather than

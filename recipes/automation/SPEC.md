@@ -39,7 +39,8 @@ Box"), never stored half-working.
 | `engine`, `model` | agent: engine (null = the run_as user's preferred one) and model (null = the profile default) |
 | `cwd` | agent: working directory, inside `box.json` `workerdeck.cwdRoots` (null = the first root) |
 | `prompt` | agent: sent verbatim |
-| `success_marker` | agent: the run is a success only when the final text has this as a whole line |
+| `success_marker` | agent: the run is a success only when a line of the final text starts with this word (`SENT_OK` or `SENT_OK 42 sent`) |
+| `permission_mode` | agent: null runs the job in the unattended mode (`workerdeck.queue.permissionMode`); `bypassPermissions` runs the main job with no permission checks (the gate keeps the unattended mode). Any other value, or a mode on a non-agent trigger, is refused on write |
 | `gate_prompt`, `gate_model`, `gate_marker` | agent: an optional cheap first job; the run goes ahead only when its final text has the marker line |
 | `route`, `message`, `notify`, `cooldown_min`, `debounce_sec` | deliver: the runner's fields (recipes/alerts/SPEC.md "Deliver triggers") |
 | `daily_cap` | runs per UTC day that event fires stop at; null = 50 for an agent trigger, none for an action; refused on a delivery |
@@ -56,6 +57,10 @@ this feature it inserts each well-formed entry as a time trigger that runs its a
 id (so `trigger_id` of old runs, backfilled from `schedule_id`, points at it), `enabled` and
 `description`, with `name = id` and no owner. Existing ids are left alone. After it runs, the key is
 not read; the scheduler logs a warning at boot while it is still present, and the owner removes it.
+
+**Migration `automation:002-trigger-permission-mode`** adds `permission_mode` (nullable, no
+constraint: an ALTER cannot carry one, so the value is checked on write). Existing triggers keep
+null, the unattended mode.
 
 **Runs** are core's `automation_runs`. Core migrations `core:004-runs-trigger-id` (adds
 `trigger_id`, backfilled from the legacy `schedule_id`) and `core:005-runs-event-id` link a run to
@@ -163,8 +168,9 @@ worker enables whenever the agent surface boots (`box.json` `workerdeck.queue`, 
 3. Submit `POST /v1/jobs` over the loopback listener, so the worker vets it like any session create
    (profile, `cwd` inside `cwdRoots`, permission mode). The session carries `scope.user = run_as`
    (that person can watch it in their Work panel), `meta.app = box-trigger` (it never counts as their
-   one live sidebar session), `questionBehavior: deny` and the unattended permission mode
-   (`workerdeck.queue.permissionMode`, below). The job
+   one live sidebar session), `questionBehavior: deny` and the trigger's `permission_mode` for the
+   main job, else the unattended permission mode (`workerdeck.queue.permissionMode`, below). The
+   first log line names the mode the job runs in. The job
    `meta` carries `triggerId`, `runId`, `eventId` and `depth`.
 4. Follow the job's events: `job_started` marks the row running; tool and text previews become log
    lines; a `permission_requested` is answered with a denial (`denyAgentPermission`; nobody can
@@ -182,7 +188,7 @@ worker enables whenever the agent surface boots (`box.json` `workerdeck.queue`, 
 6. Finalize: `summary` = the final text (capped at 4000 characters), `log` = the session id line
    first, then the condensed transcript, the permission report and a usage line (tokens, turns,
    cost, duration). Success
-   only when the job succeeded and, if the trigger names a marker, the final text has it as a line.
+   only when the job succeeded and, if the trigger names a marker, a line of the final text starts with it as a word.
    The outcome goes to core's `notifyRunOutcome`, so `run.error` alerts cover agent runs too.
 
 **Permission denials.** In `auto` mode the engine's classifier decides each tool call. It refuses
@@ -197,6 +203,18 @@ report: N tool call(s) denied on this unattended run ...` line, and each one emi
 reasonType}` (no tool input or reason text). Run detail shows a "Permission denials" panel. A
 denial does not change the run's status; the success marker does. Push notifications to unblock a
 denied call are future work.
+
+**Bypass.** A trigger with `permission_mode = bypassPermissions` submits its main job in that mode,
+for a job whose work the classifier keeps refusing (pushing to a remote, writing outside the
+folder). The agent host runs WorkerDeck with `disableBypassPermissions: 'sessions'`: bypass is
+refused for sidebar sessions, agents, profile defaults and a live `set_permission_mode`, and allowed
+only for a job the host submits as the operator. The Box takes the mode only from the stored
+trigger, so only an admin (or an agent acting for one, through `trigger-upsert`) can set it; a
+browser user's session can never ask for it. While the job is in bypass WorkerDeck refuses typed
+input and peer messages into its session, so nobody can steer it mid-run. `questionBehavior: deny`
+still holds. Settings deny rules in the run_as profile and the job folder (e.g.
+`Bash(git push:*)`) remain the fence; bypass skips allow checks, not denies. The trigger list marks
+a bypass trigger and shows the mode of every agent trigger.
 
 A time fire while the trigger's previous run is still in flight records a `skipped` row. The queue is
 in-memory: a restart loses queued and running jobs, and the boot sweep (`markOrphanedRuns`) marks

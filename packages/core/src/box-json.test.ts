@@ -110,3 +110,7 @@ test('the recipes ledger records adapted recipes and their powerups', () => {
   expect(() => parseBoxJson({ recipes: { chat: { powerups: ['Mobile'] } } })).toThrow(/not a powerup id/)
   expect(() => parseBoxJson({ recipes: { chat: { adapted: true } } })).toThrow(/unknown key "adapted"/)
 })
+
+test('the removed workerdeckTokens key is refused with the replacement named', () => {
+  expect(() => parseBoxJson({ workerdeckTokens: {} })).toThrow(/workerdeckTokens was removed; connect Claude accounts in Settings > Agent accounts/)
+})

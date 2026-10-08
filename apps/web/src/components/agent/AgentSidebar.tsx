@@ -357,7 +357,8 @@ export function AgentToggle() {
         aria-expanded={open && config?.enabled === true}
         onClick={() => setAgentOpen(true)}>
         <Sparkles className={open ? 'text-accent' : undefined} />
-        <span>Work</span>
+        {/* Icon only on a phone: the bar needs the room for the page name. */}
+        <span className='max-sm:sr-only'>Work</span>
         {sessionId && (
           <span className={`absolute top-1 right-1 size-1.5 rounded-full ${pending ? 'bg-warning' : 'bg-success'}`} />
         )}

@@ -35,7 +35,7 @@ const fake = vi.hoisted(() => {
 })
 
 vi.mock('@silkweave/box-core', () => ({
-  boxJson: () => ({ agentProfiles: { alice: { codex: 'alice:codex', claude: 'alice:claude' } }, workerdeckTokens: {} }),
+  boxJson: () => ({ agentProfiles: { alice: { codex: 'alice:codex', claude: 'alice:claude' } } }),
 }))
 vi.mock('../agent/workerdeck.config.js', () => ({
   readWorkerdeckConfig: () => ({
@@ -43,7 +43,7 @@ vi.mock('../agent/workerdeck.config.js', () => ({
       { name: 'alice:codex', engine: 'codex', person: 'alice', home: '/codex' },
       { name: 'alice:claude', engine: 'claude', person: 'alice', home: join(homedir(), '.claude') },
     ],
-    pending: [], cwdRoots: ['/box'], stateDir: '/box/data/agent', claudeTokens: false,
+    pending: [], cwdRoots: ['/box'], stateDir: '/box/data/agent',
   }),
 }))
 vi.mock('@workerdeck/server', () => ({

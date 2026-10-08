@@ -1,7 +1,8 @@
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import type { ComponentType, ReactNode } from 'react'
+import { ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { useEffect, useRef, type ComponentType, type ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 import { storageKey } from '../lib/storage.ts'
+import { usePersistedState } from '../lib/usePersistedState.ts'
 import { Wordmark } from '../brand/Wordmark.tsx'
 import { Button } from '../components/Button.tsx'
 import { ThemeToggle } from './ThemeToggle'
@@ -99,6 +100,22 @@ export function Sidebar({
   // The wordmark's link home is the app's to define (its router's <Link>), through the shell seam;
   // standalone, a plain anchor to the origin root. Never `#/` - that was hash-router vocabulary.
   const { homeLink: HomeLink = PlainHomeLink, settingsControl: SettingsControl } = useShellExtensions()
+  // Folded section headings, by label. A folded section still shows its ACTIVE group, so the
+  // sidebar never hides where you are; only the inactive destinations fold away.
+  const [foldedSections, setFoldedSections] = usePersistedState<string[]>(
+    storageKey(storagePrefix, 'sidebar', 'foldedSections'),
+    [],
+    (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
+  )
+  // Keep the active group's whole panel (header plus its open sub-nav) in view when the selection
+  // changes, scrolling only as far as needed.
+  const activePanel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    activePanel.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  }, [activeGroup, activeId, items.length])
+  const toggleSection = (section: string) =>
+    setFoldedSections((prev) => (prev.includes(section) ? prev.filter((x) => x !== section) : [...prev, section]))
 
   return (
     <nav
@@ -117,88 +134,112 @@ export function Sidebar({
           const GroupIcon = group.icon
           const isActive = group.id === activeGroup
           const isOpen = group.expandable !== false && isActive && items.length > 0
+          const section = group.section
+          const folded = section !== undefined && foldedSections.includes(section)
+          const startsSection = section !== undefined && section !== groups[index - 1]?.section
           return (
             <div key={group.id}>
-              {group.section && group.section !== groups[index - 1]?.section && (
-                <h2 className={cn('px-2.5 pb-1.5 text-label font-medium text-muted-foreground', index > 0 ? 'pt-5' : 'pt-1')}>
-                  {group.section}
+              {startsSection && (
+                <h2 className={cn('px-1', index > 0 ? 'pt-5' : 'pt-1', 'pb-1.5')}>
+                  <button
+                    type='button'
+                    onClick={() => toggleSection(section)}
+                    aria-expanded={!folded}
+                    className={cn(
+                      'group/sec flex w-full items-center gap-1 rounded-md px-1.5 text-left text-label font-medium text-muted-foreground',
+                      'transition-colors duration-[120ms] ease-[var(--ease-standard)] hover:text-text',
+                    )}>
+                    <span className='flex-1 truncate'>{section}</span>
+                    <ChevronRight
+                      aria-hidden
+                      className={cn(
+                        'size-3.5 shrink-0 transition-transform',
+                        !folded && 'rotate-90',
+                        // Quiet until the heading is hovered or focused, unless folded (the caret is
+                        // then the only sign that something is hidden).
+                        folded ? 'opacity-100' : 'opacity-0 group-hover/sec:opacity-100 group-focus-visible/sec:opacity-100',
+                      )}
+                    />
+                  </button>
                 </h2>
               )}
-              <div className={cn(
-                // Reserve the panel inset even when closed so activating a group never moves its header.
-                'rounded-lg border p-1',
-                isOpen
-                  ? 'border-[var(--sidebar-group-border)] bg-[var(--sidebar-group-bg)] shadow-[0_1px_3px_#00000008]'
-                  : 'border-transparent',
-              )}>
-                <div
-                  className={cn(
-                    'group/grp flex w-full items-center rounded-md text-body-sm',
-                    'transition-colors duration-[120ms] ease-[var(--ease-standard)]',
-                    isActive
-                      ? 'bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-text)] font-semibold'
-                      : 'text-text hover:bg-accent-tint',
-                  )}>
-                  <NavAnchor
-                    href={group.href}
-                    onClick={() => onSelectGroup(group.id)}
-                    aria-current={isActive ? 'page' : undefined}
-                    className='flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-3 py-2 text-left'>
-                    <GroupIcon className={cn('size-4 shrink-0', isActive ? 'text-current' : 'text-muted-foreground')} />
-                    <span className='line-clamp-1 flex-1'>{group.label}</span>
-                  </NavAnchor>
-                  {isActive && groupAction && <span className='mr-1.5 flex shrink-0 items-center'>{groupAction}</span>}
-                </div>
+              {folded && !isActive ? null : (
+                <div ref={isActive ? activePanel : undefined} className={cn(
+                  // Reserve the panel inset even when closed so activating a group never moves its header.
+                  'rounded-lg border p-1',
+                  isOpen
+                    ? 'border-[var(--sidebar-group-border)] bg-[var(--sidebar-group-bg)] shadow-[0_1px_3px_#00000008]'
+                    : 'border-transparent',
+                )}>
+                  <div
+                    className={cn(
+                      'group/grp flex w-full items-center rounded-md text-body-sm',
+                      'transition-colors duration-[120ms] ease-[var(--ease-standard)]',
+                      isActive
+                        ? 'bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-text)] font-semibold'
+                        : 'text-text hover:bg-accent-tint',
+                    )}>
+                    <NavAnchor
+                      href={group.href}
+                      onClick={() => onSelectGroup(group.id)}
+                      aria-current={isActive ? 'page' : undefined}
+                      className='flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-3 py-2 text-left'>
+                      <GroupIcon className={cn('size-4 shrink-0', isActive ? 'text-current' : 'text-muted-foreground')} />
+                      <span className='line-clamp-1 flex-1'>{group.label}</span>
+                    </NavAnchor>
+                    {isActive && groupAction && <span className='mr-1.5 flex shrink-0 items-center'>{groupAction}</span>}
+                  </div>
 
-                {isOpen && (
-                  <ul className='mt-1 space-y-1'>
-                    {items.map((item, i) => {
-                      const Icon = item.icon
-                      const active = item.id === activeId
-                      const heading = item.section && item.section !== items[i - 1]?.section ? item.section : null
-                      return (
-                        <li key={item.id}>
-                          {heading && (
-                            <div
-                              className={cn(
-                                'px-2.5 pb-1.5 pt-1 text-label font-medium text-muted-foreground',
-                                i > 0 && 'mt-2 border-t border-border pt-1.5',
-                              )}>
-                              {heading}
-                            </div>
-                          )}
-                          <NavAnchor
-                            href={item.href}
-                            onClick={() => onSelect(item.id)}
-                            aria-current={active ? 'page' : undefined}
-                            className={cn(
-                              'group/nav relative flex min-h-9 w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-body-sm',
-                              'transition-colors duration-[120ms] ease-[var(--ease-standard)]',
-                              active
-                                ? 'bg-[var(--sidebar-item-selected)] text-[var(--sidebar-item-selected-text)] font-medium ring-1 ring-inset ring-[var(--sidebar-item-selected-border)]'
-                                : 'text-text hover:bg-[var(--sidebar-item-hover)]',
-                            )}>
-                            {item.leading ?? (
-                              <Icon
+                  {isOpen && (
+                    <ul className='mt-1 space-y-1'>
+                      {items.map((item, i) => {
+                        const Icon = item.icon
+                        const active = item.id === activeId
+                        const heading = item.section && item.section !== items[i - 1]?.section ? item.section : null
+                        return (
+                          <li key={item.id}>
+                            {heading && (
+                              <div
                                 className={cn(
-                                  'size-4 shrink-0',
-                                  item.iconClass ?? (active ? 'text-[var(--sidebar-item-selected-icon)]' : 'text-muted-foreground'),
-                                )}
-                              />
+                                  'px-2.5 pb-1.5 pt-1 text-label font-medium text-muted-foreground',
+                                  i > 0 && 'mt-2 border-t border-border pt-1.5',
+                                )}>
+                                {heading}
+                              </div>
                             )}
-                            <span className='line-clamp-1 flex-1'>{item.label}</span>
-                            {(item.badge ?? item.count) != null && (
-                              <span className='text-label text-muted-foreground tabular-nums'>
-                                {item.badge ?? item.count}
-                              </span>
-                            )}
-                          </NavAnchor>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-              </div>
+                            <NavAnchor
+                              href={item.href}
+                              onClick={() => onSelect(item.id)}
+                              aria-current={active ? 'page' : undefined}
+                              className={cn(
+                                'group/nav relative flex min-h-9 w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-body-sm',
+                                'transition-colors duration-[120ms] ease-[var(--ease-standard)]',
+                                active
+                                  ? 'bg-[var(--sidebar-item-selected)] text-[var(--sidebar-item-selected-text)] font-medium ring-1 ring-inset ring-[var(--sidebar-item-selected-border)]'
+                                  : 'text-text hover:bg-[var(--sidebar-item-hover)]',
+                              )}>
+                              {item.leading ?? (
+                                <Icon
+                                  className={cn(
+                                    'size-4 shrink-0',
+                                    item.iconClass ?? (active ? 'text-[var(--sidebar-item-selected-icon)]' : 'text-muted-foreground'),
+                                  )}
+                                />
+                              )}
+                              <span className='line-clamp-1 flex-1'>{item.label}</span>
+                              {(item.badge ?? item.count) != null && (
+                                <span className='text-label text-muted-foreground tabular-nums'>
+                                  {item.badge ?? item.count}
+                                </span>
+                              )}
+                            </NavAnchor>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}

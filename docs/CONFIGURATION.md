@@ -35,7 +35,7 @@ see `recipes/automation/powerups/relay/`). All default to false and are forced o
 Arm `relay` on exactly one Box per relay Worker: a second connection takes the Worker over.
 
 Core sections include `agent`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
-`stack`, `recipes`, `accounts`, `credentials`, `agentProfiles`, `workerdeck` and `workerdeckTokens`. Feature
+`stack`, `recipes`, `accounts`, `credentials`, `agentProfiles` and `workerdeck`. Feature
 settings live under `features.<id>`, keyed by the feature id, and are described in the
 documentation of the recipe the feature came from (`recipes/<id>/`).
 
@@ -96,8 +96,10 @@ generated there at first use. Changing them invalidates sessions or encrypted ac
 `mcp.url` defaults to the local server; set `mcp.token` locally to the intended principal's token.
 Never print permanent tokens into logs. `credentials` is keyed by channel, account, then key;
 the account `*` supplies channel-wide defaults. `accounts` declares the corresponding channel
-accounts. Agent engine configuration belongs in `workerdeck`, user-to-profile mappings in
-`agentProfiles`, and per-person host tokens in `workerdeckTokens`.
+accounts. Agent engine configuration belongs in `workerdeck` and user-to-profile mappings in
+`agentProfiles`. Claude logins for agent profiles are connected in Settings > Agent accounts and
+kept by WorkerDeck beside each profile's config dir; `workerdeckTokens` and
+`workerdeck.claudeTokens` were removed and are refused.
 
 Runtime settings edits and credential refreshes write only the relevant overrides to
 `box.local.json`, atomically with owner-only permissions. Shared settings remain unchanged.

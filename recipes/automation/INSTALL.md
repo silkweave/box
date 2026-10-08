@@ -33,7 +33,8 @@ ledgers before replaying an operation.
 3. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record
    path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Advance
    the completed upstream SHA in docs/UPSTREAM.md only after the full validation and boot pass.
-4. Migrations: `automation:001-import-schedules` (config schedules become time triggers), with
+4. Migrations: `automation:001-import-schedules` (config schedules become time triggers),
+   `automation:002-trigger-permission-mode` (adds `triggers.permission_mode`), with
    core's `004-runs-trigger-id` and `005-runs-event-id`. Remove `features.automation.schedules` from
    the config files after the live boot.
 5. For migrations, stage the runner, registration, and minimum code first. Test against a restored

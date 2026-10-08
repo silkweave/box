@@ -293,12 +293,6 @@
         "null"
       ]
     },
-    "workerdeckTokens": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
     "accounts": {
       "type": "object",
       "additionalProperties": {

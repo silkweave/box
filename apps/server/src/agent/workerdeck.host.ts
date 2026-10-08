@@ -1,10 +1,11 @@
 import { createRequire } from 'node:module'
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { IncomingMessage } from 'node:http'
-import { createFileSessionStore, createWorkerServer, type WorkerServer, type WorkerServerOptions } from '@workerdeck/server'
+import { createFileSessionStore, createMemoryProfileStore, createWorkerServer, type WorkerServer, type WorkerServerOptions } from '@workerdeck/server'
 import type { CreateJobRequest, JobEvent, JobInfo, ProfileInfo, SessionEvent, SessionInfo } from '@workerdeck/protocol'
-import { agentSessionAccess, boxJson, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
+import { agentProfileMapFor, agentSessionAccess, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
 import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
 import { revokeBuilderControl, trackBuilderControl } from './builder-control.js'
 
@@ -113,31 +114,6 @@ const readEnvFile = (path: string): Record<string, string> => {
   return out
 }
 
-/**
- * A person's long-lived Claude OAuth token (`claude setup-token`), from `CLAUDE_TOKEN_<PERSON>` in
- * `box.json`'s `workerdeckTokens` map. Optional; a person without one falls back to whatever their configDir
- * resolves.
- *
- * WHY IT EXISTS, and why dropping it in the merge would have been a silent production break: under
- * launchd, a session pinned to a per-person `<home>/.claude` fails with "OAuth session expired and
- * could not be refreshed" even though that directory's .credentials.json is fresh and valid - the
- * same file, read through any other path, authenticates fine (investigated 2026-07-22 on a production host;
- * mechanism never identified). A long-lived token sidesteps config-dir credential resolution
- * altogether. CLAUDE_CONFIG_DIR is still pinned to the profile, so settings, memory and skills
- * remain that person's.
- *
- * Keyed by PERSON, not by profile name: `<person>:claude` and `<person>:codex` are the same human,
- * and deriving the variable from the profile would look for `CLAUDE_TOKEN_TOBY:CLAUDE`, find
- * nothing, and drop back to exactly the failure the token exists to sidestep - as an auth error
- * mid-turn rather than at startup. Applied to a person's codex profile too; codex ignores it.
- *
- * Read at CALL time and by hand, never `process.loadEnvFile`: the file is the operator's to edit
- * (a token rotated at 3pm should not need a restart), and loading it would pile every person's
- * token into this process's environment - which is the Box's, and which every session inherits.
- */
-const claudeTokenFor = (person: string): string | undefined =>
-  boxJson().workerdeckTokens['CLAUDE_TOKEN_' + person.toUpperCase()]?.trim() || undefined
-
 /** Resolve the bundled codex binary exactly the way @workerdeck/core does, so a missing platform
  *  package is a loud boot failure instead of a per-session `@openai/codex is not installed`. */
 const codexBinaryResolves = (): boolean => {
@@ -221,6 +197,44 @@ export async function submitAgentJob(request: CreateJobRequest): Promise<JobInfo
   return body.job
 }
 
+/** A configured profile with its live account state, for Settings > Agent accounts. */
+export interface AgentAccountProfile {
+  name: string
+  person: string
+  engine: 'claude' | 'codex'
+  description: string | null
+  /** Only claude profiles can connect in WorkerDeck 3.9.1 (Codex device sign-in comes later). */
+  connectable: boolean
+  account: { connectedAt: string; expiresAt: string } | null
+  available: boolean | null
+  unavailableReason: string | null
+}
+
+/**
+ * Every configured profile with WorkerDeck's own view of it (account, availability), read over the
+ * loopback listener as the host so the list is not narrowed to one person's profiles. Callers filter
+ * by who is asking (agent.controller.ts).
+ */
+export async function agentAccountProfiles(): Promise<AgentAccountProfile[]> {
+  if (!host) return []
+  const res = await fetch(`${host.url}/v1/profiles`, { headers: { authorization: `Bearer ${host.key}` } })
+  if (!res.ok) throw new Error(`profile list refused (${res.status})`)
+  const live = new Map(((await res.json()) as { profiles: ProfileInfo[] }).profiles.map((p) => [p.name, p]))
+  return host.config.profiles.map((p) => {
+    const info = live.get(p.name)
+    return {
+      name: p.name,
+      person: p.person,
+      engine: p.engine,
+      description: p.description ?? null,
+      connectable: p.engine === 'claude',
+      account: info?.account ? { connectedAt: info.account.connectedAt, expiresAt: info.account.expiresAt } : null,
+      available: typeof info?.available === 'boolean' ? info.available : null,
+      unavailableReason: info?.unavailableReason ?? null,
+    }
+  })
+}
+
 /** Cancel a queued or running job. Null when the queue does not know it. */
 export async function cancelAgentJob(id: string): Promise<JobInfo | null> {
   return (await host?.worker.queue?.cancel(id)) ?? null
@@ -243,19 +257,6 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
     return undefined
   }
 
-  if (deployment.claudeTokens) {
-    // Named at boot because the failure this guards against is silent and mid-turn: a missing token
-    // does not fail the create, it fails the first Claude turn with an expired-OAuth error.
-    const people = [...new Set(deployment.profiles.filter((p) => p.engine === 'claude').map((p) => p.person))]
-    const have = people.filter((person) => claudeTokenFor(person))
-    const missing = people.filter((person) => !claudeTokenFor(person))
-    // Logged rather than merely warned so a deploy can ASSERT the tokens parsed, without printing
-    // one. An invalid value in box.local.json is otherwise indistinguishable from no file at all.
-    if (have.length > 0) console.log(`  agent: claude tokens loaded for ${have.join(', ')}`)
-    if (missing.length > 0) {
-      console.warn(`  agent: no CLAUDE_TOKEN_<PERSON> in box.json workerdeckTokens for ${missing.join(', ')}`)
-    }
-  }
   if (deployment.pending.length > 0) {
     // Named rather than passed over silently, so the log says who still owes a login. A declared
     // profile whose home is missing is a hard createWorkerServer failure, and that once crash-looped
@@ -269,25 +270,49 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
     )
   }
 
+  // `connectors: false` on every profile (owner decision 2026-10-08): claude.ai connectors never run
+  // in Box sessions, which use Box-managed MCP servers instead. A setup-token carries no connector
+  // scope anyway; this also stops a full login's connectors from appearing.
   const profiles: ProfileInfo[] = deployment.profiles.map((p) =>
     p.engine === 'codex'
       ? { name: p.name, engine: 'codex', codexHome: p.home, defaults: p.defaults, description: p.description }
-      : { name: p.name, configDir: p.home, description: p.description },
+      : { name: p.name, engine: 'claude', configDir: p.home, description: p.description, connectors: false },
   ) as ProfileInfo[]
 
   const byName = new Map<string, WorkerdeckProfile>(deployment.profiles.map((p) => [p.name, p]))
+  const canConnectAccount = (auth: AgentAuth | undefined, profile: string): boolean => {
+    if (auth?.via !== 'box') return false
+    if (auth.admin === true) return true
+    return byName.get(profile)?.person === auth.user || Object.values(agentProfileMapFor(auth.user)).includes(profile)
+  }
 
   const options: WorkerServerOptions = {
     basePath: '/v1',
-    profiles,
+    // A profile STORE, not `profiles`: WorkerDeck refuses account connect (403) for profiles declared
+    // in server options. The store is rebuilt from box.local.json on every boot, so box.local.json
+    // stays the source of truth; nobody may edit it over the API (every principal below has
+    // `canManageProfiles: false`, so PATCH/DELETE/POST /v1/profiles answer 403).
+    profileStore: createMemoryProfileStore(profiles),
+    // Required for managed claude/codex profiles: each one's config dir must sit under a root. The
+    // roots are the configured dirs' own parents (the person's home), nothing wider.
+    allowedConfigDirRoots: [...new Set(deployment.profiles.map((p) => dirname(p.home)))],
+    // Settings > Agent accounts (docs/SERVER.md, "Agent accounts"). WorkerDeck runs `claude setup-token`, keeps
+    // the token in <configDir>/workerdeck-account.json and injects it into that profile's sessions.
+    // A person connects their own profiles; an admin may connect anyone's (D3). The host principal
+    // (the chat agent's loopback client) never may.
+    accounts: { canConnect: (principal, profile) => canConnectAccount(principal as AgentAuth | undefined, profile.name) },
     allowedCwdRoots: deployment.cwdRoots,
     // Host filesystem routes OFF. They mount on allowedCwdRoots alone, needing no grant of their
     // own, so leaving them on would publish the whole checkout - box.local.json included - as an
     // authenticated GET. An explicit [] 404s them. `operator: false` is the second lock.
     hostFiles: { roots: [] },
-    // The sidebar can raise a session's permission mode; bypassPermissions on a live checkout has
-    // no legitimate use here.
-    disableBypassPermissions: true,
+    // Bypass for jobs only. Sessions, agents, profile defaults and a live set_permission_mode are
+    // refused it (the sidebar has no legitimate use for it on a live checkout); a job the host
+    // submits as the operator may run in it, and WorkerDeck then refuses typed input and peer
+    // messages into that session. The Box asks for it only from an admin's stored agent trigger
+    // (features/automation, `permission_mode`): WorkerDeck cannot tell an admin's job from a
+    // browser user's, since both arrive under the host's operator key.
+    disableBypassPermissions: 'sessions',
     // Probe credentials at launch so an un-logged-in profile shows a remedy rather than dying on
     // the first turn. requireAvailableProfile stays unset: the probe produces standing false
     // negatives, and a 503 on a profile that works is worse than a late failure.
@@ -366,17 +391,15 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
       const env = { ...process.env } as Record<string, string | undefined>
       delete env.WORKERDECK_AUTH_KEY
       delete env.AGENT_PROXY_KEY
-      // A session runs arbitrary Bash, so it must never inherit anyone's long-lived Claude token -
-      // holding someone else's would defeat the whole point of per-person config dirs. These are
-      // never loaded into THIS process's env (see claudeTokenFor), so this is belt and braces
-      // against one being exported into the service by hand.
+      // A session runs arbitrary Bash, so it must never inherit a Claude token exported into the
+      // service by hand: holding the host's would defeat per-person config dirs. A connected
+      // account's own token is added back by WorkerDeck after this (accountSessionEnv).
+      delete env.CLAUDE_CODE_OAUTH_TOKEN
       for (const key of Object.keys(env)) if (key.startsWith('CLAUDE_TOKEN_')) delete env[key]
       const profile = typeof req.profile === 'string' ? byName.get(req.profile) : undefined
       if (profile?.engine === 'codex' && profile.mcpTokensPath) {
         Object.assign(env, readEnvFile(profile.mcpTokensPath))
       }
-      const token = profile ? claudeTokenFor(profile.person) : undefined
-      if (token) env.CLAUDE_CODE_OAUTH_TOKEN = token
       return { ...req, env } as ReturnType<NonNullable<WorkerServerOptions['buildRunnerConfig']>>
     },
   }

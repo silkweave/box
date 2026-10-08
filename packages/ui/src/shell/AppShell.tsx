@@ -148,7 +148,8 @@ export function AppShell({
                 onClick={() => setDrawerOpen(true)}>
                 <Menu />
               </Button>
-              <span className='md:hidden'>
+              {/* Below sm the drawer carries the brand; the bar keeps its room for the page name. */}
+              <span className='hidden sm:inline md:hidden'>
                 <Wordmark size='small' />
               </span>
             </>

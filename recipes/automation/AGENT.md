@@ -12,7 +12,8 @@ The recipe documents ship with core at `recipes/automation/`; the reference impl
 Copy or adapt `<fetched stack>/features/automation/` into the Box's `features/automation/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
 Migrations: `automation:001-import-schedules` (imports `features.automation.schedules` from
-`box.json` / `box.local.json` as time triggers) plus core's `004-runs-trigger-id` and
+`box.json` / `box.local.json` as time triggers), `automation:002-trigger-permission-mode` (adds the
+nullable `triggers.permission_mode` column) plus core's `004-runs-trigger-id` and
 `005-runs-event-id`, which arrive with core. Back up the warehouse first, then boot a restored copy
 and confirm every configured schedule is a trigger (`triggers-list`) before the live Box takes it.
 After the live boot, remove `features.automation.schedules` from the config files: it is no longer
@@ -35,7 +36,10 @@ read, and the boot log warns while it is present.
    line. The unattended permission mode (`workerdeck.queue.permissionMode`) is `auto` by default:
    the engine's classifier decides each tool call, and denials land in the run's permission report.
    `dontAsk` (Claude only) runs only what the run_as profile's settings allow. Either way, check the
-   profile's settings and MCP servers before moving a job in. Tune the
+   profile's settings and MCP servers before moving a job in. A trigger can instead run its main
+   job in `bypassPermissions` ("Bypass permissions" in the editor, `permission_mode` in
+   `trigger-upsert`), for a trusted prompt the classifier keeps blocking; put deny rules for what it
+   must never do in the job folder's settings. Tune the
    queue in `box.json` `workerdeck.queue` (SPEC.md, "Settings").
 5. **Event triggers** - When = a Box event: an exact kind (`content.published`) or a family
    (`signal.*`); `triggers-list` returns `eventKinds`, the kinds recorded in the last 30 days.

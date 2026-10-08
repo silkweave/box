@@ -62,6 +62,32 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   model carries on; the run's status still comes from the success marker. Read the run's
   "Permission denials" panel (or the `agent.permission_denied` diagnostics) after moving a job in,
   and give important jobs a marker the prompt only prints when the work is really done.
+- **A service-run Box needs a connected Claude account per `run_as` person.** Under a launchd
+  LaunchAgent the Claude CLI reads a profile's login from the macOS login Keychain (an item per
+  config dir), while cron, ssh and other non-GUI shells read `<dir>/.credentials.json`. Refresh
+  tokens rotate, so whichever side refreshes last kills the other side's copy, and the job fails at
+  once with "OAuth session expired and could not be refreshed" although `claude auth status` over
+  ssh says logged in. Each person (or an admin for them) connects the profile in Settings > Agent
+  accounts: WorkerDeck runs `claude setup-token`, keeps the one-year token beside the config dir and
+  injects it into that profile's runs. Never copy a token out of `.credentials.json` or the
+  Keychain, and do not test a person's dir with `claude -p` over ssh: each run can rotate their
+  token again.
+- **A setup-token loads no claude.ai connectors.** It covers inference only, so `claude_ai_*` MCP
+  tools (Gmail, Google Drive, Granola, HubSpot) are missing from a job that runs on a connected
+  account, and Box profiles turn claude.ai connectors off (`connectors: false`) anyway; a prompt
+  that needs them reports them unavailable or fails. Such jobs need MCP servers with their own
+  credentials.
+- **Project allow rules apply only in a trusted folder.** Claude Code ignores a job folder's
+  `.claude/settings.json` until that folder is trusted in the `run_as` profile's `.claude.json`
+  (accept the trust prompt once in an interactive session there). In rules, `//path` is absolute
+  and `/path` is relative to the folder: `Write(//Users/me/job/out.json)`, not `Write(/Users/...)`.
+  The run's "Permission denials" list names what to allow next.
+- **Bypass skips allow checks, not deny rules.** A `bypassPermissions` trigger runs every tool its
+  prompt reaches for, so keep the prompt trusted and fence the rest with deny rules in the job
+  folder's `.claude/settings.json` (e.g. `Bash(git push:*)`). It needs the agent host's WorkerDeck
+  to allow bypass for jobs (`disableBypassPermissions: 'sessions'`, WorkerDeck 3.8.2 or later); an
+  older one refuses the submit and the run ends `error` with `job refused`. Nobody can type into a
+  job session while it is in bypass.
 - **A restart loses agent jobs.** The job queue is in-memory; the boot sweep marks their runs
   `orphaned by server restart`. `service-restart` refuses while a job session is mid-turn.
 - **`run_as` is checked at fire time too.** A user demoted from admin since the trigger was saved

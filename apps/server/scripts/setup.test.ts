@@ -35,7 +35,6 @@ describe('first-run setup', () => {
     expect(patch).toMatchObject({
       workerdeck: {
         cwdRoots: ['/box'],
-        claudeTokens: false,
         profiles: [
           { name: 'assistant:codex' },
           { name: 'admin:codex', engine: 'codex', person: 'admin', home: '/profiles/codex', defaults: { permissionMode: 'acceptEdits' } },

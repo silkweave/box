@@ -62,8 +62,6 @@ export interface WorkerdeckConfig {
   cwdRoots: string[]
   /** Where parked/dormant session records live. Defaults to `<instance>/agent`. */
   stateDir: string
-  /** Whether to expect `CLAUDE_TOKEN_<PERSON>` in boxJson().workerdeckTokens and say who is missing. */
-  claudeTokens: boolean
   /** The job queue that runs agent triggers unattended (always on when the agent surface is). */
   queue: WorkerdeckQueueConfig
 }
@@ -233,15 +231,15 @@ export function parseWorkerdeckConfig(
     stateDir = raw['stateDir'].trim()
   }
 
-  const claudeTokens = raw['claudeTokens'] ?? false
-  if (typeof claudeTokens !== 'boolean') return refuse('`claudeTokens` must be a boolean')
+  // Removed 2026-10-08 with box.json `workerdeckTokens`: each person connects their Claude account in
+  // Settings > Agent accounts instead. Refused rather than ignored, so a stale key is noticed.
+  if (raw['claudeTokens'] !== undefined) return refuse('`claudeTokens` was removed; connect Claude accounts in Settings > Agent accounts')
 
   return {
     profiles: declared.filter((p) => ctx.homeExists(p.home)),
     pending: declared.filter((p) => !ctx.homeExists(p.home)),
     cwdRoots,
     stateDir,
-    claudeTokens,
     queue: parseQueue(raw['queue']),
   }
 }

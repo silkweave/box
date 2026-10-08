@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { LogOut, Upload, UserCircle2, Users as UsersIcon, X } from 'lucide-react'
+import { KeyRound, LogOut, Upload, UserCircle2, Users as UsersIcon, X } from 'lucide-react'
 import { PageContainer, Avatar, Button, Dialog, DialogContent, DialogTitle, InlineDialogScope, ConfirmHost } from '@silkweave/box-ui'
 import { ChannelGlyph } from '@/lib/channelIcons.tsx'
 import { useSettingsDialog } from '../lib/settingsDialog.ts'
@@ -12,6 +12,7 @@ import { fileToAvatarDataUri } from '../lib/image.ts'
 import type { User } from '../user-types.ts'
 import { cn } from '@/lib/utils'
 import { UsersView } from './UsersView.tsx'
+import { AgentAccountsView } from './AgentAccountsView.tsx'
 
 /** Settings sections. Each carried a role ACL until 2026-09-10; every signed-in principal now sees
  *  all of them, matching a server that no longer gates any of them either. */
@@ -19,6 +20,7 @@ import { UsersView } from './UsersView.tsx'
 const CORE_SECTIONS: SettingsSection[] = [
   { id: 'users', label: 'Users', icon: UsersIcon, order: 100, render: () => <UsersView /> },
   { id: 'profile', label: 'Profile', icon: UserCircle2, order: 0, render: () => <ProfileSection /> },
+  { id: 'agent-accounts', label: 'Agent accounts', icon: KeyRound, order: 10, render: () => <AgentAccountsView /> },
 ]
 
 let cachedSections: SettingsSection[] | undefined

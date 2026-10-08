@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Principal = { id: string; display: string; role: 'admin' | 'member' }
-type Forwarded = { url: string; body: Record<string, unknown> }
+type Forwarded = { url: string; body: Record<string, unknown>; auth?: Record<string, unknown> }
 
 const state = (() => {
   const principals = new Map<string, Principal>([
@@ -25,7 +25,9 @@ const state = (() => {
         void (async () => {
           let raw = ''
           for await (const chunk of req) raw += Buffer.from(chunk as Uint8Array).toString('utf8')
-          forwarded.push({ url: req.url ?? '', body: JSON.parse(raw || '{}') as Record<string, unknown> })
+          const sym = Object.getOwnPropertySymbols(req).find((s) => s.description === 'agent-auth')
+          const auth = sym ? (req as unknown as Record<symbol, Record<string, unknown>>)[sym] : undefined
+          forwarded.push({ url: req.url ?? '', body: JSON.parse(raw || '{}') as Record<string, unknown>, auth })
           if (holdNextResponse) await new Promise<void>((resolve) => { releaseResponse = resolve })
           res.statusCode = 201
           res.setHeader('content-type', 'application/json')
@@ -211,5 +213,43 @@ describe('agent mount Builder creation gate', () => {
 
     state.release()
     expect((await first).status).toBe(201)
+  })
+})
+
+describe('agent mount account routes', () => {
+  let server: Server
+
+  beforeEach(async () => {
+    state.reset()
+    const mount = createAgentMount()
+    server = createServer((req, res) => mount!.middleware(req, res, () => { res.statusCode = 404; res.end() }))
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  })
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  })
+
+  const post = (path: string, token: string): Promise<Response> => request(server, path, {}, token)
+
+  it('lifts an admin\'s profile pin on account connect, so they may connect anyone\'s profile', async () => {
+    const res = await post('/agent/v1/profiles/dan:claude/account/connect', 'alice-token')
+    expect(res.status).toBe(201)
+    await waitUntil(() => state.forwarded.length === 1)
+    expect(state.forwarded[0]!.url).toBe('/v1/profiles/dan:claude/account/connect')
+    expect(state.forwarded[0]!.auth).toMatchObject({ via: 'box', user: 'alice', admin: true })
+    expect(state.forwarded[0]!.auth).not.toHaveProperty('allowedProfiles')
+  })
+
+  it('keeps a member pinned to their own profiles on account routes', async () => {
+    await post('/agent/v1/profiles/dan:claude/account/complete', 'member-token')
+    await waitUntil(() => state.forwarded.length === 1)
+    expect(state.forwarded[0]!.auth).toMatchObject({ via: 'box', user: 'member', allowedProfiles: ['member:claude', 'member:codex'] })
+  })
+
+  it('keeps an admin pinned on every other profile route', async () => {
+    await post('/agent/v1/profiles/dan:claude', 'alice-token')
+    await waitUntil(() => state.forwarded.length === 1)
+    expect(state.forwarded[0]!.auth).toMatchObject({ allowedProfiles: ['alice:claude', 'alice:codex'] })
   })
 })

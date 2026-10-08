@@ -22,7 +22,7 @@ export function navEntries(): NavEntry[] {
 
 /** This Box's sidebar organization. Domain names belong here, outside the UI library. */
 const SIDEBAR_SECTIONS = [
-  { label: 'Workspace', ids: ['home', 'chat', 'artifacts', 'sink'] },
+  { label: 'Workspace', ids: ['home', 'mail', 'chat', 'artifacts', 'sink'] },
   { label: 'Reporting', ids: ['signals', 'boards'] },
   { label: 'Operations', ids: ['goals', 'initiatives', 'sprints', 'reminders'] },
   { label: 'Sales', ids: ['crm'] },

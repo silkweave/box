@@ -39,7 +39,7 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
   const preferredEngineFor = (user: string): string => Object.keys(profileMapFor(user)).sort((a, b) => a === 'claude' ? -1 : b === 'claude' ? 1 : a.localeCompare(b))[0] ?? 'claude'
   const profiles: ProfileInfo[] = (deployment?.profiles ?? []).map(p => p.engine === 'codex'
     ? { name: p.name, engine: 'codex', codexHome: p.home, defaults: profileDefaults(p.name, p.defaults), description: p.description }
-    : { name: p.name, engine: 'claude', configDir: p.home, defaults: profileDefaults(p.name, p.defaults), description: p.description })
+    : { name: p.name, engine: 'claude', configDir: p.home, defaults: profileDefaults(p.name, p.defaults), description: p.description, connectors: false })
   const key = randomBytes(32).toString('hex')
   const worker = createWorkerServer({
     basePath: '/v1', profiles, allowedCwdRoots: [paths.repoRoot],
@@ -62,8 +62,6 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
           if (match) env[match[1]] = match[2]
         }
       }
-      const token = profile && box.workerdeckTokens[`CLAUDE_TOKEN_${profile.person.toUpperCase()}`]
-      if (token) env.CLAUDE_CODE_OAUTH_TOKEN = token
       return { ...req, env, instructions: builderInstructions } as ReturnType<NonNullable<WorkerServerOptions['buildRunnerConfig']>>
     },
   })
