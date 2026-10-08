@@ -7,6 +7,9 @@
 // `400 unknown profile: <name>` on every session start for that person.
 
 import { boxJson } from './box-config.js'
+import { agentDefaultProfile } from './agent-defaults.js'
+
+export { agentDefaultProfile } from './agent-defaults.js'
 
 /**
  * What one user maps to: `engine → profile name`.
@@ -53,9 +56,16 @@ export function agentEnginesFor(userId: string): string[] {
   )
 }
 
-/** The engine a start defaults to for this user: their preferred available one. */
+/**
+ * The engine a start defaults to for this user: the engine of their chosen default profile
+ * (users.agent_profile, Settings > Profile) while it is still one of their mapped profiles, else
+ * their preferred available one.
+ */
 export function preferredAgentEngine(userId: string): string {
-  return agentEnginesFor(userId)[0] ?? DEFAULT_AGENT_ENGINE
+  const chosen = agentDefaultProfile(userId)
+  const map = enginesOf(readAgentProfiles()[userId])
+  const engine = chosen ? Object.keys(map).find((e) => map[e] === chosen) : undefined
+  return engine ?? agentEnginesFor(userId)[0] ?? DEFAULT_AGENT_ENGINE
 }
 
 /**

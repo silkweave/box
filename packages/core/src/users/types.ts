@@ -39,6 +39,9 @@ export interface User {
   /** channel → handle map, the source of truth for per-person presence (engagement verify,
    *  self-content links, the engagement matrix). */
   channels: Record<string, string>
+  /** Default agent profile (`<person>:<engine>`, one of this user's agentProfiles), or null for the
+   *  deployment rule (Claude first). For the agent principal it is the only profile it runs on. */
+  agent_profile: string | null
   /** Whether an access token has been issued (the token itself is never listed). */
   has_token: boolean
   /** Display ordering in the Users page (lower first). */
@@ -66,4 +69,6 @@ export interface UserInput {
   role?: UserRole
   /** Admin-only ('' clears). */
   tailscale_login?: string | null
+  /** Default agent profile; must be one of the user's agentProfiles ('' or null clears). */
+  agent_profile?: string | null
 }

@@ -5,7 +5,7 @@ import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { SESSION_COOKIE, authenticatePrincipal, boxBrand, dataPath, findPathMount, pathMountSigninUrl, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, parseCookies, rateLimit, repoRoot, resolvePrincipalById, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders, verifySession } from '@silkweave/box-core'
+import { SESSION_COOKIE, authenticatePrincipal, boxBrand, dataPath, findPathMount, pathMountSigninUrl, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, parseCookies, readUsers, rateLimit, repoRoot, resolvePrincipalById, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders, verifySession } from '@silkweave/box-core'
 import { AppModule } from './app.module.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
@@ -176,6 +176,9 @@ async function bootstrap(): Promise<void> {
   //
   // It must be listening before app.listen(), because AgentModule.onModuleInit starts the chat
   // agent, which sweeps orphan sessions against that URL immediately.
+  // Warm the default-agent-profile cache (core agent-defaults.ts) before anything can start an agent:
+  // the engine rule reads it synchronously. A failure only means the deployment rule applies.
+  await readUsers().catch((err: unknown) => diagnostic('app', 'boot.agent-defaults.error', { error: errorKind(err) }))
   try {
     diagnostic('app', 'boot.workerdeck.start')
     await bootWorkerdeck()

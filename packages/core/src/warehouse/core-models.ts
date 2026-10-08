@@ -37,6 +37,9 @@ export const USERS: ModelSpec = {
     // edit would rewrite a watermark of 10:00:00.500 as 10:00:00 and re-arm the very link that had
     // just been consumed. An integer round-trips exactly.
     link_watermark: { kind: 'bigint', nullable: true },
+    // The default agent profile (e.g. `toby:claude`), one of the person's agentProfiles; null keeps
+    // the deployment rule. agent-defaults.ts. Added by core:006 on an existing warehouse.
+    agent_profile: { kind: 'text', nullable: true },
   },
   timestamps: true,
   audit: true,

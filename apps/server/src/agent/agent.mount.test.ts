@@ -253,3 +253,45 @@ describe('agent mount account routes', () => {
     expect(state.forwarded[0]!.auth).toMatchObject({ allowedProfiles: ['alice:claude', 'alice:codex'] })
   })
 })
+
+// main.ts registers Nest's JSON body parser ahead of the mount, so a JSON body arrives already
+// drained into req.body (body-parser 2 sets it only when it consumed one). The worker reads the stream, so the
+// mount must hand the parsed body on; before it did, account complete answered "attemptId and code
+// are required". This stands in for body-parser with its own contract.
+describe('agent mount behind a JSON body parser', () => {
+  let server: Server
+
+  beforeEach(async () => {
+    state.reset()
+    const mount = createAgentMount()
+    server = createServer((req, res) => {
+      void (async () => {
+        let raw = ''
+        for await (const chunk of req) raw += Buffer.from(chunk as Uint8Array).toString('utf8')
+        Object.assign(req, { body: JSON.parse(raw || '{}') as unknown })
+        mount!.middleware(req, res, () => { res.statusCode = 404; res.end() })
+      })()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  })
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  })
+
+  it('forwards the parsed body of an account complete to the worker', async () => {
+    const res = await request(server, '/agent/v1/profiles/alice:claude/account/complete', { attemptId: 'a-1', code: 'c-1' })
+    expect(res.status).toBe(201)
+    await waitUntil(() => state.forwarded.length === 1)
+    expect(state.forwarded[0]!.url).toBe('/v1/profiles/alice:claude/account/complete')
+    expect(state.forwarded[0]!.body).toEqual({ attemptId: 'a-1', code: 'c-1' })
+    expect(state.forwarded[0]!.auth).toMatchObject({ via: 'box', user: 'alice' })
+  })
+
+  it('reads the parsed body of a session create', async () => {
+    const res = await request(server, '/agent/v1/sessions', { engine: 'codex', title: 'from the parser' })
+    expect(res.status).toBe(201)
+    await waitUntil(() => state.forwarded.length === 1)
+    expect(state.forwarded[0]!.body).toMatchObject({ title: 'from the parser' })
+  })
+})

@@ -1,5 +1,6 @@
 import { useSettingsDialog } from '../lib/settingsDialog.ts'
 import { useAuth } from '../lib/useAuth.tsx'
+import { AgentAccountsPanel } from '../components/agent/AgentAccountsPanel.tsx'
 import * as React from 'react'
 import {
   Check,
@@ -415,6 +416,9 @@ const HANDLE_CHANNELS = ['github', 'x', 'linkedin', 'reddit'] as const
  */
 function UserDialog({ state, existingIds, onClose }: { state: DialogState; existingIds: string[]; onClose: () => void }) {
   const editing = state?.mode === 'edit' ? state.user : null
+  const { principal, agent } = useAuth()
+  // Agent accounts: an admin manages anyone's (the agent included), a member only their own.
+  const showAccounts = editing !== null && (principal?.role === 'admin' || principal?.id === editing.id)
   const [firstName, setFirstName] = React.useState(editing?.first_name ?? '')
   const [lastName, setLastName] = React.useState(editing?.last_name ?? '')
   const [nickname, setNickname] = React.useState(editing?.nickname ?? '')
@@ -478,6 +482,7 @@ function UserDialog({ state, existingIds, onClose }: { state: DialogState; exist
     color: color || null,
     status: editing?.status ?? 'active',
     channels: handles,
+    agent_profile: editing?.agent_profile ?? null,
     has_token: editing?.has_token ?? false,
     sort: 0,
     created_at: '',
@@ -486,7 +491,7 @@ function UserDialog({ state, existingIds, onClose }: { state: DialogState; exist
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className='max-w-md'>
+      <DialogContent className={showAccounts ? 'max-w-xl' : 'max-w-md'}>
         <div className='flex flex-col gap-1'>
           <DialogTitle>{editing ? 'Edit user' : 'New user'}</DialogTitle>
           <DialogDescription>
@@ -614,6 +619,11 @@ function UserDialog({ state, existingIds, onClose }: { state: DialogState; exist
             </Button>
           </div>
         </form>
+        {showAccounts && editing && (
+          <div className='mt-4 border-t border-border pt-4'>
+            <AgentAccountsPanel user={editing} isAgent={editing.id === agent?.id} />
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

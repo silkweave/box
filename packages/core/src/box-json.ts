@@ -242,8 +242,8 @@ export function parseBoxAgent(raw: unknown, where: string): BoxAgent {
 export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   if (!isRecord(raw)) return refuse(where, 'must contain a JSON object')
   const defaults = defaultBoxJson()
-  // Removed 2026-10-08: per-person Claude tokens are connected in Settings > Agent accounts now.
-  if (raw['workerdeckTokens'] !== undefined) refuse(where, 'workerdeckTokens was removed; connect Claude accounts in Settings > Agent accounts and delete the key')
+  // Removed 2026-10-08: per-person Claude tokens are connected in Settings > Profile now.
+  if (raw['workerdeckTokens'] !== undefined) refuse(where, 'workerdeckTokens was removed; connect Claude accounts in Settings > Profile and delete the key')
   onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'recipes', 'features', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
 
   const agent = raw['agent'] === undefined ? defaults.agent : parseBoxAgent(raw['agent'], where)

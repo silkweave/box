@@ -10,6 +10,8 @@ import { USERS } from '../warehouse/core-models.js'
 import { type User, type UserInput, type UserRole, type UserStatus } from './types.js'
 import { systemUserId, agentIdentity } from '../box-config.js'
 import { runUserCleanups } from './cleanup.js'
+import { agentProfileMapFor } from '../agent-profiles.js'
+import { rememberAgentDefault, forgetAgentDefault } from '../agent-defaults.js'
 
 // Re-export the lazy identity lookup for existing user-directory consumers.
 export { systemUserId } from '../box-config.js'
@@ -36,6 +38,7 @@ interface UserRecord {
   /** Sign-in link single-use watermark: epoch MILLISECONDS, not a timestamp (see core-models.ts).
    *  Never surfaced to a caller - toUser() drops it, like the token columns. */
   link_watermark: number | null
+  agent_profile: string | null
   created_at: string
   updated_at: string
   created_by: string | null
@@ -55,6 +58,7 @@ function toUser(r: UserRecord): User {
     role: r.id === systemUserId() ? agentIdentity().role : (r.role || 'member') as UserRole,
     tailscale_login: r.tailscale_login,
     channels: r.channels ?? {}, // malformed JSON degrades to no handles (the layer parses to null)
+    agent_profile: r.agent_profile ?? null,
     has_token: r.token_ciphertext != null,
     sort: r.sort,
     created_at: r.created_at,
@@ -77,7 +81,9 @@ export function userSlug(nickname: string): string {
  *  karma labels); with collaborators gone every row IS internal and there is nothing to filter. */
 export async function readUsers(): Promise<User[]> {
   const rows = await readRecords<UserRecord>(USERS, { orderBy: 'sort, created_at' })
-  return rows.map(toUser)
+  const users = rows.map(toUser)
+  for (const user of users) rememberAgentDefault(user.id, user.agent_profile)
+  return users
 }
 
 /** One user by id (primitive lookup). */
@@ -125,6 +131,11 @@ export async function upsertUser(input: UserInput): Promise<User> {
   if (input.id === systemUserId() && input.role !== undefined && input.role !== agentIdentity().role) {
     throw new Error('the system principal role is controlled by box.json')
   }
+  const agentProfile =
+    input.agent_profile !== undefined ? input.agent_profile?.trim() || null : (prevUser?.agent_profile ?? null)
+  if (input.agent_profile !== undefined && agentProfile && !Object.values(agentProfileMapFor(input.id)).includes(agentProfile)) {
+    throw new Error(`"${agentProfile}" is not one of ${input.id}'s agent profiles (box.json agentProfiles)`)
+  }
   const tailscaleLogin =
     input.tailscale_login !== undefined ? input.tailscale_login?.trim() || null : (prevUser?.tailscale_login ?? null)
   // Uniqueness by a read before the write, like the slug check: DuckDB cannot ALTER a UNIQUE
@@ -150,10 +161,12 @@ export async function upsertUser(input: UserInput): Promise<User> {
       status: prevUser?.status ?? 'active',
       role: input.role ?? prevUser?.role ?? 'member',
       tailscale_login: tailscaleLogin,
+      agent_profile: agentProfile,
       sort: input.sort ?? prevUser?.sort ?? 0,
     },
     { prev },
   )
+  rememberAgentDefault(rec.id, rec.agent_profile ?? null)
   return toUser(rec)
 }
 
@@ -171,6 +184,7 @@ export async function deleteUser(id: string): Promise<void> {
   await withWrite(async (conn) => {
     await conn.run(`DELETE FROM users WHERE id = ?`, [id])
   })
+  forgetAgentDefault(id)
 }
 
 /** Assign sequential `sort` to users in the given id order (drag reorder). */

@@ -36,7 +36,7 @@ Box"), never stored half-working.
 | `do_kind` | `action` or `agent` (run here); `deliver` while a deliver runner is registered (event triggers only) |
 | `action_id`, `params` | action: registry id; JSON object of string params handed to the action |
 | `run_as` | agent: the admin whose agent profile runs the prompt ("runs as") |
-| `engine`, `model` | agent: engine (null = the run_as user's preferred one) and model (null = the profile default) |
+| `engine`, `model` | agent: engine (null = the run_as user's default profile, else Claude first) and model (null = the profile default). A trigger that runs as the agent principal always uses the agent's default profile; its own engine is ignored and a model chosen for another engine is dropped |
 | `cwd` | agent: working directory, inside `box.json` `workerdeck.cwdRoots` (null = the first root) |
 | `prompt` | agent: sent verbatim |
 | `success_marker` | agent: the run is a success only when a line of the final text starts with this word (`SENT_OK` or `SENT_OK 42 sent`) |

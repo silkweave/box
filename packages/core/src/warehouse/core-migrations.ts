@@ -59,4 +59,11 @@ export const CORE_MIGRATIONS: readonly Migration[] = [
     name: '005-runs-event-id',
     statements: [`ALTER TABLE automation_runs ADD COLUMN IF NOT EXISTS event_id VARCHAR`],
   },
+  {
+    // Default agent profile (2026-10-08): the profile a person's runs prefer, chosen in Settings >
+    // Profile or the Users detail; for the agent principal the only one it uses. NULL keeps the
+    // previous rule (Claude first among the mapped engines), so existing rows need no backfill.
+    name: '006-users-agent-profile',
+    statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS agent_profile VARCHAR`],
+  },
 ]

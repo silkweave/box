@@ -112,5 +112,5 @@ test('the recipes ledger records adapted recipes and their powerups', () => {
 })
 
 test('the removed workerdeckTokens key is refused with the replacement named', () => {
-  expect(() => parseBoxJson({ workerdeckTokens: {} })).toThrow(/workerdeckTokens was removed; connect Claude accounts in Settings > Agent accounts/)
+  expect(() => parseBoxJson({ workerdeckTokens: {} })).toThrow(/workerdeckTokens was removed; connect Claude accounts in Settings > Profile/)
 })

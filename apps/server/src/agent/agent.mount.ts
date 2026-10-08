@@ -194,6 +194,19 @@ const readBody = (req: IncomingMessage): Promise<string> =>
     req.on('error', reject)
   })
 
+/**
+ * The body main.ts's JSON body parser already drained, re-serialized; undefined when it did not run.
+ *
+ * That parser is registered ahead of this mount, so for `application/json` the stream is spent and
+ * the worker (which reads the stream) would see an empty body: account `complete` then answered
+ * "attemptId and code are required". body-parser 2 sets `req.body` only once it has consumed a body
+ * (it leaves `undefined` on a request it skipped, and has no `_body` flag any more).
+ */
+const parsedBody = (req: IncomingMessage): Buffer | undefined => {
+  const parsed = (req as IncomingMessage & { body?: unknown }).body
+  return parsed === undefined ? undefined : Buffer.from(JSON.stringify(parsed), 'utf8')
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /**
@@ -247,7 +260,7 @@ export function createAgentMount(): AgentMount | undefined {
   ): Promise<void> {
     let body: Record<string, unknown>
     try {
-      const parsed: unknown = JSON.parse((await readBody(req)) || '{}')
+      const parsed: unknown = JSON.parse((parsedBody(req)?.toString('utf8') ?? (await readBody(req))) || '{}')
       if (!isRecord(parsed)) throw new Error('not an object')
       body = parsed
     } catch {
@@ -344,7 +357,7 @@ export function createAgentMount(): AgentMount | undefined {
     }
     const gated = gatePath(path)
     let auth = agentAuthFor(principal, READ_METHODS.has(method))
-    // An admin may connect or disconnect anyone's agent account (Settings > Agent accounts, D3), so
+    // An admin may connect or disconnect anyone's agent account (Settings > Profile, D3), so
     // their profile pin is lifted on exactly these routes. WorkerDeck's `accounts.canConnect` still
     // decides (workerdeck.host.ts); a member keeps their pin and reaches only their own profiles.
     if (auth.via === 'box' && auth.admin === true && ACCOUNT_PATH.test(gated)) {
@@ -383,6 +396,11 @@ export function createAgentMount(): AgentMount | undefined {
       return
     }
     stash(req, auth)
+    const drained = parsedBody(req)
+    if (drained) {
+      worker.server.emit('request', replayRequest(req, workerUrl(req.url ?? '/'), drained, auth), res)
+      return
+    }
     req.url = workerUrl(req.url ?? '/')
     worker.server.emit('request', req, res)
   }

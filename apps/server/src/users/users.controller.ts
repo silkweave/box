@@ -21,6 +21,7 @@ const userOutput = z.object({
   role: z.enum(['admin', 'member']),
   tailscale_login: z.string().nullable(),
   channels: z.record(z.string(), z.string()),
+  agent_profile: z.string().nullable(),
   has_token: z.boolean(),
   sort: z.number(),
   created_at: z.string(),
@@ -49,6 +50,8 @@ class UserDto {
   tailscale_login!: string | null
   @ApiProperty({ type: Object, description: 'channel → handle map' })
   channels!: Record<string, string>
+  @ApiProperty({ required: false, nullable: true, description: 'Default agent profile (`<person>:<engine>`); null = Claude first. The agent principal runs on it only' })
+  agent_profile!: string | null
   @ApiProperty({ description: 'Whether an access token has been issued (never the token itself)' })
   has_token!: boolean
   @ApiProperty() sort!: number
@@ -75,6 +78,8 @@ class UpsertUserDto {
   @ApiProperty({ required: false }) @IsOptional() @IsInt() sort?: number
   @ApiProperty({ required: false, description: 'ADMIN-only: the tailscale login this user signs in as ("" clears it)' })
   @IsOptional() @IsString() tailscale_login?: string
+  @ApiProperty({ required: false, description: 'Default agent profile, one of the user\'s agentProfiles ("" clears it)' })
+  @IsOptional() @IsString() agent_profile?: string
 }
 class SetRoleDto {
   @ApiProperty() @IsString() id!: string

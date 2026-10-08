@@ -123,10 +123,12 @@ recent messages plus whatever is new since the session last looked; `chat-histor
 reaches further back.
 
 **The host.** `chat-agent.ts` creates a workerdeck `SessionHandle` per room against
-`agentWorkerUrl()` with `hostAuth`, under the `codex` profile declared for `nova` in
-`agentProfiles` in `box.json` (`agentProfileFor('nova', 'codex')`; no profile = the turn throws).
-Model `gpt-5.6-luna`, reasoning effort `medium`, both probed against the profile's catalogue first
-and **omitted if the profile does not declare them** rather than failing. Sessions close after
+`agentWorkerUrl()` with `hostAuth`, under the agent's default profile (`users.agent_profile`, set on
+its user detail; unset means Claude first among its `agentProfiles`), resolved as
+`agentProfileFor(agent, preferredAgentEngine(agent))` (no profile = the turn throws). A room's live
+session is retired between turns when that default changes. Per engine (`CHAT_AGENT_TUNING`): Codex
+`gpt-5.6-luna`, Claude `sonnet`, reasoning effort `medium`, each probed against the profile's
+catalogue first and **omitted if the profile does not declare it** rather than failing. Sessions close after
 `SESSION_IDLE_TTL_MS` (1h idle); a turn that emits nothing for `TURN_SILENCE_LIMIT_MS` (10min) is
 interrupted, with the watchdog standing down while the turn is legitimately blocked on an approval.
 Text is assembled by `AgentTurnText` from `stream_delta`s and `assistant_message` blocks and
@@ -247,9 +249,9 @@ Everything else in chat is a member's, rooms included: a room is a conversation,
    day one creates it.
 2. **The agent's identity** - select it in the `agent` block of the root `box.json` before first boot.
    Core seeds the matching user; changing the ID later is unsupported. The agent also needs an entry in `agentProfiles` mapping it to a real workerdeck profile, and a
-   token for its MCP client. `AGENT_ENGINE = 'codex'`, `CHAT_AGENT_MODEL` and
-   `CHAT_AGENT_REASONING_EFFORT` in `features/chat/server/chat-agent.ts` are the other three
-   knobs, and the last two degrade rather than fail if the profile does not declare them.
+   token for its MCP client. Its default profile (Settings > Users, the agent's detail) picks the
+   engine; `CHAT_AGENT_TUNING` in `features/chat/server/chat-agent.ts` sets the model and effort per
+   engine, and both degrade rather than fail if the profile does not declare them.
 3. **Labels and order** - the nav entry's `label` and `order` in
    `features/chat/web/index.tsx`. Band 500 puts chat mid-sidebar.
 4. **Vocabulary** - `CHAT_ROOM_ICONS` (69 curated lucide names) and `CHAT_REACTION_EMOJI` (12, in UI

@@ -97,7 +97,7 @@ generated there at first use. Changing them invalidates sessions or encrypted ac
 Never print permanent tokens into logs. `credentials` is keyed by channel, account, then key;
 the account `*` supplies channel-wide defaults. `accounts` declares the corresponding channel
 accounts. Agent engine configuration belongs in `workerdeck` and user-to-profile mappings in
-`agentProfiles`. Claude logins for agent profiles are connected in Settings > Agent accounts and
+`agentProfiles`. Claude logins for agent profiles are connected in Settings > Profile and
 kept by WorkerDeck beside each profile's config dir; `workerdeckTokens` and
 `workerdeck.claudeTokens` were removed and are refused.
 

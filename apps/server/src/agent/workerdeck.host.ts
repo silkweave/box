@@ -197,13 +197,13 @@ export async function submitAgentJob(request: CreateJobRequest): Promise<JobInfo
   return body.job
 }
 
-/** A configured profile with its live account state, for Settings > Agent accounts. */
+/** A configured profile with its live account state, for Settings > Profile. */
 export interface AgentAccountProfile {
   name: string
   person: string
   engine: 'claude' | 'codex'
   description: string | null
-  /** Only claude profiles can connect in WorkerDeck 3.9.1 (Codex device sign-in comes later). */
+  /** Settings can connect it: Claude by setup-token, Codex by device sign-in (WorkerDeck 3.10). */
   connectable: boolean
   account: { connectedAt: string; expiresAt: string } | null
   available: boolean | null
@@ -227,7 +227,7 @@ export async function agentAccountProfiles(): Promise<AgentAccountProfile[]> {
       person: p.person,
       engine: p.engine,
       description: p.description ?? null,
-      connectable: p.engine === 'claude',
+      connectable: true,
       account: info?.account ? { connectedAt: info.account.connectedAt, expiresAt: info.account.expiresAt } : null,
       available: typeof info?.available === 'boolean' ? info.available : null,
       unavailableReason: info?.unavailableReason ?? null,
@@ -256,7 +256,6 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
     console.log('  agent: off (workerdeck is not configured in box.json)')
     return undefined
   }
-
   if (deployment.pending.length > 0) {
     // Named rather than passed over silently, so the log says who still owes a login. A declared
     // profile whose home is missing is a hard createWorkerServer failure, and that once crash-looped
@@ -296,11 +295,15 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
     // Required for managed claude/codex profiles: each one's config dir must sit under a root. The
     // roots are the configured dirs' own parents (the person's home), nothing wider.
     allowedConfigDirRoots: [...new Set(deployment.profiles.map((p) => dirname(p.home)))],
-    // Settings > Agent accounts (docs/SERVER.md, "Agent accounts"). WorkerDeck runs `claude setup-token`, keeps
+    // Settings > Profile (docs/SERVER.md, "Agent accounts"). WorkerDeck runs `claude setup-token`, keeps
     // the token in <configDir>/workerdeck-account.json and injects it into that profile's sessions.
     // A person connects their own profiles; an admin may connect anyone's (D3). The host principal
     // (the chat agent's loopback client) never may.
-    accounts: { canConnect: (principal, profile) => canConnectAccount(principal as AgentAuth | undefined, profile.name) },
+    // Codex profiles connect by device sign-in (a user code on the ChatGPT page, no paste). Under
+    // Bun, WorkerDeck's loadPty picks Bun's own PTY (node-pty never starts the child there).
+    accounts: {
+      canConnect: (principal, profile) => canConnectAccount(principal as AgentAuth | undefined, profile.name),
+    },
     allowedCwdRoots: deployment.cwdRoots,
     // Host filesystem routes OFF. They mount on allowedCwdRoots alone, needing no grant of their
     // own, so leaving them on would publish the whole checkout - box.local.json included - as an

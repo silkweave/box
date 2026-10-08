@@ -35,6 +35,8 @@ export interface UserUpsert {
   /** channel → handle map - the source of truth for per-person presence ('' handles are dropped). */
   channels?: Record<string, string>
   sort?: number
+  /** Default agent profile, one of the user's agentProfiles; '' clears. */
+  agent_profile?: string
 }
 
 /** Create or update a user of any role (partial), then reload. Never flips an existing row's role

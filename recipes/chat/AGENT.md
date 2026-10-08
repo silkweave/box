@@ -31,9 +31,10 @@ tab label, icon and order live in the module declaration in `features/chat/mobil
    default is Nova (`nova`), admin; ID changes after initialization are unsupported. Core seeds
    its directory row. Read [the role tradeoff](../../docs/AUTH.md#agent-identity-and-role) before
    arming chat. The seat also needs an entry in
-   `agentProfiles` (`box.json`, or `box.local.json`) mapping it to a real workerdeck profile under the
-   `codex` engine, and an access token for its MCP client (`box auth token`).
-3. **Tune the turn** - `CHAT_AGENT_MODEL`, `CHAT_AGENT_REASONING_EFFORT`, `AGENT_TURN_BUDGET`,
+   `agentProfiles` (`box.json`, or `box.local.json`) mapping it to a real workerdeck profile, its
+   default profile chosen on its user detail (Settings > Users), and an access token for its MCP
+   client (`box auth token`).
+3. **Tune the turn** - `CHAT_AGENT_TUNING` (model and effort per engine), `AGENT_TURN_BUDGET`,
    `SESSION_IDLE_TTL_MS`, `TURN_SILENCE_LIMIT_MS` in
    `features/chat/server/chat-agent.ts`. The model and effort are probed against the
    profile's own catalogue and silently omitted if it does not declare them, so a wrong value degrades

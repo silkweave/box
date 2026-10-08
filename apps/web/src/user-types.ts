@@ -20,6 +20,8 @@ export interface User extends AvatarUser {
   status: string
   /** channel → handle map - the source of truth for per-person presence. */
   channels: Record<string, string>
+  /** Default agent profile (`<person>:<engine>`); null = Claude first. The agent runs on it only. */
+  agent_profile: string | null
   /** Whether an access token has been issued (the token itself is never sent to the client). */
   has_token: boolean
   sort: number

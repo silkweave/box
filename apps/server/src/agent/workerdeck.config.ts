@@ -232,8 +232,8 @@ export function parseWorkerdeckConfig(
   }
 
   // Removed 2026-10-08 with box.json `workerdeckTokens`: each person connects their Claude account in
-  // Settings > Agent accounts instead. Refused rather than ignored, so a stale key is noticed.
-  if (raw['claudeTokens'] !== undefined) return refuse('`claudeTokens` was removed; connect Claude accounts in Settings > Agent accounts')
+  // Settings > Profile instead. Refused rather than ignored, so a stale key is noticed.
+  if (raw['claudeTokens'] !== undefined) return refuse('`claudeTokens` was removed; connect Claude accounts in Settings > Profile')
 
   return {
     profiles: declared.filter((p) => ctx.homeExists(p.home)),

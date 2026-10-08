@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common'
+import { Controller, ForbiddenException, Get, Query, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { DEFAULT_AGENT_ENGINE, agentEnginesFor, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, repoRoot, type Principal } from '@silkweave/box-core'
 import { CurrentPrincipal } from '../auth/auth.decorators.js'
@@ -58,7 +58,7 @@ class AgentAccountProfileDto {
   @ApiProperty({ description: 'Box user the profile belongs to.' }) person!: string
   @ApiProperty({ enum: ['claude', 'codex'] }) engine!: 'claude' | 'codex'
   @ApiProperty({ nullable: true, type: String }) description!: string | null
-  @ApiProperty({ description: 'Whether Settings can connect an account for it (Claude only for now).' }) connectable!: boolean
+  @ApiProperty({ description: 'Whether Settings can connect an account for it (Claude by setup-token, Codex by device sign-in).' }) connectable!: boolean
   @ApiProperty({ nullable: true, type: AgentAccountDto, description: 'The connected account; null = none (the profile uses its config dir login).' })
   account!: AgentAccountDto | null
   @ApiProperty({ nullable: true, type: Boolean, description: 'Credential probe result; null = not probed yet.' }) available!: boolean | null
@@ -109,20 +109,24 @@ export class AgentController {
   }
 
   /**
-   * Settings > Agent accounts: the profiles this principal may connect. A person sees their own
+   * Settings > Profile: the profiles this principal may connect. A person sees their own
    * (by `person` or their agentProfiles map); an admin sees everyone's (D3). Connect and disconnect
    * themselves go to WorkerDeck's own routes through the /agent mount, where `accounts.canConnect`
    * applies the same rule (workerdeck.host.ts).
    */
   @Get('accounts')
   @ApiOkResponse({ type: AgentAccountsDto })
-  async accounts(@CurrentPrincipal() principal: Principal | null): Promise<AgentAccountsDto> {
+  async accounts(@CurrentPrincipal() principal: Principal | null, @Query('user') user?: string): Promise<AgentAccountsDto> {
     if (!principal || agentWorkerUrl() === undefined) return { enabled: false, profiles: [] }
-    const own = new Set(Object.values(agentProfileMapFor(principal.id)))
-    const all = await agentAccountProfiles()
-    return {
-      enabled: true,
-      profiles: principal.role === 'admin' ? all : all.filter((p) => p.person === principal.id || own.has(p.name)),
+    // `?user=` narrows to one person (Settings > Profile, the Users detail). Another person's list
+    // is an admin's, like connecting their profiles (canConnectAccount).
+    if (user !== undefined && user !== principal.id && principal.role !== 'admin') {
+      throw new ForbiddenException("another user's agent accounts are admin-only")
     }
+    const subject = user ?? principal.id
+    const own = new Set(Object.values(agentProfileMapFor(subject)))
+    const all = await agentAccountProfiles()
+    const theirs = all.filter((p) => p.person === subject || own.has(p.name))
+    return { enabled: true, profiles: user === undefined && principal.role === 'admin' ? all : theirs }
   }
 }
