@@ -90,7 +90,7 @@ is descriptive prose, not a manifest. There is no `box adopt`, one-click install
 workflow. The root workspace package owns packages imported by the shared feature tree.
 
 The Stack carries every maintained recipe: reminders, sink, data, planning, content, CRM, chat,
-automation, alerts, email, notifications, engagement, artifacts and mobile. The Mobile app recipe is the
+automation, alerts, email, notifications, engagement, artifacts, sso and mobile. The Mobile app recipe is the
 one whose code ships with core ([MOBILE.md](MOBILE.md)): adapting it makes the shipped app the Box's
 own and records it in the ledger, and each recipe's `mobile` powerup requires it. A consumer Box starts with core and
 adapts only the recipes its team chooses.

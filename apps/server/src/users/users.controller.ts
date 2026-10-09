@@ -3,7 +3,7 @@ import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsIn, IsInt, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { z } from 'zod/v4'
-import { boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, issuePrincipalToken, issueSigninLink, readUser, readUsers, revealPrincipalToken, revokePrincipalToken, setPrincipalRole, upsertUser, type User, type UserRole } from '@silkweave/box-core'
+import { boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, issuePrincipalToken, issueSigninLink, readUser, readUsers, revealPrincipalToken, revokePrincipalToken, sameEmail, setPrincipalRole, upsertUser, type User, type UserRole } from '@silkweave/box-core'
 import { revokeBuilderControl } from '../agent/builder-control.js'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { Admin } from '../auth/auth.decorators.js'
@@ -67,7 +67,7 @@ class UpsertUserDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() first_name?: string
   @ApiProperty({ required: false }) @IsOptional() @IsString() last_name?: string
   @ApiProperty({ required: false }) @IsOptional() @IsString() nickname?: string
-  @ApiProperty({ required: false, description: 'Reference-only contact email ("" clears it)' })
+  @ApiProperty({ required: false, description: 'Identity email ("" clears it). Admin-only to change; unique across users' })
   @IsOptional() @IsString() email?: string
   @ApiProperty({ required: false, description: 'Avatar image URL or data: URI ("" clears it)' })
   @IsOptional() @IsString() image?: string
@@ -150,8 +150,9 @@ export class UsersController {
    *
    * Self-or-admin, checked here rather than with `@Admin()` because the answer depends on the BODY:
    * a member may edit their own profile fields and nothing else. Creating a user is an admin's, so
-   * a member cannot mint themselves a second identity, and `tailscale_login` is an admin's on every
-   * row, because it is the mapping that decides who a tailscale login signs in as.
+   * a member cannot mint themselves a second identity, and `tailscale_login` and `email` are an
+   * admin's on every row, because each decides who a person is somewhere else (a tailscale login,
+   * an SSO sign-in).
    */
   @Post('upsert')
   @ApiOkResponse({ type: UserDto })
@@ -163,6 +164,11 @@ export class UsersController {
       if (req.principal?.id !== body.id) throw new ForbiddenException('editing another user is admin-only')
       if (!(await readUser(body.id))) throw new ForbiddenException('creating a user is admin-only')
       if (body.tailscale_login !== undefined) throw new ForbiddenException('tailscale_login is admin-only')
+      // The email is an identity (SSO's NameID), so changing it is an admin's. The profile form
+      // always sends it, so an unchanged value passes.
+      if (body.email !== undefined && !sameEmail(body.email, (await readUser(body.id))?.email)) {
+        throw new ForbiddenException('changing email is admin-only')
+      }
     }
     let channels: Record<string, string> | undefined
     try {
@@ -170,7 +176,12 @@ export class UsersController {
     } catch {
       throw new BadRequestException('channels must be a JSON object of channel→handle')
     }
-    return (await upsertUser({ ...body, channels })) as User as UserDto
+    try {
+      return (await upsertUser({ ...body, channels })) as User as UserDto
+    } catch (e) {
+      // Domain refusals (a taken email or tailscale login, an invalid id) are the caller's to fix.
+      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+    }
   }
 
   /**

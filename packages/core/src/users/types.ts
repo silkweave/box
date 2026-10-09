@@ -23,7 +23,8 @@ export interface User {
   first_name: string
   last_name: string
   nickname: string
-  /** Reference-only contact - no mail is ever sent. */
+  /** The person's identity email: unique (case-insensitive) and admin-only to change, because SSO
+   *  signs people in by it. No mail is ever sent to it by core. */
   email: string | null
   /** Avatar image URL; null falls back to a nickname-initials chip in the UI. */
   image: string | null
@@ -56,7 +57,7 @@ export interface UserInput {
   first_name?: string
   last_name?: string
   nickname?: string
-  /** Reference-only contact ('' clears). */
+  /** Identity email ('' clears). Admin-only to change; unique across users. */
   email?: string | null
   image?: string | null
   color?: string | null

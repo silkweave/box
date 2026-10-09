@@ -22,7 +22,7 @@ A request is resolved to a principal by the first of these that yields one
 | 2 | the `box_session` cookie | `session` | the SPA |
 | 3 | *(none)* | - | the five `@Public()` routes on `AuthController` only |
 
-Path mounts (`/artifacts/<slug>/`, see SERVER.md) resolve the same two credentials in `main.ts`
+Path mounts (`/artifacts/<slug>/`, the sso recipe's `/auth/`, see SERVER.md) resolve the same two credentials in `main.ts`
 before their handler runs; they are never public.
 
 `Principal` is `{ id, display, role }` (`packages/core/src/auth/principal.ts`). The credential kind
@@ -91,7 +91,9 @@ unusable, so when in doubt the answer is member.
 `user-invite-reveal`, `user-access-revoke`, `user-set-role` and `user-delete` carry `@Admin()`. `user-upsert` is
 self-or-admin, checked in the method rather than with the decorator because the answer depends on
 the body: a member may edit their own profile fields, may not create a user (that would be minting
-a second identity), and may not set `tailscale_login` on any row.
+a second identity), and may not set `tailscale_login` on any row or change any `email`. Both decide
+who a person is somewhere else: a tailscale login, or an SSO sign-in (the `sso` recipe signs people
+in by their email). Emails are also unique across users, case-insensitively (`upsertUser`).
 
 **In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: data's signal definitions
 and sources, automation's triggers and restart, content's channel profiles, planning's initiative

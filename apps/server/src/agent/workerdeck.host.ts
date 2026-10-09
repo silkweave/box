@@ -235,6 +235,23 @@ export async function agentAccountProfiles(): Promise<AgentAccountProfile[]> {
   })
 }
 
+/**
+ * Whether a profile's engine takes per-session MCP servers (Claude does, Codex does not), from the
+ * worker's own capability report. False when the worker is down or does not know the profile, so a
+ * caller then starts the session without them rather than failing.
+ */
+export async function profileTakesSessionMcpServers(profile: string): Promise<boolean> {
+  if (!host) return false
+  try {
+    const res = await fetch(`${host.url}/v1/profiles`, { headers: { authorization: `Bearer ${host.key}` } })
+    if (!res.ok) return false
+    const { profiles } = (await res.json()) as { profiles: ProfileInfo[] }
+    return profiles.find((p) => p.name === profile)?.capabilities?.sessionMcpServers === true
+  } catch {
+    return false
+  }
+}
+
 /** Cancel a queued or running job. Null when the queue does not know it. */
 export async function cancelAgentJob(id: string): Promise<JobInfo | null> {
   return (await host?.worker.queue?.cancel(id)) ?? null

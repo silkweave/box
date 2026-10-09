@@ -358,6 +358,16 @@ what runs unattended, so `trigger-upsert`, `trigger-delete`, `trigger-run` and `
 are admin-only. An agent trigger runs on a person's own agent account, so that person is an admin
 too, named explicitly in `run_as` and shown beside the owner ("runs as Dan, owned by Toby"). Reading triggers, status and history stays a member's, as does core's Run Now.
 
+**The Box MCP server in a job.** A job on an engine that takes per-session MCP servers (Claude)
+gets `box`, this Box's `/mcp` authenticated as the trigger's `run_as` user, so a run as toby uses
+the Box as toby. The token is that user's existing one, revealed rather than rotated (issued only
+when they have none), so it is readable by any shell command the job may run. `mcp__box` is
+auto-approved; the floor `ServiceRestart`, `UserDelete`, `UserSetRole`, `UserAccessRevoke` is
+disallowed (the same floor as the chat agent, `apps/server/src/agent/box-mcp.ts`). A `box` entry in
+the person's own Claude config is replaced for the job, not run beside it. A Codex profile takes no
+session servers: it keeps `box` in its config.toml with the token from its `mcpTokensPath` file.
+When the token cannot be read the job starts without `box` and the run log says so.
+
 ## What a team customises
 
 - **The triggers.** Rows in the Box's warehouse, team-specific; a fresh Box has none.
@@ -365,7 +375,8 @@ too, named explicitly in `run_as` and shown beside the owner ("runs as Dan, owne
 - **Which events fire work.** Event kinds are whatever the installed features record (`eventKinds`
   lists the recent ones); filters, caps and depth per trigger.
 - **What an agent run may do.** The run_as profile's own settings (allow rules, MCP servers) under
-  the unattended permission mode, and the directories in `workerdeck.cwdRoots`.
+  the unattended permission mode, the directories in `workerdeck.cwdRoots`, and the Box's own MCP
+  tools as the run_as user (below).
 - **Which actions are armed.** Whatever the installed features contribute; a trigger naming a
   missing action is listed as invalid with its reason, not dropped.
 - **Labels and order.** Band 800 in `features/automation/web/index.tsx`.

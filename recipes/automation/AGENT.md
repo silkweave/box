@@ -36,7 +36,9 @@ read, and the boot log warns while it is present.
    line. The unattended permission mode (`workerdeck.queue.permissionMode`) is `auto` by default:
    the engine's classifier decides each tool call, and denials land in the run's permission report.
    `dontAsk` (Claude only) runs only what the run_as profile's settings allow. Either way, check the
-   profile's settings and MCP servers before moving a job in. A trigger can instead run its main
+   profile's settings and MCP servers before moving a job in. A Claude job gets the Box's own MCP
+   server (`box`) as its run_as user from the session (SPEC "The Box MCP server in a job"); a Codex
+   profile needs `box` in its config.toml. A trigger can instead run its main
    job in `bypassPermissions` ("Bypass permissions" in the editor, `permission_mode` in
    `trigger-upsert`), for a trusted prompt the classifier keeps blocking; put deny rules for what it
    must never do in the job folder's settings. Tune the

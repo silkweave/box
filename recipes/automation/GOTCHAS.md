@@ -72,6 +72,10 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   injects it into that profile's runs. Never copy a token out of `.credentials.json` or the
   Keychain, and do not test a person's dir with `claude -p` over ssh: each run can rotate their
   token again.
+- **A job's `box` is the session's, not the profile's.** A Claude job gets `box` as its run_as user
+  from the session and it replaces a `box` entry in that person's own `.claude.json` for the job.
+  Fix a Box MCP problem in a job on the Box side, not by editing the person's config; a Codex job
+  still reads `box` from its config.toml.
 - **A setup-token loads no claude.ai connectors.** It covers inference only, so `claude_ai_*` MCP
   tools (Gmail, Google Drive, Granola, HubSpot) are missing from a job that runs on a connected
   account, and Box profiles turn claude.ai connectors off (`connectors: false`) anyway; a prompt

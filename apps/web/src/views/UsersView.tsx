@@ -570,8 +570,17 @@ function UserDialog({ state, existingIds, onClose }: { state: DialogState; exist
           </div>
 
           <label className='flex flex-col gap-1 text-label text-muted-foreground'>
-            Email <span className='text-fg-4'>(reference only - no mail is sent)</span>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder='name@example.com' className={inputCls} />
+            Email{' '}
+            <span className='text-fg-4'>
+              {principal?.role === 'admin' ? '(identity for sign-in elsewhere; no mail is sent)' : '(ask an administrator to change it)'}
+            </span>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              readOnly={!!editing && principal?.role !== 'admin'}
+              placeholder='name@example.com'
+              className={inputCls}
+            />
           </label>
 
           <div className='flex flex-col gap-1 text-label text-muted-foreground'>

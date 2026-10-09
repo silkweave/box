@@ -117,6 +117,25 @@ export async function assertKnownActor(actor: string): Promise<void> {
  * be a valid slug. `channels` (channel → handle) lives here too - the users table is the source of
  * truth for per-person presence.
  */
+/** An email as an identity: trimmed and lowercased, `null` when blank. */
+export function normalizeEmail(email: string | null | undefined): string | null {
+  const value = email?.trim().toLowerCase()
+  return value ? value : null
+}
+
+/** Whether two emails name the same identity (case-insensitive; blank equals null). */
+export function sameEmail(a: string | null | undefined, b: string | null | undefined): boolean {
+  return normalizeEmail(a) === normalizeEmail(b)
+}
+
+/** The user whose email is `email` (case-insensitive), or null. */
+export async function readUserByEmail(email: string): Promise<User | null> {
+  const value = normalizeEmail(email)
+  if (!value) return null
+  const rows = await withRead<{ id: string }>(`SELECT id FROM users WHERE lower(trim(email)) = ? LIMIT 1`, [value])
+  return rows[0] ? readUser(rows[0].id) : null
+}
+
 export async function upsertUser(input: UserInput): Promise<User> {
   if (!SLUG_SEG.test(input.id)) throw new Error(`invalid user id "${input.id}" (use a-z, 0-9, -)`)
   // Read prev as the FULL record (not the User shape) so the {prev} merge keeps the token columns
@@ -147,6 +166,17 @@ export async function upsertUser(input: UserInput): Promise<User> {
     ])
     if (clash[0]) throw new Error(`tailscale login "${tailscaleLogin}" already belongs to user "${clash[0].id}"`)
   }
+  const email = input.email !== undefined ? input.email?.trim() || null : (prevUser?.email ?? null)
+  // The email is an identity (SSO signs people in by it), so two users may not share one, compared
+  // case-insensitively. Checked on change only, so a Box that already holds a duplicate still saves
+  // unrelated profile edits.
+  if (email && !sameEmail(email, prevUser?.email)) {
+    const clash = await withRead<{ id: string }>(`SELECT id FROM users WHERE lower(trim(email)) = ? AND id <> ? LIMIT 1`, [
+      normalizeEmail(email),
+      input.id,
+    ])
+    if (clash[0]) throw new Error(`email "${email}" already belongs to user "${clash[0].id}"`)
+  }
   const rec = await upsertRecord<UserRecord>(
     USERS,
     {
@@ -154,7 +184,7 @@ export async function upsertUser(input: UserInput): Promise<User> {
       first_name: input.first_name ?? prevUser?.first_name ?? '',
       last_name: input.last_name ?? prevUser?.last_name ?? '',
       nickname: input.nickname ?? prevUser?.nickname ?? input.id,
-      email: input.email !== undefined ? input.email || null : (prevUser?.email ?? null),
+      email,
       image: input.image !== undefined ? input.image : (prevUser?.image ?? null),
       color: input.color !== undefined ? input.color : (prevUser?.color ?? null),
       channels,
