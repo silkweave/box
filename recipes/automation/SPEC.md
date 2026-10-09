@@ -88,7 +88,14 @@ Three of core's run semantics make a trigger safe to point at any action (`packa
   running, `run-get` / `opsRun` return its log so far from memory; each line carries a per-run `seq`,
   and `run-get` takes `after` (the last seq seen, for polling) and `tail` (the last n lines). The
   lines are flushed to the row at most every 5 seconds while it runs and written in full at
-  finalization. Run detail refreshes an active run every 2 seconds. Nothing prunes
+  finalization. `opsRunTail` (tRPC subscription) streams one run: its log so far, each new line,
+  then a closing chunk with the outcome; Run detail follows an active run through it (polling
+  `opsRun` every 2 seconds if the subscription fails) and keeps the newest line in view until the
+  reader scrolls up. Every run state change (inserted, running, settled) is a
+  `table:automation_runs` change event, so the Runs list shows a new run without a refresh; an
+  active run shows its newest line in the list. A quiet running agent run writes a heartbeat line
+  every 2 minutes ("still running: last session activity N min ago, M tool calls so far"), so a long
+  silent step reads as working and a hang (no session activity) can be told apart. Nothing prunes
   `automation_runs`.
 - **Every signed-in principal can read every run and its log**, whoever owns the trigger or runs it
   (team trust, owner decision 2026-10-09). A trigger owner watches a run that runs as someone else

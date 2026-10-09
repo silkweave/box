@@ -200,7 +200,9 @@ from an agent, the CLI - goes through `executeRecorded()`, which wraps the gener
 the run's live log (`ops/run-log.ts`, shared with agent trigger runs): `readRun` serves it from
 memory while the run is active, a throttled flush writes it to the row at most every 5 seconds
 (never per line: the warehouse is single-writer), and finalization writes it in full (capped at the
-last 2000 lines - backfills stream thousands; each line has a per-run `seq`). The queue is in-process FIFO with
+last 2000 lines - backfills stream thousands; each line has a per-run `seq`). `onRunLog` hands
+each new line to `opsRunTail`, and every row state change emits `table:automation_runs` (with the
+run id) on the change bus. The queue is in-process FIFO with
 concurrency 1, because the warehouse is single-writer. A caller that wants skip-instead-of-queue
 checks `isActionBusy()` first and records a `skipped` row.
 
@@ -218,8 +220,9 @@ The controller's four procedures, present in every Box:
 | procedure | what |
 |---|---|
 | `opsActions` (query) | the catalogue: every action this Box has, minus the runner |
-| `opsRuns` (query) | the latest 100 runs, no logs |
+| `opsRuns` (query) | the latest 100 runs, no logs; an active run carries its newest line as `latest` |
 | `opsRun` (mutation, MCP `run-get`) | one run including its log, live while it runs; `after` (seq) and `tail` (n) narrow the log |
+| `opsRunTail` (subscription) | follow one run: its log so far (or after `after`), each new line, then a `done` chunk with the outcome; same access as `opsRun` |
 | `opsRunNow` (subscription, MCP `run-now`) | run any action now, streaming, recorded as `trigger: 'manual'` and attributed to the authenticated principal unless the caller names someone |
 
 ## 5. Changes and events

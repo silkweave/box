@@ -26,6 +26,43 @@ interface LiveLog {
 
 const live = new Map<string, LiveLog>()
 
+/** What a run-log listener hears: each new line, then `closed` once the run stops writing lines. */
+export type RunLogEvent = { type: 'line'; line: RunLogLine } | { type: 'closed' }
+type RunLogListener = (ev: RunLogEvent) => void
+
+const listeners = new Map<string, Set<RunLogListener>>()
+
+function notify(runId: string, ev: RunLogEvent): void {
+  for (const l of listeners.get(runId) ?? []) {
+    try {
+      l(ev)
+    } catch {
+      /* a listener never breaks the run that writes the line */
+    }
+  }
+}
+
+/**
+ * Follow a run's live log: every line appended from now on, then `closed` when the run settles.
+ * Works before the run's first line (the subscriber may attach while it is queued). Returns the
+ * unsubscribe function. Read the lines so far with readRun() AFTER subscribing, and drop
+ * duplicates by `seq`, so nothing falls between the read and the first event.
+ */
+export function onRunLog(runId: string, listener: RunLogListener): () => void {
+  let set = listeners.get(runId)
+  if (!set) {
+    set = new Set()
+    listeners.set(runId, set)
+  }
+  set.add(listener)
+  return () => {
+    const current = listeners.get(runId)
+    if (!current) return
+    current.delete(listener)
+    if (current.size === 0) listeners.delete(runId)
+  }
+}
+
 const ensure = (runId: string): LiveLog => {
   let log = live.get(runId)
   if (!log) {
@@ -64,7 +101,13 @@ export function appendRunLog(runId: string, line: Omit<RunLogLine, 'ts' | 'seq'>
   log.lines.push(entry)
   if (log.lines.length > RUN_LOG_CAP) log.lines.splice(0, log.lines.length - RUN_LOG_CAP)
   schedule(runId, log)
+  notify(runId, { type: 'line', line: entry })
   return entry
+}
+
+/** The newest live line of an active run in this process, or null (the runs list subtitle). */
+export function lastRunLogLine(runId: string): RunLogLine | null {
+  return live.get(runId)?.lines.at(-1) ?? null
 }
 
 /** The live lines of an active run in this process, or null when it has none. */
@@ -79,11 +122,15 @@ export function liveRunLog(runId: string): RunLogLine[] | null {
  */
 export async function closeRunLog(runId: string): Promise<RunLogLine[]> {
   const log = live.get(runId)
-  if (!log) return []
+  if (!log) {
+    notify(runId, { type: 'closed' })
+    return []
+  }
   if (log.timer) clearTimeout(log.timer)
   log.timer = null
   if (log.flushing) await log.flushing
   live.delete(runId)
+  notify(runId, { type: 'closed' })
   return log.lines
 }
 

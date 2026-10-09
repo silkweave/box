@@ -32,6 +32,9 @@
   /* The ui kit's font-role vars ride the Box's font stacks. */
   --cw-font-sans: var(--cp-font-sans);
   --cw-font-mono: var(--cp-font-mono);
+  /* The ui kit's geometry knob for the Composer's inset (worker theme default 12px). Unset, the
+     prompt card sits flush against the panel's edges. */
+  --wd-composer-padding: 12px;
 }
 
 /* ── prompt-area (the Composer's contentEditable input, vendored inside @workerdeck/ui) ──────

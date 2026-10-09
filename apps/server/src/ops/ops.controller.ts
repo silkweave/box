@@ -3,7 +3,7 @@ import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsInt, IsOptional, IsString, Min } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { z } from 'zod/v4'
-import { RUN_TRIGGERS, listAutomationActions, readRun, readRuns, startDetachedRun, type IngestProgress } from '@silkweave/box-core'
+import { RUN_TRIGGERS, listAutomationActions, onChange, onRunLog, readRun, readRuns, startDetachedRun, type IngestProgress, type RunLogLine } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { type PrincipalRequest } from '../auth/auth.decorators.js'
 
@@ -33,6 +33,7 @@ const runsOutput = z.object({
     duration_ms: z.number().nullable(),
     summary: z.string().nullable(),
     error: z.string().nullable(),
+    latest: z.string().optional(),
   })),
 })
 const runOutput = z.object({
@@ -108,6 +109,7 @@ class RunDto {
   @ApiProperty({ required: false, nullable: true }) duration_ms!: number | null
   @ApiProperty({ required: false, nullable: true }) summary!: string | null
   @ApiProperty({ required: false, nullable: true }) error!: string | null
+  @ApiProperty({ required: false, description: 'The newest live log line of an active run (runs list only)' }) latest?: string
 }
 class RunLogLineDto {
   @ApiProperty() ts!: string
@@ -123,6 +125,23 @@ class RunsDto {
   @ApiProperty() generatedAt!: string
   @ApiProperty({ type: [RunDto] }) runs!: RunDto[]
 }
+
+class RunTailDto {
+  @ApiProperty() @IsString() id!: string
+  @ApiProperty({ required: false, description: 'Only log lines with a greater seq (resume after a drop)' })
+  @IsOptional() @IsInt() @Min(-1) after?: number
+}
+
+class RunTailChunkDto {
+  @ApiProperty({ type: [RunLogLineDto], description: 'New log lines, in seq order (empty on a keepalive)' }) lines!: RunLogLineDto[]
+  @ApiProperty({ enum: ['queued', 'running', 'success', 'error', 'skipped'] }) status!: string
+  @ApiProperty({ description: 'The run has settled; this is the last chunk' }) done!: boolean
+  @ApiProperty({ required: false, nullable: true }) summary!: string | null
+  @ApiProperty({ required: false, nullable: true }) error!: string | null
+}
+
+/** Keepalive cadence of a quiet tail, and how often it re-reads the row as a fallback. */
+const TAIL_PING_MS = 30_000
 
 class RunNowDto {
   @ApiProperty({ description: 'Automation action id (see automationActions)' }) @IsString() action_id!: string
@@ -175,6 +194,75 @@ export class OpsController {
     const run = await readRun(body.id, { after: body.after, tail: body.tail })
     if (!run) throw new Error(`no run "${body.id}"`)
     return run as RunWithLogDto
+  }
+
+  /**
+   * tRPC subscription `opsRunTail` - follow one run live: its log so far (or after `after`), then
+   * each new line as the run writes it, then a final chunk with `done: true` and the outcome. Any
+   * client may attach or detach at any time; the run does not depend on it. Same access as opsRun
+   * (every signed-in principal; owner decision 2026-10-09). A settled run yields one chunk.
+   */
+  @Trpc({ kind: 'subscription', chunk: RunTailChunkDto })
+  async *runTail(@Body() body: RunTailDto): AsyncGenerator<RunTailChunkDto> {
+    const queue: RunLogLine[] = []
+    let poke = false
+    let wake: (() => void) | undefined
+    const rouse = () => {
+      poke = true
+      wake?.()
+    }
+    // Listen first, then read, so no line falls between the read and the first event.
+    const offLog = onRunLog(body.id, (ev) => {
+      if (ev.type === 'closed') return rouse()
+      queue.push(ev.line)
+      wake?.()
+    })
+    // finalizeRun announces the settled row (closeRunLog fires just before it is written).
+    const offChange = onChange((ev) => {
+      if (ev.scope === 'table:automation_runs' && (ev.detail === body.id || ev.detail === null)) rouse()
+    })
+    try {
+      const first = await readRun(body.id, { after: body.after })
+      if (!first) throw new Error(`no run "${body.id}"`)
+      let last = first.log.at(-1)?.seq ?? body.after ?? -1
+      const settled = (status: string) => status !== 'queued' && status !== 'running'
+      yield { lines: first.log, status: first.status, done: settled(first.status), summary: first.summary, error: first.error }
+      if (settled(first.status)) return
+      let status: string = first.status
+      for (;;) {
+        if (queue.length === 0 && !poke) {
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(() => {
+              poke = true
+              resolve()
+            }, TAIL_PING_MS)
+            wake = () => {
+              clearTimeout(timer)
+              resolve()
+            }
+          })
+          wake = undefined
+        }
+        const fresh = queue.splice(0).filter((l) => (l.seq ?? -1) > last)
+        if (fresh.length > 0) last = fresh.at(-1)!.seq ?? last
+        if (!poke) {
+          yield { lines: fresh, status, done: false, summary: null, error: null }
+          continue
+        }
+        poke = false
+        // A state change, a closed log or a quiet spell: the row says where the run stands.
+        const run = await readRun(body.id, { after: last })
+        if (!run) return
+        const more = run.log.filter((l) => (l.seq ?? -1) > last)
+        if (more.length > 0) last = more.at(-1)!.seq ?? last
+        status = run.status
+        yield { lines: [...fresh, ...more], status, done: settled(status), summary: run.summary, error: run.error }
+        if (settled(status)) return
+      }
+    } finally {
+      offLog()
+      offChange()
+    }
   }
 
   /**

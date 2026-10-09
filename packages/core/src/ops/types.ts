@@ -100,6 +100,8 @@ export interface AutomationRun {
   duration_ms: number | null
   summary: string | null
   error: string | null
+  /** The newest live log line of an active run in this process (list reads only). */
+  latest?: string
 }
 
 export interface AutomationRunWithLog extends AutomationRun {

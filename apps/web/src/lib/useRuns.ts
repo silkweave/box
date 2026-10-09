@@ -34,6 +34,8 @@ export interface Run {
   duration_ms: number | null
   summary: string | null
   error: string | null
+  /** The newest live log line of an active run (list reads only). */
+  latest?: string
 }
 
 export interface RunLogLine {
@@ -95,6 +97,30 @@ export const useActions = (): { data: Action[] | null; error: string | null } =>
 /** One run with its stored log (a mutation because it carries an input - repo convention). */
 export async function fetchRun(id: string): Promise<RunWithLog> {
   return (await trpc.opsRun.mutate({ id })) as unknown as RunWithLog
+}
+
+/** One `opsRunTail` chunk: new lines, where the run stands, and `done` on the last one. */
+export interface RunTailChunk {
+  lines: RunLogLine[]
+  status: RunStatus
+  done: boolean
+  summary?: string | null
+  error?: string | null
+}
+
+/**
+ * Follow one run live (`opsRunTail`): its log so far (after `after`), each new line as the run
+ * writes it, and a final `done` chunk. Detaching never affects the run. Returns the unsubscribe handle.
+ */
+export function tailRun(
+  id: string,
+  handlers: { onData: (c: RunTailChunk) => void; onError: (e: { message: string }) => void },
+  after?: number,
+): { unsubscribe: () => void } {
+  return trpc.opsRunTail.subscribe(
+    { id, ...(after !== undefined ? { after } : {}) },
+    { onData: (c) => handlers.onData(c as unknown as RunTailChunk), onError: handlers.onError },
+  )
 }
 
 export interface ProgressChunk {

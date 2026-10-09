@@ -86,8 +86,12 @@ export default defineConfig(({ mode }) => ({
     },
     // Reciprocal proxy so hitting the bare Vite port still reaches the backend. Normal flow is
     // Nest -> Vite. tRPC subscriptions are SSE and /mcp is Streamable HTTP - http-proxy streams
-    // both (no compression on these paths, so nothing buffers).
+    // both (no compression on these paths, so nothing buffers). Keep the keys in step with
+    // RESERVED in apps/server/src/main.ts.
     proxy: {
+      // The agent mount (REST and session sockets). A dashboardUrl on this port (Agent accounts
+      // Connect, agent sessions) 404s without it.
+      '/agent': { target: serverUrl, changeOrigin: true, ws: true },
       '/trpc': { target: serverUrl, changeOrigin: true },
       '/mcp': { target: serverUrl, changeOrigin: true },
       // Incidental REST routes the SPA calls directly (e.g. /api/content/asset images).

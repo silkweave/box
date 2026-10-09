@@ -11,7 +11,8 @@
 import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
 import { readRecord, readRecords, toNaiveUtc } from '../warehouse/model.js'
 import { AUTOMATION_RUNS } from '../warehouse/core-models.js'
-import { liveRunLog, sliceRunLog } from './run-log.js'
+import { emitChange } from '../changes.js'
+import { lastRunLogLine, liveRunLog, sliceRunLog } from './run-log.js'
 import type { AutomationRun, AutomationRunWithLog, RunLogLine, RunStatus, RunTrigger } from './types.js'
 
 /** The record-layer row shape: every column (parsed `log` included), before duration_ms exists. */
@@ -19,6 +20,14 @@ type RunRecord = Omit<AutomationRun, 'duration_ms'> & { log: RunLogLine[] | null
 
 /** UTC-naive "now" for raw writes - the same stamp convention the record layer uses. */
 const utcNow = (): string => toNaiveUtc(new Date().toISOString())
+
+/**
+ * Tell the dashboard's change feed a run row changed state (inserted, running, settled), so the
+ * runs list shows a new run without a Refresh. Not on log flushes: the list carries only the
+ * newest line, which it picks up on its own poll while a run is active. `detail` is the run id
+ * (opsRunTail listens for its run settling).
+ */
+const runChanged = (id?: string): void => emitChange('table:automation_runs', id)
 
 /** Derive duration_ms from the ISO timestamps and drop the log column (list reads stay light). */
 const withDuration = ({ log: _log, ...r }: RunRecord): AutomationRun => ({
@@ -51,6 +60,7 @@ export async function insertRun(run: {
       [run.id, run.action_id, run.trigger, run.trigger_id ?? null, run.event_id ?? null, run.triggered_by, run.status ?? 'queued', utcNow()],
     )
   })
+  runChanged(run.id)
 }
 
 /** Flip a queued run to running and reset started_at (queue wait doesn't count as runtime). */
@@ -61,6 +71,7 @@ export async function markRunning(id: string): Promise<void> {
       id,
     ])
   })
+  runChanged(id)
 }
 
 /** Terminal update - status/summary/error plus the whole buffered log, written once. */
@@ -76,6 +87,7 @@ export async function finalizeRun(
       [outcome.status, utcNow(), outcome.summary ?? null, outcome.error ?? null, JSON.stringify(outcome.log), id],
     )
   })
+  runChanged(id)
 }
 
 /** Record a trigger fire that was skipped (its action already queued/running, a guard said no). */
@@ -93,6 +105,7 @@ export async function insertSkippedRun(
       [id, run.actionId, run.trigger, run.triggerId, run.eventId ?? null, now, now, reason],
     )
   })
+  runChanged(id)
 }
 
 /**
@@ -146,6 +159,7 @@ export async function markOrphanedRuns(): Promise<number> {
       )
     }
   })
+  runChanged()
   return orphans.length
 }
 
@@ -159,12 +173,20 @@ const parseLog = (raw: string | null): RunLogLine[] => {
   }
 }
 
-/** Latest runs, newest first, without the log (dropped after the read - kept light for the list). */
+/**
+ * Latest runs, newest first, without the log (dropped after the read - kept light for the list).
+ * An active run in this process carries its newest live line as `latest`.
+ */
 export async function readRuns(limit = 100): Promise<AutomationRun[]> {
   const rows = await readRecords<RunRecord>(AUTOMATION_RUNS, {
     orderBy: `started_at DESC, id DESC LIMIT ${Number(limit)}`,
   })
-  return rows.map(withDuration)
+  return rows.map((rec) => {
+    const run = withDuration(rec)
+    const active = rec.status === 'queued' || rec.status === 'running'
+    const latest = active ? lastRunLogLine(rec.id) : null
+    return latest ? { ...run, latest: latest.message } : run
+  })
 }
 
 /**

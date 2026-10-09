@@ -7,8 +7,9 @@ import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { resetInstanceDir, setInstanceDir } from '../io.js'
 import { withRead } from '../warehouse/db.js'
-import { RUN_LOG_CAP, RUN_LOG_FLUSH_MS, appendRunLog, closeRunLog, liveRunLog, sliceRunLog } from './run-log.js'
-import { finalizeRun, insertRun, markOrphanedRuns, markRunning, newRunId, readRun } from './runs.js'
+import { onChange, type ChangeEvent } from '../changes.js'
+import { RUN_LOG_CAP, RUN_LOG_FLUSH_MS, appendRunLog, closeRunLog, liveRunLog, onRunLog, sliceRunLog, type RunLogEvent } from './run-log.js'
+import { finalizeRun, insertRun, insertSkippedRun, markOrphanedRuns, markRunning, newRunId, readRun, readRuns } from './runs.js'
 import type { RunLogLine } from './types.js'
 
 let dir: string
@@ -106,5 +107,40 @@ describe('run log', () => {
     const old: RunLogLine[] = [{ ts: 't', channel: 'c', phase: 'start', message: 'a' }, { ts: 't', channel: 'c', phase: 'done', message: 'b' }]
     expect(sliceRunLog(old).map((l) => l.seq)).toEqual([0, 1])
     expect(sliceRunLog(old, { after: 0 }).map((l) => l.message)).toEqual(['b'])
+  })
+
+  it('tells listeners each new line, then that the log closed, from before the first line', async () => {
+    const id = newRunId()
+    const heard: RunLogEvent[] = []
+    const off = onRunLog(id, (ev) => heard.push(ev))
+    await insertRun({ id, action_id: 'agent', trigger: 'manual', triggered_by: 'dan' })
+    appendRunLog(id, line('one'))
+    appendRunLog(id, line('two'))
+    await closeRunLog(id)
+    off()
+    appendRunLog(id, line('late'))
+    expect(heard.map((ev) => (ev.type === 'line' ? `${ev.line.seq}:${ev.line.message}` : ev.type))).toEqual(['0:one', '1:two', 'closed'])
+    await closeRunLog(id)
+  })
+
+  it('announces every run state change on the change feed, with the run id', async () => {
+    const seen: ChangeEvent[] = []
+    const off = onChange((ev) => seen.push(ev))
+    const id = await startRun()
+    await finalizeRun(id, { status: 'success', log: await closeRunLog(id) })
+    await insertSkippedRun({ trigger: 'time', triggerId: 't1', actionId: 'agent' }, 'busy')
+    off()
+    const runs = seen.filter((ev) => ev.scope === 'table:automation_runs')
+    expect(runs.slice(0, 3).map((ev) => ev.detail)).toEqual([id, id, id])
+    expect(runs).toHaveLength(4)
+  })
+
+  it('gives an active run in the list its newest live line, a settled one none', async () => {
+    const id = await startRun()
+    appendRunLog(id, line('first'))
+    appendRunLog(id, line('working on it'))
+    expect((await readRuns()).find((r) => r.id === id)?.latest).toBe('working on it')
+    await finalizeRun(id, { status: 'success', log: await closeRunLog(id) })
+    expect((await readRuns()).find((r) => r.id === id)?.latest).toBeUndefined()
   })
 })
