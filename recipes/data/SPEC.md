@@ -23,15 +23,17 @@ own). Almost everything a team looks at is downstream of this feature.
 
 ## Tables
 
-Six models, all in `features/data/core/models.ts`. One migration, `001-drop-signal-target`
+Six models, all in `features/data/core/models.ts`. Two migrations: `001-drop-signal-target`
 (2026-10-06): a signal no longer carries a standing target; targets are planning **goals** (a signal,
-a target and a window). Every table is otherwise at its baseline shape.
+a target and a window). `002-signal-formula` (2026-10-09) adds the nullable `signals.formula` column
+(`ALTER TABLE signals ADD COLUMN IF NOT EXISTS formula VARCHAR`; a fresh Box gets it from the model,
+so the migration is a no-op there). Every table is otherwise at its baseline shape.
 
 | table | pk | what it holds |
 |---|---|---|
 | `snapshots` | `channel`, `snapshot_date` | raw verbatim pulls, one row per (channel, date), `payload` kept as-is. Also the audit trail a data-source sync writes (`data_sources.id` doubles as a snapshot channel). |
 | `legacy_signal_points` | `signal_id`, `date` | the tidy long-format daily rows a channel deriver writes. `source` is `live` (wholesale-replaced on every re-derive) or `backfill` (gap filler). Identity is denormalized onto every row, which is why the registry lives elsewhere. |
-| `signals` | `id` | the signal REGISTRY - one row per first-class signal: `label`, `signal_group`, `unit`, `channel`, `source` (`derived`\|`manual`), `interval`, `accumulation`, `direction`, `owner`, `description`, `depends_on` (JSON), `sort`, and the provider binding `data_source_id` + `measure_key`. Timestamps + audit. |
+| `signals` | `id` | the signal REGISTRY - one row per first-class signal: `label`, `signal_group`, `unit`, `channel`, `source` (`derived`\|`manual`), `interval`, `accumulation`, `direction`, `owner`, `description`, `depends_on` (JSON), `sort`, the provider binding `data_source_id` + `measure_key`, and `formula` (null, or the expression a formula signal is computed from). Timestamps + audit. |
 | `signal_points` | `signal_id`, `bucket`, `source` | the point store at the signal's own grain. `bucket` is the naive-UTC interval start (`floorSignalBucket`, ISO weeks, Monday start). `source` (`manual`\|`live`) is part of the PK so a live write can never destroy a hand-entered point. Timestamps + audit. |
 | `signal_boards` | `id` | a circuit board: slug, label, description, `nodes` JSON (`[{kind, ref, x, y}]`; rows from before node kinds hold `{signal_id, x, y}` and read as kind `signal`) written whole on every autosave, `sort`. Edges are NOT here - they are derived from the objects. Timestamps + audit. |
 | `data_sources` | `id` | a user-created instance of a provider: `provider`, `label`, `config` JSON (non-secret settings only), `status` (`enabled`\|`disabled`, born disabled), `notes`, and the four denormalized `last_sync_*` health stamps. Timestamps + audit. **No secrets** - those stay in the gitignored `box.local.json credentials`. |
@@ -64,6 +66,44 @@ never interpolated, and return the bucket with the value. The level entering a w
 bucket that ENDED on or before the first day. An `increment` running total sums the buckets that
 started in the window (a window with no history answers null). Staleness is a `snapshot` question
 only. Planning's goals are built on these; the signals UI carries no health or target of its own.
+
+## Formula signals
+
+A formula signal's points are COMPUTED from other signals: `churn-rate` (monthly, `%`) =
+`churned-mrr / start(mrr) * 100`. It is identified by `formula IS NOT NULL`; `source` stays `manual`
+(`SIGNAL_SOURCES` does not grow a third value), and it may carry no provider binding and may not be
+`derived`. The language and the evaluation live in `features/data/core/signals/formula.ts`, a
+hand-written tokenizer and recursive-descent parser to an AST (never `eval`).
+
+- **Language.** Decimal numbers, `+ - * /`, unary minus, parentheses and signal ids. A bare id is a
+  run of `[a-z0-9_.@-]` starting with a letter (`churned-mrr`, `atomicbi.first_response`), so `a-b`
+  is one id: write binary minus with spaces (`a - b`). A trailing `-` or `.` never belongs to a bare
+  id. Ids a bare token cannot spell (a leading digit, a `/`) are written quoted:
+  `"npm.pkg.@acme/core"`. Parse errors carry the character position.
+- **Bucket functions.** `x` is x aggregated into the formula signal's own interval bucket: the sum
+  of x's buckets that start in it for an `increment` input, the last value for a `snapshot` input
+  (no proration: a weekly bucket counts wholly in the month it starts in; a coarser input feeds only
+  the bucket its own bucket starts in). `start(x)` is the level entering the bucket, x's latest bucket
+  that ended on or before the bucket start (`levelEntering`'s rule). `prev(x)` is x in the previous
+  bucket.
+- **Compute on read, never materialized.** The history is computed over the union of the inputs'
+  buckets at the formula's interval, wherever a merged history is produced: `readSignalPoints` (so
+  goals, board cards and `signal-series`) and the bulk `signalsData` read, through one resolver
+  (`resolveSignalHistory`). A formula may read another formula; resolution is recursive and memoized.
+  A missing input, division by zero or a non-finite result gives NO point, never 0. Computed points
+  carry `source: 'live'` and `computed: true`; formula signals are not zero-filled.
+- **Manual overrides win.** A manual point on a formula signal replaces the computed value of its
+  bucket, the deliberate exception to live-beats-manual: a live feed is an external truth, while a
+  computed value is arithmetic over other numbers and the person typing a correction knows something
+  the inputs do not. The hidden value is surfaced as `shadowed_computed` (and `overrides_computed` on
+  `signal-points`); deleting the point brings it back. Stored live rows for a formula signal are
+  ignored, and `signal-event` is refused for one.
+- **depends_on is derived.** On upsert with a formula, `depends_on` becomes the formula's ids
+  (unique, in order of appearance); unknown ids, self-reference and cycles are refused with the
+  existing checks. Clearing the formula (`''` or null) keeps `depends_on` as it is.
+- **Rename and delete.** Renaming a signal rewrites its id inside every formula token by token
+  (`mrr` never touches `churned-mrr`). Deleting a signal a formula reads is refused, naming the
+  formula signals.
 
 ## Ports this feature owns
 
@@ -113,9 +153,9 @@ PascalCased (`signal-upsert` appears as `SignalUpsert`), while `bun run cli` tak
 |---|---|---|
 | `signalsData` (query) | - | the full cross-channel payload in one round-trip: every definition, both point stores merged per bucket (live over manual), period aggregates, and the data sources for resolving `data_source_id`. Sub-daily buckets are windowed to `SUBDAILY_WINDOW_DAYS`. |
 | `signalsList` (query) | `signals-list` | the registry rows alone, no points |
-| `signalsUpsert` (mutation) | `signal-upsert` | create or partially update a definition; the domain refuses unknown `depends_on` ids, cycles, half a provider binding and out-of-enum values |
-| `signalsRename` (mutation) | `signal-rename` | re-key an id, cascading to goals (via planning's hook), trigger filters on `fields.signal_id` (via alerts' hook), `depends_on`, the owners file and the rows. Refused for `source: 'derived'` - the deriver would re-create the old id. |
-| `signalsDelete` (mutation) | `signal-delete` | remove a definition; prunes `depends_on` edges and board placements, reports what still references it (goals as `goal:<id>`, triggers as `trigger:<id>`; left in place, listed in `bound_initiatives`), never deletes points |
+| `signalsUpsert` (mutation) | `signal-upsert` | create or partially update a definition; the domain refuses unknown `depends_on` ids, cycles, half a provider binding and out-of-enum values. `formula` makes it a formula signal (see "Formula signals"); `''` clears it |
+| `signalsRename` (mutation) | `signal-rename` | re-key an id, cascading to goals (via planning's hook), trigger filters on `fields.signal_id` (via alerts' hook), `depends_on`, every formula naming the id, the owners file and the rows. Refused for `source: 'derived'` - the deriver would re-create the old id. |
+| `signalsDelete` (mutation) | `signal-delete` | remove a definition; prunes `depends_on` edges and board placements, reports what still references it (goals as `goal:<id>`, triggers as `trigger:<id>`; left in place, listed in `bound_initiatives`), never deletes points. Refused while a formula signal reads it |
 | `signalsOwners` (query) | `signal-owners` | the `box.json features.data.signalOwners` map (channel defaults + per-signal overrides) |
 | `signalsOwnersSave` (mutation) | `signal-owner-set` | set/unset one mapping; applies at the next read, no restart |
 | `signalsSeries` (mutation) | `signal-series` | ONE signal's full merged history, windowable. The read path for agents. |
@@ -286,11 +326,16 @@ others.
 
 ### Board node kinds (port)
 
-`core/signals/board-kinds.ts` is the port: `registerBoardNodeKind({ kind, label, layer, watch,
+`core/signals/board-kinds.ts` is the port: `registerBoardNodeKind({ kind, label, layer, lead, watch,
 exists, resolve, candidates, edges })`. Data registers `SIGNAL_BOARD_KIND` (layer 2, edges from
-`depends_on`, driver -> signal) from its server module; planning registers `goal` (layer 1, goal ->
-its signal) and `initiative` (layer 0, initiative -> each goal). `resolve` returns a generic card, so
-no feature contributes web code to the board. An owner of a kind keeps placements pointing at real
+`depends_on`, driver -> signal; a formula signal's subtitle says so) from its server module; planning
+registers `goal` (layer 3, `lead`, signal -> goal) and `initiative` (layer 0, initiative -> each goal).
+`resolve` returns a generic card, so no feature contributes web code to the board. A card carries a
+`look` (`metric`, `lead`, `work`), optional `pace`, `target`, `eyebrow` and `attachments` (small cards
+drawn on the parent, each with the node `key` it would have, so the canvas leaves out one that is
+placed). Layout lives in `core/signals/board-layout.ts` (pure; used by the web's Arrange and by
+planning's cycle board): rows read bottom-up, lead nodes share the top row, cards are sized by look
+and attachment count, everything snaps to the 16px grid. An owner of a kind keeps placements pointing at real
 objects by calling `renameBoardRef(kind, old, new)` and `pruneBoardRef(kind, ref)` from its own
 rename and delete. A Box without planning has signal-only boards; placements of a kind that is not
 installed are kept and reported as missing.

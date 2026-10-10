@@ -18,8 +18,11 @@ that doc rather than typed.
   preset does. Goals *reference* a `signals.id` in `goals.signal_id`, but as a string - there is no
   FK. Core-side, goals read data's `signals/series.ts` (day-grain reads over a merged history),
   `readSignalDefinition(s)` and `readSignalPoints`. Circuit boards: `core/board-kinds.ts` defines
-  `GOAL_BOARD_KIND` (layer 1, edge goal -> its signal) and `INITIATIVE_BOARD_KIND` (layer 0, edge
-  initiative -> each goal; card shows status, open tasks and open estimated hours), registered into
+  `GOAL_BOARD_KIND` (layer 3, `lead`: always the top row when arranged; edge its signal -> goal; a
+  `lead` card with the signal's value, target, progress against pace, health, the signal's sparkline
+  and the goal's initiatives as `attachments`) and `INITIATIVE_BOARD_KIND` (layer 0, edge
+  initiative -> each goal; a `work` card with status, open tasks and open estimated hours; an
+  initiative placed as a node is left off its goal's attachments), registered into
   data's `registerBoardNodeKind` port from `onModuleInit`; goal and initiative rename/delete call
   data's `renameBoardRef` / `pruneBoardRef` so placements follow.
 - **Depended on by**: `content` (`dependsOn: ['data', 'planning']` - it reuses `PLANNING_STATUSES`
@@ -153,6 +156,7 @@ behind `AuthGuard`:
 | `goalsCarryForward` (mutation) | `goal-carry-forward` | continue an open goal in another cycle (see Goals) |
 | `cyclesList` (query) | `cycles-get` | every cycle, newest window first |
 | `cyclesUpsert` (mutation) | `cycle-upsert` | create or partially update; `start_date` / `end_date` are required on create |
+| `cyclesBoard` (mutation) | `cycle-board` | seed a circuit board (`cycle-<id>` unless `id` is given) with the cycle's goals, their signals and those signals' direct drivers, arranged with data's `layoutLayers`; refuses an existing board unless `replace` (core `cycle-board.ts`; the cycle page's *Circuit board* button) |
 | `cyclesDelete` (mutation) | `cycle-delete` | remove a cycle; its goals stay, outside any cycle, dates intact |
 
 The two `doc-*` tools and `initiatives-get` / `sprint-get` are mutations because they carry an input

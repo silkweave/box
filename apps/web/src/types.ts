@@ -67,6 +67,9 @@ export interface Signal {
    *  and `measure_key` are set together - connectedness IS `data_source_id != null`. */
   data_source_id: string | null
   measure_key: string | null
+  /** The formula this signal's points are computed from (null = an ordinary signal). A manual
+   *  point on a formula signal overrides the computed value of its bucket. */
+  formula: string | null
   aggregates: SignalAggregates
   points: Point[]
 }

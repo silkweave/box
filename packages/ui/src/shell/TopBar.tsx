@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Check, ChevronRight, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronRight, ChevronsUpDown, Info } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.tsx'
 import { NavAnchor } from '../components/NavAnchor.tsx'
@@ -28,6 +28,9 @@ export interface Crumb {
    * appears, and a second copy of it in the surface below was the thing being deleted.
    */
   onRename?: (next: string) => void
+  /** Context for the crumb (a record's description), behind an info icon beside it. Lets a view drop
+   *  its own title and description row: the crumb names the record, the icon explains it. */
+  info?: React.ReactNode
 }
 
 export interface TopBarContent {
@@ -89,10 +92,8 @@ function Breadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
       className='flex min-w-0 items-center gap-1.5 overflow-hidden text-body-sm max-sm:max-w-[35%] max-sm:shrink-0 max-sm:[&>:not(:last-child)]:hidden'>
       {crumbs.map((crumb, i) => {
         const last = i === crumbs.length - 1
-        return (
-          <React.Fragment key={crumb.key ?? `${crumb.label}-${i}`}>
-            {i > 0 && <ChevronRight className='size-3.5 shrink-0 text-muted-foreground' />}
-            {crumb.menu && crumb.menu.length > 0 && crumb.onRename ? (
+        const body =
+            crumb.menu && crumb.menu.length > 0 && crumb.onRename ? (
               // Both: the crumb IS the name field, and the chevron beside it jumps to a sibling.
               // Renaming and navigating are different verbs, so they get different targets rather
               // than one control that does whichever you did not mean.
@@ -117,11 +118,41 @@ function Breadcrumbs({ crumbs }: { crumbs: Crumb[] }) {
               </NavAnchor>
             ) : (
               <span className='shrink-0 text-muted-foreground'>{crumb.label}</span>
+            )
+        return (
+          <React.Fragment key={crumb.key ?? `${crumb.label}-${i}`}>
+            {i > 0 && <ChevronRight className='size-3.5 shrink-0 text-muted-foreground' />}
+            {/* One box with its info icon, so the phone rule (last child only) keeps both. */}
+            {crumb.info ? (
+              <span className='flex min-w-0 items-center gap-0.5'>
+                {body}
+                <CrumbInfo label={crumb.label}>{crumb.info}</CrumbInfo>
+              </span>
+            ) : (
+              body
             )}
           </React.Fragment>
         )
       })}
     </nav>
+  )
+}
+
+/** The info icon beside a crumb: opens on hover, focus or click, so it also works on touch. */
+function CrumbInfo({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={150}
+        aria-label={`About ${label}`}
+        className='grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:text-text focus-visible:outline-2 focus-visible:outline-ring'>
+        <Info className='size-3.5' />
+      </PopoverTrigger>
+      <PopoverContent align='start' className='w-80 gap-2 text-body-sm'>
+        {children}
+      </PopoverContent>
+    </Popover>
   )
 }
 
