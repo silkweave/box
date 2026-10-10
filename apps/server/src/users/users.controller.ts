@@ -137,12 +137,28 @@ interface PrincipalRequest {
 @Controller('users')
 @UseGuards(AuthGuard)
 export class UsersController {
-  /** tRPC query `usersList` - every principal, ordered for display. */
+  /**
+   * tRPC query `usersList` / MCP `users-list` - every principal, ordered for display: the people
+   * directory (names, identity email, channel handles, role). Any principal, like reading anything
+   * else; it carries `has_token`, never a token. An agent reads who it is talking to here.
+   */
   @Get('list')
   @ApiOkResponse({ type: UsersDto })
   @Trpc({ output: usersOutput })
+  @Mcp({ name: 'users-list' })
   async list(): Promise<UsersDto> {
     return { generatedAt: new Date().toISOString(), users: (await readUsers()) as UserDto[] }
+  }
+
+  /** tRPC query `usersGet` / MCP `user-get` - one person's profile by id. Any principal. */
+  @Post('get')
+  @ApiOkResponse({ type: UserDto })
+  @Trpc({ output: userOutput })
+  @Mcp({ name: 'user-get' })
+  async get(@Body() body: IdDto): Promise<UserDto> {
+    const user = await readUser(body.id)
+    if (!user) throw new BadRequestException(`unknown user "${body.id}" - users-list names every user`)
+    return user as UserDto
   }
 
   /**

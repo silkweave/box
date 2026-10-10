@@ -8,7 +8,7 @@ reflex. This file is how it gets into a Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/crm/`; the reference implementation lives in the Stack at `features/crm/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
 
-**Builds on:** data. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** core only (its signals, boards and saved views). Resolve imports from the Box's source tree and root workspace dependencies.
 
 Copy or adapt `<fetched stack>/features/crm/` into the Box's `features/crm/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 

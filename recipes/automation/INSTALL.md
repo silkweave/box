@@ -27,6 +27,11 @@ ledgers before replaying an operation.
    features/automation/{core,server,web}. Keep existing runtime
    contracts, registrations, dependency order, and package manifests. Register the result as the
    `automation` feature. Do not create a feature package, a symlink, or a release catalogue entry.
+   The Stack's tree also carries the Alerts powerup (`core/alerts/`, `server/alerts/`,
+   `web/alerts/` and their wiring lines in `core/manifest.ts`, `core/index.ts`,
+   `server/automation/automation.module.ts` and `web/views/AutomationView.tsx`). Ask the owner
+   which powerups to add now (Alerts, Webhook relay); leave a powerup's source and wiring out unless
+   it is chosen, and add it with its own `recipes/automation/powerups/<powerup>/INSTALL.md`.
 2. Declare imported third-party packages in root workspace manifests when the consolidated layout
    requires it. Resolve imports and production output from source; fix integration errors in the
    target Box as part of the adaptation.

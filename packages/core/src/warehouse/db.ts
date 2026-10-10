@@ -163,10 +163,3 @@ export async function setKvState(key: string, value: unknown): Promise<void> {
   })
 }
 
-/**
- * The four signal writers and `SignalRow` moved OUT of this file on 2026-09-13, into
- * `features/data/signals/write.ts`. They write `snapshots` and `legacy_signal_points`, which the
- * `data` feature owns, so core naming them here was core knowing a feature's tables - harmless at
- * runtime (only feature code ever called them) and invisible to `schema:check`'s ownership lint,
- * which reads migrations rather than helpers. Import them from the data feature instead.
- */

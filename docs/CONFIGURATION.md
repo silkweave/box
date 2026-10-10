@@ -35,9 +35,47 @@ see `recipes/automation/powerups/relay/`). All default to false and are forced o
 Arm `relay` on exactly one Box per relay Worker: a second connection takes the Worker over.
 
 Core sections include `agent`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
-`stack`, `recipes`, `accounts`, `credentials`, `agentProfiles` and `workerdeck`. Feature
-settings live under `features.<id>`, keyed by the feature id, and are described in the
-documentation of the recipe the feature came from (`recipes/<id>/`).
+`stack`, `recipes`, `signals`, `browsers`, `agentMcp`, `accounts`, `credentials`, `agentProfiles` and
+`workerdeck`. Feature settings live under `features.<id>`, keyed by the feature id, and are
+described in the documentation of the recipe the feature came from (`recipes/<id>/`). For example,
+the Data Sync recipe's settings (`features.data-sync.npmPackages`, `features.data-sync.redditRadar`)
+are described in [recipes/data-sync/](../recipes/data-sync/).
+
+## Signals
+
+`signals.owners` maps signals to the people who own them ([SIGNALS.md](SIGNALS.md#owners)):
+`channels` gives a default owner per signal channel, and `signals` overrides one signal, where null
+marks it deliberately unowned. Settings > Signal owners writes it to `box.local.json`; edits apply
+at the next read.
+
+```json
+{
+  "signals": {
+    "owners": {
+      "channels": { "github": "alice" },
+      "signals": { "mrr": "bob", "npm.week": null }
+    }
+  }
+}
+```
+
+## Browsers
+
+`browsers` configures the browser lease ([BROWSERS.md](BROWSERS.md)): `url` (the chromatrix origin,
+default `http://127.0.0.1:8830`), `identity` (the default identity, default `default`), `token` (the
+chromatrix bearer token, in `box.local.json` only) and `users` (`users.id` -> that person's
+browser identity).
+
+```json
+{ "browsers": { "url": "http://127.0.0.1:8830", "users": { "alice": "alice" } } }
+```
+
+## Agent tools
+
+`agentMcp` holds the MCP servers and toolsets that chat rooms and agent triggers grant to their
+agent sessions ([AGENT-TOOLS.md](AGENT-TOOLS.md)): `servers` (id -> `url`, `type`, `label`, and
+`token` in `box.local.json` only) and `toolsets` (id -> `servers`, `allow`, `deny`). Settings > Agent
+tools writes it to `box.local.json`.
 
 ## Recipe ledger
 

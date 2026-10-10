@@ -11,6 +11,8 @@ The recipe documents ship with core at `recipes/automation/`; the reference impl
 
 Copy or adapt `<fetched stack>/features/automation/` into the Box's `features/automation/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
+The recipe has two powerups: Alerts (`recipes/automation/powerups/alerts/`, delivery for event triggers) and Webhook relay (`recipes/automation/powerups/relay/`). Ask the owner which to add now. The Stack's tree carries the Alerts source (`core/alerts/`, `server/alerts/`, `web/alerts/`) and its wiring lines; leave both out of the base adaptation unless the owner picks the powerup, then follow its INSTALL.md.
+
 Migrations: `automation:001-import-schedules` (imports `features.automation.schedules` from
 `box.json` / `box.local.json` as time triggers), `automation:002-trigger-permission-mode` (adds the
 nullable `triggers.permission_mode` column) plus core's `004-runs-trigger-id` and
@@ -36,9 +38,9 @@ read, and the boot log warns while it is present.
    line. The unattended permission mode (`workerdeck.queue.permissionMode`) is `auto` by default:
    the engine's classifier decides each tool call, and denials land in the run's permission report.
    `dontAsk` (Claude only) runs only what the run_as profile's settings allow. Either way, check the
-   profile's settings and MCP servers before moving a job in. A Claude job gets the Box's own MCP
-   server (`box`) as its run_as user from the session (SPEC "The Box MCP server in a job"); a Codex
-   profile needs `box` in its config.toml. A trigger can instead run its main
+   profile's settings and MCP servers before moving a job in. A job gets the Box's own MCP
+   server (`box`) as its run_as user from the session, on Claude and Codex (SPEC "The Box MCP server
+   in a job"). A trigger can instead run its main
    job in `bypassPermissions` ("Bypass permissions" in the editor, `permission_mode` in
    `trigger-upsert`), for a trusted prompt the classifier keeps blocking; put deny rules for what it
    must never do in the job folder's settings. Tune the
@@ -50,10 +52,11 @@ read, and the boot log warns while it is present.
    prompt also gets the event as JSON. `daily_cap` (default 50 for agent prompts, none for actions)
    and `max_depth` (default 2) keep a chatty kind or a loop of triggers in check. An agent prompt
    can ask a cheap gate first (`gate_prompt`, `gate_model`, `gate_marker`).
-6. **Deliveries** - with the `alerts` recipe installed, an event trigger can deliver a message
-   instead (Do = "Deliver a message": `route`, `message`, `notify`, `cooldown_min`,
-   `debounce_sec`). Alerts registers the runner through automation's port; without it the option is
-   greyed out and a stored delivery is listed invalid (recipes/alerts/SPEC.md).
+6. **Deliveries** - with the Alerts powerup, an event trigger can deliver a message instead (Do =
+   "Deliver a message": `route`, `message`, `notify`, `cooldown_min`, `debounce_sec`). The powerup
+   registers the runner through automation's port; without it the option is disabled, a stored
+   delivery is listed invalid, and the Triggers tab offers admins a Builder brief to add it
+   (recipes/automation/powerups/alerts/).
 7. **Labels and order** - `features/automation/web/index.tsx`, band 800.
 
 ## 3. Prove it

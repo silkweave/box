@@ -19,7 +19,7 @@ The app is small on purpose; the interesting edits are all additions.
 
 1. **Make it fire.** Out of the box a reminder is remembered, not delivered. The wiring is an
    `ActionSpec` in `features/reminders/core/` that selects
-   `due_at <= now() AND done_at IS NULL`, routes each row through `alerts`, and stamps `done_at` (or
+   `due_at <= now() AND done_at IS NULL`, routes each row through Automation's `alerts` powerup, and stamps `done_at` (or
    a new `fired_at`); `automation` then schedules it. It is not shipped because it would make a
    one-table app depend on three others.
 2. **Recurrence** - a `repeat` column plus a re-arm inside `setReminderDone`. Add it as migration

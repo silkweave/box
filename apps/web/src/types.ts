@@ -55,7 +55,7 @@ export interface Signal {
   label: string
   group: string
   unit?: string
-  /** Owning users.id, resolved server-side (definition first, then config/signal-owners.json). */
+  /** Owning users.id, resolved server-side (definition first, then the signal-owner settings). */
   owner: string | null
   interval: SignalInterval
   accumulation: SignalAccumulation
@@ -70,6 +70,8 @@ export interface Signal {
   /** The formula this signal's points are computed from (null = an ordinary signal). A manual
    *  point on a formula signal overrides the computed value of its bucket. */
   formula: string | null
+  /** Levels that record a `signal.threshold` event when reached or crossed upward, ascending. */
+  thresholds: number[]
   aggregates: SignalAggregates
   points: Point[]
 }

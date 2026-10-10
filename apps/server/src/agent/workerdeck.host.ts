@@ -8,6 +8,7 @@ import type { CreateJobRequest, JobEvent, JobInfo, ProfileInfo, SessionEvent, Se
 import { agentProfileMapFor, agentSessionAccess, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
 import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
 import { revokeBuilderControl, trackBuilderControl } from './builder-control.js'
+import { NO_SESSION_TOOLS, sessionToolCapsOf, type SessionToolCaps } from './box-mcp.js'
 
 /**
  * Boots workerdeck INSIDE this server's process (see docs/SERVER.md).
@@ -236,19 +237,20 @@ export async function agentAccountProfiles(): Promise<AgentAccountProfile[]> {
 }
 
 /**
- * Whether a profile's engine takes per-session MCP servers (Claude does, Codex does not), from the
- * worker's own capability report. False when the worker is down or does not know the profile, so a
- * caller then starts the session without them rather than failing.
+ * What a profile's engine takes for agent tools: per-session MCP servers (Claude and Codex) and
+ * which tool filters it honours ('all' Claude, 'mcp' Codex, 'none' provider), from the worker's own
+ * capability report. No servers and no filters when the worker is down or does not know the
+ * profile, so a caller then starts the session without them rather than failing.
  */
-export async function profileTakesSessionMcpServers(profile: string): Promise<boolean> {
-  if (!host) return false
+export async function profileSessionToolCaps(profile: string): Promise<SessionToolCaps> {
+  if (!host) return NO_SESSION_TOOLS
   try {
     const res = await fetch(`${host.url}/v1/profiles`, { headers: { authorization: `Bearer ${host.key}` } })
-    if (!res.ok) return false
+    if (!res.ok) return NO_SESSION_TOOLS
     const { profiles } = (await res.json()) as { profiles: ProfileInfo[] }
-    return profiles.find((p) => p.name === profile)?.capabilities?.sessionMcpServers === true
+    return sessionToolCapsOf(profiles.find((p) => p.name === profile))
   } catch {
-    return false
+    return NO_SESSION_TOOLS
   }
 }
 

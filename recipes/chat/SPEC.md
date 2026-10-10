@@ -8,7 +8,7 @@ touches - who the users are, who the agent's worker profile is - it reads from c
 
 - **dependsOn**: nothing. Chat is a root of the dependency graph; it imports core (`io.ts`,
   `auth/principal.ts`, `users/state.ts`, `ops/*`, `warehouse/backup.ts`) and no other feature.
-- **Depended on by**: `notifications` (`dependsOn: ['chat', 'alerts']`) - the bell, web + FCM push,
+- **Depended on by**: `notifications` (`dependsOn: ['chat', 'automation']`) - the bell, web + FCM push,
   and alert delivery into chat rooms. It is glue, and it lives entirely on chat's store and chat's
   bus: `onChatEvent` for delivery, and five of chat's own SQLite tables (`mentions`,
   `notification_reads`, `notification_dismissals`, `push_subscriptions`, `device_tokens`) for its
@@ -120,7 +120,9 @@ top level. `parseAgentDirective` recognises exactly one non-turn directive - `st
 an optional trailing `.`/`!` - and it never counts against the budget. Budget: `AGENT_TURN_BUDGET = 25`
 (or `features.chat.agentTurnsPerHour`) turns per room per `AGENT_BUDGET_WINDOW_MS` (1h). A turn is seeded with `AGENT_SEED_HISTORY = 10`
 recent messages plus whatever is new since the session last looked; `chat-history` over MCP is how it
-reaches further back.
+reaches further back. Each ask names the asker's user id and identity email (from the users
+directory, read per turn); `user-get` and `users-list` give the agent anyone's profile, so a tool
+that acts for a person (a mail or calendar account) takes that person's email from there.
 
 **The host.** `chat-agent.ts` creates a workerdeck `SessionHandle` per room against
 `agentWorkerUrl()` with `hostAuth`, under the agent's default profile (`users.agent_profile`, set on
@@ -137,10 +139,17 @@ profile's `capabilities.sessionMcpServers`), the session is created with the Box
 `box` (`http://127.0.0.1:<server.port>/mcp`, Bearer the agent's token: revealed, issued only when the
 agent has none), `allowedTools: ["mcp__box"]` and the floor `CHAT_AGENT_BOX_MCP_FLOOR` (`ServiceRestart`,
 `UserDelete`, `UserSetRole`, `UserAccessRevoke`) as `mcp__box__<Tool>` in `disallowedTools`. A
-`box` entry in the profile's own config is replaced for that session, not run beside it. Codex takes
-no per-session servers: its profile's `config.toml` carries `box`, the auto-approval and the same
-floor (INSTALL.md "The agent's Box MCP server"). Without the server a Claude agent has no Box tools and
+`box` entry in the profile's own config is replaced for that session, not run beside it. Codex
+takes the same session options; it honours only MCP entries in the tool lists, which the floor is
+(`capabilities.toolFilters`, docs/AGENT-TOOLS.md "Engines"). Without the server an agent has no Box tools and
 falls back to the shell, which raises an approval card per command.
+
+**The room's toolset.** A room may name an agent toolset (`rooms.agent_toolset`, migration
+`016-room-agent-toolset`; [docs/AGENT-TOOLS.md](../../docs/AGENT-TOOLS.md)). Its servers, `allow` and
+`deny` are added beside `box` when the room's session starts, and a session whose room now names a
+different toolset is retired between turns, like a profile change. `chatRoomToolset` (tRPC only)
+reads it for anyone who can read the room and sets it for an admin who is not the agent; Room
+settings shows it to admins. No toolset means the Box's tools only.
 Text is assembled by `AgentTurnText` from `stream_delta`s and `assistant_message` blocks and
 checkpointed into the room's placeholder message roughly twice a second.
 
@@ -263,8 +272,7 @@ Everything else in chat is a member's, rooms included: a room is a conversation,
    day one creates it.
 2. **The agent's identity** - select it in the `agent` block of the root `box.json` before first boot.
    Core seeds the matching user; changing the ID later is unsupported. The agent also needs an entry in `agentProfiles` mapping it to a real workerdeck profile.
-   A Claude profile gets the Box MCP server from the session; a Codex profile needs it in its
-   `config.toml` with the agent's token (INSTALL.md). Its default profile (Settings > Users, the agent's detail) picks the
+   Its profile gets the Box MCP server from the session (Claude and Codex). Its default profile (Settings > Users, the agent's detail) picks the
    engine; `features.chat.agentModels` in `box.json` sets the model and effort per engine (see
    Settings), and both degrade rather than fail if the profile does not declare them.
 3. **Labels and order** - the nav entry's `label` and `order` in

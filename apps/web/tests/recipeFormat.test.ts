@@ -18,7 +18,7 @@ describe('recipe catalog format', () => {
   test('recipes parse with highlights and dependencies', () => {
     expect(recipe('chat').highlights.length).toBeGreaterThan(0)
     expect(recipe('chat').buildsOn).toEqual([])
-    expect(recipe('notifications').buildsOn).toEqual(['chat', 'alerts'])
+    expect(recipe('notifications').buildsOn).toEqual(['chat', 'automation'])
   })
 
   test('RECIPE.md no longer carries a ## Mobile section; the mobile module is a powerup', () => {
@@ -100,6 +100,6 @@ describe('recipe catalog format', () => {
     const legacy = new RecipeBook({ mobile: { powerups: [] } }, new Set(['chat']))
     expect(legacy.powerup(mobile)).toEqual({ kind: 'available' })
     expect(legacy.recipe(recipe('chat'))).toEqual({ adapted: true, recorded: false, missing: [] })
-    expect(new RecipeBook({}, new Set(['chat'])).recipe(recipe('notifications'))).toEqual({ adapted: false, recorded: false, missing: ['alerts'] })
+    expect(new RecipeBook({}, new Set(['chat'])).recipe(recipe('notifications'))).toEqual({ adapted: false, recorded: false, missing: ['automation'] })
   })
 })

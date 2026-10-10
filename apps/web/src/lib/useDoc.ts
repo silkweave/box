@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { WEB_FEATURE_LIST } from '../generated/features.ts'
+import { ALL_WEB_FEATURES } from '../web-features.ts'
 // One definition, and it lives with the editor that reads it. What this hook returns is structurally
 // the library's `DocHandle`, which is the whole contract between them.
 import type { DocStatus } from '@silkweave/box-ui/editor'
@@ -38,7 +38,7 @@ const cache = new Map<string, DocSurface | null>()
 function docSurface(kind: string): DocSurface | null {
   let found = cache.get(kind)
   if (found === undefined) {
-    found = WEB_FEATURE_LIST.reduce<DocSurface | null>((hit, f) => hit ?? f.docs?.[kind] ?? null, null)
+    found = ALL_WEB_FEATURES.reduce<DocSurface | null>((hit, f) => hit ?? f.docs?.[kind] ?? null, null)
     cache.set(kind, found)
   }
   return found

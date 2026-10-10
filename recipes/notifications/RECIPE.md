@@ -1,6 +1,6 @@
 # Notifications
 
-One bell for everything that needs attention, merging chat mentions and messages with alerts, and delivering alerts straight into chat rooms. It is glue between Chat and Alerts: remove it and both keep working on their own.
+One bell for everything that needs attention, merging chat mentions and messages with alerts, and delivering alerts straight into chat rooms. It is glue between Chat and Automation's Alerts powerup: remove it and both keep working on their own.
 
 ## Highlights
 
@@ -12,4 +12,6 @@ One bell for everything that needs attention, merging chat mentions and messages
 ## Builds on
 
 - [Chat](../chat/RECIPE.md)
-- [Alerts](../alerts/RECIPE.md)
+- [Automation](../automation/RECIPE.md)
+
+Alert delivery into chat needs Automation's [Alerts powerup](../automation/powerups/alerts/POWERUP.md).

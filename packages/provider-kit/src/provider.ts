@@ -102,6 +102,26 @@ export interface ProviderPullContext {
    * Providers whose credentials are static (an API key) never call this.
    */
   saveCredentials: (updates: Record<string, string>) => Promise<void>
+  /** USD exchange rates, supplied by core (signals report money in USD). */
+  fx: FxRates
+}
+
+/** One day's rate: USD per one unit of a currency. */
+export interface FxRate {
+  rate: number
+  /** The day the rate was published (on or before the day it serves: weekends use Friday's). */
+  rateDate: string
+  /** Where it came from, e.g. `ecb`. */
+  source: string
+}
+
+export interface FxRates {
+  /**
+   * The USD rate of `currency` (ISO 4217, any case) for each UTC day (YYYY-MM-DD): the reference
+   * rate published on that day or the last one before it. USD maps to 1. Throws, naming the
+   * currency and days, when a rate cannot be had; a provider never falls back to 1.
+   */
+  usdRates(currency: string, days: readonly string[]): Promise<Map<string, FxRate>>
 }
 
 export interface Provider {

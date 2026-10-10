@@ -4,7 +4,7 @@ import { useSettingsDialog } from './settingsDialog.ts'
 import { Button } from '@silkweave/box-ui'
 import { Link } from '@tanstack/react-router'
 import { ShellExtensionsProvider, type HomeLinkProps, type ShellExtensions } from '@silkweave/box-ui'
-import { WEB_FEATURE_LIST } from '../generated/features.ts'
+import { ALL_WEB_FEATURES } from '../web-features.ts'
 import { AgentSidebar, AgentToggle, useAgentFullscreen } from '../components/agent/AgentSidebar.tsx'
 import { useAgent } from './agentStore.ts'
 import { APP_STORAGE_PREFIX } from './storage.ts'
@@ -29,7 +29,7 @@ import { isBuilderPreview } from './builderPreview.ts'
  */
 let cachedTopbar: ComponentType[] | undefined
 function topbarComponents(): ComponentType[] {
-  cachedTopbar ??= WEB_FEATURE_LIST.flatMap((f) => f.shell?.topbar ?? [])
+  cachedTopbar ??= ALL_WEB_FEATURES.flatMap((f) => f.shell?.topbar ?? [])
     .sort((a, b) => a.order - b.order)
     .map((slot) => slot.component)
   return cachedTopbar

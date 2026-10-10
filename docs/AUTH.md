@@ -95,8 +95,12 @@ a second identity), and may not set `tailscale_login` on any row or change any `
 who a person is somewhere else: a tailscale login, or an SSO sign-in (the `sso` recipe signs people
 in by their email). Emails are also unique across users, case-insensitively (`upsertUser`).
 
-**In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: data's signal definitions
-and sources, automation's triggers and restart, content's channel profiles, planning's initiative
+**In core's signals** (`apps/server/src/signals/`): `signal-upsert`, `signal-rename`,
+`signal-delete`, `signal-owner-set`, `data-source-upsert` and `data-source-delete`. Signal
+definitions and owners are configuration, and a data source is configuration wired to credentials;
+manual point entry is a member's ([SIGNALS.md](SIGNALS.md#procedures-and-tools)).
+
+**In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: automation's triggers and restart, content's channel profiles, planning's initiative
 kinds, engagement's pod membership, and chat's `moderate` flag on `chat-message-delete` - the last
 through `assertAdmin(req, ...)`, for a branch a decorator cannot express.
 
@@ -257,7 +261,8 @@ the table identifies operations available only through tRPC:
 
 | MCP tool | tRPC | Tier |
 |---|---|---|
-| *(none)* | `usersList` | any principal (`has_token`, never a token) |
+| `users-list` | `usersList` | any principal (`has_token`, never a token) |
+| `user-get` | `usersGet` | any principal (one profile by id) |
 | `user-link` | `usersLink` | admin (short-lived sign-in link) |
 | `user-upsert` | `usersUpsert` | self-or-admin |
 | `user-invite` | `usersInvite` | admin |

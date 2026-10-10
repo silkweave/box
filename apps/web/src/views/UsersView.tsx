@@ -8,17 +8,15 @@ import {
   KeyRound,
   Link2,
   MoreHorizontal,
-  Pencil,
   Plus,
   Send,
   ShieldCheck,
   ShieldOff,
   Trash2,
-  Upload,
   type LucideIcon,
 } from 'lucide-react'
-import { Avatar, Badge, type BadgeProps, Button, confirm, InlineDialog as Dialog, InlineDialogContent as DialogContent, InlineDialogDescription as DialogDescription, InlineDialogTitle as DialogTitle, PageContainer, PageHeader, Popover, PopoverContent, PopoverTrigger } from '@silkweave/box-ui'
-import { ChannelGlyph } from '@/lib/channelIcons.tsx'
+import { Avatar, Badge, type BadgeProps, Button, confirm, InlineDialog as Dialog, InlineDialogContent as DialogContent, InlineDialogDescription as DialogDescription, InlineDialogTitle as DialogTitle, Popover, PopoverContent, PopoverTrigger, SETTINGS_GUTTER, SettingsActions, SettingsFooterBar, SettingsIntro, SettingsList, SettingsListRow, settingsRowActionCls, useSettingsFooter } from '@silkweave/box-ui'
+import { UserProfileForm, userFormValues, userUpsertInput } from '../components/UserProfileForm.tsx'
 import {
   deleteUser,
   inviteUser,
@@ -30,13 +28,8 @@ import {
   type UserInvite,
   type UserSigninLink,
 } from '../lib/useUsersData.ts'
-import { SWATCHES, swatchClass } from '@silkweave/box-ui/lib'
-import { fileToAvatarDataUri } from '../lib/image.ts'
 import { USER_STATUS_META, userName, type User } from '../user-types.ts'
 import { cn } from '@/lib/utils'
-
-const inputCls =
-  'w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-body-sm text-text transition-colors hover:border-accent/40 focus:border-accent focus:outline-none'
 
 /** nickname → slug id: lowercase, non-alphanumerics → '-', trimmed. Matches the server's slug rules. */
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
@@ -57,6 +50,19 @@ export function UsersView() {
   const [failure, setFailure] = React.useState<string | null>(null)
   const [invite, setInvite] = React.useState<UserInvite | null>(null)
   const [link, setLink] = React.useState<UserSigninLink | null>(null)
+  // The list owns the footer only while no editor is open; the editor publishes its own Save bar.
+  useSettingsFooter(
+    dialog
+      ? null
+      : (shadowed) => (
+          <SettingsFooterBar shadowed={shadowed}>
+            <Button size='sm' onClick={() => open('users/new')}>
+              <Plus /> New user
+            </Button>
+          </SettingsFooterBar>
+        ),
+    [],
+  )
 
   const shown = users ?? []
 
@@ -67,32 +73,20 @@ export function UsersView() {
   }
 
   return (
-    <PageContainer width='wide' className='md:px-6'>
-      <PageHeader
-        title='Users'
-        description='Everyone with a principal. Each signs in with a short-lived sign-in link, or with their own access token.'
-        actions={
-          (
-            <Button size='sm' onClick={() => setDialog({ mode: 'new' })}>
-              <Plus /> New user
-            </Button>
-          )
-        }
-      />
+    <div className='pb-4'>
+      <SettingsIntro>Everyone with a principal. Each signs in with a short-lived sign-in link, or with their own access token.</SettingsIntro>
 
-      {failure && <p role='alert' className='mb-4 text-body-sm text-danger'>{failure}</p>}
-      {error && <p className='mb-4 text-body-sm text-danger'>Failed to load users: {error}</p>}
+      {failure && <p role='alert' className={`${SETTINGS_GUTTER} pb-4 text-body-sm text-danger`}>{failure}</p>}
+      {error && <p className={`${SETTINGS_GUTTER} pb-4 text-body-sm text-danger`}>Failed to load users: {error}</p>}
 
       {!users ? (
-        <p className='text-body-sm text-muted-foreground'>Loading…</p>
+        <p className={`${SETTINGS_GUTTER} text-body-sm text-muted-foreground`}>Loading…</p>
       ) : shown.length === 0 ? (
-        <div className='grid place-items-center rounded-lg border border-dashed border-border py-16 text-center text-body-sm text-muted-foreground'>
-          <p>Nobody here yet.</p>
-        </div>
+        <p className={`${SETTINGS_GUTTER} py-8 text-body-sm text-muted-foreground`}>Nobody here yet.</p>
       ) : (
-        <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+        <SettingsList label='Users'>
           {shown.map((u) => (
-            <UserCard
+            <UserRow
               key={u.id}
               user={u}
               isSelf={false}
@@ -102,18 +96,20 @@ export function UsersView() {
               onSigninLink={setLink}
             />
           ))}
-        </div>
+        </SettingsList>
       )}
 
-      <UserDialog
-        key={dialog?.mode === 'edit' ? dialog.user.id : 'new'}
-        state={dialog}
-        existingIds={(users ?? []).map((u) => u.id)}
-        onClose={() => setDialog(null)}
-      />
+      {dialog && (
+        <UserDialog
+          key={dialog.mode === 'edit' ? dialog.user.id : 'new'}
+          state={dialog}
+          existingIds={(users ?? []).map((u) => u.id)}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {invite && <InviteDialog invite={invite} onClose={() => setInvite(null)} />}
       {link && <SigninLinkDialog link={link} onClose={() => setLink(null)} />}
-    </PageContainer>
+    </div>
   )
 }
 
@@ -125,18 +121,16 @@ const STATUS_VARIANT: Record<string, BadgeProps['variant']> = {
   revoked: 'danger',
 }
 
-const actionBtnCls =
-  'inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-label text-muted-foreground transition-colors hover:bg-accent-tint hover:text-accent disabled:pointer-events-none disabled:opacity-50'
+const iconBtnCls = settingsRowActionCls
 
 /**
- * One directory card. The whole surface opens the edit dialog (when the viewer may edit); the
- * actions bar carries Edit / Delete / More, with the access lifecycle (invitation, token rotate,
- * disable/enable) behind More - admin-only, like every management control here.
+ * One directory row. The whole row opens the editor; Delete and the access lifecycle (sign-in
+ * link, token view/rotate, disable/enable, behind More) sit at its end.
  *
- *   IMG [ Full name       system badge ]
- *   IMG [ @handle+status  actions bar  ]
+ *   AVATAR  Full name  [system]   email            status   🗑 ⋯
+ *           @handle
  */
-function UserCard({
+function UserRow({
   user,
   isSelf,
   onEdit,
@@ -154,57 +148,37 @@ function UserCard({
   const { agent } = useAuth()
   const systemBadge = user.id === agent?.id ? SYSTEM_BADGE : null
   const status = USER_STATUS_META[user.status as keyof typeof USER_STATUS_META]
-  const canEdit = true
 
   return (
-    <div
-      role={canEdit ? 'button' : undefined}
-      tabIndex={canEdit ? 0 : undefined}
-      onClick={canEdit ? onEdit : undefined}
-      onKeyDown={canEdit ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEdit() } } : undefined}
-      className={cn(
-        'flex items-center gap-3 rounded-lg border border-border bg-surface p-3 shadow-(--shadow-sm) transition-colors',
-        canEdit && 'cursor-pointer hover:border-accent/40 focus-visible:border-accent focus-visible:outline-none',
-      )}>
-      <Avatar user={user} size='lg' />
-      <div className='min-w-0 flex-1'>
-        <div className='flex items-center justify-between gap-2'>
-          <p className='line-clamp-1 font-medium text-text'>{userName(user)}</p>
-          {systemBadge && (
-            <Badge variant={systemBadge.variant} className='shrink-0'>
-              {systemBadge.label}
-            </Badge>
-          )}
-        </div>
-        <div className='mt-1 flex min-h-6 items-center justify-between gap-2'>
-          <p className='line-clamp-1 inline-flex items-center gap-1.5 text-label text-muted-foreground'>
-            @{user.nickname || user.id}
-            {status && <Badge variant={STATUS_VARIANT[user.status] ?? 'neutral'}>{status.label}</Badge>}
-          </p>
-          <div className='flex shrink-0 items-center gap-0.5'>
-            {canEdit && (
-              <button
-                type='button'
-                onClick={(e) => { e.stopPropagation(); onEdit() }}
-                title='Edit user'
-                className={actionBtnCls}>
-                <Pencil className='size-3.5' /> Edit
-              </button>
-            )}
-            {!isSelf && (
-              <button
-                type='button'
-                onClick={(e) => { e.stopPropagation(); onDelete() }}
-                title='Delete user'
-                className={cn(actionBtnCls, 'hover:bg-danger/10 hover:text-danger')}>
-                <Trash2 className='size-3.5' /> Delete
-              </button>
-            )}
-            <MoreMenu user={user} isSelf={isSelf} onInvited={onInvited} onSigninLink={onSigninLink} />
-          </div>
-        </div>
+    <SettingsListRow onOpen={onEdit} label={`Edit ${userName(user)}`} className='grid-cols-[2rem_minmax(0,1fr)_auto] md:grid-cols-[2rem_minmax(0,1.2fr)_minmax(0,1fr)_5.5rem_auto]'>
+      <Avatar user={user} size='md' />
+      <div className='min-w-0'>
+        <p className='flex items-center gap-2'>
+          <span className='truncate font-medium text-text'>{userName(user)}</span>
+          {systemBadge && <Badge variant={systemBadge.variant} className='shrink-0'>{systemBadge.label}</Badge>}
+        </p>
+        <p className='truncate text-label text-muted-foreground'>@{user.nickname || user.id}</p>
       </div>
-    </div>
+      <p className='hidden truncate text-body-sm text-muted-foreground md:block' title={user.email ?? undefined}>
+        {user.email || <span className='text-fg-4'>No email</span>}
+      </p>
+      <div className='hidden md:block'>
+        {status && <Badge variant={STATUS_VARIANT[user.status] ?? 'neutral'}>{status.label}</Badge>}
+      </div>
+      <div className='flex shrink-0 items-center justify-end gap-0.5'>
+        {!isSelf && (
+          <button
+            type='button'
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            title='Delete user'
+            aria-label={`Delete ${userName(user)}`}
+            className={cn(iconBtnCls, 'hover:bg-danger/10 hover:text-danger')}>
+            <Trash2 className='size-3.5' />
+          </button>
+        )}
+        <MoreMenu user={user} isSelf={isSelf} onInvited={onInvited} onSigninLink={onSigninLink} />
+      </div>
+    </SettingsListRow>
   )
 }
 
@@ -285,8 +259,8 @@ function MoreMenu({
     <>
       {failure && <span role='alert' className='text-body-sm text-danger'>{failure}</span>}
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger onClick={(e) => e.stopPropagation()} title='More actions' className={actionBtnCls}>
-          <MoreHorizontal className='size-3.5' /> More
+        <PopoverTrigger onClick={(e) => e.stopPropagation()} title='More actions' aria-label={`More actions for ${userName(user)}`} className={iconBtnCls}>
+          <MoreHorizontal className='size-4' />
         </PopoverTrigger>
         <PopoverContent align='end' className='w-60 gap-0.5 p-1.5'>
           {!isDisabled && (
@@ -361,11 +335,11 @@ function SigninLinkDialog({ link, onClose }: { link: UserSigninLink; onClose: ()
             <code className='block break-all rounded-md border border-border bg-bg p-2.5 text-label text-accent'>{link.url}</code>
           </div>
         </div>
-        <div className='mt-4 flex justify-end'>
+        <SettingsActions>
           <Button size='sm' onClick={onClose}>
             Done
           </Button>
-        </div>
+        </SettingsActions>
       </DialogContent>
     </Dialog>
   )
@@ -403,67 +377,31 @@ function MenuItem({
   )
 }
 
-/** Channels offered as handle inputs (matches the engagement/ingest channels). */
-const HANDLE_CHANNELS = ['github', 'x', 'linkedin', 'reddit'] as const
-
 /**
- * The ONE create/edit modal for every role. The role control is prominent (top): it seeds a new
- * user's role, and on edit an admin may flip it - Save then runs the audited setUserRole after the
- * upsert (never your own role, never `nova`; the server refuses both and blocks demoting the last
- * admin or a collaborator-demotion while the person owns internal work). Handles + email + avatar
- * (uploaded file → compact data URI, or a URL) are editable for EVERY role - `users.channels` is
- * the source of truth for per-channel presence.
+ * The create/edit editor. It takes the whole settings pane with the same form as Profile, Cancel
+ * and Save pinned to the pane's footer, and the person's agent accounts below.
  */
-function UserDialog({ state, existingIds, onClose }: { state: DialogState; existingIds: string[]; onClose: () => void }) {
-  const editing = state?.mode === 'edit' ? state.user : null
+function UserDialog({ state, existingIds, onClose }: { state: NonNullable<DialogState>; existingIds: string[]; onClose: () => void }) {
+  const editing = state.mode === 'edit' ? state.user : null
   const { principal, agent } = useAuth()
   // Agent accounts: an admin manages anyone's (the agent included), a member only their own.
   const showAccounts = editing !== null && (principal?.role === 'admin' || principal?.id === editing.id)
-  const [firstName, setFirstName] = React.useState(editing?.first_name ?? '')
-  const [lastName, setLastName] = React.useState(editing?.last_name ?? '')
-  const [nickname, setNickname] = React.useState(editing?.nickname ?? '')
-  const [image, setImage] = React.useState(editing?.image ?? '')
-  const [color, setColor] = React.useState(editing?.color ?? '')
-  const [email, setEmail] = React.useState(editing?.email ?? '')
-  const [handles, setHandles] = React.useState<Record<string, string>>(editing?.channels ?? {})
+  const [values, setValues] = React.useState(() => userFormValues(editing))
   const [error, setError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
-  const fileRef = React.useRef<HTMLInputElement>(null)
 
-  const open = state !== null
   // The id is the nickname slug on create, fixed once the user exists.
-  const id = editing ? editing.id : slugify(nickname)
+  const id = editing ? editing.id : slugify(values.nickname)
   const duplicate = !editing && !!id && existingIds.includes(id)
-  const setHandle = (ch: string, v: string) => setHandles((h) => ({ ...h, [ch]: v }))
-  const pickImage = async (file: File | undefined) => {
-    if (!file) return
-    try {
-      setImage(await fileToAvatarDataUri(file))
-      setError(null)
-    } catch {
-      setError('Could not read that image - try a PNG or JPG.')
-    }
-  }
+  const canSave = !saving && !!values.nickname.trim() && !duplicate
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!nickname.trim()) return setError('A nickname is required (it seeds the id).')
+    if (!values.nickname.trim()) return setError('A nickname is required (it seeds the id).')
     if (!id) return setError('The nickname must contain a letter or digit.')
     if (duplicate) return setError(`A user with id "${id}" already exists.`)
     setSaving(true)
-    const write = async () => {
-      await upsertUser({
-        id,
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        nickname: nickname.trim(),
-        email: email.trim(),
-        image: image.trim(),
-        color,
-        channels: handles,
-      })
-    }
-    void write()
+    void upsertUser(userUpsertInput(id, values))
       .then(onClose)
       .catch((err) => {
         setSaving(false)
@@ -471,165 +409,65 @@ function UserDialog({ state, existingIds, onClose }: { state: DialogState; exist
       })
   }
 
-  // A throwaway User to preview the avatar (image when set, else the initials chip).
-  const preview: User = {
+  useSettingsFooter(
+    (shadowed) => (
+      <SettingsFooterBar shadowed={shadowed}>
+        <Button type='button' variant='ghost' size='sm' onClick={onClose}>
+          Cancel
+        </Button>
+        <Button type='submit' form='user-form' size='sm' disabled={!canSave}>
+          {saving ? 'Saving…' : editing ? 'Save' : 'Create user'}
+        </Button>
+      </SettingsFooterBar>
+    ),
+    [canSave, saving, !!editing],
+  )
+
+  // A stub for a new user, so the avatar previews before anything is stored.
+  const base: User = editing ?? {
     id: id || 'new',
-    first_name: firstName,
-    last_name: lastName,
-    nickname,
-    email: email || null,
-    image: image.trim() || null,
-    color: color || null,
-    status: editing?.status ?? 'active',
-    channels: handles,
-    agent_profile: editing?.agent_profile ?? null,
-    has_token: editing?.has_token ?? false,
+    first_name: '',
+    last_name: '',
+    nickname: '',
+    email: null,
+    image: null,
+    color: null,
+    status: 'active',
+    channels: {},
+    agent_profile: null,
+    has_token: false,
     sort: 0,
     created_at: '',
     updated_at: '',
   }
+  const status = editing ? USER_STATUS_META[editing.status as keyof typeof USER_STATUS_META] : null
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className={showAccounts ? 'max-w-xl' : 'max-w-md'}>
-        <div className='flex flex-col gap-1'>
-          <DialogTitle>{editing ? 'Edit user' : 'New user'}</DialogTitle>
-          <DialogDescription>
-            {editing ? (
-              <code className='text-label'>id: {editing.id}</code>
-            ) : (
-              'One directory for everyone.'
-            )}
-          </DialogDescription>
-        </div>
-
-        <form onSubmit={submit} className='mt-2 flex flex-col gap-3'>
-          <div className='flex items-center gap-3'>
-            <button
-              type='button'
-              onClick={() => fileRef.current?.click()}
-              title='Upload avatar image'
-              aria-label='Upload avatar image'
-              className='group relative shrink-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'>
-              <Avatar user={preview} size='lg' />
-              <span className='absolute inset-0 hidden place-items-center rounded-full bg-black/45 text-white group-hover:grid'>
-                <Upload className='size-4' />
-              </span>
-            </button>
-            <div className='grid flex-1 grid-cols-2 gap-2'>
-              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder='First name' className={inputCls} aria-label='First name' />
-              <input value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder='Last name' className={inputCls} aria-label='Last name' />
-            </div>
-          </div>
-          <input
-            ref={fileRef}
-            type='file'
-            accept='image/*'
-            className='hidden'
-            aria-label='Avatar image file'
-            onChange={(e) => {
-              void pickImage(e.target.files?.[0])
-              e.target.value = ''
-            }}
-          />
-
-          <label className='flex flex-col gap-1 text-label text-muted-foreground'>
-            Nickname{!editing && id && <code className='text-fg-4'>id: {id}</code>}
-            {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
-            <input
-              autoFocus
-              value={nickname}
-              onChange={(e) => {
-                setNickname(e.target.value)
-                setError(null)
-              }}
-              placeholder='e.g. Alice'
-              className={inputCls}
-            />
-          </label>
-
-          <div className='flex flex-col gap-1 text-label text-muted-foreground'>
-            Avatar image
-            <div className='flex items-center gap-1.5'>
-              <input
-                value={image.startsWith('data:') ? '' : image}
-                onChange={(e) => setImage(e.target.value)}
-                placeholder={image.startsWith('data:') ? 'Uploaded image set - paste a URL to replace it' : 'https://… or upload'}
-                className={inputCls}
-                aria-label='Avatar image URL'
-              />
-              <Button type='button' variant='outline' size='sm' onClick={() => fileRef.current?.click()}>
-                <Upload /> Upload
-              </Button>
-              {image && (
-                <Button type='button' variant='ghost' size='sm' onClick={() => setImage('')}>
-                  Remove
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <label className='flex flex-col gap-1 text-label text-muted-foreground'>
-            Email{' '}
-            <span className='text-fg-4'>
-              {principal?.role === 'admin' ? '(identity for sign-in elsewhere; no mail is sent)' : '(ask an administrator to change it)'}
-            </span>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              readOnly={!!editing && principal?.role !== 'admin'}
-              placeholder='name@example.com'
-              className={inputCls}
-            />
-          </label>
-
-          <div className='flex flex-col gap-1 text-label text-muted-foreground'>
-            Handles <span className='text-fg-4'>(where this person appears on each channel)</span>
-            <div className='grid grid-cols-2 gap-2'>
-              {HANDLE_CHANNELS.map((ch) => (
-                <div key={ch} className='relative'>
-                  <ChannelGlyph channel={ch} className='pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-4' />
-                  <input value={handles[ch] ?? ''} onChange={(e) => setHandle(ch, e.target.value)} placeholder={ch} className={cn(inputCls, 'pl-8')} aria-label={`${ch} handle`} />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className='flex flex-col gap-1 text-label text-muted-foreground'>
-            Swatch color <span className='text-fg-4'>tints where this user appears</span>
-            <div className='flex items-center gap-1.5'>
-              {SWATCHES.map((s) => (
-                <button
-                  key={s}
-                  type='button'
-                  title={s}
-                  aria-label={`Swatch ${s}`}
-                  aria-pressed={color === s}
-                  onClick={() => setColor(color === s ? '' : s)}
-                  className={cn(
-                    'size-6 rounded-full border-2 transition-transform hover:scale-110',
-                    swatchClass(s),
-                    color === s ? 'border-text' : 'border-transparent',
-                  )}
-                  style={{ background: 'var(--swatch)' }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {error && <p className='text-label text-danger'>{error}</p>}
-
-          <div className='mt-1 flex items-center justify-end gap-2'>
-            <Button type='button' variant='ghost' size='sm' onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type='submit' size='sm' disabled={saving || !nickname.trim() || duplicate}>
-              {saving ? 'Saving…' : editing ? 'Save' : 'Create user'}
-            </Button>
-          </div>
-        </form>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogTitle>{editing ? userName(editing) : 'New user'}</DialogTitle>
+        <DialogDescription className='sr-only'>{editing ? `id: ${editing.id}` : 'One directory for everyone.'}</DialogDescription>
+        <UserProfileForm
+          formId='user-form'
+          base={base}
+          values={values}
+          onChange={(patch) => setValues((v) => ({ ...v, ...patch }))}
+          onSubmit={submit}
+          autoFocusNickname={!editing}
+          emailReadOnly={!!editing && principal?.role !== 'admin'}
+          emailHint={principal?.role === 'admin' ? 'Identity for sign-in elsewhere; no mail is sent.' : 'Ask an administrator to change it.'}
+          meta={
+            <>
+              {id ? <code>id: {id}</code> : <span>The nickname seeds the id.</span>}
+              {editing?.id === agent?.id && <Badge variant={SYSTEM_BADGE.variant}>{SYSTEM_BADGE.label}</Badge>}
+              {editing && status && <Badge variant={STATUS_VARIANT[editing.status] ?? 'neutral'}>{status.label}</Badge>}
+            </>
+          }
+          error={error}
+          onError={setError}
+        />
         {showAccounts && editing && (
-          <div className='mt-4 border-t border-border pt-4'>
+          <div className='mt-4'>
             <AgentAccountsPanel user={editing} isAgent={editing.id === agent?.id} />
           </div>
         )}
@@ -679,11 +517,11 @@ function InviteDialog({ invite, onClose }: { invite: UserInvite; onClose: () => 
             </div>
           </div>
         )}
-        <div className='mt-4 flex justify-end'>
+        <SettingsActions>
           <Button size='sm' onClick={onClose}>
             Done
           </Button>
-        </div>
+        </SettingsActions>
       </DialogContent>
     </Dialog>
   )

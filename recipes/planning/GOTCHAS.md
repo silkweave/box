@@ -37,7 +37,7 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **Deleting a signal leaves its goals in place.** They report a missing signal (no reading) rather
   than disappearing; data's delete report names them as `goal:<id>`. Re-point with `goal-upsert
   signal_id`, or delete the goals. A signal rename re-points them for you.
-- **Health suggests, people record.** Nothing sets `goals.outcome` automatically, and the alerts
+- **Health suggests, people record.** Nothing sets `goals.outcome` automatically, and the goal events
   `goal.ended` event only carries a `suggested_outcome`.
 - **`index.tsx` sits on the web feature-registry import cycle.** Never read a registry binding at
   module scope there, and load the app in a browser after touching it - `box verify` has no runtime

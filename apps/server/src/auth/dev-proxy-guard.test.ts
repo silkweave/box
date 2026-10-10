@@ -50,7 +50,7 @@ describe('classifyDevProxyRequest: what the anonymous login page needs is forwar
     '/manifest.webmanifest',
     `/@fs${REPO}/packages/ui/src/index.ts`,
     `/@fs${REPO}/packages/core/src/builder-browser.ts`,
-    `/@fs${REPO}/features/data/web/index.tsx`,
+    `/@fs${REPO}/features/crm/web/index.tsx`,
     `/@fs${REPO}/recipes/crm/RECIPE.md?raw`,
     `/@fs${REPO}/recipes/crm/screenshots/board.png`,
     `/@fs${REPO}/apps/web/src/lib/utils.ts?import`,

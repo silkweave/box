@@ -7,7 +7,7 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/notifications/`; the reference implementation lives in the Stack at `features/notifications/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
 
-**Builds on:** chat, alerts. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** chat, automation (with its `alerts` powerup). Adapt those first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
 
 Copy or adapt `<fetched stack>/features/notifications/` into the Box's `features/notifications/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
@@ -39,7 +39,7 @@ until then the Settings row says "Not set up".
    must already exist (delivery throws otherwise, and the alert row records the error rather than
    disappearing), and the slug must be a plain room - `chat:dm:...` is refused on purpose.
    `user:<id>` is a direct message from the agent, pushed to that person. `channel` and an
-   unresolved `owner` post into alerts' room (`features.alerts.channelRoom`, default
+   unresolved `owner` post into the alerts room (`features.automation.alerts.channelRoom`, default
    `automations`), so create it.
    Rule of thumb from the code's own comment: page a person for what needs answering now, route to
    a room what wants a durable line people read later.

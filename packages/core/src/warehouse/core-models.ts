@@ -4,6 +4,8 @@
 import type { ModelSpec } from './model.js'
 import { USER_ROLES, USER_STATUSES } from '../users/types.js'
 import { RUN_STATUSES, RUN_TRIGGERS } from '../ops/types.js'
+import { SIGNAL_MODELS } from '../signals/models.js'
+import { FX_RATES } from '../fx/rates.js'
 
 /** The people directory - every principal. docs/AUTH.md. */
 export const USERS: ModelSpec = {
@@ -102,4 +104,4 @@ export const EVENTS: ModelSpec = {
 }
 
 
-export const CORE_MODELS: readonly ModelSpec[] = [USERS, KV_STATE, EVENTS, AUTOMATION_RUNS]
+export const CORE_MODELS: readonly ModelSpec[] = [USERS, KV_STATE, EVENTS, AUTOMATION_RUNS, ...SIGNAL_MODELS, FX_RATES]

@@ -7,7 +7,7 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/engagement/`; the reference implementation lives in the Stack at `features/engagement/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
 
-**Builds on:** data, content. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** content. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
 
 Copy or adapt `<fetched stack>/features/engagement/` into the Box's `features/engagement/{core,server,web,skills}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
@@ -34,8 +34,9 @@ No shipped migrations currently. A future schema change must be a new migration.
    card for it.
 3. **Set each member's channel handles** in Settings → Users (`users.channels`, keyed by
    platform). Comment verification hard-requires them; like/react verification does not.
-4. **Map browsers** in `box.json features.data.browsers` (`users.id` → chromatrix identity) if the team wants
-   x/linkedin verification rather than manual attestation. That file belongs to `data`.
+4. **Map browsers** in `box.json browsers.users` (`users.id` → chromatrix identity) if the team wants
+   x/linkedin verification rather than manual attestation. The browser lease is core
+   (`docs/BROWSERS.md`).
 5. **Vocabularies** in `verify/types.ts` (`EngagementAction`) and `inbox/types.ts`
    (`InboxChannel`, `InboxKind`). Adding an action needs a karma rate, an `ACTION_META` /
    `ACTION_ICON` entry in `features/engagement/web/engagement-types.ts`, and usually a
@@ -45,6 +46,16 @@ No shipped migrations currently. A future schema change must be a new migration.
    `Pods` settings section are both band 400. "Pods", "karma" and "Replies" are this team's words;
    change them in `index.tsx` and in `EngagementView.tsx`'s `SECTIONS` if they are not yours.
 7. Set `server.dashboardUrl` in `box.json` for deep links to this Box.
+8. **Which polls run.** Schedule them with Automation time triggers: a fast tier for
+   `engagement-reddit-inbox` and `engagement-github-notifications`, about 15 minutes for
+   `engagement-traction`. `engagement-github-notifications` needs a `github` account with a
+   `GH_TOKEN` credential; `engagement-reddit-inbox` needs the Data Sync `reddit` powerup and
+   `engagement-linkedin-comments` the Data Sync `linkedin` powerup for org posts
+   (`recipes/data-sync/`); a call without its powerup fails naming it. Member-post comments need the
+   author's browser in `box.json browsers.users`. The GitHub and traction polls skip while no
+   trigger listens for their kind. `features.engagement.tractionTiers` sets the traction ladder
+   (default `[10, 25, 50, 100, 250]`). To have the events delivered to people or rooms, add
+   Automation's Alerts powerup and deliver triggers on the kinds.
 
 ## 3. Prove it
 
@@ -58,7 +69,7 @@ box dev
   piece (switch the active user in the top-right menu to see it), with the expected actions as
   badges and the karma badge in the top bar. "I did this" records it and the card disappears;
   "Not this one" dismisses it.
-- `http://localhost:8190/engagement/replies` - the tactical inbox. Empty until `data` has pulled
+- `http://localhost:8190/engagement/replies` - the tactical inbox. Empty until Data Sync has pulled
   a `github-engagement` / `hackernews` / `reddit-engagement` snapshot or the events spine has a
   response-needed row; empty is a correct answer on a fresh Box. Open an item, save a draft, come
   back - it is still there.
@@ -78,8 +89,10 @@ bun run cli inbox-draft-save              # what /draft-reply writes
 bun run cli InboxSetDone                  # mark an inbox item done/snoozed/open
 ```
 
-`pod-engagement-verify` also appears in the Automation view's action catalog (group
-`Engagement`), and every run lands in `automation_runs` like any other op.
+`pod-engagement-verify` and the four polls also appear in the Automation view's action catalog
+(group `Engagement`), and every run lands in `automation_runs` like any other op. `box run-now
+--action_id engagement-traction` runs a poll by hand; its summary says what it recorded and what
+the delivery flush did.
 
 ## 4. Adapt or remove
 

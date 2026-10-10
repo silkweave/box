@@ -1,6 +1,6 @@
 # notifications gotchas
 
-Push credentials and subscriptions are local data. Preserve them, and remember notifications depends on both chat and alerts at runtime.
+Push credentials and subscriptions are local data. Preserve them, and remember notifications depends on both chat and Automation's alerts powerup at runtime.
 
 The feature id (`notifications`, the same as the recipe id) is part of runtime registration and migration identity. Keep it stable. Existing
 migrations are byte-exact source: preserve names, order, evaluated SQL, and callback behavior.

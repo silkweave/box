@@ -4,8 +4,8 @@
 // downstream is either a read-only query over this table (digests, traction, the Inbox) or an
 // in-process `onEvent` subscriber that only ever sees FRESH events.
 //
-// This is core, not a feature: the data feature's derives, content publishing, relay handlers and
-// the run funnel all emit into it, and the alerts feature is one subscriber among several.
+// This is core, not a feature: Data Sync's pulls, content publishing, relay handlers and the run
+// funnel all emit into it, and automation's triggers are one subscriber among several.
 //
 // The freshness-gate insert stays raw (INSERT … ON CONFLICT DO NOTHING … RETURNING is the
 // idempotency semantics the record layer's partial upsert must not replace); plain row reads go

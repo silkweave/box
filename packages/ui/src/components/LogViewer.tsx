@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { CheckCircle2, CircleSlash, Clock, Loader2, Terminal, XCircle } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 
@@ -64,8 +65,11 @@ interface LogViewerProps {
   emptyNote: string
   /** Counted in the header, e.g. `(n) => \`${n} steps\``. Defaults to a bare count. */
   countLabel?: (count: number) => string
-  /** Scroll anchor, so the caller owns the follow-the-tail behaviour. */
+  /** A marker after the last line, for a caller that needs to know whether the tail is on screen. */
   endRef?: React.RefObject<HTMLDivElement | null>
+  /** Keep the newest line in view while the reader is at the bottom; scrolling up pauses it.
+   *  The log scrolls inside its own body, never the page around it. Default on. */
+  follow?: boolean
   className?: string
 }
 
@@ -76,8 +80,18 @@ export function LogViewer({
   emptyNote,
   countLabel = (n) => String(n),
   endRef,
+  follow = true,
   className,
 }: LogViewerProps) {
+  // Follow the tail by moving this body's own scrollTop. `scrollIntoView` on a tail marker (what
+  // callers used to do) scrolls every ancestor too: inside a settings pane it dragged the whole
+  // page to the log on load and on every new line.
+  const body = React.useRef<HTMLDivElement>(null)
+  const atEnd = React.useRef(true)
+  React.useLayoutEffect(() => {
+    const el = body.current
+    if (follow && el && atEnd.current) el.scrollTop = el.scrollHeight
+  }, [follow, lines.length])
   return (
     <section
       className={cn(
@@ -90,7 +104,13 @@ export function LogViewer({
         {status ? <StatusBadge tone={status.tone} label={status.label} /> : null}
         <span className='ml-auto text-label text-muted-foreground tabular-nums'>{countLabel(lines.length)}</span>
       </header>
-      <div className='min-h-[12rem] flex-1 overflow-y-auto bg-bg px-4 py-3 font-mono text-label leading-relaxed'>
+      <div
+        ref={body}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          atEnd.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 8
+        }}
+        className='max-h-[32rem] min-h-[12rem] flex-1 overflow-y-auto bg-bg px-4 py-3 font-mono text-label leading-relaxed'>
         {lines.length === 0 ? (
           <p className='text-muted-foreground'>{emptyNote}</p>
         ) : (

@@ -15,27 +15,33 @@ rows of the events spine into one actionable list, with per-item done/snoozed st
 reply an agent can write and a human copies out. **Engagement verification** is the deterministic
 `pod-engagement-verify` op: it answers "did I engage" from the *engager's own* side - reddit's
 public thread JSON, or their own logged-in Chrome over CDP for x and linkedin - and records the
-engagement (karma included) only on a `confirmed` verdict.
+engagement (karma included) only on a `confirmed` verdict. Four **polls** put the response-needed
+activity on the events spine: the Reddit inbox, GitHub notifications, comments on published
+LinkedIn pieces, and trailing-hour traction spikes ("Polls" below).
 
-- **dependsOn**: `data`, `content`.
-  - From **`data`**: `browserIdentity` (`features/data/core/browsers.ts`, `box.json features.data.browsers`:
-    `users.id` → chromatrix identity) and `connectCDP` / `firstContext` / `detach`
-    (`features/data/core/cdp.ts`) - the whole browser half of `verify/strategies.ts`. The inbox build
-    also reads data's `snapshots` table directly (`github-engagement`, `hackernews`,
-    `reddit-engagement`, latest row per channel).
+- **dependsOn**: `content`.
+  - From **core's browser lease** (`docs/BROWSERS.md`): `browserIdentity`
+    (`@silkweave/box-core/browser/browsers`, `box.json browsers.users`: `users.id` → chromatrix
+    identity) and `connectCDP` / `firstContext` / `detach` (`@silkweave/box-core/browser/cdp`) -
+    the whole browser half of `verify/strategies.ts`. The inbox build reads core's `snapshots`
+    table directly (`github-engagement`, `hackernews`, `reddit-engagement`, latest row per
+    channel); those snapshots are written by the Data Sync recipe's pulls (`hackernews` in its
+    base, `github-engagement` with its `github` powerup, `reddit-engagement` with its `reddit`
+    powerup). Without them the inbox shows only events-spine items.
   - From **`content`**: `pod_content` LEFT JOINs `content_pieces` to resolve a team piece's
     `topic_id` (`pods/state.ts`, `CONTENT_FROM`), and the `content.published` event is what feeds
     the auto-content hook. On the web: `ContentPiece` / `ContentChannel` types, `ChannelLabel`,
     and `useContentData` for topic titles in the Pods admin section.
-  - From **core** (not a dependency, just core): the events spine (`listEvents`, `onEvent`),
+  - From **core** (not a dependency, just core): the events spine (`listEvents`, `onEvent`,
+    `recordEvent`), the event ports (`eventWanted`, `flushDeliveries`, `registerEventLinker`;
+    `packages/core/src/event-ports.ts`), the platform client port (`requirePlatformClient`),
     `users/state.ts` (`readUsers` for handles and karma labels), `accounts.ts`
     (`channelPlatform`), the warehouse record layer, and the run funnel.
-- **Depended on by**: `alerts` (`dependsOn: ['data','planning','content','engagement']`), which
-  imports `inboxDeepLink` and `dashboardUrl` from `engagement/inbox/inbox-map.ts` so an alert card
-  can deep-link the exact Replies item the event created.
-- **Removal**: remove the source trees only after adapting or removing `alerts` and `notifications`.
-  The six tables are left in the
-  warehouse; nothing else reads them.
+- **Depended on by**: nothing. `InboxModule` registers `inboxDeepLink` as core's event linker, so a
+  delivered alert (Automation's Alerts powerup) can deep-link the exact Replies item the event
+  created, without either side importing the other.
+- **Removal**: remove the source trees; nothing imports them. The six tables and the polls'
+  `kv_state` keys are left in the warehouse; nothing else reads them.
 
 ## Tables
 
@@ -132,15 +138,50 @@ only, no MCP:
 
 ## Actions
 
-One, in core's run funnel (`actions.ts`):
+Five, in core's run funnel (`actions.ts`, the polls in `polls/actions.ts`):
 
 | id | group | what |
 |---|---|---|
 | `pod-engagement-verify` | `Engagement` | `parameterized: true` - params `pod_content_id`, `participant_kind`, `participant_id` (+ `actor`). Resolves the piece, asserts membership, works out the remaining expected actions, runs the per-`(channel·action)` strategy for each, and records the ones that come back `confirmed` |
+| `engagement-reddit-inbox` | `Engagement` | browser-free unread-feed poll, `reddit.inbox` events (deduped). Needs the Data Sync `reddit` powerup |
+| `engagement-github-notifications` | `Engagement` | conditional poll of the participating notifications inbox, `github.notification` events |
+| `engagement-linkedin-comments` | `Engagement` | comments on published LinkedIn pieces, `linkedin.comment` events: the official API for org posts (needs the Data Sync `linkedin` powerup), the author's logged-in Chrome for member posts |
+| `engagement-traction` | `Engagement` | trailing-hour engagement per subject against the tier ladder, `traction.spike` events |
 
 Verdict discipline: ambiguity is `unknown`, never `confirmed` - a false positive corrupts the
 ledger, a false negative just means clicking Verify again. A run is `confirmed` only when every
 remaining action confirmed; one `unknown` makes the whole run `unknown`.
+
+## Polls
+
+The four poll actions record events on the spine; what acts on them is whatever listens (the
+tactical inbox reads the response-needed kinds, and event triggers in Automation run actions,
+agent prompts or, with its Alerts powerup, deliveries). Each poll ends with core's
+`flushDeliveries()`, so a batch goes out as one message per target at once instead of after the
+debounce; without the Alerts powerup the call does nothing and the run summary says so.
+
+- **`engagement-reddit-inbox`** reads `requirePlatformClient('reddit').unreadInbox()`, the
+  browser-free unread feed the Data Sync `reddit` powerup provides. Without that powerup the run
+  fails naming it.
+- **`engagement-github-notifications`** polls the Notifications API with `If-Modified-Since`, so an
+  unchanged inbox is a free `304`, and honours `X-Poll-Interval`. Protocol state (Last-Modified and
+  the earliest next poll) lives in `kv_state` under `engagement-github.notifications`; losing it
+  costs one full response.
+- **`engagement-linkedin-comments`** targets published LinkedIn pieces carrying
+  `metadata.post_urn` (content's `readContentPieces`). Org posts go through the official API
+  (`requirePlatformClient('linkedin')`, the Data Sync `linkedin` powerup). Member posts have no API:
+  the author's own Chrome (identity from `browsers.users`, through core's browser lease) reads the
+  comment section at most once an hour (cursor in `kv_state` under `engagement-linkedin.browser`),
+  over a 7-day window; comment URNs dedup replays.
+- **`engagement-traction`** counts the trailing `WINDOW_MIN = 60` minutes of engagement kinds
+  (`ENGAGEMENT_KINDS`: x replies, mentions, quotes, reposts and likes, `reddit.inbox`,
+  `github.star`, `linkedin.comment`) per subject and records one `traction.spike` per (subject,
+  tier) against `features.engagement.tractionTiers`. An hourly schedule makes the windows abut
+  exactly, so any drift leaves a gap or an overlap; a tighter schedule is the safe direction.
+
+The GitHub and traction polls ask core's `eventWanted(kind)` first and skip while nothing listens
+for `github.notification` / `traction.spike`, so an unused poll costs nothing. Schedule the polls
+with Automation time triggers (a fast tier for Reddit and GitHub, about 15 minutes for traction).
 
 ## Events
 
@@ -148,6 +189,8 @@ remaining action confirmed; one `unknown` makes the whole run `unknown`.
   `content.published` event whose channel is listed in `autoContent.channels` mints a `pod_content`
   row in the configured pod. Idempotent on `(pod_id, content_id)`, so re-saves never duplicate a
   card.
+- **Recorded**: `reddit.inbox`, `github.notification`, `linkedin.comment` and `traction.spike` by
+  the polls above.
 - **Read**: the inbox build queries `events` for `x.reply`, `x.mention`, `x.quote`,
   `reddit.inbox`, `github.notification`, `linkedin.comment` over a 30-day window.
   `inbox-map.ts` is the one place that decides which event kinds are response-needed and what the
@@ -184,9 +227,14 @@ remaining action confirmed; one `unknown` makes the whole run `unknown`.
 The feature reads no environment variables. Two settings still change its behaviour:
 
 - `server.dashboardUrl` is read by `inbox/inbox-map.ts` (`dashboardUrl()`, `inboxDeepLink()`); unset
-  simply means no deep links. It is `alerts` that consumes them.
-- The browser verify path goes through data's CDP client, whose `features.data.chromatrixUrl`,
-  `features.data.chromatrixIdentity` and `features.data.chromatrixToken` belong to `data`.
+  simply means no deep links. The registered event linker hands them to whatever renders an event
+  (the Alerts powerup's chat body).
+- `features.engagement.tractionTiers` (`polls/traction.ts`) - the traction tier ladder, a non-empty
+  list of positive numbers; default `[10, 25, 50, 100, 250]`.
+- GitHub notifications take their token from core's credential store (`requireCredentials('github',
+  <default account>, 'GH_TOKEN')`), not from an environment variable.
+- The browser verify path goes through core's browser lease, configured by `browsers.url`,
+  `browsers.token` and `browsers.users` (`docs/BROWSERS.md`).
 
 ## Admin-only
 
@@ -228,7 +276,7 @@ curated content, the inbox and recording an engagement are a member's.
 
 `x:like`, `x:repost`, `linkedin:react` and `linkedin:comment` (and their `linkedin-article`
 twins) verify by opening the page in **the engager's own logged-in Chrome**, reached over CDP
-through chromatrix, with the identity looked up in `box.json features.data.browsers` by `users.id`.
+through chromatrix, with the identity looked up in `box.json browsers.users` by `users.id`.
 Operationally that means:
 
 - a machine with a persistent, human-logged-in headed Chrome per participant, and the chromatrix

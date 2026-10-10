@@ -222,20 +222,56 @@ Sections receive the remaining path as `render(params: string[])`. Examples:
 - `/initiatives#settings/initiative-kinds`
 - `/initiatives#settings/users/new` or `#settings/users/<id>`
 - `#settings/automation/triggers`, `#settings/automation/actions`, `#settings/automation/runs/<id>`
-- `#settings/alerts` (the alert history)
+- `#settings/automation/alerts` (the alert history, with Automation's Alerts powerup)
 
 Section and sub-page navigation participates in browser history. Closing clears the hash with a
 replace navigation; the page behind the dialog stays mounted. Legacy `/settings/<section>`,
-`/automation/...`, and `/alerts` URLs redirect to the corresponding dialog over Dashboard.
-Old `schedules` and `rules` Settings identifiers remain valid aliases (`rules`, and `alerts/rules`,
-open Automation > Triggers, where the alert rules live as deliver triggers).
+and `/automation/...` URLs redirect to the corresponding dialog over Dashboard. The `schedules`
+Settings identifier opens Automation > Triggers.
 
-Settings wraps its content in the UI library's `InlineDialogScope`. Editors use `InlineDialog`,
-`InlineDialogContent`, `InlineDialogTitle`, and `InlineDialogDescription`: they replace the pane
-with a Back action while preserving the underlying list. Outside that scope they retain normal
-dialog behavior, so shared editors still work on application pages. Confirmations use the same
-pane; leaving the section cancels pending confirmations. Keep new Settings editors in this scope
-instead of adding another modal. Profile edits stay inline and include sign-out.
+Settings wraps every section in the UI library's `SettingsPane` and an `InlineDialogScope`. The
+pane owns the fixed title bar, the one scrolling surface and the fixed footer; a section renders
+content only. Editors use `InlineDialog`, `InlineDialogContent`, `InlineDialogTitle`, and
+`InlineDialogDescription`: they replace the list with a full-width editor while preserving the
+list's state, and the editor's title becomes a breadcrumb in the title bar (`Users › Toby`), whose
+first part returns to the list. The editor opens at the top of the pane and the list comes back at
+the position it was left. Outside the scope these components keep normal dialog behavior, so
+shared editors still work on application pages. Confirmations use the same pane; leaving the
+section cancels pending confirmations. Keep new Settings editors in this scope instead of adding
+another modal. Profile edits stay inline and include sign-out.
+
+### Building a settings section
+
+Settings sections are a canvas, not a stack of cards. Build them from the pieces
+`@silkweave/box-ui` exports (see the `Settings/SettingsPane` story):
+
+- `SettingsIntro` for the one-paragraph explanation under the title, with an optional `aside`
+  for view controls (a group-by switch, Refresh).
+- `SettingsList` and `SettingsListRow` for collections: full-bleed rows ruled top and bottom, the
+  column template passed as a grid class so rows and a `SettingsListHeader` line up. `onOpen`
+  makes the whole row open its editor; trailing actions use `settingsRowActionCls` and stop
+  propagation. `SettingsListHeading` labels a second list in the same section.
+- `SettingsGroup` for a titled group inside a form or detail (a hairline rule and an uppercase
+  label, with an optional aside such as Reset).
+- `SettingsField` and `settingsInputCls` for labelled inputs. Use `SelectField` (options as data,
+  groups for what an `<optgroup>` did) for a closed set and `Autocomplete` for free text with
+  suggestions; never a native `<select>` or `<datalist>`, which draw their own caret and popup. Lay fields out on a grid that uses
+  the pane's width (Profile and the Users editor use three columns), not a narrow centred column.
+- The pane footer for primary actions, which stays pinned however long the content is. A list
+  publishes its create button with `useSettingsFooter(footer, deps)` and `SettingsFooterBar`. An
+  editor or confirmation wraps its action row in `SettingsActions`, which pins it to the footer
+  inside Settings and renders it inline anywhere else. Footers stack: the newest shows, and closing
+  an editor or confirmation hands the bar back to the list. A submit button in the footer sits
+  outside its form, so it names the form with `form='<form id>'`.
+- Sub-pages are routed through the section's `params` (`#settings/pods/<id>/members`) and render
+  as inline editors. `InlineDialogTitle` takes a `trail` of the pages between the section and the
+  editor and an `onRoot` for the section title, so the bar reads
+  `Pods › Founders amplification › Add members` and each part navigates.
+- `SETTINGS_GUTTER` for any other block that must align with the title bar and rows.
+
+Tabs inside a section use `TabNav` directly under the title bar (Automation, Channels). A log
+(`LogViewer`, `RunLogPane`) follows its own tail inside its body; never call `scrollIntoView` on
+content inside the pane, which scrolls the whole pane along with it.
 
 ## Routing - real paths, no server work
 
@@ -286,9 +322,9 @@ notifications, it inherits this problem and this answer.
 `index.tsx` default-exports one `defineWebFeature({...})`. `src/generated/features.ts`, maintained alongside the feature source, is the **only file outside the feature that names it**.
 
 ```ts
-export const WEB_FEATURES = [alerts, automation, ...] as const satisfies readonly WebFeature[]
+export const WEB_FEATURES = [artifacts, automation, ...] as const satisfies readonly WebFeature[]
 export const WEB_FEATURE_LIST: readonly WebFeature[] = WEB_FEATURES   // widened, for port readers
-export const WEB_ROUTES = [...alerts.routes, ...automation.routes, ...] as const
+export const WEB_ROUTES = [...artifacts.routes, ...automation.routes, ...] as const
 ```
 
 `WEB_ROUTES` is spread explicitly rather than flat-mapped on purpose: a `flatMap` over a tuple of

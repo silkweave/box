@@ -7,11 +7,11 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/planning/`; the reference implementation lives in the Stack at `features/planning/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
 
-**Builds on:** data. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** core only (its signals, boards and saved views). Resolve imports from the Box's source tree and root workspace dependencies.
 
 Copy or adapt `<fetched stack>/features/planning/` into the Box's `features/planning/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
-Preserve the existing 001-sprint-tasks, 002-drop-initiative-target and 003-drop-initiative-signal-ids identities and bodies exactly. Planning builds on data's `signals/series.ts` and its signal hooks, and expects data's `001-drop-signal-target` migration to be present. New schema behavior gets a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
+Preserve the existing 001-sprint-tasks, 002-drop-initiative-target and 003-drop-initiative-signal-ids identities and bodies exactly. Planning builds on core's signal series reads (`@silkweave/box-core/signals/series`) and its signal hooks. New schema behavior gets a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
 ### Mobile module
 

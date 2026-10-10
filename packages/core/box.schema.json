@@ -287,6 +287,102 @@
         "type": "object"
       }
     },
+    "signals": {
+      "type": "object",
+      "description": "Core's signal settings.",
+      "properties": {
+        "owners": {
+          "type": "object",
+          "description": "Signal ownership: channels (channel -> users.id) and signals (signal id -> users.id, or null for deliberately unowned).",
+          "properties": {
+            "channels": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "signals": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null",
+                  "boolean"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "browsers": {
+      "type": "object",
+      "description": "The browser lease: the chromatrix service that hands out headed Chrome tabs.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "chromatrix origin (default http://127.0.0.1:8830)."
+        },
+        "identity": {
+          "type": "string",
+          "description": "Default browser identity (default 'default')."
+        },
+        "token": {
+          "type": "string",
+          "description": "chromatrix bearer token; keep it in box.local.json."
+        },
+        "users": {
+          "type": "object",
+          "description": "users.id -> that person's browser identity.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "agentMcp": {
+      "type": "object",
+      "description": "MCP servers and the toolsets that grant them to server-owned agent sessions (chat rooms, agent triggers). A session gets the Box's own tools plus its toolset's servers; no toolset means the Box's tools only.",
+      "properties": {
+        "servers": {
+          "type": "object",
+          "description": "Server id -> connection. The id is the tool prefix (mcp__<id>__<Tool>).",
+          "additionalProperties": {
+            "type": ["object", "null"],
+            "properties": {
+              "url": { "type": "string", "description": "HTTP or SSE endpoint." },
+              "type": { "type": "string", "enum": ["http", "sse"], "description": "Transport (default http)." },
+              "label": { "type": "string", "description": "Display name." },
+              "token": { "type": "string", "description": "Bearer token sent as Authorization; keep it in box.local.json." }
+            },
+            "required": ["url"],
+            "additionalProperties": false
+          }
+        },
+        "toolsets": {
+          "type": "object",
+          "description": "Toolset id -> grant.",
+          "additionalProperties": {
+            "type": ["object", "null"],
+            "properties": {
+              "label": { "type": "string" },
+              "description": { "type": "string" },
+              "servers": { "type": "array", "items": { "type": "string" }, "description": "Server ids this toolset attaches." },
+              "allow": { "type": "array", "items": { "type": "string" }, "description": "Tools that run without approval: mcp__<server> or mcp__<server>__<Tool>." },
+              "deny": { "type": "array", "items": { "type": "string" }, "description": "Tools the session never gets: an MCP tool or server, or a built-in tool such as Bash." }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "workerdeck": {
       "type": [
         "object",

@@ -10,7 +10,7 @@ at `recipes/crm/`. The reference implementation does not: it lives in the Stack 
 ## Prerequisites
 
 - Existing Box backup and a recorded restore path for both data and matching application source.
-- Core, plus every recipe this one builds on already adapted and registered in the target Box. Builds on: **data**.
+- Core. This recipe builds on no other recipe.
 - Feature-specific package imports include: `@tiptap/extension-list`, `@tiptap/extension-table`, `@tiptap/extensions`, `@tiptap/markdown`, `@tiptap/react`, and `@tiptap/starter-kit` (web). Install latest into the root workspace package; record any necessary compatibility pin and its reason in the Box gotchas. Also declare shared framework/UI packages imported directly by this feature: dependencies declared only under apps/server or apps/web do not resolve from the shared feature tree.
 - A recorded source SHA in docs/UPSTREAM.md, and an integration entry with scope, target SHA,
   intended changes, and state in _docs/INTEGRATION.md.

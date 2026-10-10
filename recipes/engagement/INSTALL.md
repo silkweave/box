@@ -10,7 +10,7 @@ at `recipes/engagement/`. The reference implementation does not: it lives in the
 ## Prerequisites
 
 - Existing Box backup and a recorded restore path for both data and matching application source.
-- Core, plus every recipe this one builds on already adapted and registered in the target Box. Builds on: **data, content**.
+- Core, plus every recipe this one builds on already adapted and registered in the target Box. Builds on: **content**.
 - Feature-specific package imports include: `playwright-core` (core). Install latest into the root workspace package; record any necessary compatibility pin and its reason in the Box gotchas. Also declare shared framework/UI packages imported directly by this feature: dependencies declared only under apps/server or apps/web do not resolve from the shared feature tree.
 - A recorded source SHA in docs/UPSTREAM.md, and an integration entry with scope, target SHA,
   intended changes, and state in _docs/INTEGRATION.md.

@@ -113,6 +113,14 @@ export interface BoxJson {
   stack: BoxStack
   recipes: Record<string, BoxRecipe>
   features: Record<string, Record<string, unknown>>
+  /** Core's signal settings: `owners` (signal ownership; signals/owners.ts). */
+  signals: Record<string, unknown>
+  /** The browser lease (browser/cdp.ts): `url`, `identity`, `token` (box.local.json) and `users`
+   *  (users.id → that person's browser identity). */
+  browsers: Record<string, unknown>
+  /** MCP servers and toolsets for server-owned agent sessions (agent-mcp/toolsets.ts): `servers`
+   *  (id → url, type, label, token in box.local.json) and `toolsets` (id → servers, allow, deny). */
+  agentMcp: Record<string, unknown>
   workerdeck: Record<string, unknown> | null
   accounts: Record<string, unknown[]>
   credentials: Record<string, Record<string, Record<string, string>>>
@@ -155,7 +163,7 @@ export function defaultBoxJson(): BoxJson {
     http: { userAgent: 'Silkweave Box' },
     stack: { source: 'silkweave/stack' },
     recipes: {},
-    features: {}, workerdeck: null, accounts: {}, credentials: {}, agentProfiles: {},
+    features: {}, signals: {}, browsers: {}, agentMcp: {}, workerdeck: null, accounts: {}, credentials: {}, agentProfiles: {},
   }
 }
 
@@ -244,7 +252,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   const defaults = defaultBoxJson()
   // Removed 2026-10-08: per-person Claude tokens are connected in Settings > Profile now.
   if (raw['workerdeckTokens'] !== undefined) refuse(where, 'workerdeckTokens was removed; connect Claude accounts in Settings > Profile and delete the key')
-  onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'recipes', 'features', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
+  onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'recipes', 'features', 'signals', 'browsers', 'agentMcp', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
 
   const agent = raw['agent'] === undefined ? defaults.agent : parseBoxAgent(raw['agent'], where)
 
@@ -320,6 +328,9 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   }
   const features: Record<string, Record<string, unknown>> = {}
   for (const [name, value] of Object.entries(map('features'))) { if (!isRecord(value)) refuse(`${where} features`, `${name} must be an object`); features[name] = value as Record<string, unknown> }
+  const signals = map('signals')
+  const browsers = map('browsers')
+  const agentMcp = map('agentMcp')
   const workerdeckRaw = raw.workerdeck
   if (workerdeckRaw !== undefined && workerdeckRaw !== null && !isRecord(workerdeckRaw)) refuse(where, 'workerdeck must be an object or null')
   const accounts: Record<string, unknown[]> = {}
@@ -347,7 +358,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     agentProfiles[user] = entry
   }
 
-  return { agent, brand, server, backup, background, auth, mcp, http, stack, recipes, features, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
+  return { agent, brand, server, backup, background, auth, mcp, http, stack, recipes, features, signals, browsers, agentMcp, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
 }
 
 /** Parse a file's text, naming the file in the one error JSON.parse would otherwise leave vague. */

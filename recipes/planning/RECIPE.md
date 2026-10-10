@@ -14,4 +14,4 @@ Goals that put a target and a window on a signal, initiatives that say how the t
 
 ## Builds on
 
-- [Data](../data/RECIPE.md)
+Core only: goals measure core's signals, and circuit boards and saved views are core.

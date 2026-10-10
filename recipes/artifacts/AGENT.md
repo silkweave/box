@@ -30,7 +30,7 @@ skew").
   any route you give the Worker.
 - **Upload size.** `features.artifacts.maxUploadMb` in `box.json`.
 - **Comment alerts.** Add an alerts rule for `artifact.annotated` / `artifact.replied` that routes to
-  the `owner` field or a chat room. Without the alerts recipe the events are still recorded.
+  the `owner` field or a chat room. Without Automation's Alerts powerup the events are still recorded.
 - **Toolbar.** `features/artifacts/toolbar/`. It renders in a shadow root with its own CSS string;
   Tailwind classes do not exist there.
 - **Public sharing.** The Public sharing powerup

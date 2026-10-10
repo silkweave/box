@@ -13,14 +13,15 @@ cannot express a provider-owned column, and a machine one (`import.ts`, `upsertI
 never overwrites a human's judgement. Rows the machine cannot attribute are written anyway and land
 in the **assign queue**, because a row written nowhere visible is a row lost.
 
-- **dependsOn**: `data`, and entirely on the WEB side - the board surface. `crm` imports data's
-  `BoardKanban`, `BoardViewBar`, `GridHeader`, `GridFooter`, `presetIcon`
-  (`features/data/components/board/*`), its saved-view store (`createViewStore`, `ViewStore`,
-  `BoardBarSpec` from `features/data/web/lib/boardView.ts`) and `useDataSources`
-  (`features/data/web/lib/useSourcesData.ts`, which labels a contact's origin on the detail page).
-  Nothing in `features/crm/core` or `features/crm/server` imports another
-  feature. Remove `data` and the accounts table, the pipeline board, the view bar and the saved
-  views in the CRM sidebar all fail to resolve.
+- **dependsOn**: nothing. Everything it shares comes from core, all on the WEB side:
+  `BoardKanban` from `@silkweave/box-ui/board`, core's saved views (`ViewBar` / `ViewBarSpec` from
+  `apps/web/src/presets/ViewBar.tsx`, `createViewStore` / `ViewStore` from
+  `apps/web/src/presets/boardView.ts`, `presetIcon` from `apps/web/src/presets/presetIcons.tsx`;
+  `docs/SIGNALS.md`, "Saved views") and `useDataSources`
+  (`apps/web/src/signals/lib/useSourcesData.ts`, which labels a contact's origin on the detail
+  page). Nothing in `features/crm/core` or `features/crm/server` imports another feature. The
+  `stripe` powerup reads the key of a Stripe data source, which the Data Sync `stripe` powerup
+  provides.
 - **Depended on by**: nothing, since `relay` was removed on 2026-09-13. `relay` was the
   predecessor's webhook glue and the only caller of its outreach-tool sync; both went in the same
   commit. **The template ships no sync at all** - the machine write path above is the door a team's
@@ -177,9 +178,11 @@ tools. Nothing a model or a human types can reach them; they are library functio
 
 ## Actions
 
-**None.** `manifest.ts` declares no `actions`, so `crm` contributes nothing to core's run funnel and
-`automation` has nothing of its own to schedule here. There is no sync in the template; a team that
-writes one against `import.ts` decides then whether it is an action (scheduled) or event-driven.
+The base recipe declares none. The `stripe` powerup (`powerups/stripe`) adds `crm-stripe-sync`
+(group `CRM`, not parameterized, schedulable): every Stripe invoice into `crm_revenue_events`
+through `upsertImportedRevenueEvent`, configured by `features.crm.stripe` in `box.json`. Any other
+sync a team writes against `import.ts` decides then whether it is an action (scheduled) or
+event-driven.
 
 ## UI
 
@@ -191,14 +194,14 @@ writes one against `import.ts` decides then whether it is an action (scheduled) 
 - **Settings / shell / slots / onSession**: none. `defineWebFeature` passes `routes` and `nav` only.
   The top-bar cluster on the accounts table is filled per-view with `TopBarActions` from
   `@silkweave/box-ui`, which is the shell extension seam rather than a manifest field.
-- **Inside the layout**: a sidebar that is NAVIGATION, not a filter - the saved views (from data's
+- **Inside the layout**: a sidebar that is NAVIGATION, not a filter - the saved views (from core's
   view store) above, then the ten most recently opened accounts (per-browser `localStorage`; where
   you have been is not team state), plus an assign-queue entry badged with its count. Filtering
   lives in exactly one place, the view bar.
 - **The accounts index** is two layouts over one view model: a full-width grid with one row per
   account and totallable columns (the leading open deal, the weighted pipeline, MRR), and a
-  pipeline kanban with one card per DEAL, dragged between deal stages (`CrmKanban` over data's
-  `BoardKanban`). The account filters narrow both; the `stage` filter is the board's column list
+  pipeline kanban with one card per DEAL, dragged between deal stages (`CrmKanban` over the UI
+  library's `BoardKanban`). The account filters narrow both; the `stage` filter is the board's column list
   and "has a deal at this stage" on the list; the owner scope reads the deal's owner on the board.
   Saved views stored before deals existed are repaired on read (`normalizeCrmFilters`).
 - **The detail page** is a summary strip (owner, MRR, open pipeline, last contact) above unboxed

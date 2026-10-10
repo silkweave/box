@@ -47,8 +47,10 @@ The chat agent reaches the Box through its own MCP surface, as the agent princip
   have (a wiki, WhatsApp reads) in the profile's own `.claude.json`, and their allow rules in its
   `settings.json`. A `box` entry there is replaced for chat sessions; drop it rather than keep a
   second copy of the agent's token.
-- **Codex profile:** Codex takes no per-session MCP servers, so the profile's `config.toml` declares
-  it, with the same floor as `CHAT_AGENT_BOX_MCP_FLOOR`:
+- **Codex profile:** Codex takes per-session MCP servers too, so the session brings `box` and the
+  floor as it does for Claude, and the profile's `config.toml` needs no `box`. Only a worker older
+  than WorkerDeck 3.12 (where Codex reports `sessionMcpServers: false`) needs it declared there,
+  with the same floor as `CHAT_AGENT_BOX_MCP_FLOOR`:
   ```toml
   [mcp_servers.box]
   url = "http://127.0.0.1:<server.port>/mcp"

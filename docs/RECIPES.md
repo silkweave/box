@@ -89,8 +89,8 @@ is descriptive prose, not a manifest. There is no `box adopt`, one-click install
 `deps.json`, feature package manifest, registry catalogue, release tag, or mount and compose
 workflow. The root workspace package owns packages imported by the shared feature tree.
 
-The Stack carries every maintained recipe: reminders, sink, data, planning, content, CRM, chat,
-automation, alerts, email, notifications, engagement, artifacts, sso and mobile. The Mobile app recipe is the
+The Stack carries every maintained recipe: reminders, sink, Data Sync, planning, content, CRM, chat,
+automation, comms (communications), notifications, engagement, artifacts, sso and mobile. The Mobile app recipe is the
 one whose code ships with core ([MOBILE.md](MOBILE.md)): adapting it makes the shipped app the Box's
 own and records it in the ledger, and each recipe's `mobile` powerup requires it. A consumer Box starts with core and
 adapts only the recipes its team chooses.
@@ -134,7 +134,7 @@ the validation chain passes, and each powerup once its Verify steps pass. The mo
 
 In a live Builder session, the agent then runs `box app restart` to activate server and
 registration changes without stopping the stable supervisor, and validates the refreshed Preview.
-An agent session lists the Box's MCP tools once, when it starts, so a recipe's new tools (`email-*`,
+An agent session lists the Box's MCP tools once, when it starts, so a recipe's new tools (`comms-*`,
 say) do not appear in the session that adapted it; use the `box <tool>` CLI there, or a new
 session, to exercise them.
 Record durable local findings in the Box's `docs/GOTCHAS.md`.

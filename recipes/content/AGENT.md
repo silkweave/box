@@ -7,7 +7,7 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/content/`; the reference implementation lives in the Stack at `features/content/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
 
-**Builds on:** data, planning. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** planning. Adapt those recipes first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies. Signals are core. Publishing to LinkedIn needs the Data Sync `linkedin` powerup and publishing to Substack its `substack` powerup at runtime (`recipes/data-sync/`); the LinkedIn newsletter-article path also needs the author's browser identity in `box.json browsers.users` (`docs/BROWSERS.md`).
 
 Copy or adapt `<fetched stack>/features/content/` into the Box's `features/content/{core,server,web,skills}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 

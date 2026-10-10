@@ -2,6 +2,7 @@
 // feature manifests' actions in ops/registry.ts.
 
 import { backupWarehouse } from '../warehouse/backup.js'
+import { sourceSyncAction, sourcesSyncAction } from '../signals/sources/actions.js'
 import { todayUtc, type ActionSpec, type IngestProgress } from './types.js'
 
 async function* warehouseBackupAction(): AsyncGenerator<IngestProgress> {
@@ -12,4 +13,13 @@ async function* warehouseBackupAction(): AsyncGenerator<IngestProgress> {
 
 export const CORE_ACTIONS: readonly ActionSpec[] = [
   { id: 'warehouse-backup', label: 'Warehouse backup', group: 'Warehouse', description: 'Copy the warehouse to <instance>/backups (and to GCS when GCS_BUCKET is set)', run: warehouseBackupAction },
+  { id: 'sources-sync', label: 'Data sources sync', group: 'Pulls', description: 'Pull every ENABLED data source (Settings → Data sources) into the signals bound to it; one bad source does not stop the others', run: sourcesSyncAction },
+  {
+    id: 'source-sync',
+    label: 'Sync one data source',
+    group: 'Pulls',
+    description: 'Pull ONE data source, disabled ones included - the supervised first run before a source is armed (params: source_id)',
+    parameterized: true,
+    run: (opts) => sourceSyncAction({ source_id: opts.params?.source_id ?? '' }),
+  },
 ]

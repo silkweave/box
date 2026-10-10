@@ -5,8 +5,8 @@ action registry (`packages/core/src/ops/registry.ts`), and every execution - man
 triggered - goes through the one funnel `executeRecorded()` (`ops/run.ts`), which records it in the
 `automation_runs` table. This feature adds **when**: a trigger names *when* it fires and *what* it
 does. This Box runs **time** and **event** triggers that do an **action** or an **agent** prompt,
-and event triggers that **deliver** a message when a feature registers the deliver runner (the
-`alerts` recipe does; "Ports" below). An agent prompt runs as a WorkerDeck job under an admin's
+and event triggers that **deliver** a message when the deliver runner is registered (the Alerts
+powerup registers it; "Ports" below). An agent prompt runs as a WorkerDeck job under an admin's
 agent profile, outside the action funnel. The table already carries the columns for webhook
 triggers; a trigger of a kind this Box cannot run is refused on write ("not supported in this
 Box"), never stored half-working.
@@ -15,7 +15,15 @@ Box"), never stored half-working.
   and the server's agent host (`apps/server/src/agent/workerdeck.host.ts`) for the restart drain and
   the job queue. Without the agent surface (`box.json` `workerdeck` null) agent triggers are refused
   on write and everything else works.
-- **Depended on by**: `alerts` (registers the deliver runner and a trigger check; reads triggers).
+- **Powerups**: Alerts (`recipes/automation/powerups/alerts/`, source in `core/alerts/`,
+  `server/alerts/`, `web/alerts/`: the deliver runner, the `alerts` ledger, transports, the daily
+  digest and the Alerts tab) and Webhook relay (`recipes/automation/powerups/relay/`).
+- **Depended on by**: `notifications` (registers the `chat` and `dm` transports into the Alerts
+  powerup; needs it). Event sources in other features (engagement's polls, planning's goal events)
+  ask core's `eventWanted` before a costly poll, which automation answers; they never import it.
+- **Registers**: core's event interest (`registerEventInterest`: an enabled, valid event trigger
+  listens for the kind) and a signal hook that re-points trigger filters on `fields.signal_id` when
+  a signal is renamed.
 - **Removal**: nothing runs on a timer or an event any more. Every action stays runnable by hand and by agent,
   because Run Now, the registry and the run history are core's `OpsController`. The `triggers`
   table stays in the warehouse, unread.
@@ -42,7 +50,7 @@ Box"), never stored half-working.
 | `success_marker` | agent: the run is a success only when a line of the final text starts with this word (`SENT_OK` or `SENT_OK 42 sent`) |
 | `permission_mode` | agent: null runs the job in the unattended mode (`workerdeck.queue.permissionMode`); `bypassPermissions` runs the main job with no permission checks (the gate keeps the unattended mode). Any other value, or a mode on a non-agent trigger, is refused on write |
 | `gate_prompt`, `gate_model`, `gate_marker` | agent: an optional cheap first job; the run goes ahead only when its final text has the marker line |
-| `route`, `message`, `notify`, `cooldown_min`, `debounce_sec` | deliver: the runner's fields (recipes/alerts/SPEC.md "Deliver triggers") |
+| `route`, `message`, `notify`, `cooldown_min`, `debounce_sec` | deliver: the runner's fields (recipes/automation/powerups/alerts/POWERUP.md) |
 | `daily_cap` | runs per UTC day that event fires stop at; null = 50 for an agent trigger, none for an action; refused on a delivery |
 | `max_depth` | event: the chain depth it still fires at, 0-5; null = 2 |
 | `owner` | the admin the trigger belongs to; null only for triggers imported from config |
@@ -161,13 +169,16 @@ the dispatcher read the table (`onApplicationBootstrap`):
   the runner's `validate`; the dispatcher calls `deliver(t, event)`, and `trigger-run` calls
   `deliver(t, event, { now: true })` and answers with its one-line outcome.
 - `registerTriggerCheck(id, check)` - `validateTrigger` runs every registered check last, for every
-  trigger. Alerts refuses a `signal.increase` / `signal.threshold` trigger that does not name its
-  signal and threshold in its filters.
+  trigger, so a feature that records events can say what a trigger on its kinds needs.
 
 Helpers for dependents: `triggersListeningFor(kind)` (enabled, valid event triggers covering a kind,
-any do kind; an event source asks before polling), `filterValues(t, path)`, and
-`triggersFilteringOn` / `repointTriggerFilters` (a renamed signal re-points every filter on
-`fields.signal_id`, written without validation).
+any do kind), `filterValues(t, path)`, and `triggersFilteringOn` / `repointTriggerFilters` (a renamed
+signal re-points every filter on `fields.signal_id`, written without validation; automation's own
+signal hook does this).
+
+Event sources outside automation do not import it: they ask core's `eventWanted(kind)`
+(`packages/core/src/event-ports.ts`), which `AutomationModule` answers with
+`triggersListeningFor(kind)`. With automation absent the answer is false and a costly poll skips.
 
 ### Agent runs (WorkerDeck jobs)
 
@@ -203,7 +214,7 @@ worker enables whenever the agent surface boots (`box.json` `workerdeck.queue`, 
    first, then the condensed transcript, the permission report and a usage line (tokens, turns,
    cost, duration). Success
    only when the job succeeded and, if the trigger names a marker, a line of the final text starts with it as a word.
-   The outcome goes to core's `notifyRunOutcome`, so `run.error` alerts cover agent runs too.
+   The outcome goes to core's `notifyRunOutcome`, so a failed agent run records `run.error` too.
 
 **Permission denials.** In `auto` mode the engine's classifier decides each tool call. It refuses
 some outright (the SDK's `permission_denied` system message, which WorkerDeck forwards as an
@@ -309,7 +320,8 @@ least 1, `max_depth` 0-5. A gate needs an agent trigger, a prompt and a one-line
   `#settings/automation/triggers` (the default; the old `schedules` id opens it),
   `#settings/automation/runs` (`/runs/<runId>` for detail), `#settings/automation/actions` and
   `#settings/automation/webhooks` (relay state, sources with a copyable hook URL, the delivery ledger
-  with each envelope, Send test, Reconnect; admins).
+  with each envelope, Send test, Reconnect; admins) and, with the Alerts powerup,
+  `#settings/automation/alerts` (the alert history).
 - **Triggers**: one card per trigger (When, Do, next fire, owner, problem). A delivery's Do reads
   "deliver to <route>" (or "count in the daily digest for") with the start of its message, and its
   When shows the cooldown and debounce instead of a daily cap. An event trigger's When
@@ -322,7 +334,9 @@ least 1, `max_depth` 0-5. A gate needs an agent trigger, a prompt and a one-line
   with the trigger id; for an agent trigger it calls `trigger-run` (admins) and links the run. The
   editor's Do picks an action, an agent prompt (runs as, engine, model, directory, prompt, marker),
   or, on an event, a delivery (route with suggestions, message, each event or the daily digest,
-  cooldown, debounce; disabled without a deliver runner).
+  cooldown, debounce; disabled without a deliver runner). Without the Alerts powerup the tab shows a
+  note naming it, with an "Add the Alerts powerup" Builder brief for admins (members are told to
+  ask an admin).
   Create, edit, delete and the enabled toggle show for admins only; the server enforces it regardless.
 - **Runs**: a run fired by a trigger shows the trigger id; a manual run shows who ran it, plus the
   trigger id when it was a trigger's Run now. Agent runs are labelled "Agent prompt"; their log
@@ -365,15 +379,21 @@ what runs unattended, so `trigger-upsert`, `trigger-delete`, `trigger-run` and `
 are admin-only. An agent trigger runs on a person's own agent account, so that person is an admin
 too, named explicitly in `run_as` and shown beside the owner ("runs as Dan, owned by Toby"). Reading triggers, status and history stays a member's, as does core's Run Now.
 
-**The Box MCP server in a job.** A job on an engine that takes per-session MCP servers (Claude)
-gets `box`, this Box's `/mcp` authenticated as the trigger's `run_as` user, so a run as toby uses
+**The Box MCP server in a job.** A job on an engine that takes per-session MCP servers (Claude,
+Codex) gets `box`, this Box's `/mcp` authenticated as the trigger's `run_as` user, so a run as toby uses
 the Box as toby. The token is that user's existing one, revealed rather than rotated (issued only
 when they have none), so it is readable by any shell command the job may run. `mcp__box` is
 auto-approved; the floor `ServiceRestart`, `UserDelete`, `UserSetRole`, `UserAccessRevoke` is
 disallowed (the same floor as the chat agent, `apps/server/src/agent/box-mcp.ts`). A `box` entry in
-the person's own Claude config is replaced for the job, not run beside it. A Codex profile takes no
-session servers: it keeps `box` in its config.toml with the token from its `mcpTokensPath` file.
-When the token cannot be read the job starts without `box` and the run log says so.
+the person's own profile config is replaced for the job, not run beside it. Codex honours only the
+MCP entries of the tool lists, which the floor is; a toolset denying a non-MCP tool is refused on
+Codex (docs/AGENT-TOOLS.md "Engines"). When the token cannot be read the job starts without `box` and the run log says so.
+
+**The trigger's toolset.** An agent trigger may name a toolset (`toolset`, migration
+`automation:003-trigger-toolset`; [docs/AGENT-TOOLS.md](../../docs/AGENT-TOOLS.md)): its servers,
+`allow` and `deny` are added beside `box` for the gate and the main job. Saving refuses an id that is
+not configured and a toolset on a trigger that does not run an agent; starting refuses a toolset on
+a profile without session servers. Null gives the job the Box's tools only.
 
 ## What a team customises
 

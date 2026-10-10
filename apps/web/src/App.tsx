@@ -5,7 +5,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import { router } from './router.tsx'
 import { startChangeFeed } from './lib/changeFeed.ts'
 import { AuthProvider, useAuth } from './lib/useAuth.tsx'
-import { WEB_FEATURE_LIST } from './generated/features.ts'
+import { ALL_WEB_FEATURES } from './web-features.ts'
 import { BrandProvider, UsersProvider } from '@silkweave/box-ui'
 import { useUsersData } from './lib/useUsersData.ts'
 import { LoginView } from './views/LoginView.tsx'
@@ -38,7 +38,7 @@ function AuthGate() {
   useEffect(() => {
     if (!startFeed) return
     startChangeFeed()
-    const teardowns = WEB_FEATURE_LIST.map((f) => f.onSession?.()).filter((t): t is () => void => typeof t === 'function')
+    const teardowns = ALL_WEB_FEATURES.map((f) => f.onSession?.()).filter((t): t is () => void => typeof t === 'function')
     return () => teardowns.forEach((t) => t())
   }, [startFeed])
   if (loading) return <div className='h-dvh w-full bg-bg' />

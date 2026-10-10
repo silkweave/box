@@ -2,7 +2,7 @@ import { LayoutDashboard } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import type { GroupNav, NavGroup } from '@silkweave/box-ui'
 import type { NavEntry } from '../feature.ts'
-import { WEB_FEATURE_LIST } from '../generated/features.ts'
+import { ALL_WEB_FEATURES } from '../web-features.ts'
 
 const DASHBOARD: NavEntry = { id: 'home', label: 'Dashboard', icon: LayoutDashboard, to: '/', order: 0, expandable: false }
 
@@ -14,7 +14,7 @@ const DASHBOARD: NavEntry = { id: 'home', label: 'Dashboard', icon: LayoutDashbo
  */
 let cached: NavEntry[] | undefined
 export function navEntries(): NavEntry[] {
-  cached ??= [DASHBOARD, ...WEB_FEATURE_LIST.flatMap((f) => f.nav ?? [])].sort(
+  cached ??= [DASHBOARD, ...ALL_WEB_FEATURES.flatMap((f) => f.nav ?? [])].sort(
     (a, b) => a.order - b.order || a.id.localeCompare(b.id),
   )
   return cached
@@ -22,7 +22,7 @@ export function navEntries(): NavEntry[] {
 
 /** This Box's sidebar organization. Domain names belong here, outside the UI library. */
 const SIDEBAR_SECTIONS = [
-  { label: 'Workspace', ids: ['home', 'mail', 'chat', 'artifacts', 'sink'] },
+  { label: 'Workspace', ids: ['home', 'comms', 'chat', 'artifacts', 'sink'] },
   { label: 'Reporting', ids: ['signals', 'boards'] },
   { label: 'Operations', ids: ['goals', 'initiatives', 'sprints', 'reminders'] },
   { label: 'Sales', ids: ['crm'] },

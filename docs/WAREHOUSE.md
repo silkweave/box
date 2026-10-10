@@ -12,13 +12,15 @@ rebuild step - writes UPSERT straight into it.
   `<checkout>/data`; no environment variable moves it, so a second
   tenant or a scratch Box is a second checkout. **Gitignored** - the durable copy is the GCS backup
   below, never git.
-- **Ownership:** core owns the engine, the record layer, the schema lifecycle and four tables
-  (`users`, `kv_state`, `events`, `automation_runs`,
-  [`warehouse/core-models.ts`](../packages/core/src/warehouse/core-models.ts)). Every other table
-  belongs to a feature and is documented in the recipe it came from, `recipes/<id>/SPEC.md`. A Box with no
-  features installed has exactly those four.
+- **Ownership:** core owns the engine, the record layer, the schema lifecycle and nine tables,
+  declared in [`warehouse/core-models.ts`](../packages/core/src/warehouse/core-models.ts)
+  (`CORE_MODELS`): `users`, `kv_state`, `events` and `automation_runs`, plus the signal tables
+  `signals`, `signal_points`, `snapshots`, `data_sources` and `signal_boards`
+  ([`signals/models.ts`](../packages/core/src/signals/models.ts), described in
+  [SIGNALS.md](SIGNALS.md)). Every other table belongs to a feature and is documented in the recipe
+  it came from, `recipes/<id>/SPEC.md`. A Box with no features installed has exactly those nine.
 
-This document is core's half. For what a given table means, read its feature's SPEC.
+This document is core's half. For what a feature's table means, read its feature's SPEC.
 
 ## Concurrency: single writer, ephemeral connections
 
@@ -370,8 +372,8 @@ time, most frequent first.
 
 **Why reacting to events is a subscriber and not part of the spine.** The spine is core; triggers
 and alerting are features. `automation`'s event dispatcher registers one `onEvent` listener that
-matches event triggers (deliveries among them, through alerts' runner), and core does not know it
-exists. That split is what lets a Box run with `automation` or `alerts` removed and still have
+matches event triggers (deliveries among them, through the alerts powerup's runner), and core does not know it
+exists. That split is what lets a Box run with `automation` or its alerts powerup removed and still have
 content publishing, the run funnel and every other producer emit normally: the events are recorded,
 nothing reacts. Fold the policy into `recordEvent` and the spine grows a dependency on a feature,
 which is the one thing the seam forbids (`docs/core/SEAM.md` § 1). It also keeps
@@ -399,7 +401,7 @@ throws: a bad subscriber cannot break a write.
 Two producers feed it:
 
 - **precise and immediate** - the record layer (`upsertRecord`, `deleteRecord`) and the signal write
-  helpers in `db.ts`, per table, for every in-process write. The web UI, MCP tools, REST and cron
+  helpers in `signals/write.ts` and `signals/points.ts`, per table, for every in-process write. The web UI, MCP tools, REST and cron
   all funnel through the one server process, so this covers nearly everything.
 - **coarse and watched** - the server's recursive fs watcher on the instance dir
   (`apps/server/src/changes/changes.watcher.ts`) for OUT-of-process edits: an agent session editing
@@ -554,23 +556,18 @@ Three edits inside the feature's own directory, then one command.
 2. **List it in the manifest** (`manifest.ts`), which is the only thing `schema.ts` reads:
 
    ```ts
-   import { defineCoreFeature } from '../../feature.js'
-   import { DATA_ACTIONS } from './actions.js'
-   import { DATA_MODELS } from './models.js'
+   import { defineCoreFeature } from '@silkweave/box-core/feature'
+   import { CRM_MODELS } from './models.js'
 
    export default defineCoreFeature({
-     id: 'data',
-     models: DATA_MODELS,
-     baseline: [
-       `CREATE OR REPLACE VIEW latest_signals AS
-        SELECT channel, signal_id, label, signal_group, unit,
-               last(value ORDER BY date) AS value, max(date) AS as_of
-        FROM legacy_signal_points GROUP BY 1, 2, 3, 4, 5`,
-     ],
+     id: 'crm',
+     models: CRM_MODELS,
      migrations: [],
-     actions: DATA_ACTIONS,
    })
    ```
+
+   A feature that needs views or indexes adds `baseline`, a list of idempotent DDL statements
+   (`CREATE OR REPLACE VIEW ...`, `CREATE INDEX IF NOT EXISTS ...`).
 
    `id` is the directory name and **the migration ledger namespace, so it is never renamed**.
    `dependsOn` must cover every `../<feature>/` import in the directory. `baseline` is idempotent
@@ -595,7 +592,10 @@ holding the lock. Configure it in the MCP client's own configuration; examples a
 
 ## Where the signal writers live
 
-`snapshots` and `legacy_signal_points` are the **`data`** app's tables, and the four helpers that
-write them (`upsertSnapshot`, `replaceChannelSignals`, `replaceSignalRows`,
-`upsertBackfillSignals`) live with it, in that app's own `signals/write.ts`. If you find yourself adding a writer to
-`warehouse/db.ts` for a table core does not own, that is the same mistake.
+`snapshots` and `signal_points` are core tables, and their writers live with them in
+[`packages/core/src/signals/`](../packages/core/src/signals/): `upsertSnapshot`,
+`replaceChannelSignals`, `replaceSignalRows` and `upsertBackfillSignals` in `write.ts`, and the
+manual, windowed-sync and increment writers in `points.ts` ([SIGNALS.md](SIGNALS.md#the-point-store)).
+Features write signal history through those helpers, never with their own SQL. If you find yourself
+adding a writer to `warehouse/db.ts` for a table it does not own, put it with the table's owner
+instead.

@@ -111,7 +111,7 @@ trees too large for an MCP argument, capped by `features.artifacts.maxUploadMb`.
 
 `artifact.annotated` and `artifact.replied`, recorded with `subject` = slug, `actor` = author and
 fields `slug`, `title`, `owner`, `author`, `thread`, `thread_author`, `text` (280 chars), `url`. Route
-them with an alerts rule; artifacts does not depend on notifications.
+them with a deliver trigger; artifacts does not depend on notifications.
 
 ## Actions
 

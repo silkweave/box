@@ -1,25 +1,25 @@
 # `notifications` - the bell, push, and alerts into chat
 
 **A glue feature** (`docs/core/SEAM.md` § 4.2), and the one the pattern was invented for. `chat` is
-useful alone: rooms, mentions, the agent's seat, its own sidebar unread badges. `alerts` is useful
-alone: deliveries for triggers, the alert ledger, the alert history. It has no sink of its own.
+useful alone: rooms, mentions, the agent's seat, its own sidebar unread badges. Automation's
+`alerts` powerup is useful alone: deliveries for triggers, the alert ledger, the alert history. It has no sink of its own.
 The *together*-part is this third feature, and it is two things pointing in opposite directions -
 a top-bar **bell** that merges chat mentions and messages with warehouse alerts into one list, and
-**two transports registered into alerts**: a delivery routed `chat:<slug>` (or `channel` /
-`owner`, which alerts resolves to its alerts room) lands as a post in that room, and one routed
+**two transports registered into the alerts powerup**: a delivery routed `chat:<slug>` (or `channel` /
+`owner`, which the powerup resolves to its alerts room) lands as a post in that room, and one routed
 `user:<id>` lands as a direct message from the agent, pushed to that person's devices. Delete it
 and both halves keep working, minus exactly those things: chat has no bell (the chat sidebar still
 counts unread), and an alert matches no transport, so it records a delivery `error` - it stays in
 the history and the ledger either way. That is the whole argument for glue.
 
-- **dependsOn**: `chat`, `alerts`. From **chat** it takes `chatStore()` (mentions, recent messages,
+- **dependsOn**: `chat`, `automation` (with its `alerts` powerup). From **chat** it takes `chatStore()` (mentions, recent messages,
   the notification watermark and dismissal tables, push subscriptions, device tokens, room lookup,
   `directPeer`), `onChatEvent`/`ChatBusEvent`/`ChatMessage` (the delivery trigger), and on the web `subscribeChatFrames` from
-  `features/chat/web/lib/useChatData.ts`. From **alerts** it takes `listAlerts` (the bell's second
+  `features/chat/web/lib/useChatData.ts`. From the **alerts powerup** it takes `listAlerts` (the bell's second
   stratum), the `AlertTransport` / `AlertRecord` types and `registerAlertTransport`. From core:
   `resolvePrincipalById`, `readUsers`, `credential`, the `AuthGuard`.
 - **Nothing depends on `notifications`.** It is a leaf; it is the longest chain in the Box
-  (`notifications -> alerts -> data`).
+  (`notifications -> automation`).
 - **Removal**: remove the feature's `core`, `server`, and `web` source trees after checking
   registrations. No feature names it, no table is its own to drop.
 
@@ -38,7 +38,7 @@ Its state lives in three places it does not own:
   interactive bell is a small hot per-user write, which is the shape DuckDB's ephemeral
   single-writer design is wrong for; chat.db is the instance's store for exactly that, and is only
   called "chat" because chat got there first.
-- **The DuckDB warehouse**, via alerts: the `alerts` table is read through `listAlerts` and never
+- **The DuckDB warehouse**, via the alerts powerup: the `alerts` table is read through `listAlerts` and never
   written here.
 - **`box.local.json credentials`** under the `push.*` channel: the VAPID pair and the
   FCM service account. Secrets go in credentials, in `box.local.json` (see Configuration below).
@@ -58,12 +58,12 @@ providers at all - the chat SQLite handle belongs to `ChatModule`:
 | `startNotificationDelivery()` | its own chat-bus listener | translates `mention.created` and DM `message.created` into `NotificationDelivery` structs |
 | `registerWebPushTransport()` | its own delivery seam (`delivery.ts`) | web push; returns `false` and does nothing when VAPID is unconfigured |
 | `registerFcmTransport()` | the same seam | FCM/APNs device push; `false` when the service account is unconfigured |
-| `registerAlertTransport(CHAT_ALERT_TRANSPORT)` | **alerts'** port (`features/alerts/core/transports.ts`) | routes `chat:<slug>` to a chat room post |
+| `registerAlertTransport(CHAT_ALERT_TRANSPORT)` | the **alerts powerup's** port (`features/automation/core/alerts/transports.ts`) | routes `chat:<slug>` to a chat room post |
 | `registerAlertTransport(directAlertTransport(notifyDirectMessage))` | the same port | routes `user:<id>` to the agent's direct message with that person, then pushes it as kind `dm` |
 
 **The direction rule**: the dependent registers into the dependency, never the reverse. `alerts`
 owns the `AlertTransport` port and has no idea chat exists; `notifications` - which depends on both
-and may therefore import both - hands it an implementation at boot. The same shape is how `data`
+and may therefore import both - hands it an implementation at boot. The same shape is how core
 takes signal hooks and how core takes `onEvent` listeners (§ 4.3). `registerAlertTransport` throws
 on a duplicate `id`, so the registration is once-per-process, not idempotent; the delivery seam's
 own `registerNotificationTransport` replaces by name instead, so a hot reload cannot double-send.
@@ -177,9 +177,9 @@ did, unattended, on 2026-09-10.
 ## Actions
 
 None. `notifications` contributes nothing to core's run funnel: there is nothing to schedule.
-Alert *evaluation* and *delivery* are alerts' own actions (`alerts-reddit`, `alerts-github`,
-`alerts-linkedin`, `alerts-traction`, `alerts-digest`); this feature only supplies a transport they
-route through.
+Event sources are their owners' actions (Engagement's polls, core's signal and run events) and
+delivery is Automation's Alerts powerup (`alerts-digest` included); this feature only supplies the
+transports a delivery routes through.
 
 ## UI
 

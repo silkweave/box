@@ -10,6 +10,12 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 
 ## Recipe-specific operational details
 
+- **A poll that records nothing may simply be unwanted.** The GitHub and traction polls skip
+  while no enabled event trigger listens for `github.notification` / `traction.spike` (core's
+  `eventWanted`); without Automation nothing listens, so they always skip.
+- **Polls flush delivery at the end.** Each calls core's `flushDeliveries()`, so a batch goes out
+  at once; without Automation's Alerts powerup that is a no-op and the summary says "no delivery in
+  this Box".
 - **No `pods.json`, no cards.** A channel absent from `channels` expects nothing, so the piece
   produces no card at all, silently. Same for a paused/archived pod and for a piece older than
   `windowDays`.

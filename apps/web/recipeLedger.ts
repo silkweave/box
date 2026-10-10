@@ -5,7 +5,9 @@
 // Like the brand it is read at build time, so a built Box shows the ledger as of its last build.
 // That matches the catalog and the feature registry: adapting a recipe or adding a powerup ends with
 // the validation chain, which rebuilds. In dev the module is invalidated and the page reloaded when
-// box.json or box.local.json changes, so a freshly recorded entry shows without a restart.
+// the ledger in box.json or box.local.json changes, so a freshly recorded entry shows without a
+// restart. Only a ledger change reloads: settings saved from the dashboard (signal owners, for one)
+// are written to box.local.json too, and reloading on every write threw away the page being edited.
 //
 // Loaded by Node from vite.config.ts without the @silkweave/box-source condition: import only Node
 // builtins, `vite` types and the dependency-free box-json module (see branding.ts).
@@ -25,9 +27,18 @@ export function recipeLedgerPlugin(boxJsonPath: string): Plugin {
     resolveId: id => id === VIRTUAL_ID ? RESOLVED_ID : undefined,
     load: id => id === RESOLVED_ID ? `export default ${JSON.stringify(read())}\n` : undefined,
     configureServer(server) {
+      let ledger = JSON.stringify(read())
       server.watcher.add(files)
       server.watcher.on('change', path => {
         if (!files.includes(path)) return
+        let next: string
+        try {
+          next = JSON.stringify(read())
+        } catch {
+          return // a half-written file; the write that completes it fires another change
+        }
+        if (next === ledger) return
+        ledger = next
         const module = server.moduleGraph.getModuleById(RESOLVED_ID)
         if (!module) return
         server.moduleGraph.invalidateModule(module)

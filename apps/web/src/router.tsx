@@ -2,7 +2,7 @@ import { createBrowserHistory, createRoute, createRouter, redirect } from '@tans
 import { AppLayout } from './components/AppLayout.tsx'
 import { CenteredNote } from '@silkweave/box-ui'
 import { rootRoute, installRootLayout } from './router-root.tsx'
-import { WEB_ROUTES } from './generated/features.ts'
+import { ALL_WEB_ROUTES } from './web-features.ts'
 import { HomeView } from './views/HomeView.tsx'
 import { RecipeGalleryView } from './views/RecipeGalleryView.tsx'
 import { captureReturnPath } from './lib/returnPath.ts'
@@ -60,7 +60,7 @@ const routeTree = rootRoute.addChildren([
   recipesRoute,
   builderRoute,
   settingsRoute.addChildren([settingsSectionRoute]),
-  ...WEB_ROUTES,
+  ...ALL_WEB_ROUTES,
 ])
 
 // Legacy hash links (`/#/crm/acme`, `/#/chat/general`) predate browser history (2026-09-14) and are

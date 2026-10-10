@@ -31,6 +31,7 @@
 export * from './components/inlineField.ts'
 export * from './components/Avatar.tsx'
 export * from './components/ActionListRow.tsx'
+export * from './components/Autocomplete.tsx'
 export * from './components/Badge.tsx'
 export * from './components/Button.tsx'
 export * from './components/Checkbox.tsx'
@@ -48,6 +49,7 @@ export * from './components/Popover.tsx'
 export * from './components/SearchInput.tsx'
 export * from './components/SegmentedControl.tsx'
 export * from './components/Select.tsx'
+export * from './components/SelectField.tsx'
 export * from './components/SplitPane.tsx'
 export * from './components/TabNav.tsx'
 export * from './components/TokenPicker.tsx'
@@ -65,6 +67,9 @@ export * from './shell/Sidebar.tsx'
 export * from './shell/ThemeToggle.tsx'
 export * from './shell/TopBar.tsx'
 export * from './shell/TopBarActions.tsx'
+
+// Settings: the detail pane and the list, group, field and footer pieces every section is built from.
+export * from './settings/SettingsPane.tsx'
 
 // The data grid: the column model (order, widths, aggregates) and the two rows that frame a list -
 // a sticky header you can drag the dividers of, and a sticky footer that totals what is on screen.

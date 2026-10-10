@@ -12,5 +12,6 @@ A writing pipeline that takes an idea from topic to published piece on each chan
 
 ## Builds on
 
-- [Data](../data/RECIPE.md)
 - [Planning](../planning/RECIPE.md)
+
+Publishing to LinkedIn needs the [Data Sync](../data-sync/RECIPE.md) `linkedin` powerup and publishing to Substack its `substack` powerup at runtime; without one, that publisher says which powerup to add. The LinkedIn newsletter-article path also drives the author's own browser through core's browser lease.

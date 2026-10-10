@@ -11,10 +11,10 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `f1a5aa561c186b99921111f301829618bfe3d0b9` (2026-10-08), materialized
-with `box:build`; `box verify` passed 11/11. It brings WorkerDeck 3.9.1 with Settings > Agent
-accounts and removes `workerdeckTokens` and `workerdeck.claudeTokens`, which this Box's `box.json`
-and `box.local.json` no longer carry.
+Latest core refresh: Stack commit `a894f56a851f0cbdd9e0e49a07dbccf950490665` (2026-10-10),
+materialized with `box:build`; `box verify` passed 11/11. Core carries signals, signal events,
+`run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
+like any other recipe.
 
 The target includes Stack commits `1679963573056b98046b8c5dc2bf2434452197a9` for the reviewed
 dependency and documentation cleanup and `bc9cf70f076ed1d505b380fd2389d51dc2d37a4b` for first-run

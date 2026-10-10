@@ -11,6 +11,7 @@ import { AgentModule } from './agent/agent.module.js'
 import { AuthModule } from './auth/auth.module.js'
 import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { ChangesModule } from './changes/changes.module.js'
+import { SignalsModule } from './signals/signals.module.js'
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ChangesModule } from './changes/changes.module.js'
     ChangesModule,
     OpsModule,
     AgentModule,
+    SignalsModule,
     ...SERVER_FEATURE_LIST.map((f) => f.module),
     SilkweaveModule.forRoot({
       // Evaluated when this module is imported (Nest module metadata is static), which main.ts

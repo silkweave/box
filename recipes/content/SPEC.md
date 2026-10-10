@@ -9,22 +9,25 @@ per-channel **profiles** (limits, required fields, whether a real sender exists)
 instead of a status dropdown, and the gated publishers for LinkedIn and Substack. It also ships the
 six agent skills that do the actual writing (`features/content/skills/`).
 
-- **dependsOn**: `data`, `planning`.
+- **dependsOn**: `planning`.
   - From **`planning`**: the vocabulary only - `PLANNING_STATUSES` / `PlanningStatus`
     (`types.ts`, `models.ts`, and the web mirror in `content-types.ts`). A topic's status IS the
     planning status list (`planned`/`active`/`blocked`/`done`/`dropped`), imported rather than
     re-declared. Nothing here reads or writes an initiative.
-  - From **`data`**: `autoRegisterDefinitions` (signal definitions, `state.ts`), the Substack
-    client (`data/pulls/substack-client.js`), the LinkedIn client (`data/pulls/linkedin-client.js`),
-    and the browser/CDP helpers `browserIdentity`, `connectCDP`, `detach`, `firstContext` for the
-    LinkedIn newsletter-article path. It also registers INTO data (see Ports).
-- **Depended on by**: `engagement` (`dependsOn: ['data', 'content']` - the pods board reads
+  - From **core** (`docs/SIGNALS.md`, `docs/BROWSERS.md`): `autoRegisterDefinitions` and
+    `replaceChannelSignals` (`@silkweave/box-core/signals/...`, `state.ts`); the platform client
+    port `requirePlatformClient('linkedin' | 'substack')` (`@silkweave/box-core/platforms`) for
+    the LinkedIn and Substack publishers; and the browser lease `browserIdentity`, `connectCDP`,
+    `detach`, `firstContext` (`@silkweave/box-core/browser/...`) for the LinkedIn
+    newsletter-article path. It also registers into core's ports (see Ports).
+  - At runtime, LinkedIn publishing needs the Data Sync `linkedin` powerup and Substack publishing
+    its `substack` powerup (`recipes/data-sync/`), which register those clients. Without one,
+    `requirePlatformClient` refuses with `add the Data Sync "<id>" powerup`.
+- **Depended on by**: `engagement` (`dependsOn: ['content']` - the pods board reads
   `useContentData`, `ChannelLabel` and the `ContentPiece`/`ContentChannel` types, and contributes the
-  `content.piece.panel` slot) and `alerts` (`dependsOn: ['data', 'planning', 'content',
-  'engagement']` - `alerts/linkedin.ts` imports `readContentPieces` and `ContentPiece`).
-  `notifications` reaches it transitively through `alerts`.
-- **Removal**: remove the source trees only after adapting or removing `engagement`, `alerts`, and
-  `notifications`. The `content_topics` / `content_pieces` tables stop
+  `content.piece.panel` slot; its LinkedIn comments poll, `polls/linkedin.ts`, imports
+  `readContentPieces` and `ContentPiece`).
+- **Removal**: remove the source trees only after adapting or removing `engagement`. The `content_topics` / `content_pieces` tables stop
   being created; existing rows are left in the warehouse. The markdown under `docs/content/` and the
   voice files under `docs/identity/` survive - the feature reads them, it does not own them.
 
@@ -48,14 +51,15 @@ Every path is derived from validated slugs and re-checked to stay inside its bas
 ## Ports it owns
 
 - **`registerSignalHooks({ id: 'content', derive: deriveContentSignals })`** - registered into
-  `data` from `ContentModule.onModuleInit`. Derives `content.published.<channel>` and
+  core's signal hooks port from `ContentModule.onModuleInit`. Derives `content.published.<channel>` and
   `content.published_total` (cumulative published counts, dated by `published_at`) into a `content`
   signal channel.
-- **`registerLinkedinPostSource(publishedLinkedinPosts)`** - also into `data`, from the same hook.
-  Content tells data's LinkedIn pull which published member posts (`linkedin` /
-  `linkedin-article`, status `published`, a `metadata.post_urn`, author not `company`) to fetch
-  per-post analytics for. Note the direction: the dependency (`data`) owns the port, the dependent
-  (`content`) fills it - the same shape one level up, where `engagement` fills content's slot.
+- **`registerPublishedPostSource('linkedin', publishedLinkedinPosts)`** - into core's platform
+  port (`packages/core/src/platforms.ts`), from the same hook. Content tells the Data Sync
+  `linkedin` pull which published member posts (`linkedin` / `linkedin-article`, status
+  `published`, a `metadata.post_urn`, author not `company`) to fetch per-post analytics for. Core
+  owns the port and content fills it, so neither content nor Data Sync imports the other - the same
+  shape one level up, where `engagement` fills content's slot.
 - **Web slot `content.piece.panel`** - rendered by `ContentDetailView.tsx`, props
   `{ piece: ContentPiece }`. `engagement` contributes `PodEngagementPanel` into it
   (`features/engagement/web/index.tsx`). Content never names engagement.
@@ -183,8 +187,10 @@ Under `features.content` in `box.json`:
 | `features.content.linkedinPublishLive` | `true` to let the scheduled LinkedIn publisher post for real (dry-run otherwise) |
 | `features.content.substackPublishLive` | `true` to let the scheduled Substack publisher post for real (dry-run otherwise) |
 
-The LinkedIn and Substack clients themselves live in `data` and carry their own credentials and
-session requirements; those settings belong to that feature, not this one.
+The LinkedIn and Substack clients themselves live in the Data Sync `linkedin` and `substack`
+powerups and carry their own credentials and session requirements; those settings belong to Data
+Sync, not this one. The article path's browser identities come from core's `browsers.users`
+(`docs/BROWSERS.md`).
 
 ## The skills
 

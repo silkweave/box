@@ -33,7 +33,7 @@ const restorePointsOutput = z.object({
 /**
  * Warehouse backup: CORE, not a feature. A Box with zero features installed still has a warehouse
  * that an agent can restructure, so the safety net has to be reachable without installing anything.
- * (`warehouse-derive` is different - it belongs to the `data` feature and stays in its controller.)
+ * (`warehouse-derive` re-derives Data Sync's pulls and belongs to that recipe.)
  *
  * RESTORE IS DELIBERATELY NOT HERE. It overwrites the running server's own ground truth, and the
  * server would then need a restart anyway because the schema step is memoized per process. It is a

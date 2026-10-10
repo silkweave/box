@@ -7,7 +7,7 @@ read and write. Everything a team wants beyond that - a notification, a recurren
 customisation, and the app is deliberately small enough to make each of them an obvious edit.
 
 - **dependsOn**: nothing. It is the reference for "a feature that owns exactly one table": `sink` owns
-  none, and most other features in the Stack own several and depend on `data`.
+  none, and most other features in the Stack own several.
 - **Removal**: remove the feature's source trees after checking imports. Drop `reminders` only if
   the team explicitly chooses to discard its rows. No other feature imports it.
 
@@ -85,7 +85,7 @@ React, all of which core already brings.
 
 ## What a team customises
 
-1. **Make it fire.** The app stores reminders; it does not deliver them. With `alerts` and
+1. **Make it fire.** The app stores reminders; it does not deliver them. With Automation's `alerts` powerup and
    `notifications` installed, the honest wiring is an `ActionSpec` on this feature that sweeps
    `due_at <= now() AND done_at IS NULL` and hands each one to the alert route, scheduled by
    `automation`. That is a real feature and is deliberately not here - it would make `reminders`

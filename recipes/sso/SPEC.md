@@ -202,7 +202,7 @@ agent, which runs as the system principal, cannot, whatever its role. Emails are
 ## Events
 
 `sso.assertion`, `source` = `sso`, `actor` = user id, `subject` = provider id, fields `provider`,
-`outcome`, `user`. Route them with an alerts rule; sso does not depend on notifications.
+`outcome`, `user`. Route them with a deliver trigger; sso does not depend on notifications.
 
 ## UI
 

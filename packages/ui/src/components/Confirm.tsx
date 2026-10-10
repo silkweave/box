@@ -6,6 +6,7 @@ import * as React from 'react'
 import { Button } from './Button.tsx'
 import { InlineDialog, InlineDialogContent, InlineDialogTitle, InlineDialogDescription, useInlineDialogTarget } from './InlineDialog.tsx'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './Dialog.tsx'
+import { SettingsActions } from '../settings/SettingsPane.tsx'
 
 export interface ConfirmOptions {
   /** Short question, e.g. "Delete this rule?". Defaults to "Are you sure?". */
@@ -64,19 +65,19 @@ export function ConfirmHost() {
 
   return (
     <Root open onOpenChange={(open) => !open && answer(false)}>
-      <Content className='max-w-sm' showClose={false}>
-        <Title className='pr-0 text-body font-medium font-sans'>{o.title ?? 'Are you sure?'}</Title>
+      <Content className='max-w-sm' showClose={false} {...(inline ? { fill: false } : {})}>
+        <Title className='pr-0 text-body font-medium font-sans' {...(inline ? { crumb: false } : {})}>{o.title ?? 'Are you sure?'}</Title>
         {o.message != null && (
           <Description className='whitespace-pre-wrap'>{o.message}</Description>
         )}
-        <div className='flex items-center justify-end gap-2'>
-          <Button variant='ghost' onClick={() => answer(false)}>
+        <SettingsActions>
+          <Button variant='ghost' size={inline ? 'sm' : 'default'} onClick={() => answer(false)}>
             {o.cancelLabel ?? 'Cancel'}
           </Button>
-          <Button variant={o.danger ? 'destructive' : 'default'} autoFocus onClick={() => answer(true)}>
+          <Button variant={o.danger ? 'destructive' : 'default'} size={inline ? 'sm' : 'default'} autoFocus onClick={() => answer(true)}>
             {o.confirmLabel ?? 'Confirm'}
           </Button>
-        </div>
+        </SettingsActions>
       </Content>
     </Root>
   )

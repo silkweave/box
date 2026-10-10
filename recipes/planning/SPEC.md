@@ -10,29 +10,29 @@ with a daily stand-up check-in recorded against it. Structured state lives in se
 the long-form rationale lives in markdown on disk, and the row's one-line `summary` is derived from
 that doc rather than typed.
 
-- **dependsOn**: `data`. Two things, both narrow. Core-side, `state.ts` imports
-  `autoRegisterDefinitions` (`features/data/core/signals/definitions.ts`) and the `SignalHooks` type
-  (`features/data/core/signals/hooks.ts`); the server module registers `PLANNING_SIGNAL_HOOKS` into
-  data's `registerSignalHooks` port from `onModuleInit`. Web-side, `InitiativeKindsSection` imports
-  data's `components/board/presetIcons.tsx` so a kind picks from the same closed icon vocabulary a
-  preset does. Goals *reference* a `signals.id` in `goals.signal_id`, but as a string - there is no
-  FK. Core-side, goals read data's `signals/series.ts` (day-grain reads over a merged history),
-  `readSignalDefinition(s)` and `readSignalPoints`. Circuit boards: `core/board-kinds.ts` defines
+- **dependsOn**: nothing. Signals, boards and saved views are core (`docs/SIGNALS.md`). Core-side,
+  `state.ts` imports `autoRegisterDefinitions` (`@silkweave/box-core/signals/definitions`),
+  `replaceSignalRows` (`@silkweave/box-core/signals/write`) and the `SignalHooks` type
+  (`@silkweave/box-core/signals/hooks`); the server module registers `PLANNING_SIGNAL_HOOKS` into
+  core's `registerSignalHooks` port from `onModuleInit`. Web-side, `InitiativeKindsSection` imports
+  core's `apps/web/src/presets/presetIcons.tsx` so a kind picks from the same closed icon
+  vocabulary a preset does, the Initiatives board uses core's saved views
+  (`apps/web/src/presets/`), and the goal views use `useSignalsData` and `SignalPicker` from
+  `apps/web/src/signals/`. Goals *reference* a `signals.id` in `goals.signal_id`, but as a string -
+  there is no FK. Core-side, goals read `@silkweave/box-core/signals/series` (day-grain reads over
+  a merged history), `readSignalDefinition(s)` and `readSignalPoints`. Circuit boards: `core/board-kinds.ts` defines
   `GOAL_BOARD_KIND` (layer 3, `lead`: always the top row when arranged; edge its signal -> goal; a
   `lead` card with the signal's value, target, progress against pace, health, the signal's sparkline
   and the goal's initiatives as `attachments`) and `INITIATIVE_BOARD_KIND` (layer 0, edge
   initiative -> each goal; a `work` card with status, open tasks and open estimated hours; an
   initiative placed as a node is left off its goal's attachments), registered into
-  data's `registerBoardNodeKind` port from `onModuleInit`; goal and initiative rename/delete call
-  data's `renameBoardRef` / `pruneBoardRef` so placements follow.
-- **Depended on by**: `content` (`dependsOn: ['data', 'planning']` - it reuses `PLANNING_STATUSES`
+  core's `registerBoardNodeKind` port from `onModuleInit`; goal and initiative rename/delete call
+  core's `renameBoardRef` / `pruneBoardRef` so placements follow.
+- **Depended on by**: `content` (`dependsOn: ['planning']` - it reuses `PLANNING_STATUSES`
   and `PlanningStatus` in its own models and types, and its web views reuse planning's
-  `StatusSelect` / `StatusLabel`) and `alerts` (`dependsOn: ['data', 'planning', 'content',
-  'engagement']` - `goal-events.ts` imports planning's `readMeasuredGoals`).
-  `engagement` depends on `content`, and `notifications` on `alerts`, so both sit downstream.
-- **Removal**: remove planning only after adapting or removing `content`, `engagement`, `alerts`,
-  and `notifications`. Without planning, data keeps
-  working but loses the `github.silkweave_prs_merged` outcome signal, the re-pointing of goals on a
+  `StatusSelect` / `StatusLabel`). `engagement` depends on `content`, so it sits downstream.
+- **Removal**: remove planning only after adapting or removing `content` and `engagement`. Without planning, core's signals keep
+  working but lose the `github.silkweave_prs_merged` outcome signal, the re-pointing of goals on a
   signal rename, and the "what references this signal" answer (`goal:<id>`) that guards a rename and
   a delete.
 
@@ -156,7 +156,7 @@ behind `AuthGuard`:
 | `goalsCarryForward` (mutation) | `goal-carry-forward` | continue an open goal in another cycle (see Goals) |
 | `cyclesList` (query) | `cycles-get` | every cycle, newest window first |
 | `cyclesUpsert` (mutation) | `cycle-upsert` | create or partially update; `start_date` / `end_date` are required on create |
-| `cyclesBoard` (mutation) | `cycle-board` | seed a circuit board (`cycle-<id>` unless `id` is given) with the cycle's goals, their signals and those signals' direct drivers, arranged with data's `layoutLayers`; refuses an existing board unless `replace` (core `cycle-board.ts`; the cycle page's *Circuit board* button) |
+| `cyclesBoard` (mutation) | `cycle-board` | seed a circuit board (`cycle-<id>` unless `id` is given) with the cycle's goals, their signals and those signals' direct drivers, arranged with core's `layoutLayers`; refuses an existing board unless `replace` (core `cycle-board.ts`; the cycle page's *Circuit board* button) |
 | `cyclesDelete` (mutation) | `cycle-delete` | remove a cycle; its goals stay, outside any cycle, dates intact |
 
 The two `doc-*` tools and `initiatives-get` / `sprint-get` are mutations because they carry an input
@@ -174,7 +174,8 @@ not a known user (`assertKnownUser`).
 ## Actions
 
 None. `manifest.ts` declares no `actions`, so planning contributes nothing to core's run funnel -
-there is nothing here on a timer. What it *does* contribute is registered into **data**:
+there is nothing here on a timer. What it *does* contribute is registered into core's signal
+hooks port:
 
 ```ts
 PLANNING_SIGNAL_HOOKS = {
@@ -188,14 +189,17 @@ PLANNING_SIGNAL_HOOKS = {
 
 `github.silkweave_prs_merged` is the cumulative count of `done` tasks across `oss-pr` initiatives,
 dated by `done_at`, extended flat to today. Every task mutation, delete, move and rename calls
-`deriveOssPrSignals()`, so the signal is never fabricated.
+`deriveOssPrSignals()`, so the signal is never fabricated. `channelRows.github` keeps it alive when
+the Data Sync recipe's `github` powerup re-derives the `github` channel, and `derive` runs inside
+Data Sync's `warehouse-derive` action; a Box without Data Sync still gets the signal from the task
+writes.
 
 ## Goals
 
 A goal measures **one registered signal** (checked on write) over an inclusive window, against a
 target. Initiatives link to goals through `goal_initiatives`; an initiative "somehow contributes",
 with no weight. `goals.ts` (`measureGoal`) is pure and is the one implementation the Goals page, the
-board, MCP and the alerts evaluator all read; `goal-state.ts` is the warehouse side
+board, MCP and the goal events (`goal-events.ts`) all read; `goal-state.ts` is the warehouse side
 (`readMeasuredGoals` is the measured view).
 
 **Kinds.** The default comes from the signal's accumulation on create (`increment` -> `accumulate`,
@@ -245,7 +249,7 @@ with its cycle suffix swapped for the new cycle's.
 initiative, so unconnected work and unowned targets are visible rather than silent.
 
 **Signal changes.** A signal rename re-points its goals through the hooks above. A signal delete is
-not blocked by goals: data's delete report names them (`goal:<id>`), and a goal whose signal is gone
+not blocked by goals: core's delete report names them (`goal:<id>`), and a goal whose signal is gone
 stays and reports a missing signal (no reading).
 
 **Cascades.** Renaming or deleting an initiative updates or removes its `goal_initiatives` rows;

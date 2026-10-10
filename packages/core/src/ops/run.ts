@@ -4,7 +4,7 @@
 // readable while it runs, flushed every few seconds, written in full at finalization).
 //
 // Core knows nothing about what should happen AFTER a run: features subscribe with
-// onRunOutcome() (alerts re-evaluates signal rules on success and records a `run.error` event on
+// onRunOutcome() (core itself records signal events on success and a `run.error` event on
 // failure). Listeners are best-effort and never affect the run's own outcome.
 //
 // Queue semantics: in-process FIFO, concurrency 1 (the warehouse is single-writer and heavy pulls

@@ -148,6 +148,7 @@ same rule with the runtime doing the bookkeeping.
 |---|---|
 | `src/components/` | Primitives: Button, Badge, Dialog, Popover, Select, DateInput, TokenPicker, Figures, UrlInput, ActionListRow, Confetti, … |
 | `src/shell/` | AppShell, Sidebar, TopBar, PageContainer, CollapsibleSection, EmptyState, ThemeToggle, and the `ShellExtensions` seam |
+| `src/settings/` | The settings detail pane (`SettingsPane`: title bar with breadcrumbs, scroll surface, footer slot) and the section vocabulary: intro, list and rows, group, field, footer bar |
 | `src/board/` | The board: `BoardKanban`, the `DraggableCard` frame both card shapes share, and the controlled `BoardViewBar`. Its own entry point |
 | `src/charts/` | The charts: `TimeSeriesChart`, `SeriesLineChart`, `Sparkline`, the tooltip/legend frames, the window helpers and `theme.ts`'s series palette. Its own entry point |
 | `src/grid/` | The data grid: `columns.ts` (order, widths, footer aggregates) plus `GridHeader` and `GridFooter` |
