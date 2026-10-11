@@ -63,8 +63,9 @@ export const Fixed: Story = {
 
 /**
  * `freeze` keeps the first N columns in view while the grid scrolls sideways. The header, the
- * footer and every row cell take the same count through `frozenColumnStyle`, so they stick at the
- * same offsets; only the last frozen column draws the hairline edge. Scroll right: Name and Owner
+ * footer and every row cell take the same count through `frozenColumnStyle` (or `frozenCellStyle`
+ * for a grid that freezes only its first column), so they stick at the same offsets; only the last
+ * frozen column draws the hairline edge. Scroll right: Name and Owner
  * stay.
  */
 export const Frozen: Story = {

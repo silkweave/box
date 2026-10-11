@@ -119,6 +119,11 @@ export function frozenColumnStyle(
   }
 }
 
+/** `frozenColumnStyle` for a grid that freezes only its first column, for that column's cells: a row
+ *  freezes its identity cell without knowing the column widths. */
+export const frozenCellStyle = (background = 'var(--bg)'): CSSProperties =>
+  frozenColumnStyle([{ width: 0 }], 0, 1, background)!
+
 export function orderColumns<T extends { key: string }>(catalog: readonly T[], selected: readonly string[]): T[] {
   const seen = new Set<string>()
   return selected.flatMap((k) => {
