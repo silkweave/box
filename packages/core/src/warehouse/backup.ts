@@ -12,10 +12,11 @@
 // identity, `backup.gcsBucket` in box.json.
 // Auth is the ambient gcloud/gsutil credential. See docs/WAREHOUSE.md.
 
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { constants, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { boxJson } from '../box-config.js'
 import { instanceDir, instanceRelative, warehousePath } from '../io.js'
@@ -79,6 +80,29 @@ export function assertGcsBucketReachable(gs: string): void {
         `Then ensure your gcloud identity has objectAdmin. See docs/WAREHOUSE.md.`,
     )
   }
+}
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Copy a local directory to `<gs>/<prefix>/` (`gsutil rsync -r`): new and changed files go up, and
+ * nothing is ever deleted remotely. A file gone from the host stays in the bucket, so a lost or
+ * partly deleted directory can never empty its own backup; the backup only grows. For file trees
+ * whose files do not change once written (chat uploads, artifact pages), where dated copies would
+ * only repeat the same bytes. Shared with the chat and artifacts backups.
+ *
+ * A missing or empty directory fails the run, so a store that vanished shows up as a failed backup
+ * rather than a quiet success. `exclude` is a gsutil `-x` regex (paths relative to `dir`). Async, so
+ * a large first upload does not block the server.
+ */
+export async function uploadDirToGcs(dir: string, gs: string, prefix: string, opts: { exclude?: string } = {}): Promise<string> {
+  if (!existsSync(dir) || readdirSync(dir).length === 0) {
+    throw new Error(`${dir} is missing or empty; not backed up (the copy at ${gs}/${prefix}/ is untouched)`)
+  }
+  const target = `${gs}/${prefix}/`
+  const args = ['-m', '-q', 'rsync', '-r', ...(opts.exclude ? ['-x', opts.exclude] : []), dir, target]
+  await execFileAsync('gsutil', args, { maxBuffer: 16 * 1024 * 1024 })
+  return target
 }
 
 function mb(bytes: number): string {

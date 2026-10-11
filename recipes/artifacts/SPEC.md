@@ -118,6 +118,10 @@ them with a deliver trigger; artifacts does not depend on notifications.
 `artifacts-expire` withdraws public copies whose expiry has passed (the Worker already refuses them;
 this removes the bytes and corrects the Box's state). Schedulable.
 
+`artifacts-backup` copies `data/artifacts.db` (`VACUUM INTO`) to `artifacts/artifacts-latest.sqlite`
+and the published trees to `artifacts/files/` in the `backup.gcsBucket` bucket. The tree copy only
+adds and updates, never deletes remotely. Schedulable, beside `warehouse-backup`.
+
 ## Public copies
 
 The Public sharing powerup (`recipes/artifacts/powerups/public-sharing/`). The Worker in

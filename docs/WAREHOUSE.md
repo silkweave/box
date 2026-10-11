@@ -529,6 +529,23 @@ warehouse/analytics-<date>.duckdb   dated snapshot, <date> is the UTC date of th
 warehouse/analytics-latest.duckdb   pointer, overwritten every run
 ```
 
+The same bucket carries the other stores beside the warehouse, each through its own action:
+
+| Prefix | Written by | What |
+|---|---|---|
+| `chat/chat-<date>.sqlite`, `chat/chat-latest.sqlite` | `chat-backup` | `chat.db`, dated snapshots plus a pointer |
+| `chat/uploads/` | `chat-backup` | copy of `chat-uploads/` |
+| `artifacts/artifacts-latest.sqlite` | `artifacts-backup` | `artifacts.db` (page kv, view counts), latest copy |
+| `artifacts/files/` | `artifacts-backup` | copy of `data/artifacts/` (published pages) |
+
+The SQLite copies go through `VACUUM INTO`, never `cp`. The file trees go up with `gsutil rsync -r`
+(`uploadDirToGcs`): new and changed files are copied and **nothing is deleted remotely**, so a host
+that loses part or all of a tree can never empty its backup. Their files do not change once written,
+so dated copies would only repeat them. The cost is that the bucket keeps files the host has since
+deleted; on restore, drop artifact trees that have no catalogue row. A missing or empty tree fails
+the run, so a vanished store shows up as a failed backup. Schedule each action with a time trigger
+beside `warehouse-backup`.
+
 No bucket is the normal case, not an error: the run is local-only and says so. Setup is one-time, a
 **private** bucket with objectAdmin for the ambient `gcloud` identity. Auth is the ambient gcloud
 credential, never a key in the warehouse. `assertGcsBucketReachable` fails fast with the `gsutil mb`

@@ -222,7 +222,7 @@ One, in `actions.ts`:
 
 | id | group | what |
 |---|---|---|
-| `chat-backup` | Warehouse | Snapshot `chat.db` (`VACUUM INTO`, through the live store) to the private GCS bucket as `chat/chat-<date>.sqlite` + `chat/chat-latest.sqlite` |
+| `chat-backup` | Warehouse | Snapshot `chat.db` (`VACUUM INTO`, through the live store) to the private GCS bucket as `chat/chat-<date>.sqlite` + `chat/chat-latest.sqlite`, then copy new `chat-uploads/` blobs to `chat/uploads/` (never deletes remotely) |
 
 It is in core's action registry, so `automation` can schedule it and every invocation lands in
 `automation_runs` - the `chatBackup` procedure calls `executeRecorded('chat-backup', …)` rather than

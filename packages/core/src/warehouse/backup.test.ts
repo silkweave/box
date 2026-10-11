@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { warehousePath } from '../io.js'
 import { resetInstanceDir, setInstanceDir } from '../testing.js'
 import { withRead, withWrite } from './db.js'
-import { backupWarehouse, listRestorePoints, parseBackupName, planRetention, pruneBackups, restoreWarehouse } from './backup.js'
+import { backupWarehouse, listRestorePoints, uploadDirToGcs, parseBackupName, planRetention, pruneBackups, restoreWarehouse } from './backup.js'
 import { backupName, type BackupLabel, type RestorePoint } from './restore-points.js'
 import { snapshotBeforeMigration } from './migration-snapshot.js'
 import type { MigrationConn } from './schema.js'
@@ -265,5 +265,17 @@ describe('on disk', () => {
     expect(files('backups')).toEqual([basename(path)]) // stale and older fell to retention: the fresh one is the label's newest
     expect(files('backups')).not.toContain(`${stale}.db.wal`)
     expect(files('backups')).not.toContain(`${older}.db`)
+  })
+})
+
+describe('uploadDirToGcs', () => {
+  it('fails on a missing or empty directory before calling gsutil', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'box-mirror-'))
+    try {
+      await expect(uploadDirToGcs(join(dir, 'absent'), 'gs://nowhere', 'x')).rejects.toThrow(/missing or empty/)
+      await expect(uploadDirToGcs(dir, 'gs://nowhere', 'x')).rejects.toThrow(/missing or empty/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
