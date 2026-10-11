@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@duckdb/node-api": "1.5.5-r.5",
-    "@silkweave/box-provider-kit": "workspace:*"
+    "@silkweave/box-provider-kit": "workspace:*",
+    "playwright-core": "^1.63.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

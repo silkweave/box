@@ -51,9 +51,10 @@ The app's light and dark design tokens live in the UI library
 ([`packages/ui/src/styles/tokens.css`](../packages/ui/src/styles/tokens.css)), which is core: a Box
 does not edit it. A Box restyles the app in `theme/theme.css` at the checkout root. The web app
 imports it after the library's stylesheets, so any token set there wins, and core upgrades never
-touch it (a new Box gets the commented default). Set only what differs, under the selector the
-library uses: `[data-theme='light']` and `[data-theme='dark']` for colours, `:root` for fonts and
-anything shared by both modes.
+touch it (a new Box gets the commented default). Set only what differs: `[data-theme='light']` and
+`[data-theme='dark']` for colours, `:root` for fonts and anything shared by both modes. Never set a
+colour under `:root`: the theme loads after the dark tokens, so a `:root` colour wins in dark mode
+too.
 
 ```css
 @import '@fontsource/poppins/400.css';

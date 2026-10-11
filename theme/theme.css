@@ -1,11 +1,14 @@
 /*
  * This Box's theme. The web app loads it after the UI library's design tokens
  * (packages/ui/src/styles/tokens.css), so a token set here wins. The file belongs to the Box: core
- * upgrades never change it. Override only what differs, under the same selector the library uses:
+ * upgrades never change it. Override only what differs:
  *
  *   [data-theme='light'] { --accent: #2d85de; }    light mode
  *   [data-theme='dark']  { --accent: #4a96e4; }    dark mode
  *   :root { --cp-font-sans: 'Poppins', system-ui, sans-serif; }    both modes
+ *
+ * Never set a colour under `:root`: this file loads after the dark tokens, so it would win in dark
+ * mode too.
  *
  * A font comes from an @fontsource package in the root package.json (`@import
  * '@fontsource/poppins/400.css';` at the top of this file) or from files kept beside this one.
