@@ -3,13 +3,14 @@
 // The warehouse (`<instance>/data.db`) is the ground truth and is gitignored, so a copy of it is
 // the only safety net when a migration or an agent's restructuring goes wrong. Every backup lands
 // in `<instance>/backups/` (naming, listing and retention: restore-points.ts). When a bucket is
-// set the same copy is ALSO uploaded with gsutil, using the layout the bucket has always had:
-//   warehouse/analytics-<date>.duckdb   point-in-time snapshot (one per run date)
-//   warehouse/analytics-latest.duckdb   pointer to the newest
+// set the same copy is ALSO uploaded with gsutil, over one object:
+//   warehouse/analytics-latest.duckdb
+// History is the bucket's job: object versioning keeps each overwritten copy as a noncurrent
+// version and a lifecycle rule deletes those after N days, so there are no dated objects to prune.
 // No bucket is the normal, non-error case: the run is local-only and says so.
 //
-// GCS setup (one-time): a PRIVATE bucket with object versioning, objectAdmin for the active gcloud
-// identity, `backup.gcsBucket` in box.json.
+// GCS setup (one-time): a PRIVATE bucket with object versioning and a noncurrent-version lifecycle
+// rule, objectAdmin for the active gcloud identity, `backup.gcsBucket` in box.json.
 // Auth is the ambient gcloud/gsutil credential. See docs/WAREHOUSE.md.
 
 import { execFile, execFileSync } from 'node:child_process'
@@ -20,7 +21,6 @@ import { promisify } from 'node:util'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { boxJson } from '../box-config.js'
 import { instanceDir, instanceRelative, warehousePath } from '../io.js'
-import { todayUtc } from '../ops/types.js'
 import { withRead, withWrite } from './db.js'
 import {
   copyWarehouseUnderLock,
@@ -77,6 +77,7 @@ export function assertGcsBucketReachable(gs: string): void {
       `bucket ${gs} not reachable. Create it (private) and grant access, e.g.:\n` +
         `  gsutil mb -p <project> -b on -l <region> ${gs}\n` +
         `  gsutil versioning set on ${gs}\n` +
+        `  gsutil lifecycle set lifecycle.json ${gs}   # delete noncurrent versions after 30 days\n` +
         `Then ensure your gcloud identity has objectAdmin. See docs/WAREHOUSE.md.`,
     )
   }
@@ -126,7 +127,7 @@ export async function backupWarehouse(
   const live = warehousePath()
   const bucket = remote ? gcsBucketName() : null
   const gs = bucket ? `gs://${bucket}` : null
-  const snapshot = gs ? `${gs}/warehouse/analytics-${todayUtc()}.duckdb` : null
+  const snapshot = gs ? `${gs}/warehouse/analytics-latest.duckdb` : null
 
   if (dryRun) {
     const name = backupName(label)
@@ -142,7 +143,6 @@ export async function backupWarehouse(
   if (gs && snapshot) {
     try {
       execFileSync('gsutil', ['cp', local.path, snapshot], { stdio: 'pipe' })
-      execFileSync('gsutil', ['cp', local.path, `${gs}/warehouse/analytics-latest.duckdb`], { stdio: 'pipe' })
     } catch (error) {
       throw new Error(
         `local backup written to ${local.path}, but the upload to ${snapshot} failed: ${String((error as Error)?.message ?? error)}`,

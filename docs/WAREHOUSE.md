@@ -297,7 +297,7 @@ box db list                                      # copy the name
 
 # in a SECOND CHECKOUT of the repo - its own data/, its own ports in its own box.json
 git clone git@github.com:silkweave/box.git box-scratch && cd box-scratch && bun install
-cp /path/to/real/box/data/backups/<name> data/backups/   # or fetch it from the GCS copy
+cp /path/to/real/box/data/backups/<name> data/backups/   # or fetch a version from the GCS copy
 box db restore <name>
 box dev                                         # watch the migration apply for real
 ```
@@ -522,18 +522,13 @@ There is no server-side schedule in core; putting backup on a cron is the `autom
 ### The optional remote copy
 
 Set `backup.gcsBucket` in `box.json` or its gitignored `box.local.json` and every backup is **also**
-uploaded, from the local copy, so the two are the same bytes:
+uploaded, from the local copy, so the two are the same bytes. Every store has one object (or one
+tree) in the bucket, overwritten each run; the history comes from the bucket's object versioning:
 
-```
-warehouse/analytics-<date>.duckdb   dated snapshot, <date> is the UTC date of the run
-warehouse/analytics-latest.duckdb   pointer, overwritten every run
-```
-
-The same bucket carries the other stores beside the warehouse, each through its own action:
-
-| Prefix | Written by | What |
+| Object | Written by | What |
 |---|---|---|
-| `chat/chat-<date>.sqlite`, `chat/chat-latest.sqlite` | `chat-backup` | `chat.db`, dated snapshots plus a pointer |
+| `warehouse/analytics-latest.duckdb` | `warehouse-backup`, `box db backup` | `data.db` |
+| `chat/chat-latest.sqlite` | `chat-backup` | `chat.db` |
 | `chat/uploads/` | `chat-backup` | copy of `chat-uploads/` |
 | `artifacts/artifacts-latest.sqlite` | `artifacts-backup` | `artifacts.db` (page kv, view counts), latest copy |
 | `artifacts/files/` | `artifacts-backup` | copy of `data/artifacts/` (published pages) |
@@ -541,13 +536,33 @@ The same bucket carries the other stores beside the warehouse, each through its 
 The SQLite copies go through `VACUUM INTO`, never `cp`. The file trees go up with `gsutil rsync -r`
 (`uploadDirToGcs`): new and changed files are copied and **nothing is deleted remotely**, so a host
 that loses part or all of a tree can never empty its backup. Their files do not change once written,
-so dated copies would only repeat them. The cost is that the bucket keeps files the host has since
-deleted; on restore, drop artifact trees that have no catalogue row. A missing or empty tree fails
+so a changed file is the rare case (a republished page), and versioning keeps its previous copy for
+the window. The cost is that the bucket keeps files the host has since deleted; on restore, drop artifact trees that have no catalogue row. A missing or empty tree fails
 the run, so a vanished store shows up as a failed backup. Schedule each action with a time trigger
 beside `warehouse-backup`.
 
+**History is versioning plus a lifecycle rule.** With object versioning on, each overwrite keeps
+the previous copy as a noncurrent version, and a lifecycle rule deletes noncurrent versions after a
+fixed number of days, so the bucket holds a rolling window of nightly copies and never grows past it.
+The Box writes no dated objects and prunes nothing. Without versioning the bucket holds only the
+latest copy. Restoring an older one:
+
+```bash
+gsutil ls -a gs://<bucket>/warehouse/analytics-latest.duckdb       # every version, with #<generation>
+gsutil cp gs://<bucket>/warehouse/analytics-latest.duckdb#<generation> data/backups/manual-<stamp>-gcs.db
+box db restore manual-<stamp>-gcs                                  # server stopped
+```
+
 No bucket is the normal case, not an error: the run is local-only and says so. Setup is one-time, a
-**private** bucket with objectAdmin for the ambient `gcloud` identity. Auth is the ambient gcloud
+**private** bucket with objectAdmin for the ambient `gcloud` identity, object versioning and the
+lifecycle rule (the window is yours; 30 days shown):
+
+```bash
+gsutil versioning set on gs://<bucket>
+echo '{"rule":[{"action":{"type":"Delete"},"condition":{"isLive":false,"daysSinceNoncurrentTime":30}}]}' > lifecycle.json
+gsutil lifecycle set lifecycle.json gs://<bucket>
+```
+ Auth is the ambient gcloud
 credential, never a key in the warehouse. `assertGcsBucketReachable` fails fast with the `gsutil mb`
 recipe rather than letting a scheduled run report success against nothing. An upload failure after a
 successful local copy raises an error that names the local path, so nothing is silently lost.
