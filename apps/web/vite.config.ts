@@ -72,16 +72,17 @@ export default defineConfig(({ mode }) => ({
     // adds its own host.
     allowedHosts: ['.ts.net', 'localhost', ...(dashboardHost ? [dashboardHost] : [])],
     // The dev server is reachable through the Box origin before sign-in, so /@fs/ must never reach
-    // instance state. Allow only browser source and the Bun dependency store (where @fontsource
-    // ships its font files), never the checkout root or apps/server: box.local.json holds the
-    // session and token secrets and data/ holds the databases. The nested Stack box/ checkout is
-    // outside the list too, and so is the `.stack/` source cache `box stack fetch` writes. recipes/
-    // is docs and screenshots the onboarding catalog imports. The deny list restates Vite's
-    // defaults, which `deny` replaces, and adds Box configuration and the Stack cache by name. Do not
-    // deny `**/data/**`: dependencies ship data/ folders. Keep the allow list in step with
-    // DEV_SOURCE_DIRS in apps/server/src/auth/dev-proxy-guard.ts.
+    // instance state. Allow only browser source and the Bun dependency store (where @fontsource ships
+    // its font files), never the checkout root or apps/server: box.local.json holds the session and
+    // token secrets and data/ holds the databases. The nested Stack box/ checkout is outside the list
+    // too, and so is the `.stack/` source cache `box stack fetch` writes. recipes/ is docs and
+    // screenshots the onboarding catalog imports; theme/ is the Box's stylesheet and any fonts or
+    // images it references. The deny list restates Vite's defaults, which `deny` replaces, and adds Box
+    // configuration and the Stack cache by name. Do not deny `**/data/**`: dependencies ship data/
+    // folders. Keep the allow list in step with DEV_SOURCE_DIRS in
+    // apps/server/src/auth/dev-proxy-guard.ts.
     fs: {
-      allow: [workspace('apps/web'), workspace('packages'), workspace('features'), workspace('recipes'), workspace('node_modules')],
+      allow: [workspace('apps/web'), workspace('packages'), workspace('features'), workspace('recipes'), workspace('theme'), workspace('node_modules')],
       deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/.stack/**', 'box.json', 'box.local.json'],
     },
     // Reciprocal proxy so hitting the bare Vite port still reaches the backend. Normal flow is

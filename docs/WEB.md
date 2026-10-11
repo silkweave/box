@@ -160,7 +160,10 @@ The UI library accepts optional `NavGroup.section` labels and renders a heading 
 changes. Selecting a group navigates to its overview and automatically shows its sub-navigation
 in a rounded panel with a solid header. `--sidebar-primary` controls the header fill and the
 lower-opacity sub-item hover (10%) and selected (18%) fills in both themes;
-`--sidebar-primary-text` controls the header foreground. Override these tokens in theme CSS.
+`--sidebar-primary-text` controls the header foreground. The header reads
+`--sidebar-group-active-bg`, `-text` and `-icon`, which default to that solid fill; point them at
+`--sidebar-item-selected`, `-selected-text` and `-selected-icon` for a tinted header that matches its
+selected item. Override these tokens in the Box's `theme/theme.css` ([BRANDING](BRANDING.md)).
 Groups use the 12px `--radius-lg`, buttons the 8px `--radius-md`, with uniform 4px panel
 padding and row gaps and 12px horizontal button padding. Every group reserves the same
 padding and 1px border, including closed groups and standalone destinations, so activating

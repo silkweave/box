@@ -54,10 +54,23 @@ import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.t
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/Select.tsx'
 import type { NavIcon } from '../shell/Sidebar.tsx'
 
-/** Every board is a list or a board. ONE vocabulary whatever the caller labels them - a CRM calls
- *  its board a "Pipeline", but that is a LABEL, and two stored values for one axis is how a shared
- *  normalize starts needing a per-module table. */
+/** The two shared layouts: a list and a board. ONE vocabulary whatever the caller labels them - a
+ *  CRM calls its board a "Pipeline", but that is a LABEL, and two stored values for one axis is how
+ *  a shared normalize starts needing a per-module table. A module that draws a genuinely different
+ *  shape (a timeline) adds its own value through `LayoutOption`; it never renames these two. */
 export type BoardLayout = 'list' | 'board'
+
+/** One entry of the layout toggle. `groups` and `columns` say whether the group-by select and the
+ *  column picker apply to it; both default to true for `list` and false for anything else, since a
+ *  board already groups, in columns, and its cards have a fixed anatomy. */
+export interface LayoutOption {
+  /** A `BoardLayout`, or the module's own value for a layout only it draws. */
+  value: string
+  label: string
+  icon: NavIcon
+  groups?: boolean
+  columns?: boolean
+}
 
 /** Which way a sort runs. Split from the field it sorts by: fusing the two into one enum value is
  *  what produces a sort called "Least recently contacted" with no way to ask it the other way. */
@@ -67,7 +80,8 @@ export type SortDir = 'asc' | 'desc'
  *  enums) and usually carries more; it passes the overlap in and merges the patch back. */
 export interface BoardBarValue {
   search: string
-  layout: BoardLayout
+  /** A `BoardLayout` or a module's own layout value; one of `spec.layouts`. */
+  layout: string
   groupBy: string
   /** OPTIONAL, because a board may have no sort axis at all - one whose rows sit in the order they
    *  were created hands the bar an empty `sort` list and the control never renders. */
@@ -112,8 +126,8 @@ export interface BoardBarSpec {
    *  field's accessible name, and nothing else. */
   noun: string
   searchPlaceholder: string
-  /** The two layouts and what this board calls them. */
-  layouts: { value: BoardLayout; label: string; icon: NavIcon }[]
+  /** The layouts this board offers and what it calls them. */
+  layouts: LayoutOption[]
   groupBy: FilterOption[]
   /** The sort axes. EMPTY is a legitimate answer and the control does not render at all. */
   sort: SortOption[]
@@ -155,7 +169,10 @@ export function BoardViewBar({
 }) {
   const filters = value.filters
   const nFilters = activeFilterCount(filters, value.search)
+  const layout = spec.layouts.find((l) => l.value === value.layout)
   const isList = value.layout === 'list'
+  const showGroups = layout?.groups ?? isList
+  const showColumns = layout?.columns ?? isList
   // A small distance threshold keeps a click on a column's checkbox from being read as a drag.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
@@ -208,9 +225,9 @@ export function BoardViewBar({
     <div className='flex flex-wrap items-center gap-1.5 border-b border-border bg-bg px-3 py-1.5'>
       {presets}
 
-      {/* Two options, so it is a segmented control rather than a select - and it sits with the
-          preset controls because the layout IS part of what a preset stores. Icon-only: a list and
-          a board are the two shapes everybody already reads at a glance. */}
+      {/* Two or three options, so it is a segmented control rather than a select - and it sits with
+          the preset controls because the layout IS part of what a preset stores. Icon-only: a list
+          and a board are shapes everybody already reads at a glance, and the title names the rest. */}
       <div
         role='radiogroup'
         aria-label='Layout'
@@ -247,8 +264,9 @@ export function BoardViewBar({
         />
       </div>
 
-      {/* Grouping is a list concept: the board already groups, in columns. */}
-      {isList && spec.groupBy.length > 0 && (
+      {/* Grouping is a list concept (and any layout that declares it): the board already groups,
+          in columns. */}
+      {showGroups && spec.groupBy.length > 0 && (
         <Select
           value={value.groupBy}
           onValueChange={(next) => next != null && onChange({ groupBy: next })}
@@ -373,8 +391,8 @@ export function BoardViewBar({
         )}
       </div>
 
-      {/* Columns shape the list; a board card has a fixed anatomy. */}
-      {isList && spec.columns.length > 0 && (
+      {/* Columns shape the list (and any layout that declares them); a board card has a fixed anatomy. */}
+      {showColumns && spec.columns.length > 0 && (
         <Popover>
           <PopoverTrigger
             aria-label='Columns'

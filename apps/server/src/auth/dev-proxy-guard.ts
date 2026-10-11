@@ -29,7 +29,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
  *  apps/web/vite.config.ts; nothing in the browser graph imports apps/server, and that is the
  *  side that reads instance state. The `.stack/` source cache stays outside. Change both files
  *  together. */
-export const DEV_SOURCE_DIRS = ['apps/web', 'packages', 'features', 'recipes', 'node_modules'] as const
+export const DEV_SOURCE_DIRS = ['apps/web', 'packages', 'features', 'recipes', 'theme', 'node_modules'] as const
 
 /** Inside the allowed directories but never served: tests park throwaway instance directories
  *  (a data.db, a box.json) under node_modules/.cache, and nothing a browser loads lives there. */

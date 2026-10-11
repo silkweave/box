@@ -15,7 +15,7 @@ const claude = [
 const codex = ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.2'].map(id => option(id))
 
 test('the status bar offers only the current generation, default first', () => {
-  expect(builderModelOptions('claude', claude, 'claude-sonnet-5-5').map(m => m.value)).toEqual(['sonnet', 'opus[1m]', 'claude-fable-5-1[1m]'])
+  expect(builderModelOptions('claude', claude, 'claude-sonnet-5-5').map(m => m.value)).toEqual(['opus[1m]', 'sonnet', 'claude-fable-5-1[1m]'])
   expect(builderModelOptions('codex', codex, 'gpt-5.6-luna').map(m => m.value)).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-6-astra'])
 })
 

@@ -176,7 +176,7 @@ export function Sidebar({
                       'group/grp flex w-full items-center rounded-md text-body-sm',
                       'transition-colors duration-[120ms] ease-[var(--ease-standard)]',
                       isActive
-                        ? 'bg-[var(--sidebar-primary)] text-[var(--sidebar-primary-text)] font-semibold'
+                        ? 'bg-[var(--sidebar-group-active-bg)] text-[var(--sidebar-group-active-text)] font-semibold'
                         : 'text-text hover:bg-accent-tint',
                     )}>
                     <NavAnchor
@@ -184,7 +184,7 @@ export function Sidebar({
                       onClick={() => onSelectGroup(group.id)}
                       aria-current={isActive ? 'page' : undefined}
                       className='flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-3 py-2 text-left'>
-                      <GroupIcon className={cn('size-4 shrink-0', isActive ? 'text-current' : 'text-muted-foreground')} />
+                      <GroupIcon className={cn('size-4 shrink-0', isActive ? 'text-[var(--sidebar-group-active-icon)]' : 'text-muted-foreground')} />
                       <span className='line-clamp-1 flex-1'>{group.label}</span>
                     </NavAnchor>
                     {isActive && groupAction && <span className='mr-1.5 flex shrink-0 items-center'>{groupAction}</span>}

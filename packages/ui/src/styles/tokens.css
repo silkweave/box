@@ -110,7 +110,7 @@
   --sidebar: #f5f5f8;
   --sidebar-group-bg: #ffffff;
   --sidebar-group-border: #dedee8;
-  /* Override this solid primary to recolor the header and its sub-item states together. */
+  /* Override this primary to recolor the active header and its sub-item states together. */
   --sidebar-primary: #7a7efe;
   --sidebar-primary-text: #ffffff;
   --sidebar-item-hover: color-mix(in srgb, var(--sidebar-primary) 10%, transparent);
@@ -118,6 +118,11 @@
   --sidebar-item-selected-border: color-mix(in srgb, var(--sidebar-primary) 24%, transparent);
   --sidebar-item-selected-text: var(--fg-1);
   --sidebar-item-selected-icon: var(--sidebar-primary);
+  /* The active group header: a solid primary fill. For a tinted header that matches its selected
+     item, point these at --sidebar-item-selected, -selected-text and -selected-icon. */
+  --sidebar-group-active-bg: var(--sidebar-primary);
+  --sidebar-group-active-text: var(--sidebar-primary-text);
+  --sidebar-group-active-icon: currentColor;
   --text: var(--fg-1);
   --text-muted: var(--fg-3);
   --accent-tint: var(--accent-bg);
@@ -210,7 +215,7 @@
   --sidebar: #16161f;
   --sidebar-group-bg: #1d1d29;
   --sidebar-group-border: #30303f;
-  /* Override this solid primary to recolor the header and its sub-item states together. */
+  /* Override this primary to recolor the active header and its sub-item states together. */
   --sidebar-primary: #7a7efe;
   --sidebar-primary-text: #ffffff;
   --sidebar-item-hover: color-mix(in srgb, var(--sidebar-primary) 10%, transparent);
@@ -218,6 +223,11 @@
   --sidebar-item-selected-border: color-mix(in srgb, var(--sidebar-primary) 24%, transparent);
   --sidebar-item-selected-text: var(--fg-1);
   --sidebar-item-selected-icon: var(--sidebar-primary);
+  /* The active group header: a solid primary fill. For a tinted header that matches its selected
+     item, point these at --sidebar-item-selected, -selected-text and -selected-icon. */
+  --sidebar-group-active-bg: var(--sidebar-primary);
+  --sidebar-group-active-text: var(--sidebar-primary-text);
+  --sidebar-group-active-icon: currentColor;
   --text: var(--fg-1);
   --text-muted: var(--fg-3);
   --accent-tint: var(--accent-bg);

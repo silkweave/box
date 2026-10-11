@@ -55,8 +55,10 @@ import {
 /**
  * The two axes the library's board bar also reads, re-exported so a module names them once. They are
  * ITS types on purpose: a stored view and the control that edits it have to agree about what "board"
- * and "desc" are, and one vocabulary across the three modules is what keeps a shared `normalize`
- * from needing a per-module table. (The CRM calls its board a "Pipeline" - that is a LABEL.)
+ * and "desc" are, and one vocabulary across the modules is what keeps a shared `normalize` from
+ * needing a per-module table. (The CRM calls its board a "Pipeline" - that is a LABEL.) A module
+ * that draws a layout of its own (a timeline) widens its `layout` to `BoardLayout | 'timeline'` and
+ * offers it through its spec's `layouts`.
  */
 export type { BoardLayout, SortDir }
 
@@ -64,7 +66,8 @@ export type { BoardLayout, SortDir }
  *  shape the shared bar and store are allowed to assume. */
 export interface BaseViewState {
   search: string
-  layout: BoardLayout
+  /** A `BoardLayout`, or a value of the module's own layout (narrowed per module). */
+  layout: string
   groupBy: string
   /** OPTIONAL, because a module may have no sort axis at all - Initiatives has none (2026-08-13):
    *  its rows sit in the order they were created and only its tasks are arranged by hand. A module

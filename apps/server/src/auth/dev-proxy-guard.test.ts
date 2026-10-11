@@ -12,7 +12,7 @@ import { classifyDevProxyRequest, createDevProxyGuard, devSourceScope, resolveRe
 
 const REPO = '/Users/dev/stack'
 const SCOPE: DevSourceScope = {
-  roots: ['apps/web', 'packages', 'features', 'recipes', 'node_modules'].map((dir) => `${REPO}/${dir}`),
+  roots: ['apps/web', 'packages', 'features', 'recipes', 'theme', 'node_modules'].map((dir) => `${REPO}/${dir}`),
   deny: [`${REPO}/node_modules/.cache`],
 }
 
@@ -53,6 +53,7 @@ describe('classifyDevProxyRequest: what the anonymous login page needs is forwar
     `/@fs${REPO}/features/crm/web/index.tsx`,
     `/@fs${REPO}/recipes/crm/RECIPE.md?raw`,
     `/@fs${REPO}/recipes/crm/screenshots/board.png`,
+    `/@fs${REPO}/theme/fonts/brand-400.woff2`,
     `/@fs${REPO}/apps/web/src/lib/utils.ts?import`,
     `/@fs${REPO}/apps/web/src/App.tsx?raw`,
     `/@fs${REPO}/node_modules/.bun/vite@8.3.0+5e27b56279d105f0/node_modules/vite/dist/client/env.mjs`,

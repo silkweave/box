@@ -89,22 +89,35 @@ export interface GridLayout {
  * columns are OFFERED in; which of them you took, and in which order you read them, is yours.
  */
 /**
- * The inline style that FREEZES a grid's first (identity) column while the grid scrolls sideways:
- * sticky to the scrollport's left edge and opaque so cells scroll under it. It reaches over the
- * grid's 0.5rem gap (negative margin, matching padding) so nothing peeks between it and the next
- * column, with a hairline on its edge. `background` is the surface it sits on; a row that tints on
- * hover passes 'inherit' and gives itself a solid background, so the frozen cell tints with it.
- * Inline rather than classes so a consumer's cells and these components always agree.
+ * The inline style that FREEZES a grid's first `freeze` columns while the grid scrolls sideways,
+ * for cell `index` of `columns`; undefined for a cell that scrolls, so it spreads straight into a
+ * `style` prop. A frozen cell is sticky at the summed widths and gaps of the frozen cells before it
+ * and opaque so cells scroll under it. Each reaches over the grid's 0.5rem gap (negative margin,
+ * matching padding) so nothing peeks between it and its neighbour; only the last draws the hairline
+ * edge. The flexing identity column freezes at its floor width, which is its real width whenever
+ * the grid is wide enough to scroll at all. `background` is the surface it sits on; a row that tints
+ * on hover passes 'inherit' and gives itself a solid background, so the frozen cells tint with it.
+ * Inline rather than classes so a consumer's cells and `GridHeader` / `GridFooter` always agree.
  */
-export const frozenCellStyle = (background = 'var(--bg)'): CSSProperties => ({
-  position: 'sticky',
-  left: 0,
-  zIndex: 1,
-  background,
-  marginRight: '-0.5rem',
-  paddingRight: '0.5rem',
-  boxShadow: '1px 0 0 var(--border-light)',
-})
+export function frozenColumnStyle(
+  columns: readonly Pick<GridColumn, 'width'>[],
+  index: number,
+  freeze: number,
+  background = 'var(--bg)',
+): CSSProperties | undefined {
+  const count = Math.min(freeze, columns.length)
+  if (index >= count) return undefined
+  const left = columns.slice(0, index).reduce((sum, c) => sum + c.width + GAP, 0)
+  return {
+    position: 'sticky',
+    left,
+    zIndex: 1,
+    background,
+    marginRight: '-0.5rem',
+    paddingRight: '0.5rem',
+    boxShadow: index === count - 1 ? '1px 0 0 var(--border-light)' : undefined,
+  }
+}
 
 export function orderColumns<T extends { key: string }>(catalog: readonly T[], selected: readonly string[]): T[] {
   const seen = new Set<string>()

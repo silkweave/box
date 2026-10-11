@@ -33,7 +33,7 @@ import {
   AGGREGATE_METHODS,
   aggregate,
   aggregateDecimals,
-  frozenCellStyle,
+  frozenColumnStyle,
   type AggregateMethod,
   type AggregateSource,
   type AggregateStore,
@@ -46,12 +46,12 @@ export function GridFooter({
   label,
   sources,
   store,
-  freezeFirst = false,
+  freeze = 0,
 }: {
   columns: GridColumn[]
   template: string
-  /** Keep the label cell in view while the grid scrolls sideways, as `GridHeader` does. */
-  freezeFirst?: boolean
+  /** How many leading columns stay in view while the grid scrolls sideways, as in `GridHeader`. */
+  freeze?: number
   /**
    * What sits in the identity column's footer cell - in this Box, "17 / 53 accounts" (see
    * `apps/web/src/lib/rowCount.ts`). It is a NODE the app hands over, not a count and a noun this
@@ -73,7 +73,7 @@ export function GridFooter({
       {columns.map((c, i) => {
         const source = i === 0 ? undefined : sources[c.key]
         return (
-          <div key={c.key} className='min-w-0' style={freezeFirst && i === 0 ? { ...frozenCellStyle('var(--surface)'), zIndex: 2 } : undefined}>
+          <div key={c.key} className='min-w-0' style={i < freeze ? { ...frozenColumnStyle(columns, i, freeze, 'var(--surface)'), zIndex: 2 } : undefined}>
             {i === 0 ? (
               <span className='truncate text-label tabular-nums text-muted-foreground'>{label}</span>
             ) : source ? (

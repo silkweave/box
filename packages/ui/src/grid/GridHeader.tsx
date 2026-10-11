@@ -15,23 +15,23 @@
 
 import { useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import { cn } from '../lib/utils.ts'
-import { frozenCellStyle, type ColumnWidthStore, type GridColumn } from './columns.ts'
+import { frozenColumnStyle, type ColumnWidthStore, type GridColumn } from './columns.ts'
 
 export function GridHeader({
   columns,
   template,
   onResize,
   className,
-  freezeFirst = false,
+  freeze = 0,
 }: {
   columns: GridColumn[]
   template: string
   /** Omit to make the header fixed-width (no handles). */
   onResize?: ColumnWidthStore['setWidth']
   className?: string
-  /** Keep the first (identity) column in view while the grid scrolls sideways (`frozenCellStyle`);
-   *  the consumer's row cells and `GridFooter` take the same flag. */
-  freezeFirst?: boolean
+  /** How many leading columns stay in view while the grid scrolls sideways (`frozenColumnStyle`);
+   *  the consumer's row cells and `GridFooter` take the same count. */
+  freeze?: number
 }) {
   return (
     <div
@@ -41,7 +41,7 @@ export function GridHeader({
       )}
       style={{ gridTemplateColumns: template }}>
       {columns.map((c, i) => (
-        <div key={c.key} className='relative min-w-0' style={freezeFirst && i === 0 ? { ...frozenCellStyle(), zIndex: 2 } : undefined}>
+        <div key={c.key} className='relative min-w-0' style={i < freeze ? { ...frozenColumnStyle(columns, i, freeze), zIndex: 2 } : undefined}>
           <span
             title={c.hint}
             className={cn(

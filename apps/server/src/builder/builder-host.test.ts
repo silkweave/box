@@ -98,11 +98,11 @@ describe('Builder host command dispatch', () => {
     }
   })
 
-  it('starts claude on sonnet unless the profile declares a default model', async () => {
+  it('starts claude on opus unless the profile declares a default model', async () => {
     const requests: Array<Record<string, unknown>> = []
     const profiles = [
       [{ name: 'alice:claude', engine: 'claude' }],
-      [{ name: 'alice:claude', engine: 'claude', defaults: { model: 'opus[1m]' } }],
+      [{ name: 'alice:claude', engine: 'claude', defaults: { model: 'sonnet' } }],
     ]
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url).pathname
@@ -117,7 +117,7 @@ describe('Builder host command dispatch', () => {
       const host = await createBuilderHost({ repoRoot: '/box', instanceDir: '/box/data' })
       await host.create('alice', 'claude')
       await host.create('alice', 'claude')
-      expect(requests.map(request => request.model)).toEqual(['sonnet', 'opus[1m]'])
+      expect(requests.map(request => request.model)).toEqual(['opus[1m]', 'sonnet'])
     } finally {
       vi.unstubAllGlobals()
     }
@@ -137,7 +137,7 @@ describe('Builder host command dispatch', () => {
     try {
       const host = await createBuilderHost({ repoRoot: '/box', instanceDir: '/box/data' })
       await host.create('alice')
-      expect(requests.map(request => [request.profile, request.model])).toEqual([['alice:claude', 'sonnet']])
+      expect(requests.map(request => [request.profile, request.model])).toEqual([['alice:claude', 'opus[1m]']])
     } finally {
       vi.unstubAllGlobals()
     }

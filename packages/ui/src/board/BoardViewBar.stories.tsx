@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Kanban, Rows3 } from 'lucide-react'
+import { GanttChart, Kanban, Rows3 } from 'lucide-react'
 import { Button } from '../components/Button.tsx'
 import { BoardViewBar, type BoardBarSpec, type BoardBarValue } from './BoardViewBar.tsx'
 
@@ -137,4 +137,16 @@ export const NoSortAxes: Story = {
 export const WithNotice: Story = {
   args: { value: START, onChange: () => {}, spec: SPEC },
   render: () => <Frame spec={{ ...SPEC, notice: "Only Ada's" }} />,
+}
+
+/**
+ * A module adds a layout only it draws - here a timeline - as one more `layouts` entry. It declares
+ * what applies to it: a timeline's rows are a list, so `groups` keeps the group-by select; its rows
+ * carry no columns, so the column picker stays away. `list` and `board` need no flags.
+ */
+export const ModuleLayout: Story = {
+  args: { value: START, onChange: () => {}, spec: SPEC },
+  render: () => (
+    <Frame spec={{ ...SPEC, layouts: [...SPEC.layouts, { value: 'timeline', label: 'Timeline', icon: GanttChart, groups: true }] }} />
+  ),
 }

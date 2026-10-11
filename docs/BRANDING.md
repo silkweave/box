@@ -42,9 +42,35 @@ notifications is installed, inspect `/api/push/sw.js` too. OS-installed app name
 service workers can remain cached; refresh/update the worker and, if necessary, reinstall the
 home-screen app before judging the result.
 
-The colours in this configuration affect install/browser chrome. App light/dark design tokens
-remain in [`packages/ui/src/styles/tokens.css`](../packages/ui/src/styles/tokens.css); Storybook
-has its own library branding. `BrandProvider` lets the UI library render a consumer's identity
+The colours in this configuration affect install/browser chrome. The app's own look is the theme
+below; Storybook has its own library branding.
+
+## Theme
+
+The app's light and dark design tokens live in the UI library
+([`packages/ui/src/styles/tokens.css`](../packages/ui/src/styles/tokens.css)), which is core: a Box
+does not edit it. A Box restyles the app in `theme/theme.css` at the checkout root. The web app
+imports it after the library's stylesheets, so any token set there wins, and core upgrades never
+touch it (a new Box gets the commented default). Set only what differs, under the selector the
+library uses: `[data-theme='light']` and `[data-theme='dark']` for colours, `:root` for fonts and
+anything shared by both modes.
+
+```css
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/600.css';
+
+:root { --cp-font-sans: 'Poppins', system-ui, sans-serif; }
+[data-theme='light'] { --accent: #2d85de; --accent-hover: #1f6fc2; --accent-bg: #eaf3fc; }
+[data-theme='dark'] { --accent: #4a96e4; --accent-hover: #6fabeb; --accent-bg: #102a4a; }
+```
+
+The tokens worth overriding are the backgrounds (`--bg`, `--bg-surface*`), borders, text (`--fg-1`
+to `--fg-4`), the accent family, the semantic colours, the chart series (`--chart-1` to `--chart-8`;
+re-validate the order for colour-vision safety after changing them), the shadows, the sidebar
+(`--sidebar*`, see [WEB](WEB.md)) and the silk gradient. A font comes from an `@fontsource` package
+in the root `package.json` or from files kept in `theme/`; `@import` lines go first in the file.
+Token edits hot-reload in `box dev`; production picks them up on the next web build. The Builder
+shell keeps the library's look, so a broken theme never hides the recovery surface. `BrandProvider` lets the UI library render a consumer's identity
 without depending on core. Standalone components fall back to neutral `Box` text without a logo.
 
 Branding does not rename npm packages, framework/MCP identifiers, storage keys, auth cookies,
