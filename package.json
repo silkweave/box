@@ -61,6 +61,7 @@
   "trustedDependencies": [
     "@swc/core",
     "esbuild",
-    "better-sqlite3"
+    "better-sqlite3",
+    "@ladybugdb/core"
   ]
 }

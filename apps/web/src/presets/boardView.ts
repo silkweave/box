@@ -37,7 +37,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { BoardLayout, SortDir } from '@silkweave/box-ui/board'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { readStored, writeStored } from '../lib/usePersistedState.ts'
 import { isStringArray } from '../lib/guards.ts'
 import {
@@ -157,12 +157,26 @@ export interface ViewStoreSpec<S extends BaseViewState> {
   /** Structural equality - compared field by field, never by JSON string (key order does not
    *  survive a normalize round trip, and a reloaded preset must not read as "Custom view"). */
   same: (a: S, b: S) => boolean
+  /**
+   * The search param that names the selected preset (default `preset`). Two stores mounted on one
+   * page MUST use different params: each clears a name it cannot resolve and puts its own remembered
+   * one back, so two stores sharing a param rewrite the URL against each other forever.
+   */
+  urlParam?: string
+  /**
+   * Where arriving on the bare board lands: at `path` with no preset in the URL (a sidebar entry, a
+   * typed address, a bookmark), select `preset` instead of the one this browser used last. A URL
+   * naming a preset - every preset click, a reload, a shared link - is untouched, and so is any other
+   * path the store is mounted on (an account's page). Skipped if the preset no longer exists.
+   */
+  landing?: { path: string; preset: string }
 }
 
 /**
  * Build a module's view hook: a shared live-view store plus the team's presets off the server.
  */
 export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>): () => ViewStore<S> {
+  const urlParam = spec.urlParam ?? 'preset'
   const liveKey = `${spec.storageKey}.view`
   const basedOnKey = `${spec.storageKey}.basedOn`
   const seed: PresetSeed[] = spec.defaultPresets.map((p) => ({
@@ -219,16 +233,19 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
     // `strict: false` because one store serves several routes (a board index and its detail children),
     // and none of them declares this param - it is view state that happens to live in the URL, not
     // part of any route's contract.
-    const search = useSearch({ strict: false }) as { preset?: unknown }
+    const search = useSearch({ strict: false }) as Record<string, unknown>
     const navigate = useNavigate()
-    const urlName = typeof search.preset === 'string' && search.preset.trim() ? search.preset.trim() : null
-    /** Write (or clear) `?preset=` without adding a history entry - selecting a lens is not a page. */
+    const pathname = useLocation().pathname.replace(/\/$/, '')
+    const rawName = search[urlParam]
+    const urlName = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null
+    /** Write (or clear) `?preset=` (or `urlParam`) without adding a history entry - selecting a lens is
+     *  not a page. */
     const setUrl = useCallback(
       (name: string | null) =>
         void navigate({
-          // No route here declares `preset`, so the reducer is typed against an empty search shape -
+          // No route here declares the param, so the reducer is typed against an empty search shape -
           // the cast is the price of keeping this out of every route's contract (see `strict: false`).
-          search: ((prev: Record<string, unknown>) => ({ ...prev, preset: name ?? undefined })) as never,
+          search: ((prev: Record<string, unknown>) => ({ ...prev, [urlParam]: name ?? undefined })) as never,
           replace: true,
         }),
       [navigate],
@@ -280,6 +297,7 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
     //    button, a sidebar click) - apply it;
     //  • the same name it WAS derived from is a reload of your own session - leave your edits alone,
     //    which is the whole reason `basedOn` still exists;
+    //  • no name in the URL on the store's `landing` path selects the landing preset;
     //  • a selection remembered from last time with no name in the URL puts itself back in the URL, so
     //    the address bar always says what the picker says;
     //  • a name that no longer resolves clears itself out.
@@ -295,12 +313,20 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
         }
         return
       }
+      const landing = spec.landing && pathname === spec.landing.path ? presets.find((v) => v.name === spec.landing!.preset) : undefined
+      if (landing) {
+        if (restoringUrl === landing.name) return
+        restoringUrl = landing.name
+        writeBasedOn(landing.name)
+        setView(landing.state)
+        return setUrl(landing.name)
+      }
       const remembered = readBasedOn()
       if (remembered && restoringUrl !== remembered && presets.some((v) => v.name === remembered)) {
         restoringUrl = remembered
         setUrl(remembered)
       }
-    }, [data, urlName, presets, setUrl, setView])
+    }, [data, urlName, presets, setUrl, setView, pathname])
 
     const patch = useCallback(
       <K extends keyof S>(key: K, value: S[K]) => setView((prev) => ({ ...prev, [key]: value })),
