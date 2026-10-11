@@ -17,9 +17,9 @@ import { createDataStore } from '../lib/dataStore.ts'
 import { trpc } from '../lib/trpc.ts'
 import { getActiveUserId } from '../lib/useActiveUser.ts'
 
-/** The modules that have a preset bar. Mirrors `PRESET_MODULES` in @silkweave/box-core - the server refuses
- *  anything else, and the generated tRPC input narrows to exactly these three. */
-export type PresetModule = 'content' | 'crm' | 'initiatives'
+/** A board's preset module id: one a feature registers as `presetModules` in its core manifest. The
+ *  server refuses any other. */
+export type PresetModule = string
 
 /** One preset as it comes off the wire - `state` is the module's own shape, repaired on read. */
 export interface PresetRecord {

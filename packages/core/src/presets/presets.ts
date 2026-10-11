@@ -1,4 +1,4 @@
-// Presets - the named lenses on the boards that have one (Content, the CRM, Initiatives). "Pipeline",
+// Presets - the named lenses on the boards that have one (each feature names its own, `presetModules`). "Pipeline",
 // "Critical path", "Needs review", whatever the team invents. They live in config/presets.json:
 // this is Box CONFIGURATION, it wants a diff and a git history rather than audit stamps in the
 // warehouse, and it travels with the Box's config directory, which is version-controlled (data.db
@@ -24,11 +24,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { configPath } from '../io.js'
+import { FEATURE_LIST } from '../generated/features.js'
 
-/** The modules that have a preset bar. A closed list, so a typo cannot create a phantom module whose
- *  presets are written to disk and never rendered by anything. */
-export const PRESET_MODULES = ['content', 'crm', 'initiatives'] as const
-export type PresetModule = (typeof PRESET_MODULES)[number]
+/** The modules that have a preset bar: what the registered features declare as `presetModules`, read
+ *  lazily so this module never reads the registry at import time. A closed list all the same, so a
+ *  typo cannot create a phantom module whose presets are written to disk and never rendered. */
+export function presetModules(): readonly string[] {
+  return FEATURE_LIST.flatMap((f) => f.presetModules ?? [])
+}
 
 /** The longest a preset name may be - a nav sub-item and a select trigger both have to hold it. */
 export const PRESET_NAME_MAX = 60
@@ -142,12 +145,12 @@ export function readPresetsFile(): PresetsFile {
   const source = isRecord(raw) ? (isRecord(raw.modules) ? raw.modules : isRecord(raw.boards) ? raw.boards : {}) : {}
   const seeded =
     isRecord(raw) && Array.isArray(raw.seeded)
-      ? raw.seeded.filter((m): m is string => typeof m === 'string' && (PRESET_MODULES as readonly string[]).includes(m))
+      ? raw.seeded.filter((m): m is string => typeof m === 'string' && presetModules().includes(m))
       : []
   return {
     seeded: [...new Set(seeded)].sort(),
     modules: Object.fromEntries(
-      PRESET_MODULES.map((module) => {
+      presetModules().map((module) => {
         const list = Array.isArray(source[module]) ? (source[module] as unknown[]) : []
         return [module, sortPresets(list.flatMap((entry) => readRecord(entry) ?? []))]
       }),
@@ -164,15 +167,16 @@ export function writePresetsFile(file: PresetsFile): void {
   const out: PresetsFile = {
     seeded: [...new Set(file.seeded)].sort(),
     modules: Object.fromEntries(
-      [...PRESET_MODULES].sort().map((module) => [module, sortPresets(file.modules[module] ?? [])]),
+      [...presetModules()].sort().map((module) => [module, sortPresets(file.modules[module] ?? [])]),
     ),
   }
   writeFileSync(path, `${JSON.stringify(out, null, 2)}\n`, 'utf8')
 }
 
-export function assertKnownModule(module: string): asserts module is PresetModule {
-  if (!(PRESET_MODULES as readonly string[]).includes(module)) {
-    throw new Error(`unknown module "${module}" - one of ${PRESET_MODULES.join(', ')}`)
+export function assertKnownModule(module: string): void {
+  const known = presetModules()
+  if (!known.includes(module)) {
+    throw new Error(`unknown module "${module}" - one of ${known.join(', ') || '(none registered)'}`)
   }
 }
 

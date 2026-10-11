@@ -2,11 +2,11 @@ import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsArray, IsIn, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
-import { PRESET_MODULES, deletePreset, readPresetsFile, reorderPresets, savePreset, seedPresets, updatePreset, type PresetRecord } from '@silkweave/box-core'
+import { deletePreset, readPresetsFile, reorderPresets, savePreset, seedPresets, updatePreset, type PresetRecord } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import type { PrincipalRequest } from '../auth/auth.decorators.js'
 
-// Presets - the team's named lenses on Content, the CRM and Initiatives. One list per module, shared
+// Presets - the team's named lenses on the boards features register (`presetModules`). One list per module, shared
 // by everyone, editable by anyone internal. There is no such thing as a private preset and no such
 // thing as a built-in one that cannot be changed (2026-08-12); storage is tenant config
 // (config/presets.json), not the warehouse - see @silkweave/box-core's presets/presets.ts for why.
@@ -41,7 +41,7 @@ class PresetsDto {
 // The @Mcp() scalar-inputs constraint: `state` travels as a JSON object STRING, the
 // `board-nodes-set` precedent.
 class SavePresetDto {
-  @ApiProperty({ enum: PRESET_MODULES, description: 'Which module this preset belongs to' })
+  @ApiProperty({ description: 'Which module this preset belongs to (a preset module a feature registers, e.g. crm)' })
   @IsString() module!: string
   @ApiProperty({ description: 'Preset name - saving over an existing one REPLACES it' })
   @IsString() name!: string
@@ -62,7 +62,7 @@ class SavePresetDto {
 // "leave it alone", which is what lets the manage dialog send only what was touched - `icon: ''` is
 // the explicit "back to the default", and it has to stay distinguishable from "not mentioned".
 class UpdatePresetDto {
-  @ApiProperty({ enum: PRESET_MODULES }) @IsString() module!: string
+  @ApiProperty({ description: 'A registered preset module, e.g. crm' }) @IsString() module!: string
   @ApiProperty({ description: 'The preset to edit, by its CURRENT name' })
   @IsString() name!: string
   @ApiProperty({ required: false, description: 'New name - renames in place, refused if it collides' })
@@ -80,13 +80,13 @@ class UpdatePresetDto {
 // No `actor`, on purpose: see reorderPresets - position is a property of the LIST, and stamping
 // every preset with whoever dragged one would make "last saved by" lie.
 class ReorderPresetsDto {
-  @ApiProperty({ enum: PRESET_MODULES }) @IsString() module!: string
+  @ApiProperty({ description: 'A registered preset module, e.g. crm' }) @IsString() module!: string
   @ApiProperty({ type: [String], description: 'Preset names in their new order; unmentioned ones keep their relative order at the end' })
   @IsArray() @IsString({ each: true }) names!: string[]
 }
 
 class DeletePresetDto {
-  @ApiProperty({ enum: PRESET_MODULES }) @IsString() module!: string
+  @ApiProperty({ description: 'A registered preset module, e.g. crm' }) @IsString() module!: string
   @ApiProperty({ description: 'Preset name to delete - shared, so it goes for everyone' })
   @IsString() name!: string
   @ApiProperty({ required: false, description: 'users.id performing this mutation (audit stamp; defaults to the authenticated principal)' })
@@ -96,7 +96,7 @@ class DeletePresetDto {
 // The defaults arrive as a JSON ARRAY string for the same reason `state` does - one @Mcp scalar
 // carrying a shape this layer has no vocabulary for.
 class SeedPresetsDto {
-  @ApiProperty({ enum: PRESET_MODULES }) @IsString() module!: string
+  @ApiProperty({ description: 'A registered preset module, e.g. crm' }) @IsString() module!: string
   @ApiProperty({
     description:
       'JSON array string of {name, description?, icon?, state} - the module\'s built-in presets as the SPA declares them.',

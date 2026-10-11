@@ -20,6 +20,9 @@ export interface CoreFeature {
   migrations: readonly Migration[]
   /** Runnable ops contributed to core's run funnel (scheduler, Run now, MCP, CLI). */
   actions?: readonly ActionSpec[]
+  /** The boards this feature draws with a preset bar, by preset module id (`config/presets.json`).
+   *  Only registered ids are accepted, so a typo cannot create a module nothing renders. */
+  presetModules?: readonly string[]
 }
 
 /** `const` type parameter: the manifest keeps its literal types (tuple of ModelSpecs, literal id). */
