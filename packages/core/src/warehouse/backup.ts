@@ -85,6 +85,13 @@ export function assertGcsBucketReachable(gs: string): void {
 
 const execFileAsync = promisify(execFile)
 
+/** Upload one file over a bucket object (`gsutil cp`). Async: a 100 MB warehouse copy takes over a
+ *  minute, and a synchronous child process would stall every request for that long. Shared with
+ *  the chat and artifacts backups. */
+export async function uploadFileToGcs(local: string, target: string): Promise<void> {
+  await execFileAsync('gsutil', ['cp', local, target], { maxBuffer: 16 * 1024 * 1024 })
+}
+
 /**
  * Copy a local directory to `<gs>/<prefix>/` (`gsutil rsync -r`): new and changed files go up, and
  * nothing is ever deleted remotely. A file gone from the host stays in the bucket, so a lost or
@@ -142,7 +149,7 @@ export async function backupWarehouse(
   const local = await withWrite((conn) => copyWarehouseUnderLock(conn, live, label))
   if (gs && snapshot) {
     try {
-      execFileSync('gsutil', ['cp', local.path, snapshot], { stdio: 'pipe' })
+      await uploadFileToGcs(local.path, snapshot)
     } catch (error) {
       throw new Error(
         `local backup written to ${local.path}, but the upload to ${snapshot} failed: ${String((error as Error)?.message ?? error)}`,
