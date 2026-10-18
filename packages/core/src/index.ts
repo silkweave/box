@@ -6,6 +6,7 @@
 // `@silkweave/box-core/testing` (src/testing.ts says why they stay off this surface).
 export { configRoot, configPath, dataPath, docsDir, instanceDir, instanceRelative, repoRoot, warehousePath } from './io.js'
 export * from './box-config.js'
+export * from './team-day.js'
 export {
   BOX_BRAND_KEYS,
   BOX_JSON_SCHEMA_REF,
@@ -29,7 +30,9 @@ export * from './accounts.js'
 export * from './credentials.js'
 export * from './events.js'
 export * from './event-ports.js'
+export * from './account-links.js'
 export * from './agent-session.js'
+export * from './work-access.js'
 // Every PRESENT feature's public barrel, through the generated file - never a hand-written list.
 // A hand list makes `rm -rf` of a feature's directory break this module, which is exactly the
 // invariant the seam exists to hold (SEAM 6.1: no file outside the three directories is touched).
@@ -55,14 +58,17 @@ export * from './auth/link.js'
 export * from './auth/security.js'
 export * from './auth/principal.js'
 export * from './auth/bootstrap.js'
+export * from './auth/replace-agent.js'
 export * from './auth/secrets.js'
 export * from './agent-profiles.js'
+export * from './agents.js'
 export * from './signals/index.js'
 export { FX_RATES, createFxRates, fxRates, resolveDays, type PublishedRates } from './fx/rates.js'
 export * from './presets/presets.js'
 export * from './browser/cdp.js'
 export * from './browser/browsers.js'
 export * from './agent-tools.js'
+export * from './mcp-connections.js'
 export * from './browser/check.js'
 export * from './platforms.js'
 

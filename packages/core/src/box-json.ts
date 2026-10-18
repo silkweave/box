@@ -64,6 +64,8 @@ export interface BoxBackground {
   chatAgent: boolean
   /** Arms the webhook relay. */
   relay: boolean
+  /** Arms the WhatsApp connection (comms `whatsapp` powerup). One instance per linked device. */
+  whatsapp: boolean
 }
 
 /**
@@ -103,6 +105,9 @@ export const RECIPE_ID_PATTERN = /^[a-z][a-z0-9-]*$/
 
 export interface BoxJson {
   agent: BoxAgent
+  /** The team's IANA time zone (default `UTC`): the clock "today", "this week" and day-based ages
+   *  are read on, by the server and every browser alike. See team-day.ts. */
+  timeZone: string
   brand: BoxBrand
   server: BoxServer
   backup: BoxBackup
@@ -140,6 +145,7 @@ export const BOX_BRAND_KEYS = [
 export function defaultBoxJson(): BoxJson {
   return {
     agent: { id: 'nova', name: 'Nova', role: 'admin' },
+    timeZone: 'UTC',
     brand: {
       name: 'Silkweave Box',
       shortName: 'Box',
@@ -157,7 +163,7 @@ export function defaultBoxJson(): BoxJson {
     // one machine must never be one default away from the first - give it its own numbers here.
     server: { host: '127.0.0.1', port: 8190, vitePort: 5190, viteDevUrl: null, dashboardUrl: null, vscodeRemoteHost: null },
     backup: { gcsBucket: null },
-    background: { automation: false, chatAgent: false, relay: false },
+    background: { automation: false, chatAgent: false, relay: false, whatsapp: false },
     auth: { sessionSecret: null, tokenSecret: null },
     mcp: { url: null, token: null },
     http: { userAgent: 'Silkweave Box' },
@@ -242,6 +248,14 @@ export function parseBoxAgent(raw: unknown, where: string): BoxAgent {
   return { id: agent.id, name: agent.name, role: agent.role as BoxAgent['role'] }
 }
 
+/** An IANA zone name the runtime knows (`UTC`, `Asia/Jakarta`, `Europe/Vienna`). */
+export function parseTimeZone(raw: unknown, where: string): string {
+  if (typeof raw !== 'string' || !raw.trim()) return refuse(where, 'timeZone must be an IANA time zone name such as "UTC" or "Europe/Vienna"')
+  try { new Intl.DateTimeFormat('en-CA', { timeZone: raw }) }
+  catch { return refuse(where, `timeZone "${raw}" is not a time zone this runtime knows; use an IANA name such as "Europe/Vienna"`) }
+  return raw
+}
+
 /**
  * Validate a parsed file against the shape. Every refusal names the key, because this file is
  * hand-edited and "the brand did not change" is not a message anyone can act on. Missing sections
@@ -252,9 +266,10 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   const defaults = defaultBoxJson()
   // Removed 2026-10-08: per-person Claude tokens are connected in Settings > Profile now.
   if (raw['workerdeckTokens'] !== undefined) refuse(where, 'workerdeckTokens was removed; connect Claude accounts in Settings > Profile and delete the key')
-  onlyKeys(raw, ['agent', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'recipes', 'features', 'signals', 'browsers', 'agentMcp', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
+  onlyKeys(raw, ['agent', 'timeZone', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'recipes', 'features', 'signals', 'browsers', 'agentMcp', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
 
   const agent = raw['agent'] === undefined ? defaults.agent : parseBoxAgent(raw['agent'], where)
+  const timeZone = raw['timeZone'] === undefined ? defaults.timeZone : parseTimeZone(raw['timeZone'], where)
 
   const brand = { ...defaults.brand }
   const b = section(raw, 'brand', where)
@@ -286,10 +301,11 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   const background = { ...defaults.background }
   const g = section(raw, 'background', where)
   if (g) {
-    onlyKeys(g, ['automation', 'chatAgent', 'relay'], `${where} background`)
+    onlyKeys(g, ['automation', 'chatAgent', 'relay', 'whatsapp'], `${where} background`)
     background.automation = flag(g, 'automation', `${where} background`, defaults.background.automation)
     background.chatAgent = flag(g, 'chatAgent', `${where} background`, defaults.background.chatAgent)
     background.relay = flag(g, 'relay', `${where} background`, defaults.background.relay)
+    background.whatsapp = flag(g, 'whatsapp', `${where} background`, defaults.background.whatsapp)
   }
 
   const auth = { ...defaults.auth }; const a = section(raw, 'auth', where)
@@ -358,7 +374,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     agentProfiles[user] = entry
   }
 
-  return { agent, brand, server, backup, background, auth, mcp, http, stack, recipes, features, signals, browsers, agentMcp, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
+  return { agent, timeZone, brand, server, backup, background, auth, mcp, http, stack, recipes, features, signals, browsers, agentMcp, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
 }
 
 /** Parse a file's text, naming the file in the one error JSON.parse would otherwise leave vague. */
@@ -420,6 +436,35 @@ export function writeBoxLocal(root: string, patch: Record<string, unknown>): Box
   mkdirSync(root, { recursive: true })
   const temp = `${local}.tmp-${process.pid}-${Date.now()}`
   writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 })
+  renameSync(temp, local)
+  return readBoxConfig(root)
+}
+
+/**
+ * Remove one key from box.local.json (`['credentials', 'mcp', 'stripe']`), atomically and owner-only
+ * like writeBoxLocal. Merge cannot delete, and a null is not valid everywhere (credentials). Empty
+ * parents are removed too. A key that is not there is a no-op.
+ */
+export function removeBoxLocal(root: string, path: readonly string[]): BoxJson {
+  const local = join(root, 'box.local.json')
+  if (!existsSync(local) || path.length === 0) return readBoxConfig(root)
+  const current = parseBoxJsonText(readFileSync(local, 'utf8'), 'box.local.json')
+  if (!isRecord(current)) throw new Error('box.local.json: must contain a JSON object')
+  const prune = (node: Record<string, unknown>, rest: readonly string[]): boolean => {
+    const [key, ...tail] = rest
+    if (key === undefined || !(key in node)) return false
+    if (tail.length === 0) {
+      delete node[key]
+      return true
+    }
+    const child = node[key]
+    if (!isRecord(child) || !prune(child, tail)) return false
+    if (Object.keys(child).length === 0) delete node[key]
+    return true
+  }
+  if (!prune(current, path)) return readBoxConfig(root)
+  const temp = `${local}.tmp-${process.pid}-${Date.now()}`
+  writeFileSync(temp, `${JSON.stringify(current, null, 2)}\n`, { mode: 0o600 })
   renameSync(temp, local)
   return readBoxConfig(root)
 }

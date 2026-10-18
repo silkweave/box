@@ -2,7 +2,7 @@
 // tables live in each feature's models.ts and reach schema.ts through the feature manifest.
 
 import type { ModelSpec } from './model.js'
-import { USER_ROLES, USER_STATUSES } from '../users/types.js'
+import { USER_KINDS, USER_ROLES, USER_STATUSES } from '../users/types.js'
 import { RUN_STATUSES, RUN_TRIGGERS } from '../ops/types.js'
 import { SIGNAL_MODELS } from '../signals/models.js'
 import { FX_RATES } from '../fx/rates.js'
@@ -25,6 +25,8 @@ export const USERS: ModelSpec = {
     role: { kind: 'text', default: "'member'", enum: USER_ROLES },
     tailscale_login: { kind: 'text', nullable: true },
     email: { kind: 'text', nullable: true },
+    // E.164; unique, admin-only to change (users/state.ts). Added by core:008 on an existing warehouse.
+    phone: { kind: 'text', nullable: true },
     channels: { kind: 'json', default: "'{}'" },
     token_ciphertext: { kind: 'text', nullable: true },
     token_issued_at: { kind: 'timestamp', nullable: true },
@@ -42,6 +44,12 @@ export const USERS: ModelSpec = {
     // The default agent profile (e.g. `toby:claude`), one of the person's agentProfiles; null keeps
     // the deployment rule. agent-defaults.ts. Added by core:006 on an existing warehouse.
     agent_profile: { kind: 'text', nullable: true },
+    // Work capabilities (work-access.ts WorkAccess), admin-set; NULL reads as the defaults. Added by
+    // core:009 on an existing warehouse.
+    work: { kind: 'json', nullable: true },
+    // 'human' | 'agent': the durable record that a row is an agent (agents.ts). Added by core:007
+    // on an existing warehouse (nullable there; reads narrow to 'human').
+    kind: { kind: 'text', default: "'human'", enum: USER_KINDS },
   },
   timestamps: true,
   audit: true,

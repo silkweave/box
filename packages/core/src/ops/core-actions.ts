@@ -12,7 +12,7 @@ async function* warehouseBackupAction(): AsyncGenerator<IngestProgress> {
 }
 
 export const CORE_ACTIONS: readonly ActionSpec[] = [
-  { id: 'warehouse-backup', label: 'Warehouse backup', group: 'Warehouse', description: 'Copy the warehouse to <instance>/backups (and to GCS when GCS_BUCKET is set)', run: warehouseBackupAction },
+  { id: 'warehouse-backup', label: 'Warehouse backup', group: 'Warehouse', description: 'Copy the warehouse to <instance>/backups (and to GCS when backup.gcsBucket is set)', run: warehouseBackupAction },
   { id: 'sources-sync', label: 'Data sources sync', group: 'Pulls', description: 'Pull every ENABLED data source (Settings → Data sources) into the signals bound to it; one bad source does not stop the others', run: sourcesSyncAction },
   {
     id: 'source-sync',

@@ -8,8 +8,19 @@
 //
 // The token is the principal's existing one, revealed rather than rotated: other holders of it (a
 // Codex profile's env file, scripts, the person's own Claude config) keep working. Only a principal
-// with no token yet gets one issued. Like a token in the profile's own config or environment, it is
+// with no token yet gets one issued, atomically (`sessionPrincipalToken`); a revoked principal gets
+// none and the session is refused. Like a token in the profile's own config or environment, it is
 // readable by any shell command the session is allowed to run.
+//
+// The Box server's URL carries `?passthrough=0`: a server-owned session never gets the `mcp`
+// recipe's passthrough tools on `box`, only the connections its toolset grants. Each of those is a
+// second server at `/mcp/connections/<id>` on the same loopback address with the same token (the
+// recipe's relay adds the upstream credential), plus an `x-box-via` header naming the room or run
+// for the audit log. No upstream credential enters a session.
+//
+// Fail closed: every failure (a revoked principal, a toolset the engine cannot enforce, loopback
+// that is not this server) throws, so a session never starts with fewer restrictions or a
+// different identity than it was configured with.
 //
 // Only engines that take per-session servers get it (the profile's `sessionMcpServers`: Claude,
 // Codex). The tool lists follow the engine's `toolFilters`: Claude honours every entry, Codex only
@@ -17,8 +28,9 @@
 // because the floor below could not be enforced there.
 
 import type { CreateSessionRequest, ProfileInfo } from '@workerdeck/protocol'
-import { issuePrincipalToken, revealPrincipalToken, toolsetSessionOptions } from '@silkweave/box-core'
-import { servicePort } from './loopback-guard.js'
+import { MCP_GRANT_HEADER, mcpConnectionGrant, mcpConnections, sessionPrincipalToken, toolsetSessionOptions } from '@silkweave/box-core'
+import { boxToolNames } from './box-tools.js'
+import { servicePort, verifyLoopback } from './loopback-guard.js'
 
 /** The server name the Box's own MCP surface has in an agent session (`mcp__box__<Tool>`). */
 export const BOX_MCP_SERVER = 'box'
@@ -69,56 +81,95 @@ export function toolsetEngineProblem(toolset: string, caps: SessionToolCaps): st
 }
 
 /**
- * Session options carrying `box` as `principalId`, plus the servers and tool lists of `toolset`
- * (core agent-tools.ts) when one is named, for an engine that takes session servers.
- * `disallowed` is the caller's own floor, kept on every outcome. On a failure the session starts
- * without the part that failed (the Box's server, or the toolset) and `onError` hears why; it
- * never starts with more than it was granted.
+ * Session options carrying `box` as `principalId`, plus the connections and tool lists of `toolset`
+ * (core agent-tools.ts) when one is named, for an engine that takes session servers. `via` names
+ * the room or run in the connections' audit log.
+ * `disallowed` is the caller's own floor, kept on every outcome. Throws when any part cannot be
+ * granted as configured, including a principal session on a profile that reports no session
+ * servers; only a session acting as nobody (empty `principalId`) may run with the floor alone.
  */
 export async function boxMcpSessionOptions(
   principalId: string,
   caps: SessionToolCaps,
   disallowed: readonly string[] = [],
-  onError: (message: string) => void = () => undefined,
   toolset: string | null = null,
+  via: string | null = null,
 ): Promise<BoxMcpOptions> {
   // The caller's floor, as far as the engine can carry it. A floor entry it cannot honour fails
   // the session rather than vanishing.
   const unhonoured = caps.toolFilters === 'all' ? [] : disallowed.filter((t) => caps.toolFilters === 'none' || !isMcpEntry(t))
   if (unhonoured.length > 0) throw new Error(`this engine cannot remove ${unhonoured.join(', ')} (tool filters: ${caps.toolFilters})`)
   const floor = [...disallowed]
-  const without: BoxMcpOptions = floor.length > 0 ? { disallowedTools: floor } : {}
+  const problem = toolset ? toolsetEngineProblem(toolset, caps) : null
+  if (problem) throw new Error(problem)
   if (!caps.sessionMcpServers || caps.toolFilters === 'none') {
-    if (toolset) onError(toolsetEngineProblem(toolset, caps) ?? `toolset "${toolset}" cannot be granted on this engine`)
-    return without
+    // A session acting as a principal must carry the Box server, its floor and the loopback
+    // check. "No capabilities" is also what an unknown profile or an unreachable worker reports,
+    // so it is refused rather than run on whatever MCP config the profile itself carries.
+    if (principalId) throw new Error(`the profile reports no session MCP servers or tool filters (unknown profile, or the worker is unreachable); not starting a session as ${principalId} without the Box server and its floor`)
+    return floor.length > 0 ? { disallowedTools: floor } : {}
   }
   const mcpServers: NonNullable<BoxMcpOptions['mcpServers']> = {}
   const allowedTools: string[] = []
   const disallowedTools: string[] = [...floor]
+  let token: string | null = null
   if (principalId) {
-    try {
-      const token = (await revealPrincipalToken(principalId)) ?? (await issuePrincipalToken(principalId))
-      mcpServers[BOX_MCP_SERVER] = {
-        type: 'http',
-        url: `http://127.0.0.1:${servicePort()}/mcp`,
-        headers: { Authorization: `Bearer ${token}` },
+    // The token goes to the literal 127.0.0.1 address: only when that address is this server
+    // (loopback-guard.ts carries the incident). Cached briefly, so a burst of sessions costs one probe.
+    const loopback = await verifyLoopback()
+    if (!loopback.ours) throw new Error(`not sending ${principalId}'s token to loopback: ${loopback.detail}`)
+    token = await sessionPrincipalToken(principalId)
+    mcpServers[BOX_MCP_SERVER] = {
+      type: 'http',
+      url: `http://127.0.0.1:${servicePort()}/mcp?passthrough=0`,
+      headers: { Authorization: `Bearer ${token}` },
+    }
+    allowedTools.push(`mcp__${BOX_MCP_SERVER}`)
+    disallowedTools.push(...BOX_MCP_FLOOR.map((tool) => `mcp__${BOX_MCP_SERVER}__${tool}`))
+  }
+  const extra = toolset ? toolsetSessionOptions(toolset) : null
+  // Connections: the person's own (their audience, run without asking, since they could call these
+  // tools themselves) plus the toolset's (granted by the toolset, whatever the audience). An agent
+  // principal has no own connections, and neither does a session under a built-in toolset that
+  // keeps only some Box tools (outside content: comms-draft). A toolset's deny list applies to both.
+  const directory = mcpConnections()
+  const own = principalId && directory && !extra?.boxTools ? await directory.personal(principalId) : []
+  const granted = extra?.servers ?? []
+  if (granted.length > 0) {
+    if (!directory) throw new Error(`toolset "${toolset}" attaches ${granted.join(', ')}, but this Box has no MCP connections (the mcp recipe)`)
+    if (!token) throw new Error(`toolset "${toolset}" attaches connections, which a session acting as nobody cannot reach`)
+  }
+  if (directory && token) {
+    for (const id of new Set([...granted, ...own])) {
+      const viaToolset = granted.includes(id)
+      const problem = await directory.sessionProblem(id)
+      if (problem) {
+        // A toolset's connection fails the session closed; a person's own one is just left out.
+        if (viaToolset) throw new Error(`toolset "${toolset}": ${problem}`)
+        continue
       }
-      allowedTools.push(`mcp__${BOX_MCP_SERVER}`)
-      disallowedTools.push(...BOX_MCP_FLOOR.map((tool) => `mcp__${BOX_MCP_SERVER}__${tool}`))
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error))
+      mcpServers[id] = {
+        type: 'http',
+        url: `http://127.0.0.1:${servicePort()}/mcp/connections/${id}`,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(via ? { 'x-box-via': via } : {}),
+          ...(viaToolset ? { [MCP_GRANT_HEADER]: mcpConnectionGrant(principalId, id) } : {}),
+        },
+      }
+      if (!viaToolset) allowedTools.push(`mcp__${id}`)
     }
   }
-  if (toolset) {
-    try {
-      const problem = toolsetEngineProblem(toolset, caps)
-      if (problem) throw new Error(problem)
-      const extra = toolsetSessionOptions(toolset)
-      Object.assign(mcpServers, extra.mcpServers)
-      allowedTools.push(...extra.allowedTools)
-      disallowedTools.push(...extra.disallowedTools)
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error))
+  if (toolset && extra) {
+    allowedTools.push(...extra.allowedTools)
+    disallowedTools.push(...extra.disallowedTools)
+    if (extra.boxTools) {
+      // A built-in toolset keeps only these Box tools: deny every other one by name. Without the
+      // live list that could not be enforced, so the session is refused.
+      const all = boxToolNames()
+      if (all.length === 0) throw new Error(`toolset "${toolset}" keeps only some Box tools, but the Box tool list is empty, so the rest could not be denied`)
+      const keep = new Set(extra.boxTools)
+      disallowedTools.push(...all.filter((t) => !keep.has(t)).map((t) => `mcp__${BOX_MCP_SERVER}__${t}`))
     }
   }
   if (Object.keys(mcpServers).length === 0) return disallowedTools.length > 0 ? { disallowedTools } : {}

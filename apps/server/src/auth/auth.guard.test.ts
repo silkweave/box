@@ -19,6 +19,12 @@ vi.mock('@silkweave/box-core', () => ({
   authenticatePrincipal: (...a: unknown[]) => authenticatePrincipal(...a),
   resolvePrincipalById: (...a: unknown[]) => resolvePrincipalById(...a),
   verifySession: (...a: unknown[]) => verifySession(...a),
+  // Core's composition (verify the cookie, resolve the row, persons only), over the mocks above.
+  resolveSessionPrincipal: async () => {
+    const claims = verifySession() as { sub: string } | null
+    const principal = claims ? ((await resolvePrincipalById(claims.sub)) as { kind?: string } | null) : null
+    return principal?.kind === 'human' ? principal : null
+  },
 }))
 
 const { AuthGuard } = await import('./auth.guard.js')
@@ -61,40 +67,40 @@ describe('authentication', () => {
   })
 
   it('attaches the principal and how it proved itself', async () => {
-    authenticatePrincipal.mockResolvedValue({ id: 'alice', display: 'alice', role: 'member' })
+    authenticatePrincipal.mockResolvedValue({ id: 'alice', display: 'alice', role: 'member', kind: 'human' })
     const req = bearer() as Record<string, unknown>
     await harness().run(req)
-    expect(req.principal).toMatchObject({ id: 'alice', role: 'member' })
+    expect(req.principal).toMatchObject({ id: 'alice', role: 'member', kind: 'human' })
     expect(req.credential).toBe('bearer')
   })
 })
 
 describe('authorization', () => {
   it('refuses a member on an @Admin route, on either credential', async () => {
-    authenticatePrincipal.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member' })
-    resolvePrincipalById.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member' })
+    authenticatePrincipal.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member', kind: 'human' })
+    resolvePrincipalById.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member', kind: 'human' })
     await expect(harness({ [IS_ADMIN]: true }).run(bearer())).rejects.toBeInstanceOf(ForbiddenException)
     await expect(harness({ [IS_ADMIN]: true }).run(cookie())).rejects.toBeInstanceOf(ForbiddenException)
   })
 
   it('admits an admin on an @Admin route', async () => {
-    authenticatePrincipal.mockResolvedValue({ id: 'alice', display: 'alice', role: 'admin' })
+    authenticatePrincipal.mockResolvedValue({ id: 'alice', display: 'alice', role: 'admin', kind: 'human' })
     await expect(harness({ [IS_ADMIN]: true }).run(bearer())).resolves.toBe(true)
   })
 
   it('admits a member on an unmarked route - member is the whole working surface', async () => {
-    authenticatePrincipal.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member' })
+    authenticatePrincipal.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member', kind: 'human' })
     await expect(harness().run(bearer())).resolves.toBe(true)
   })
 
   it('refuses a member BEFORE complaining about CSRF, so the error names the real reason', async () => {
-    resolvePrincipalById.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member' })
+    resolvePrincipalById.mockResolvedValue({ id: 'carol', display: 'carol', role: 'member', kind: 'human' })
     const noCsrf = { headers: { cookie: 'box_session=c' }, method: 'POST' }
     await expect(harness({ [IS_ADMIN]: true }).run(noCsrf)).rejects.toThrow(/admin only/)
   })
 
   it('still enforces CSRF for an admin on a cookie-authed mutation', async () => {
-    resolvePrincipalById.mockResolvedValue({ id: 'alice', display: 'alice', role: 'admin' })
+    resolvePrincipalById.mockResolvedValue({ id: 'alice', display: 'alice', role: 'admin', kind: 'human' })
     const noCsrf = { headers: { cookie: 'box_session=c' }, method: 'POST' }
     await expect(harness({ [IS_ADMIN]: true }).run(noCsrf)).rejects.toThrow(/CSRF/)
   })

@@ -27,8 +27,9 @@ Mail to the agent's address arrives in its Comms mailbox, shared team mailboxes 
 Resend posts `email.received` (metadata only) to `https://<relay>/hook/resend/<hook key>`. The relay
 hands it to the `resend` provider, which verifies the Svix signature and records
 `resend.email.received`. The powerup's listener stores the row as `fetching` and starts a fetch of
-`GET /emails/receiving/{id}` without holding the ack. Once stored, the worker routes it to the agent
-mailbox, a shared mailbox or `ignored`, decides `trusted` and, for the agent mailbox only, records
-`email.received`; a trigger filtered on `fields.trusted = true` wakes the agent, which reads the
+`GET /emails/receiving/{id}` without holding the ack. Once stored, the worker routes it to the first
+account addressed, a shared mailbox or `ignored`, decides `trusted` and, for an account's mailbox
+only, records `email.received` with the `account` and its `agent`; a trigger filtered on
+`fields.trusted = true` (and `fields.agent`) wakes the agent it names as `run_as`, which reads the
 message with `comms-read` and may answer with `comms-send` (still bound by the recipient allowlist
 and hourly cap).

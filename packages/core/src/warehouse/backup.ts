@@ -20,6 +20,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { boxJson } from '../box-config.js'
+import { captureAgentFiles, readAgentsSnapshot, stageAgentFiles, swapAgentFiles, writeAgentsSnapshot } from './agent-snapshot.js'
 import { instanceDir, instanceRelative, warehousePath } from '../io.js'
 import { withRead, withWrite } from './db.js'
 import {
@@ -88,8 +89,9 @@ const execFileAsync = promisify(execFile)
 /** Upload one file over a bucket object (`gsutil cp`). Async: a 100 MB warehouse copy takes over a
  *  minute, and a synchronous child process would stall every request for that long. Shared with
  *  the chat and artifacts backups. */
-export async function uploadFileToGcs(local: string, target: string): Promise<void> {
-  await execFileAsync('gsutil', ['cp', local, target], { maxBuffer: 16 * 1024 * 1024 })
+export async function uploadFileToGcs(local: string, target: string, metadata: Record<string, string> = {}): Promise<void> {
+  const headers = Object.entries(metadata).flatMap(([k, v]) => ['-h', `x-goog-meta-${k}:${v}`])
+  await execFileAsync('gsutil', [...headers, 'cp', local, target], { maxBuffer: 16 * 1024 * 1024 })
 }
 
 /**
@@ -146,10 +148,23 @@ export async function backupWarehouse(
   if (!existsSync(live)) throw new Error(`no warehouse at ${live}`)
   if (gs) assertGcsBucketReachable(gs)
 
-  const local = await withWrite((conn) => copyWarehouseUnderLock(conn, live, label))
+  // Read the agent files under the same lock as the copy, and publish the restore point only as a
+  // pair: a sidecar that cannot be written takes the database copy with it.
+  const { local, files } = await withWrite(async (conn) => ({ files: captureAgentFiles(), local: await copyWarehouseUnderLock(conn, live, label) }))
+  let agents: string
+  try {
+    agents = writeAgentsSnapshot(local.path, files)
+  } catch (error) {
+    rmSync(local.path, { force: true })
+    throw new Error(`backup abandoned: the agent files could not be written beside it: ${String((error as Error)?.message ?? error)}`, { cause: error })
+  }
   if (gs && snapshot) {
     try {
-      await uploadFileToGcs(local.path, snapshot)
+      // The agent files go up first under the restore point's own, never-overwritten name; the
+      // database's object then names that pair in its metadata. Recovery reads
+      // `restore-point` from the database object and fetches warehouse/agents/<name>.agents.json.
+      await uploadFileToGcs(agents, `${gs}/warehouse/agents/${local.name}.agents.json`)
+      await uploadFileToGcs(local.path, snapshot, { 'restore-point': local.name })
     } catch (error) {
       throw new Error(
         `local backup written to ${local.path}, but the upload to ${snapshot} failed: ${String((error as Error)?.message ?? error)}`,
@@ -166,7 +181,7 @@ export async function backupWarehouse(
     bucket,
     snapshot,
     dryRun,
-    summary: `backed up warehouse -> ${instanceRelative(local.path)} (${mb(local.bytes)})${where}${retention}`,
+    summary: `backed up warehouse -> ${instanceRelative(local.path)} (${mb(local.bytes)}) with the agent files${where}${retention}`,
     pruned,
   }
 }
@@ -239,31 +254,65 @@ async function stageRestore(from: RestorePoint, instance: string): Promise<strin
  * migrates it forward - but that step is memoized per process (`schemaReady` in schema.ts), so a
  * server that already baselined will not re-run it until restarted. The summary says so.
  */
-export async function restoreWarehouse(name: string): Promise<{ from: RestorePoint; parked: string | null; summary: string }> {
+export async function restoreWarehouse(
+  name: string,
+  opts: { keepAgentFiles?: boolean } = {},
+): Promise<{ from: RestorePoint; parked: string | null; summary: string }> {
   const instance = instanceDir()
   const live = warehousePath()
   const from = findRestorePoint(name, instance)
+  // Validated in full before anything live is touched.
+  const files = readAgentsSnapshot(from.path)
+  if (files === null && from.label !== 'seed' && !opts.keepAgentFiles) {
+    throw new Error(
+      `${from.name} carries no agent files (taken before they were backed up, or an interrupted backup). ` +
+        `Restore it with --keep-agent-files to keep data/config/agents/ as it is now, after checking those files match it.`,
+    )
+  }
   sweepStagedRestores(instance)
   const staged = await stageRestore(from, instance)
-  const hadWarehouse = existsSync(live)
-  let parked: RestorePoint | null = null
+  let stagedAgents: string | null = null
   try {
-    parked = await withWrite(async (conn) => {
-      const previous = hadWarehouse ? await copyWarehouseUnderLock(conn, live, 'pre-restore') : null
-      rmSync(`${live}.wal`, { force: true })
-      renameSync(staged, live)
-      return previous
-    })
+    stagedAgents = files ? stageAgentFiles(files) : null
   } catch (error) {
     rmSync(staged, { force: true })
     throw error
   }
+  const hadWarehouse = existsSync(live)
+  let parked: RestorePoint | null = null
+  let leftover: string | null = null
+  try {
+    parked = await withWrite(async (conn) => {
+      const previous = hadWarehouse ? await copyWarehouseUnderLock(conn, live, 'pre-restore') : null
+      if (previous) writeAgentsSnapshot(previous.path)
+      // Files first, then the database; a failed database swap puts the files back.
+      const swap = stagedAgents ? swapAgentFiles(stagedAgents, from.name) : null
+      try {
+        rmSync(`${live}.wal`, { force: true })
+        renameSync(staged, live)
+      } catch (error) {
+        swap?.undo()
+        throw error
+      }
+      leftover = swap?.commit() ?? null
+      return previous
+    })
+  } catch (error) {
+    rmSync(staged, { force: true })
+    if (stagedAgents) rmSync(stagedAgents, { recursive: true, force: true })
+    throw error
+  }
+  const agentFiles = files === null ? null : Object.keys(files).length
   const [{ tables }] = await withRead<{ tables: number }>(
     `SELECT count(*)::INTEGER AS tables FROM information_schema.tables WHERE table_schema = 'main'`,
   )
   const summary =
     `restored ${from.name} (${from.label}, ${mb(from.bytes)}, ${tables} tables) over ${live}` +
     (parked ? `; the previous warehouse is parked as ${instanceRelative(parked.path)}` : '; there was no previous warehouse to park') +
+    (agentFiles === null
+      ? '. The restore point carries no agent files; data/config/agents/ is as it was'
+      : `. data/config/agents/ restored (${agentFiles} file${agentFiles === 1 ? '' : 's'})`) +
+    (leftover ? `; the previous agent files could not be removed and are in ${instanceRelative(leftover)} (safe to delete)` : '') +
     '. Connections are ephemeral, so the next query reads the restored file. If its schema is older than ' +
     'the running code, ensureSchema() migrates it forward on the next boot: restart a long-lived server, ' +
     'because the schema step is memoized per process and will not re-run until then.'

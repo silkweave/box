@@ -8,4 +8,5 @@ A team wiki that agents keep current: what the team knows lives as linked markdo
 - Page, search, grep, graph, lint and status tools for any Box agent, with revision checks and every change logged in `log.md`
 - Keyword search out of the box, and search by meaning when the Box has an OpenAI key for embeddings
 - A Wiki section with the link graph, a page reader and editor, and a health view of structural findings with safe one-click fixes
+- A daily backup of the vault to local archives and, when the Box has a bucket, offsite
 - An agent skill that teaches any agent to read, file and repair the wiki by its conventions

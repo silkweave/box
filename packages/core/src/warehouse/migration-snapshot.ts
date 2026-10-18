@@ -1,6 +1,8 @@
+import { rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { MigrationConn } from './schema.js'
 import { copyWarehouseUnderLock, pruneBackupsQuietly } from './restore-points.js'
+import { writeAgentsSnapshot } from './agent-snapshot.js'
 
 /**
  * A `pre-migrate` backup under `<instance>/backups/`, taken while the caller HOLDS the warehouse
@@ -13,6 +15,12 @@ export async function snapshotBeforeMigration(conn: MigrationConn, source: strin
   let path: string
   try {
     path = (await copyWarehouseUnderLock(conn, source, 'pre-migrate')).path
+    try {
+      writeAgentsSnapshot(path)
+    } catch (error) {
+      rmSync(path, { force: true })
+      throw error
+    }
   } catch (error) {
     throw new Error(`pre-migration snapshot failed; schema was not changed: ${String((error as Error)?.message ?? error)}`, { cause: error })
   }

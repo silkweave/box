@@ -5,7 +5,7 @@ import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { SESSION_COOKIE, authenticatePrincipal, boxBrand, dataPath, findPathMount, pathMountSigninUrl, boxJson, clientIp, ensureBoxConfig, ensureSystemPrincipal, parseCookies, readUsers, rateLimit, repoRoot, resolvePrincipalById, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders, verifySession } from '@silkweave/box-core'
+import { SESSION_COOKIE, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, pathMountSigninUrl, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
 import { AppModule } from './app.module.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
@@ -47,13 +47,13 @@ async function bootstrap(): Promise<void> {
   // Validate merged configuration and lock the system identity before opening the warehouse.
   ensureBoxConfig()
 
-  // Seed the machine account before anything can reference it (the scheduler's attribution, the
-  // agent's seat in chat, alert delivery into rooms all assume the row). Insert-only and always a
-  // member, so this is safe on every boot. It also applies the schema, which is otherwise lazy.
+  // Seed the agent principals before anything can reference them (the scheduler's attribution, the
+  // agent's seat in chat, alert delivery into rooms all assume the row): upsert each configured
+  // agent, retire agent rows whose file is gone. It also applies the schema, which is otherwise lazy.
   // Deliberately NOT wrapped in a try: a Box that cannot write its own warehouse should fail here,
   // loudly, rather than at the first request.
   diagnostic('app', 'boot.schema.start')
-  await ensureSystemPrincipal()
+  await ensureAgentPrincipals()
   diagnostic('app', 'boot.schema.ready', { durationMs: Math.round(performance.now() - started) })
 
   diagnostic('app', 'boot.nest.start')
@@ -141,10 +141,7 @@ async function bootstrap(): Promise<void> {
       }
       const principal = viaBearer
         ? await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim())
-        : await (async () => {
-          const claims = verifySession(parseCookies(req.headers.cookie)[SESSION_COOKIE])
-          return claims ? resolvePrincipalById(claims.sub) : null
-        })()
+        : await resolveSessionPrincipal(req.headers.cookie)
       if (!principal) {
         const wantsHtml = (req.method === 'GET' || req.method === 'HEAD') && String(req.headers.accept ?? '').includes('text/html')
         if (wantsHtml && !viaBearer) {
@@ -166,6 +163,35 @@ async function bootstrap(): Promise<void> {
       res.statusCode = 500
       res.setHeader('Content-Type', 'text/plain; charset=utf-8')
       res.end('internal error')
+    })
+  })
+
+  // A connection's session endpoint (core port, packages/core/src/mcp-connections.ts):
+  // `/mcp/connections/<id>` serves one outside MCP server's tools under their upstream names to a
+  // server-owned agent session whose toolset grants it. The `mcp` recipe's relay answers it; without
+  // the recipe it is 404. Bearer only (an MCP client, never a browser), with the API rate limit; the
+  // body is already parsed above.
+  app.use((req: IncomingMessage & { body?: unknown }, res: ServerResponse, next: (err?: unknown) => void) => {
+    const path = (req.url ?? '/').split('?', 1)[0]
+    const id = mcpConnectionPathId(path)
+    if (id === null) return next()
+    const json = (status: number, body: unknown): void => {
+      res.statusCode = status
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify(body))
+    }
+    const directory = mcpConnections()
+    if (!directory) return json(404, { message: 'no MCP connections on this Box' })
+    void (async () => {
+      const authz = req.headers.authorization
+      if (typeof authz !== 'string' || !/^Bearer\s+/i.test(authz)) return json(401, { message: 'bearer token required' })
+      const principal = await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim())
+      if (!principal) return json(401, { message: 'invalid token' })
+      await directory.serve({ req, res, id, principal })
+    })().catch((err: unknown) => {
+      diagnostic('app', 'mcp-connection.error', { connection: id, error: errorKind(err) })
+      if (res.headersSent) { res.destroy(); return }
+      json(500, { message: 'internal error' })
     })
   })
 
@@ -221,8 +247,7 @@ async function bootstrap(): Promise<void> {
     const devGuard = createDevProxyGuard({
       scope: devSourceScope(repoRoot()),
       authenticate: async (req) => {
-        const claims = verifySession(parseCookies(req.headers.cookie)[SESSION_COOKIE])
-        return claims !== null && (await resolvePrincipalById(claims.sub)) !== null
+        return (await resolveSessionPrincipal(req.headers.cookie)) !== null
       },
       onRefuse: (req, verdict) => diagnostic('app', 'dev-proxy.refused', { verdict, url: req.url, ip: clientIp(req) }),
     })

@@ -167,9 +167,10 @@ export interface ViewStoreSpec<S extends BaseViewState> {
    * Where arriving on the bare board lands: at `path` with no preset in the URL (a sidebar entry, a
    * typed address, a bookmark), select `preset` instead of the one this browser used last. A URL
    * naming a preset - every preset click, a reload, a shared link - is untouched, and so is any other
-   * path the store is mounted on (an account's page). Skipped if the preset no longer exists.
+   * path the store is mounted on (an account's page). Skipped if the preset no longer exists. A
+   * store mounted on more than one board path gives one landing per path.
    */
-  landing?: { path: string; preset: string }
+  landing?: { path: string; preset: string } | { path: string; preset: string }[]
 }
 
 /**
@@ -313,7 +314,8 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
         }
         return
       }
-      const landing = spec.landing && pathname === spec.landing.path ? presets.find((v) => v.name === spec.landing!.preset) : undefined
+      const landingSpec = (spec.landing ? [spec.landing].flat() : []).find((l) => l.path === pathname)
+      const landing = landingSpec ? presets.find((v) => v.name === landingSpec.preset) : undefined
       if (landing) {
         if (restoringUrl === landing.name) return
         restoringUrl = landing.name

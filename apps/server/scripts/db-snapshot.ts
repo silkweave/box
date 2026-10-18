@@ -12,7 +12,9 @@
 //   box db snapshot [name]   copy data.db -> seeds/<name>.db (default name: baseline)
 //   box db backup            copy data.db -> backups/manual-<stamp>.db (+ GCS when configured)
 //   box db list             list every restore point with its time and size
-//   box db restore [name]    restore a seed or a backup over data.db (previous state is parked)
+//   box db restore [name] [--keep-agent-files]
+//                            restore a seed or a backup over data.db and its agent files (previous
+//                            state is parked); --keep-agent-files restores a backup that has none
 
 import { copyFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -25,6 +27,7 @@ import {
   warehousePath,
   withWrite,
 } from '@silkweave/box-core'
+import { writeAgentsSnapshot } from '@silkweave/box-core/warehouse/agent-snapshot'
 import { commandError, commandHeader, commandLine, commandSuccess } from '../../../packages/cli/src/command-ui.js'
 
 const NAME = /^[a-z0-9][a-z0-9-]*$/
@@ -34,7 +37,7 @@ function mb(bytes: number): string {
 }
 
 async function main(): Promise<void> {
-  const [cmd, nameArg] = process.argv.slice(2)
+  const [cmd, nameArg] = process.argv.slice(2).filter((a) => !a.startsWith('--'))
   const db = warehousePath()
 
   if (cmd === 'list') {
@@ -63,7 +66,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'restore') {
     const name = nameArg ?? 'baseline'
-    const result = await restoreWarehouse(name)
+    const result = await restoreWarehouse(name, { keepAgentFiles: process.argv.includes('--keep-agent-files') })
     commandHeader('db restore')
     commandSuccess(result.summary)
     return
@@ -89,6 +92,7 @@ async function main(): Promise<void> {
       rmSync(`${seed}.wal`, { force: true })
       copyFileSync(db, seed)
       if (existsSync(`${db}.wal`)) copyFileSync(`${db}.wal`, `${seed}.wal`)
+      writeAgentsSnapshot(seed)
     })
     commandHeader('db snapshot')
     commandSuccess(`Saved "${name}" to ${instanceRelative(seed)} · ${mb(statSync(seed).size)} MB`)
@@ -96,7 +100,7 @@ async function main(): Promise<void> {
     return
   }
 
-  commandError('Usage: box db snapshot [name] | box db backup | box db list | box db restore [name]')
+  commandError('Usage: box db snapshot [name] | box db backup | box db list | box db restore [name] [--keep-agent-files]')
   process.exit(1)
 }
 

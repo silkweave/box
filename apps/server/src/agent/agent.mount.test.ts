@@ -1,14 +1,14 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-type Principal = { id: string; display: string; role: 'admin' | 'member' }
+type Principal = { id: string; display: string; role: 'admin' | 'member'; kind: 'human' | 'agent' }
 type Forwarded = { url: string; body: Record<string, unknown>; auth?: Record<string, unknown> }
 
 const state = (() => {
   const principals = new Map<string, Principal>([
-    ['alice-token', { id: 'alice', display: 'Alice', role: 'admin' }],
-    ['bob-token', { id: 'bob', display: 'Bob', role: 'admin' }],
-    ['member-token', { id: 'member', display: 'Member', role: 'member' }],
+    ['alice-token', { id: 'alice', display: 'Alice', role: 'admin', kind: 'human' }],
+    ['bob-token', { id: 'bob', display: 'Bob', role: 'admin', kind: 'human' }],
+    ['member-token', { id: 'member', display: 'Member', role: 'member', kind: 'human' }],
   ])
   const forwarded: Forwarded[] = []
   let holdNextResponse = false

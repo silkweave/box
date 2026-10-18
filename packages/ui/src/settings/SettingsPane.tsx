@@ -9,9 +9,10 @@
 // and what a field edits stay with the section that owns them.
 
 import * as React from 'react'
-import { ChevronRight, X } from 'lucide-react'
+import { ChevronRight, Info, X } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 import { InlineCrumbProvider, type InlineCrumb, type InlineCrumbHost } from '../components/InlineDialog.tsx'
+import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.tsx'
 
 /** The horizontal gutter every settings surface shares: title bar, intro, list rows, footer. */
 export const SETTINGS_GUTTER = 'px-4 md:px-6'
@@ -45,6 +46,41 @@ function usePublishFooter(host: FooterHost | null, footer: SettingsFooter | null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [host, footer === null, ...deps])
   React.useEffect(() => (host ? () => host(key, null) : undefined), [host, key])
+}
+
+/** The title bar's info slot: one short explanation of the section, behind an info icon. */
+type InfoHost = (key: object, info: React.ReactNode | null) => void
+const SettingsInfoContext = React.createContext<InfoHost | null>(null)
+
+/**
+ * Publish a section's explanation to the pane's title bar while mounted: it shows as an info icon
+ * beside the title (or the breadcrumb) that opens a short popover. Outside a pane it renders the
+ * icon in place. Pass what used to be the intro line; keep it to a sentence or two.
+ */
+export function SettingsInfo({ children }: { children: React.ReactNode }) {
+  const host = React.useContext(SettingsInfoContext)
+  const key = React.useRef({}).current
+  React.useEffect(() => {
+    if (!host) return
+    host(key, children)
+    return () => host(key, null)
+  }, [host, key, children])
+  return host ? null : <SettingsInfoButton>{children}</SettingsInfoButton>
+}
+
+function SettingsInfoButton({ children }: { children: React.ReactNode }) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        aria-label='About this section'
+        className='inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent-tint hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'>
+        <Info className='size-4' />
+      </PopoverTrigger>
+      <PopoverContent align='start' className='w-80 text-body-sm text-text'>
+        {children}
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 /**
@@ -91,6 +127,14 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
   const [edges, setEdges] = React.useState({ above: false, below: false })
   const footers = React.useRef(new Map<object, SettingsFooter>())
   const [, setFooterVersion] = React.useState(0)
+  // The newest published info wins, like footers: a section's own note, or an editor's over it.
+  const infos = React.useRef(new Map<object, React.ReactNode>())
+  const [info, setInfo] = React.useState<React.ReactNode>(null)
+  const publishInfo = React.useCallback<InfoHost>((key, next) => {
+    if (next === null) infos.current.delete(key)
+    else infos.current.set(key, next)
+    setInfo([...infos.current.values()].at(-1) ?? null)
+  }, [])
   const publish = React.useCallback<FooterHost>((key, next) => {
     if (next === null) footers.current.delete(key)
     else footers.current.set(key, next)
@@ -139,9 +183,10 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
 
   return (
     <SettingsFooterContext.Provider value={publish}>
+      <SettingsInfoContext.Provider value={publishInfo}>
       <InlineCrumbProvider host={crumbHost}>
       <div className='flex h-full min-h-0 flex-col overflow-hidden bg-surface'>
-        <header className={cn('relative z-10 flex h-16 shrink-0 items-center gap-4 bg-surface', SETTINGS_GUTTER)}>
+        <header className={cn('relative z-10 flex h-16 shrink-0 items-center gap-2 bg-surface', SETTINGS_GUTTER)}>
           {crumb ? (
             <nav aria-label='Breadcrumb' className='min-w-0'>
               <ol className='flex min-w-0 items-center gap-1.5 font-serif text-lg'>
@@ -169,6 +214,7 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
           ) : (
             <h1 className='font-serif text-lg text-text'>{title}</h1>
           )}
+          {info != null && <SettingsInfoButton>{info}</SettingsInfoButton>}
           <button
             type='button'
             aria-label='Close settings'
@@ -184,6 +230,7 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
         {typeof footer === 'function' ? footer(edges.below) : footer}
       </div>
       </InlineCrumbProvider>
+      </SettingsInfoContext.Provider>
     </SettingsFooterContext.Provider>
   )
 }
@@ -279,9 +326,11 @@ export function SettingsListHeader({ className, children }: { className?: string
  * rows and its header or create row line up. With `onOpen` the whole row is a button that opens
  * the item; controls inside it should stop propagation.
  */
-export function SettingsListRow({ onOpen, label, className, children }: { onOpen?: () => void; label?: string; className?: string; children: React.ReactNode }) {
+export function SettingsListRow({ onOpen, label, className, style, ref, children }: { onOpen?: () => void; label?: string; className?: string; style?: React.CSSProperties; ref?: React.Ref<HTMLLIElement>; children: React.ReactNode }) {
   return (
     <li
+      ref={ref}
+      style={style}
       role={onOpen ? 'button' : undefined}
       tabIndex={onOpen ? 0 : undefined}
       aria-label={label}

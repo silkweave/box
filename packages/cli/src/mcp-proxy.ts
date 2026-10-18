@@ -8,6 +8,7 @@
 //   Configure mcp.url and mcp.token in box.local.json.
 //
 // Requires the server running: box dev
+// Requests carry `x-box-surface: cli`, so the mcp recipe's audit log tells CLI calls from MCP ones.
 
 import { silkweave } from '@silkweave/core'
 import { cliProxy } from '@silkweave/mcp/cli-proxy'
@@ -35,5 +36,5 @@ const retryingFetch: typeof fetch = async (input, init) => {
 }
 
 await silkweave({ name: 'box', description: 'Silkweave Box actions over MCP', version: '0.1.0' })
-  .adapter(cliProxy({ url, fetch: retryingFetch, ...(token && { headers: { authorization: `Bearer ${token}` } }) }))
+  .adapter(cliProxy({ url, fetch: retryingFetch, headers: { 'x-box-surface': 'cli', ...(token && { authorization: `Bearer ${token}` }) } }))
   .start()

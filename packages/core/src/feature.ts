@@ -14,6 +14,10 @@ export interface CoreFeature {
   dependsOn?: readonly string[]
   /** Tables this feature OWNS. Baselined with CREATE TABLE IF NOT EXISTS on every boot. */
   models: readonly ModelSpec[]
+  /** Tables this feature once owned and its own migrations dropped or reshaped (a renamed
+   *  feature's old tables, a model it retired). Never baselined; they count as its own only for
+   *  the migration ownership check, so dropping them is not mistaken for a cross-feature read. */
+  retiredTables?: readonly string[]
   /** Idempotent DDL re-run on every boot AFTER every CREATE TABLE (views, indexes). */
   baseline?: readonly string[]
   /** Append-only, one ledger row each, keyed `${id}:${name}`. Starts empty in the template. */

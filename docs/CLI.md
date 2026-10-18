@@ -124,15 +124,18 @@ refused in `box dev`, where every page already comes from Vite.
 
 Do not stop, signal or relaunch `box dev` from a Builder turn, and do not start a second Box against
 the same instance. If `box app status` or `box app restart` cannot reach the supervisor, stop and ask
-the host operator to restore it. A supervisor upgraded from a version without application control
-needs one host-operated restart before these commands become available; the same holds for the
-frontend fields and `--frontend` on a supervisor older than them (status then says the frontend
+the host operator to restore it. A supervisor started from older source than the checkout may lack
+newer control operations until the host operator restarts it once (status then says the frontend
 state is unknown).
 
 `box auth login <id>` creates a compact, single-use sign-in URL and offers five seconds to press
 Enter and open it in the default browser. It exits without opening when the countdown reaches zero;
 redirected and non-interactive output never waits. Sign-in URLs use `/login/<grant>`. The current
 `bl2` grant is typically about 50 characters, while unexpired `bl1` grants remain compatible.
+
+`box auth replace <old> <new> [--name "Name"]` changes an agent's id by replacement on a stopped
+Box: the new agent takes over the old one's configuration and the old one retires with its history
+kept. See [AUTH.md](AUTH.md#agent-identity-and-role).
 
 Both development and production starts enter the Box supervisor. The supervisor owns the stable
 Builder/recovery surface at **/builder**, its **/builder-assets/** snapshot assets and the
@@ -199,7 +202,7 @@ restarts the application, `f` restarts the Vite frontend, `c` clears the buffer,
 shuts down cleanly. Vite HMR remains automatic and does not need a shortcut.
 Use `bun run verify` or `packages/cli/bin/box verify` before installing the shim.
 
-See [BUN.md](BUN.md) for the runtime migration. Subprocess cancellation and live rendering are
+See [BUN.md](BUN.md) for the runtime. Subprocess cancellation and live rendering are
 exercised on macOS/POSIX. Windows uses `taskkill`; Windows behavior has not been field-tested.
 
 `box builder refresh` rebuilds the saved Builder UI through the running local supervisor. It keeps

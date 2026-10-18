@@ -38,6 +38,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@tiptap/core": "^3.27.1",
+    "@tiptap/extension-image": "^3.27.1",
     "@tiptap/extension-list": "^3.27.1",
     "@tiptap/extension-table": "^3.27.1",
     "@tiptap/extensions": "^3.27.1",
@@ -68,6 +69,7 @@
     "@storybook/react-vite": "^10.6.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tiptap/core": "^3.31.3",
+    "@tiptap/extension-image": "^3.31.3",
     "@tiptap/extension-list": "^3.31.3",
     "@tiptap/extension-table": "^3.31.3",
     "@tiptap/extensions": "^3.31.3",
@@ -98,6 +100,9 @@
       "optional": true
     },
     "@tiptap/core": {
+      "optional": true
+    },
+    "@tiptap/extension-image": {
       "optional": true
     },
     "@tiptap/extension-list": {

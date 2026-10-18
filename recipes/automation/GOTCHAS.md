@@ -16,11 +16,10 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **Imported triggers have no owner.** The first admin to edit one becomes its owner.
 - **Cron is evaluated in the trigger's zone.** Empty means the server's zone, which on a launchd
   host is the machine's; set the zone explicitly when the team and the host differ.
-- **`service-restart` restarts nothing by itself, and this template ships no supervisor.** The
-  implementation is `process.exit(86)`; something outside the process has to respawn it (a launchd
-  KeepAlive agent, a systemd `Restart=on-failure`, a container policy). The docstring named a
-  launchd plist that does not exist here; corrected 2026-09-13. `RestartServerButton` still talks
-  about `logs/server.log`, which is whatever the supervisor redirects to.
+- **`service-restart` needs the Box supervisor.** The server drains, then exits with code 86, and
+  the supervisor that `box dev` and `box start` run starts a fresh one. Only code 86 from a server
+  that finished booting is a restart request: a crash, or an exit during boot, stays `failed` until
+  `box app restart`. A server run without the supervisor is not respawned.
 - **`restart` refuses while an agent session is mid-turn**, returning `ok:false` with the session
   ids. That refusal must be surfaced, not polled through - the UI would otherwise find the
   un-restarted server answering instantly and reload as if it had worked. `force: true` overrides

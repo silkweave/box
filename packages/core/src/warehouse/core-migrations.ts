@@ -5,6 +5,7 @@
 // The 28 migrations this inherited were deleted at the split (each feature's ledger restarts at its own 001),
 // so this list started empty. The first entries arrived with docs/core/AUTH.md on 2026-09-13.
 
+import { systemUserId } from '../box-config.js'
 import type { Migration } from './schema.js'
 
 export const CORE_MIGRATIONS: readonly Migration[] = [
@@ -65,5 +66,32 @@ export const CORE_MIGRATIONS: readonly Migration[] = [
     // previous rule (Claude first among the mapped engines), so existing rows need no backfill.
     name: '006-users-agent-profile',
     statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS agent_profile VARCHAR`],
+  },
+  {
+    // Multiple agents (2026-10-11): `kind` is the durable record that a row is an agent, so a
+    // deleted agent file never turns an agent into a "human" with a working token. Nullable for
+    // the reason in 001 (DuckDB adds no constraint by ALTER); reads narrow anything but 'agent'
+    // to 'human'. The backfill marks the locked system id only: every other existing row stays
+    // human, and converting one is a deliberate transition script. The id is read in `run`, not
+    // baked into the SQL, so the checksum does not follow config (the 001 lesson); agentIdentity
+    // is bound by the identity lock before any migration runs.
+    name: '007-users-kind',
+    statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS kind VARCHAR DEFAULT 'human'`],
+    run: async (conn) => {
+      await conn.run(`UPDATE users SET kind = 'agent' WHERE id = ?`, [systemUserId()])
+    },
+  },
+  {
+    // Phone identity (2026-10-13): a person's number in E.164, so a channel that sees numbers
+    // (WhatsApp) can tell a team member from a client. Nullable, no backfill.
+    name: '008-users-phone',
+    statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR`],
+  },
+  {
+    // Work permissions (2026-10-14): what a member's Work session may touch, as a JSON object
+    // (work-access.ts). Nullable, no backfill: NULL reads as the defaults, which are exactly the
+    // capabilities every member had before minus the checkout, so no row needs a value.
+    name: '009-users-work',
+    statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS work JSON`],
   },
 ]

@@ -18,7 +18,7 @@ does not establish that dependencies are current.
 
 ## Runtime checks
 
-Load changed routes in Agent Chrome (the `agent-chrome` MCP server). Typechecking cannot detect every module-scope
+Load changed routes in Shuttle (the `shuttle` MCP server). Typechecking cannot detect every module-scope
 registration cycle. Use an independent scratch checkout with its own data, configuration and
 free ports. Keep automation, chat agents and relay disabled unless the test explicitly needs them.
 Do not point two servers at one instance or copy live credentials into logs.

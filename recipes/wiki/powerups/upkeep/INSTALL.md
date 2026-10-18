@@ -10,7 +10,7 @@ decisions.
 
 `features/wiki/server/upkeep/` exists, `features/wiki/server/wiki/wiki.module.ts` lists
 `WikiUpkeepController` and `WikiUpkeepService`, and `features/wiki/core/manifest.ts` sets
-`actions: WIKI_UPKEEP_ACTIONS`. On a running Box, `box wiki-status` reports `powerups.upkeep: true`,
+`actions: [WIKI_BACKUP_ACTION, ...WIKI_UPKEEP_ACTIONS]`. On a running Box, `box wiki-status` reports `powerups.upkeep: true`,
 Wiki > Health shows the Maintenance history (not the powerup note), and `box triggers-list` lists
 two time triggers whose `action_id` is `wiki-sweep-daily` and `wiki-sweep-weekly`, both `valid`.
 `box.json` `recipes.wiki.powerups` lists `upkeep` once it was verified. Source present with
@@ -58,7 +58,7 @@ connects it in Settings > Profile or the Users detail. Never copy a token by han
 2. **Wire them into the base recipe.**
    - `features/wiki/core/index.ts`: `export * as wikiUpkeep from './upkeep/index.js'`.
    - `features/wiki/core/manifest.ts`: import `WIKI_UPKEEP_ACTIONS` from `./upkeep/actions.js` and
-     set `actions: WIKI_UPKEEP_ACTIONS`.
+     spread it after the base's action: `actions: [WIKI_BACKUP_ACTION, ...WIKI_UPKEEP_ACTIONS]`.
    - `features/wiki/server/wiki/wiki.module.ts`: import `WikiUpkeepController` from
      `../upkeep/upkeep.controller.js` and `WikiUpkeepService` from `../upkeep/upkeep.service.js`;
      add `WikiUpkeepController` to `controllers` and `WikiUpkeepService` to `providers`.
@@ -119,8 +119,8 @@ connects it in Settings > Profile or the Users detail. Never copy a token by han
 
 1. Run `box verify`, then boot a disposable instance (background work off) and load `/wiki/health`
    and Settings > Wiki.
-2. `box wiki-status`: `powerups.upkeep` is `true`. Settings > Wiki shows Upkeep with a check mark and
-   the Update, Daily sweep and Weekly sweep prompt fields.
+2. `box wiki-status`: `powerups.upkeep` is `true`. Settings > Wiki shows the Update, Daily sweep and
+   Weekly sweep prompt fields.
 3. `box triggers-list`: both triggers are `valid`, with the expected `nextFire`.
 4. An update: `box wiki-update` with a short real note (`--title` optional). It returns the record
    at once with status `received`. Follow it with `box wiki-update-get --id <id>` until it is
@@ -141,8 +141,8 @@ connects it in Settings > Profile or the Users detail. Never copy a token by han
 ## Remove
 
 1. Delete the two sweep triggers (`box trigger-delete`); afterwards they would be listed invalid.
-2. Remove the wiring from step 2: the `wikiUpkeep` export, the `actions` line and its import in
-   the manifest, the two module entries, and `UpkeepHistory` in `WikiHealthView.tsx` (the
+2. Remove the wiring from step 2: the `wikiUpkeep` export, the `WIKI_UPKEEP_ACTIONS` spread and its
+   import in the manifest (`actions: [WIKI_BACKUP_ACTION]` stays), the two module entries, and `UpkeepHistory` in `WikiHealthView.tsx` (the
    Maintenance section shows the powerup note again).
 3. Delete `features/wiki/core/upkeep/`, `features/wiki/server/upkeep/` and
    `features/wiki/web/upkeep/`.

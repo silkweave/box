@@ -39,5 +39,7 @@
     "../../features/*/web/**/*.tsx",
     "../../features/*/toolbar/**/*.ts",
     "../../features/*/toolbar/**/*.tsx"
-  ]
+  ],
+  // Feature web tests run under Bun (`test:web`), like apps/web/tests, which this config leaves out too.
+  "exclude": ["../../features/*/web/**/*.test.ts", "../../features/*/web/**/*.test.tsx"]
 }

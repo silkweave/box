@@ -177,7 +177,9 @@ describe('on disk', () => {
     // Two backups in one process get distinct names and both survive retention (inside 24h).
     const second = await backupWarehouse({ label: 'manual' })
     expect(second.local!.name).not.toBe(result.local!.name)
-    expect(files('backups')).toHaveLength(2)
+    expect(files('backups').filter((f) => f.endsWith('.db'))).toHaveLength(2)
+    // Each restore point carries the agent files (none here: an empty map) beside it.
+    expect(files('backups').filter((f) => f.endsWith('.agents.json'))).toHaveLength(2)
   })
 
   it('a dry run writes nothing and a missing warehouse is refused', async () => {
@@ -211,7 +213,8 @@ describe('on disk', () => {
     expect(await ids()).toEqual([1, 2])
     expect(second.from.label).toBe('pre-restore')
     expect(second.parked).not.toBe(first.parked)
-    expect(files('backups')).toHaveLength(3)
+    expect(files('backups').filter((f) => f.endsWith('.db'))).toHaveLength(3)
+    expect(files('backups').filter((f) => f.endsWith('.agents.json'))).toHaveLength(3)
     // The live file keeps working as a writer after two swaps.
     await withWrite((c) => c.run('INSERT INTO t VALUES (9)'))
     expect(await ids()).toEqual([1, 2, 9])
@@ -262,7 +265,8 @@ describe('on disk', () => {
     const path = await withWrite((c) => snapshotBeforeMigration(c as unknown as MigrationConn, warehousePath()))
     expect(path.startsWith(join(dir, 'backups', 'pre-migrate-'))).toBe(true)
     expect(await rowsIn(path, 'SELECT id FROM t')).toEqual([{ id: 1 }])
-    expect(files('backups')).toEqual([basename(path)]) // stale and older fell to retention: the fresh one is the label's newest
+    // stale and older fell to retention: the fresh one is the label's newest, with its agent files.
+    expect(files('backups')).toEqual([basename(path).replace(/\.db$/, '.agents.json'), basename(path)])
     expect(files('backups')).not.toContain(`${stale}.db.wal`)
     expect(files('backups')).not.toContain(`${older}.db`)
   })

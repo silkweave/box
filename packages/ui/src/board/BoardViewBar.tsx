@@ -228,30 +228,32 @@ export function BoardViewBar({
       {/* Two or three options, so it is a segmented control rather than a select - and it sits with
           the preset controls because the layout IS part of what a preset stores. Icon-only: a list
           and a board are shapes everybody already reads at a glance, and the title names the rest. */}
-      <div
-        role='radiogroup'
-        aria-label='Layout'
-        className='inline-flex h-7 items-center rounded-md border border-border bg-bg p-0.5'>
-        {spec.layouts.map((l) => {
-          const on = value.layout === l.value
-          return (
-            <button
-              key={l.value}
-              type='button'
-              role='radio'
-              aria-checked={on}
-              onClick={() => onChange({ layout: l.value })}
-              aria-label={l.label}
-              title={l.label}
-              className={cn(
-                'inline-flex size-6 items-center justify-center rounded transition-colors',
-                on ? 'bg-accent-tint text-accent' : 'text-muted-foreground hover:text-text',
-              )}>
-              <l.icon className='size-3.5' />
-            </button>
-          )
-        })}
-      </div>
+      {spec.layouts.length > 1 && (
+        <div
+          role='radiogroup'
+          aria-label='Layout'
+          className='inline-flex h-7 items-center rounded-md border border-border bg-bg p-0.5'>
+          {spec.layouts.map((l) => {
+            const on = value.layout === l.value
+            return (
+              <button
+                key={l.value}
+                type='button'
+                role='radio'
+                aria-checked={on}
+                onClick={() => onChange({ layout: l.value })}
+                aria-label={l.label}
+                title={l.label}
+                className={cn(
+                  'inline-flex size-6 items-center justify-center rounded transition-colors',
+                  on ? 'bg-accent-tint text-accent' : 'text-muted-foreground hover:text-text',
+                )}>
+                <l.icon className='size-3.5' />
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className='relative'>
         <Search className='pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground' />

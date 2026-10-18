@@ -3,7 +3,7 @@ import { Pencil, Plus, StickyNote, Trash2, X } from 'lucide-react'
 import type { SignalPointRow, SignalPointsPayload, Signal } from '../../types.ts'
 import { fetchSignalPoints, removeSignalPoint, saveSignalPoint, saveSignalPoints } from '../lib/useSignalsData.ts'
 import { formatBucket, formatNumber, relativeTime } from '../../lib/format.ts'
-import { UserChip, Button, DateInput, Popover, PopoverContent, PopoverTrigger } from '@silkweave/box-ui'
+import { UserChip, Button, DateInput, Popover, PopoverContent, PopoverTrigger, todayUtc } from '@silkweave/box-ui'
 import { cn } from '@/lib/utils'
 
 const inputCls =
@@ -247,7 +247,7 @@ function PointsTable({
                 value={addDate}
                 onChange={setAddDate}
                 ariaLabel='Point date (UTC)'
-                utc
+                today={todayUtc()}
               />
               {hourly && (
                 <input

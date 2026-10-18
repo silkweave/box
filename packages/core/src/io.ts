@@ -41,15 +41,17 @@ export function instanceDir(): string {
 export function configRoot(): string { return override ?? repoRoot() }
 
 /**
- * The checkout root, for reaching the LIVE instance data. Under Vitest it refuses: a test that has not
- * redirected with setInstanceDir would read and write the real Box. That happened when a feature's
- * tests ran from a config that loaded a second copy of core: setInstanceDir landed on one copy, the
- * code under test used the other, and the run migrated and overwrote a production warehouse.
+ * The checkout root, for reaching the LIVE instance data. Under a test runner it refuses: a test that
+ * has not redirected with setInstanceDir would read and write the real Box. That happened when a
+ * feature's tests ran from a config that loaded a second copy of core (setInstanceDir landed on one
+ * copy, the code under test used the other), and when feature core tests ran under `bun test`, which
+ * sets no VITEST: both runs migrated and overwrote a production warehouse. Vitest sets VITEST and
+ * `bun test` sets NODE_ENV=test; nothing that serves a Box runs with either.
  */
 function liveRoot(): string {
-  if (process.env.VITEST) {
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') {
     throw new Error(
-      'Refusing to use the live Box instance under Vitest: call setInstanceDir() from ' +
+      'Refusing to use the live Box instance under a test runner: call setInstanceDir() from ' +
         '@silkweave/box-core/testing first, and run feature tests through packages/core or apps/server ' +
         'so every core import resolves to one module (docs/GOTCHAS.md).',
     )

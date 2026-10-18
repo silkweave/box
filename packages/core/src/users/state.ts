@@ -7,11 +7,13 @@
 import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
 import { readRecord, readRecords, upsertRecord } from '../warehouse/model.js'
 import { USERS } from '../warehouse/core-models.js'
-import { type User, type UserInput, type UserRole, type UserStatus } from './types.js'
+import { type User, type UserInput, type UserKind, type UserRole, type UserStatus } from './types.js'
 import { systemUserId, agentIdentity } from '../box-config.js'
+import { agentConfig, isConfiguredAgent } from '../agents.js'
 import { runUserCleanups } from './cleanup.js'
 import { agentProfileMapFor } from '../agent-profiles.js'
 import { rememberAgentDefault, forgetAgentDefault } from '../agent-defaults.js'
+import { normalizeWorkAccess } from '../work-access.js'
 
 // Re-export the lazy identity lookup for existing user-directory consumers.
 export { systemUserId } from '../box-config.js'
@@ -30,6 +32,7 @@ interface UserRecord {
   role: string
   tailscale_login: string | null
   email: string | null
+  phone: string | null
   channels: Record<string, string> | null
   token_ciphertext: string | null
   token_issued_at: string | null
@@ -39,26 +42,47 @@ interface UserRecord {
    *  Never surfaced to a caller - toUser() drops it, like the token columns. */
   link_watermark: number | null
   agent_profile: string | null
+  /** Work capabilities as stored (JSON); NULL on a row core:009 added the column to. */
+  work: Record<string, unknown> | null
+  /** 'human' | 'agent'; NULL on a row core:007 added the column to without a default reaching it. */
+  kind: string | null
   created_at: string
   updated_at: string
   created_by: string | null
   updated_by: string | null
 }
 
+/** A stored kind, narrowed: anything but exactly 'agent' is a human (core:007's column is nullable). */
+export const kindOf = (v: string | null | undefined): UserKind => (v === 'agent' ? 'agent' : 'human')
+
+/** The role config gives an agent row (box.json for the system principal, else its file), or null
+ *  when its config is missing or invalid: the stored role is then for display only. */
+function configuredRole(id: string): UserRole | null {
+  try {
+    return agentConfig(id)?.role ?? null
+  } catch {
+    return null
+  }
+}
+
 function toUser(r: UserRecord): User {
+  const kind = kindOf(r.kind)
   return {
     id: r.id,
     first_name: r.first_name,
     last_name: r.last_name,
     nickname: r.nickname,
     email: r.email,
+    phone: r.phone ?? null,
     image: r.image,
     color: r.color,
     status: (r.status || 'active') as UserStatus,
-    role: r.id === systemUserId() ? agentIdentity().role : (r.role || 'member') as UserRole,
+    role: r.id === systemUserId() ? agentIdentity().role : (kind === 'agent' && configuredRole(r.id)) || (r.role === 'admin' ? 'admin' : 'member'),
+    kind,
     tailscale_login: r.tailscale_login,
     channels: r.channels ?? {}, // malformed JSON degrades to no handles (the layer parses to null)
     agent_profile: r.agent_profile ?? null,
+    work: normalizeWorkAccess(r.work),
     has_token: r.token_ciphertext != null,
     sort: r.sort,
     created_at: r.created_at,
@@ -92,9 +116,9 @@ export async function readUser(id: string): Promise<User | null> {
   return rec ? toUser(rec) : null
 }
 
-/** Whether the directory contains a person rather than only the configured machine principal. */
-export function hasHumanUser(users: readonly Pick<User, 'id'>[], machineId = systemUserId()): boolean {
-  return users.some(user => user.id !== machineId)
+/** Whether the directory contains a person rather than only agents. */
+export function hasHumanUser(users: readonly Pick<User, 'id' | 'kind'>[], machineId = systemUserId()): boolean {
+  return users.some(user => user.kind !== 'agent' && user.id !== machineId)
 }
 
 /**
@@ -117,6 +141,29 @@ export async function assertKnownActor(actor: string): Promise<void> {
  * be a valid slug. `channels` (channel → handle) lives here too - the users table is the source of
  * truth for per-person presence.
  */
+/** A phone number as an identity: E.164 (`+4366012345678`), accepting spaces, dots, dashes,
+ *  brackets and a `00` prefix; null when blank. Throws on anything else. */
+export function normalizePhone(phone: string | null | undefined): string | null {
+  const typed = (phone ?? '').replace(/[\s().-]/g, '')
+  if (!typed) return null
+  const e164 = typed.startsWith('00') ? `+${typed.slice(2)}` : typed
+  if (!/^\+[1-9]\d{6,14}$/.test(e164)) throw new Error(`phone "${phone}" is not a number in international form (+4366012345678)`)
+  return e164
+}
+
+/** The user whose phone is `phone` (any typed form), or null. */
+export async function readUserByPhone(phone: string): Promise<User | null> {
+  let value: string | null
+  try {
+    value = normalizePhone(phone)
+  } catch {
+    return null
+  }
+  if (!value) return null
+  const rows = await withRead<{ id: string }>(`SELECT id FROM users WHERE phone = ? LIMIT 1`, [value])
+  return rows[0] ? readUser(rows[0].id) : null
+}
+
 /** An email as an identity: trimmed and lowercased, `null` when blank. */
 export function normalizeEmail(email: string | null | undefined): string | null {
   const value = email?.trim().toLowerCase()
@@ -136,12 +183,28 @@ export async function readUserByEmail(email: string): Promise<User | null> {
   return rows[0] ? readUser(rows[0].id) : null
 }
 
-export async function upsertUser(input: UserInput): Promise<User> {
+/**
+ * `opts.kind` is boot reconciliation's alone (auth/bootstrap.ts): no request reaches it, so a row's
+ * kind is never a field a caller can send. Without it a new row is human and an existing one keeps
+ * its kind.
+ */
+export async function upsertUser(input: UserInput, opts: { kind?: UserKind } = {}): Promise<User> {
   if (!SLUG_SEG.test(input.id)) throw new Error(`invalid user id "${input.id}" (use a-z, 0-9, -)`)
   // Read prev as the FULL record (not the User shape) so the {prev} merge keeps the token columns
   // intact - the public User only carries has_token.
   const prev = await readRecord<UserRecord>(USERS, { id: input.id })
   const prevUser = prev ? toUser(prev) : null
+  // The locked system id is an agent however its row comes to exist; anyone else starts human.
+  const kind: UserKind = opts.kind ?? (input.id === systemUserId() ? 'agent' : (prevUser?.kind ?? 'human'))
+  // An agent's file reserves its id: a person created under it would make the next boot refuse.
+  if (!prev && kind === 'human' && isConfiguredAgent(input.id)) {
+    throw new Error(`"${input.id}" is an agent id (data/config/agents/${input.id}.md); choose another id`)
+  }
+  // Config owns an agent's role: box.json for the system principal, its file for the others.
+  if (kind === 'agent' && input.role !== undefined && opts.kind === undefined && input.id !== systemUserId()) {
+    const configured = configuredRole(input.id)
+    if (input.role !== configured) throw new Error(`the role of agent "${input.id}" is controlled by data/config/agents/${input.id}.md`)
+  }
   const channels =
     input.channels !== undefined
       ? Object.fromEntries(Object.entries(input.channels).filter(([, v]) => v.trim()))
@@ -177,6 +240,16 @@ export async function upsertUser(input: UserInput): Promise<User> {
     ])
     if (clash[0]) throw new Error(`email "${email}" already belongs to user "${clash[0].id}"`)
   }
+  const phone = input.phone !== undefined ? normalizePhone(input.phone) : (prevUser?.phone ?? null)
+  if (phone && phone !== prevUser?.phone) {
+    const clash = await withRead<{ id: string }>(`SELECT id FROM users WHERE phone = ? AND id <> ? LIMIT 1`, [phone, input.id])
+    if (clash[0]) throw new Error(`phone "${phone}" already belongs to user "${clash[0].id}"`)
+  }
+  // A partial `work` merges over the stored value and is stored complete, so a later reader never
+  // depends on the defaults of its day. The controller keeps it admin-only.
+  const work = input.work !== undefined
+    ? normalizeWorkAccess({ ...prevUser?.work, ...input.work })
+    : (prev?.work ?? null)
   const rec = await upsertRecord<UserRecord>(
     USERS,
     {
@@ -185,6 +258,7 @@ export async function upsertUser(input: UserInput): Promise<User> {
       last_name: input.last_name ?? prevUser?.last_name ?? '',
       nickname: input.nickname ?? prevUser?.nickname ?? input.id,
       email,
+      phone,
       image: input.image !== undefined ? input.image : (prevUser?.image ?? null),
       color: input.color !== undefined ? input.color : (prevUser?.color ?? null),
       channels,
@@ -192,6 +266,8 @@ export async function upsertUser(input: UserInput): Promise<User> {
       role: input.role ?? prevUser?.role ?? 'member',
       tailscale_login: tailscaleLogin,
       agent_profile: agentProfile,
+      work,
+      kind,
       sort: input.sort ?? prevUser?.sort ?? 0,
     },
     { prev },
@@ -210,6 +286,12 @@ export async function upsertUser(input: UserInput): Promise<User> {
 export async function deleteUser(id: string): Promise<void> {
   if (id === systemUserId()) throw new Error('the configured system principal cannot be deleted')
   await ensureSchema()
+  // An agent row is never deleted, retired included: it stays as the author of its messages and
+  // runs, and keeps its id from being reused by someone else. Retire an agent by deleting its file.
+  const row = await readRecord<UserRecord>(USERS, { id })
+  if (row && kindOf(row.kind) === 'agent') {
+    throw new Error(`"${id}" is an agent; agents are retired by deleting data/config/agents/${id}.md, never deleted`)
+  }
   await runUserCleanups(id)
   await withWrite(async (conn) => {
     await conn.run(`DELETE FROM users WHERE id = ?`, [id])

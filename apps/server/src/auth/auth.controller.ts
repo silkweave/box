@@ -4,8 +4,10 @@ import { IsString } from 'class-validator'
 import { Trpc } from '@silkweave/nestjs'
 import { z } from 'zod/v4'
 import {
+  activeAgentPrincipals,
   authenticatePrincipal,
   agentIdentity,
+  teamTimeZone,
   clientIp,
   consumeSigninGrant,
   hasHumanUser,
@@ -41,11 +43,18 @@ class PrincipalDto {
   @ApiProperty() id!: string
   @ApiProperty() display!: string
   @ApiProperty({ enum: ['admin', 'member'] }) role!: Principal['role']
+  @ApiProperty({ enum: ['human', 'agent'] }) kind!: Principal['kind']
+}
+class AgentRefDto {
+  @ApiProperty() id!: string
+  @ApiProperty() name!: string
 }
 class MeDto {
   @ApiProperty({ required: false, nullable: true, type: PrincipalDto }) principal!: PrincipalDto | null
   @ApiProperty({ type: Object }) agent!: { id: string; name: string; role: 'admin' | 'member' }
+  @ApiProperty({ type: [AgentRefDto], description: 'The active agents, system principal first; empty when signed out.' }) agents!: AgentRefDto[]
   @ApiProperty({ description: 'True until the host creates the first human owner.' }) needsOwner!: boolean
+  @ApiProperty({ description: 'The team time zone (box.json timeZone, IANA): the clock "today" is read on.' }) timeZone!: string
 }
 
 /**
@@ -73,6 +82,9 @@ export class AuthController {
     if (!rateLimit(`login:${clientIp(req)}`, 10, 60_000)) throw new UnauthorizedException('too many attempts')
     const principal = await authenticatePrincipal((body.token ?? '').trim())
     if (!principal) throw new UnauthorizedException('invalid access token')
+    // An agent has no browser: a session cookie would let it pass as a person at one (approvals,
+    // comms decisions key on the session credential). Its token is for bearer calls only.
+    if (principal.kind === 'agent') throw new UnauthorizedException('an agent token is a bearer credential; it does not sign in')
     res.setHeader('Set-Cookie', sessionCookie(mintSession(principal.id), undefined, requestIsSecure(req)))
     return principal
   }
@@ -111,16 +123,22 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @ApiOkResponse({ type: MeDto })
   @Trpc({ output: z.object({
-    principal: z.object({ id: z.string(), display: z.string(), role: z.enum(['admin', 'member']) }).nullable(),
+    principal: z.object({ id: z.string(), display: z.string(), role: z.enum(['admin', 'member']), kind: z.enum(['human', 'agent']) }).nullable(),
     agent: z.object({ id: z.string(), name: z.string(), role: z.enum(['admin', 'member']) }),
+    agents: z.array(z.object({ id: z.string(), name: z.string() })),
     needsOwner: z.boolean(),
+    timeZone: z.string(),
   }) })
   async me(@Req() req: PrincipalRequest): Promise<MeDto> {
     const users = await readUsers()
     return {
       principal: req.principal ?? null,
       agent: agentIdentity(),
+      // The active agents (system principal first), for mention autocomplete. Only to a signed-in
+      // principal: the roster is no business of an anonymous probe.
+      agents: req.principal ? (await activeAgentPrincipals()).map(({ id, display }) => ({ id, name: display })) : [],
       needsOwner: !hasHumanUser(users),
+      timeZone: teamTimeZone(),
     }
   }
 

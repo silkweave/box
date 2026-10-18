@@ -4,6 +4,17 @@
 
 import type { AvatarUser } from '@silkweave/box-ui'
 
+/** Work capabilities (mirror of core's WorkAccess): what a member's Work session may touch. */
+export interface WorkAccess {
+  enabled: boolean
+  data: boolean
+  sandbox: boolean
+  folders: boolean
+  folder_paths: string[]
+}
+
+export const DEFAULT_WORK_ACCESS: WorkAccess = { enabled: true, data: true, sandbox: true, folders: false, folder_paths: [] }
+
 /** `extends AvatarUser` is documentation: it is what lets a `User` be passed straight to the
  *  library's avatars, pickers and directory provider with no mapping. */
 export interface User extends AvatarUser {
@@ -13,6 +24,8 @@ export interface User extends AvatarUser {
   nickname: string
   /** Reference-only contact - no mail is ever sent. */
   email: string | null
+  /** Phone in E.164; WhatsApp recognises this person as a team member by it. */
+  phone: string | null
   image: string | null
   /** Swatch name from @silkweave/box-ui/lib ('indigo', 'cyan', …); null = deterministic fallback. */
   color: string | null
@@ -22,6 +35,11 @@ export interface User extends AvatarUser {
   channels: Record<string, string>
   /** Default agent profile (`<person>:<engine>`); null = Claude first. The agent runs on it only. */
   agent_profile: string | null
+  /** Trust tier and principal kind, as the server reports them (admins and agents have no Work guard). */
+  role?: 'admin' | 'member'
+  kind?: 'human' | 'agent'
+  /** Work capabilities; admin-set, defaults when the row never had any. */
+  work?: WorkAccess
   /** Whether an access token has been issued (the token itself is never sent to the client). */
   has_token: boolean
   sort: number

@@ -17,7 +17,7 @@ import { CORE_MODELS } from '../warehouse/core-models.js'
 import { createTableSql } from '../warehouse/model.js'
 import { systemUserId } from '../box-config.js'
 import { activeAdminCount, assertNotLastAdmin, resolvePrincipalById, setPrincipalRole } from './principal.js'
-import { ensureSystemPrincipal, hasHumanUsers } from './bootstrap.js'
+import { ensureAgentPrincipals, hasHumanUsers } from './bootstrap.js'
 import { readUser, upsertUser, deleteUser } from '../users/state.js'
 import { resetInstanceDir, setInstanceDir } from '../testing.js'
 
@@ -75,12 +75,12 @@ describe('core:001-users-role on a POPULATED users table', () => {
 describe('the admin set', () => {
   it('seeds the configured admin, preserves other profile fields, and does not count it as human', async () => {
     expect(await hasHumanUsers()).toBe(false)
-    await ensureSystemPrincipal()
+    await ensureAgentPrincipals()
     expect(await hasHumanUsers()).toBe(false) // the agent alone is still a fresh Box
     expect((await readUser(systemUserId()))?.role).toBe('admin')
 
     await upsertUser({ id: systemUserId(), color: 'indigo' })
-    await ensureSystemPrincipal()
+    await ensureAgentPrincipals()
     expect((await readUser(systemUserId()))?.color).toBe('indigo') // never rewritten
 
     await upsertUser({ id: 'alice', nickname: 'alice', role: 'admin' })
@@ -115,5 +115,23 @@ describe('the admin set', () => {
     await upsertUser({ id: 'alice', tailscale_login: 'alice@github' })
     await expect(upsertUser({ id: 'carol', tailscale_login: 'alice@github' })).rejects.toThrow(/already belongs/)
     await expect(upsertUser({ id: 'alice', tailscale_login: 'alice@github' })).resolves.toBeTruthy() // idempotent
+  })
+})
+
+describe('phone identity', () => {
+  it('normalizes typed forms to E.164, refuses others, and keeps one user per number', async () => {
+    const { normalizePhone, readUserByPhone } = await import('../users/state.js')
+    expect(normalizePhone('+43 (660) 123-4567')).toBe('+436601234567')
+    expect(normalizePhone('0043 660 1234567')).toBe('+436601234567')
+    expect(normalizePhone('  ')).toBeNull()
+    expect(() => normalizePhone('0660 1234567')).toThrow(/international form/)
+    await upsertUser({ id: 'phone-a', nickname: 'A', phone: '+43 660 1234567' })
+    expect((await readUser('phone-a'))?.phone).toBe('+436601234567')
+    expect((await readUserByPhone('0043660 1234567'))?.id).toBe('phone-a')
+    await expect(upsertUser({ id: 'phone-b', nickname: 'B', phone: '+436601234567' })).rejects.toThrow(/already belongs to user "phone-a"/)
+    await upsertUser({ id: 'phone-a', nickname: 'A2' })
+    expect((await readUser('phone-a'))?.phone).toBe('+436601234567')
+    await upsertUser({ id: 'phone-a', phone: '' })
+    expect((await readUser('phone-a'))?.phone).toBeNull()
   })
 })

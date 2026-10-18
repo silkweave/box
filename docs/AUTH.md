@@ -65,7 +65,8 @@ not, so local HTTP must use a non-Secure cookie.
 There is **no server-side expiry**. `Max-Age` is 400 days (Chrome's ceiling) purely
 so the cookie survives a browser restart; it is a browser hint, not a server expiry. Revocation is
 still exact: the guard re-reads the `users` row on every request, so a revoked user's live session
-dies on its next call.
+dies on its next call. Agent WebSockets (`/agent` attach and room reader relays) authenticate once,
+so revoking, deleting or demoting a user also closes every socket they hold.
 
 **CSRF:** a cookie-authed mutating request must carry `x-box-csrf`. Bearer callers carry no ambient
 cookie and are CSRF-exempt by construction. The Box is single-origin by design, so there is no
@@ -91,9 +92,11 @@ unusable, so when in doubt the answer is member.
 `user-invite-reveal`, `user-access-revoke`, `user-set-role` and `user-delete` carry `@Admin()`. `user-upsert` is
 self-or-admin, checked in the method rather than with the decorator because the answer depends on
 the body: a member may edit their own profile fields, may not create a user (that would be minting
-a second identity), and may not set `tailscale_login` on any row or change any `email`. Both decide
-who a person is somewhere else: a tailscale login, or an SSO sign-in (the `sso` recipe signs people
-in by their email). Emails are also unique across users, case-insensitively (`upsertUser`).
+a second identity), and may not set `tailscale_login` on any row or change any `email` or `phone`.
+Each decides who a person is somewhere else: a tailscale login, an SSO sign-in (the `sso` recipe
+signs people in by their email), or a phone number (WhatsApp treats a sender whose number is a
+user's phone as a team member). Emails are unique across users, case-insensitively, and phones are
+unique in E.164 (`upsertUser`, which normalizes a typed number such as `0043 660 ...`).
 
 **In core's signals** (`apps/server/src/signals/`): `signal-upsert`, `signal-rename`,
 `signal-delete`, `signal-owner-set`, `data-source-upsert` and `data-source-delete`. Signal
@@ -103,6 +106,42 @@ manual point entry is a member's ([SIGNALS.md](SIGNALS.md#procedures-and-tools))
 **In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: automation's triggers and restart, content's channel profiles, planning's initiative
 kinds, engagement's pod membership, and chat's `moderate` flag on `chat-message-delete` - the last
 through `assertAdmin(req, ...)`, for a branch a decorator cannot express.
+
+### Work sessions
+
+The sidebar's **Work** is the person's own agent session. An admin's runs in the checkout, as
+Builder's do. A member's is guarded, and the guard is a check, not a prompt:
+
+- The working directory is the person's sandbox, `data/work/<id>/`, never the checkout.
+- File tools (Read, Write, Edit, Glob, Grep and the rest) work only inside the granted folders:
+  the sandbox and the admin-set folders. The checkout and `data/config/` are outside every grant.
+- Shell commands that name the checkout, `data/config`, walk up with `..`, write git history
+  (`commit`, `push`, `add`, `reset`, `checkout`, `stash`, `rebase`, `merge`, ...) or run the `box`
+  CLI are refused.
+- Builder is refused by the server for a member (`/builder` answers 403, and the worker refuses
+  a `kind: builder` session to a non-admin), not only hidden in the UI.
+
+The capabilities are per user, admin-set in Settings > Users (the edit dialog's Work section) and
+stored on the row (`users.work`, migration `core:009-users-work`):
+
+| Checkbox | Default | Effect |
+|---|---|---|
+| Work sessions allowed | on | off refuses a new session (`work_disabled`) and every tool call in a running one |
+| Work with all data and modules | on | off refuses every MCP tool call in the session apart from WorkerDeck's own peer server. The Box's tools come from the person's profile config under whatever name they gave the server, so the Box cannot single its own out by name |
+| Work in their sandbox folder | on | `data/work/<id>/` is a granted folder |
+| Work in selected folders | off | the listed absolute host folders are granted; each must exist and lie outside the checkout and `data/`. The picker completes a typed path from the directories that pass the same check (`usersWorkFolders`) and can create one missing folder whose parent exists (`usersWorkFolderCreate`), both admin-only; Save re-checks every path |
+
+The settings are read when the session starts and again on every guarded tool call, so a change
+applies to a running session on its next call. Agents (`kind = 'agent'`) are not users here: their
+sessions keep their own rules. The guard is a Claude Agent SDK hook, so a member's Work session
+runs on a Claude profile only; a Codex profile is refused (`work_engine_unsupported`) rather than
+run unguarded.
+
+The guard runs in the server process as a PreToolUse hook of the engine
+(`apps/server/src/agent/work-session.ts`; the classification is `packages/core/src/work-access.ts`).
+It is strong but not absolute: the shell still runs as the server's OS user, and a command can be
+written that the heuristics do not recognise. A hard guarantee needs a separate OS user or a
+container per person.
 
 ### `@Admin()` is read inside `AuthGuard`
 
@@ -146,8 +185,19 @@ Without the file, a fresh Box persists these defaults before opening its warehou
 lowercase slug ID and a display name. Core's lazy `systemUserId()` is shared by scheduling, chat,
 notifications and auth; the browser receives the same identity through `/api/auth/me`.
 
-The generated `data/config/agent-identity.lock.json` binds the ID. **Renaming an initialized agent is
-unsupported**: restore the original config if the ID changes. Keep this lock with instance backups.
+The generated `data/config/agent-identity.lock.json` binds the ID. Editing `agent.id` on an
+initialized Box is refused: restore the original config if the ID changed by accident. Keep this lock
+with instance backups.
+
+**Changing an agent's id is a replacement**, never an in-place rename, because every feature's history
+points at the id. On a stopped Box, after `box db backup`, run
+`box auth replace <old> <new> [--name "Name"]`. The new agent takes over the old one's configuration:
+the system principal in `box.json` and the identity lock (or its agent file), its instructions file,
+and its `agentProfiles` and `browsers.users` entries. The old agent is retired like a removed file:
+its token stops and its row stays as the author of its messages and runs. The command lists the
+warehouse rows that still name the old id, so configuration kept in feature tables (an automation
+trigger's `run_as`, for example) can be moved deliberately. Then mint the new agent's token and
+update every client that used the old one.
 Display name and role come from config; boot reconciles those fields in the directory without
 replacing credentials or other profile fields. Role changes apply on the next authenticated
 request, including an already-issued token. Set `agent.role` to `member` to restrict its admin tools.
@@ -168,6 +218,66 @@ restriction is wanted. A teammate's sidebar session still uses that teammate's o
 The system principal starts without a token. Mint deliberately with `box auth token nova --quiet`
 (or your configured ID). It prints no permanent token and no browser link for the machine account;
 reveal the credential privately with `box auth reveal nova` when wiring its profile.
+
+### More agents: `data/config/agents/`
+
+Each further agent is one file, `data/config/agents/<id>.md`. The file is the agent: the file name is
+its id (the same slug rule as `agent.id`), the front matter its identity, the body its instructions
+(`agentInstructions(id)` in core `agents.ts`).
+
+```md
+---
+name: Stella
+role: member
+---
+You are Stella, the team's research agent.
+```
+
+`name` and `role` (`admin` or `member`) are required and are the only keys; any other key is refused
+with its name. The system principal stays in `box.json`; a `data/config/agents/<system-id>.md` may
+exist for its instructions only, and setting `name` or `role` there is refused. Engine and model
+come from the agent's default profile (`agentProfiles` in `box.json`), as for a person. An agent is
+added by its file: on the host, or with Settings -> Users -> New agent, which writes the file and
+reconciles at once (`usersAgentCreate`, core `createAgent`). That procedure is tRPC only and needs a
+person who is an admin at a browser session: an agent (the admin system principal included) and a
+bearer token are refused, so no agent can mint agents. It refuses a person's id and an active
+agent's; a retired agent's id brings that agent back. Editing or retiring an agent stays a file
+edit on the host, and its engine profile stays host configuration.
+
+Every agent is a full principal: a `users` row with `kind = 'agent'` and its own token. The files
+say which agents exist; the column is the durable record, so a deleted file never turns an agent
+into a person with a working token. Boot (`ensureAgentPrincipals`) reconciles the rows:
+
+- **Upsert** each configured agent: name and role from config, other profile fields and credentials
+  kept. Boot refuses while an agent file does not parse, and refuses before any write when a file
+  names the id of an existing person (an agent id must be new; converting an account is a
+  deliberate transition script, never automatic).
+- **Retire** an agent row whose file is gone: revoked (tokens stop, `run_as` refused), kept as the
+  author of its messages and runs. Agent rows are never deleted.
+- **Restore** a retired row whose file is back: active again, with its old token dropped, so its
+  next session gets a fresh one. A maintenance boot skips retirement.
+
+**Eligibility** is one predicate, read at call time: an agent may act only while its row is
+`kind = 'agent'`, not revoked, and its file exists and parses (the system principal: `box.json`).
+Bearer authentication, the session token a server-owned session carries, and automation `run_as`
+all apply it, so deleting a file stops the agent at once; a missing or invalid file never falls
+back to the stored role. The first check that finds an agent's file missing or invalid also retires
+its row, so putting the file back takes effect at the next boot, with a fresh token, never by
+reviving the old one. Only regular files count: a symlink is not an agent file. The host commands
+(`box auth token`, `reveal`, `login`, `bun setup`) reconcile the agents like a boot.
+
+The rules that held for the system principal hold for every agent: role from config (user
+management cannot change it), no sign-in links and no session (`/api/auth/login` refuses an agent
+token, a sign-in grant for an agent is refused, and every cookie transport resolves persons only),
+`user-invite` and `user-access-revoke` refuse agent rows, `user-delete` refuses them
+retired or not, and they are excluded from the human and last-admin counts. An agent's token is
+rotated on the host (`box auth token <id> --rotate`), never reissued for a retired agent.
+**Approval decisions are a person's:** an agent, the system principal included, never answers an
+approval card. `/api/auth/me` lists the active agents as `agents: [{ id, name }]`, system principal
+first.
+
+Backups carry the files: every warehouse backup writes them beside the restore point and a restore
+puts them back ([WAREHOUSE](WAREHOUSE.md#the-commands)).
 
 ## First run and the commands that exist
 
@@ -264,11 +374,14 @@ the table identifies operations available only through tRPC:
 | `users-list` | `usersList` | any principal (`has_token`, never a token) |
 | `user-get` | `usersGet` | any principal (one profile by id) |
 | `user-link` | `usersLink` | admin (short-lived sign-in link) |
-| `user-upsert` | `usersUpsert` | self-or-admin |
+| `user-upsert` | `usersUpsert` | self-or-admin (`work` is admin-only) |
 | `user-invite` | `usersInvite` | admin |
 | *(none)* | `usersInviteReveal` | admin |
 | `user-access-revoke` | `usersAccessRevoke` | admin |
 | `user-set-role` | `usersSetRole` | admin |
+| *(none)* | `usersWorkFolders` | admin |
+| *(none)* | `usersWorkFolderCreate` | admin |
+| *(none)* | `usersAgentCreate` | admin person at a browser session |
 | `user-delete` | `usersDelete` | admin |
 
 ## Secrets

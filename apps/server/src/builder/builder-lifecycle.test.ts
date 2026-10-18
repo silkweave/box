@@ -77,6 +77,31 @@ describe('live Builder lifecycle', () => {
     expect(existsSync(join(builderBackupRoot(paths), state.backups[0].id, 'manifest.json'))).toBe(true)
   })
 
+  it('keeps the newest three backups per reason on disk and sweeps unlisted directories', async () => {
+    const paths = fixture()
+    let tick = 0
+    const now = () => new Date(Date.UTC(2026, 9, 16, 12, 0, tick++))
+    const starts: string[] = []
+    for (let index = 0; index < 4; index++) {
+      starts.push((await startBuilder({ paths, offline: true, now })).backup.id)
+      await stopBuilder({ paths, offline: true })
+    }
+    const manual = (await backupBuilder('manual', { paths, offline: true, now })).id
+    const root = builderBackupRoot(paths)
+    expect(existsSync(join(root, starts[0]))).toBe(false)
+    expect(readBuilderControl(paths).backups.map((backup) => backup.id)).toEqual([...starts.slice(1), manual])
+
+    // A completed backup directory the control state lost (older unbounded history) is swept too.
+    const orphan = 'orphan-start'
+    mkdirSync(join(root, orphan))
+    writeFileSync(join(root, orphan, 'manifest.json'), JSON.stringify({ id: orphan, createdAt: '2026-01-01T00:00:00.000Z', reason: 'start' }))
+    mkdirSync(join(root, 'not-a-backup'))
+    await backupBuilder('manual', { paths, offline: true, now })
+    expect(existsSync(join(root, orphan))).toBe(false)
+    expect(existsSync(join(root, 'not-a-backup'))).toBe(true)
+    expect(existsSync(join(root, manual))).toBe(true)
+  })
+
   it('adopts confirmed uncommitted changes onto the new live branch', async () => {
     const paths = fixture()
     const integration = git(paths.repoRoot, 'branch', '--show-current')

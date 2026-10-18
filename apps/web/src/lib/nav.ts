@@ -27,6 +27,7 @@ const SIDEBAR_SECTIONS = [
   { label: 'Operations', ids: ['goals', 'initiatives', 'sprints', 'reminders'] },
   { label: 'Sales', ids: ['crm'] },
   { label: 'Marketing', ids: ['content', 'engagement'] },
+  { label: 'Support', ids: ['support', 'support-help'] },
 ]
 
 function sidebarGroups(): NavGroup[] {

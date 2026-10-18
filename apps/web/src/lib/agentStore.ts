@@ -38,6 +38,8 @@ export interface AgentEngine {
 
 export interface AgentConfig {
   enabled: boolean
+  /** This person's Work access: admins always on and unguarded; members per Settings > Users. */
+  work: { enabled: boolean; guarded: boolean }
   cwd: string
   /** null = let the worker's profile default decide (the normal case). */
   permissionMode: string | null
@@ -123,6 +125,7 @@ export function loadAgentConfig(): Promise<AgentConfig> {
     .catch(
       (): AgentConfig => ({
         enabled: false,
+        work: { enabled: false, guarded: false },
         cwd: '',
         permissionMode: null,
         model: null,

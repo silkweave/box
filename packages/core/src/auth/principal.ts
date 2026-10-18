@@ -7,10 +7,12 @@
 import { agentIdentity } from '../box-config.js'
 import { timingSafeEqual } from 'node:crypto'
 import { withRead, withWrite } from '../warehouse/db.js'
-import { assertKnownActor, systemUserId } from '../users/state.js'
-import type { UserRole } from '../users/types.js'
+import { assertKnownActor, kindOf, systemUserId } from '../users/state.js'
+import type { UserKind, UserRole } from '../users/types.js'
+import { activeAgentConfig, agentRowProblem } from '../agents.js'
 import { decryptToken, encryptToken, generateAccessToken } from './token.js'
 import { mintSigninGrant, verifySigninGrant, type SigninGrantClaims } from './link.js'
+import { SESSION_COOKIE, parseCookies, verifySession } from './session.js'
 
 /** The authenticated identity attached to every request. */
 export interface Principal {
@@ -22,6 +24,11 @@ export interface Principal {
    * compares it against `@Admin()`; see docs/core/AUTH.md § 3.
    */
   role: UserRole
+  /**
+   * Human or agent, from the row. An agent is a principal only while it is eligible (agents.ts
+   * `agentRowProblem`): its name and role then come from config, never from the row.
+   */
+  kind: UserKind
 }
 
 /**
@@ -36,11 +43,56 @@ export interface Principal {
  */
 export type PrincipalCredential = 'session' | 'bearer'
 
-const display = (r: { nickname: string; first_name: string; id: string }): string =>
-  r.id === systemUserId() ? agentIdentity().name : r.nickname || r.first_name || r.id
-
 /** A stored role string, defensively narrowed - an unknown value is the least privilege, not a throw. */
 const roleOf = (v: string | null | undefined): UserRole => (v === 'admin' ? 'admin' : 'member')
+
+interface PrincipalRow { id: string; nickname: string; first_name: string; role: string; status: string; kind: string | null; token_revoked_at?: string | null }
+
+/**
+ * The principal a row stands for, or null when it may not act. A human row is judged by its
+ * status; an agent row by the eligibility predicate (row AND file, read now), and its display name
+ * and role come from config: a missing or invalid file never falls back to the stored role.
+ */
+function principalOf(r: PrincipalRow): Principal | null {
+  if (r.status === 'revoked') return null
+  if (kindOf(r.kind) === 'agent') {
+    const config = activeAgentConfig(r)
+    if (!config) return null
+    return { id: r.id, display: config.name, role: config.role, kind: 'agent' }
+  }
+  // A row core:007 has not marked yet is still the system principal (bootstrap marks it).
+  if (r.id === systemUserId()) {
+    const agent = agentIdentity()
+    return { id: r.id, display: agent.name, role: agent.role, kind: 'agent' }
+  }
+  return { id: r.id, display: r.nickname || r.first_name || r.id, role: roleOf(r.role), kind: 'human' }
+}
+
+/**
+ * Resolve a row, and persist a retirement the predicate observed. An active agent row whose file is
+ * gone or invalid is retired the moment any check sees it, not only at the next boot: otherwise
+ * deleting a file and putting it back between two boots would revive the old token. Re-adding the
+ * file then restores at the next boot, which drops that token (auth/bootstrap.ts).
+ */
+async function judge(r: PrincipalRow): Promise<Principal | null> {
+  const principal = principalOf(r)
+  if (!principal && kindOf(r.kind) === 'agent' && r.status !== 'revoked' && !r.token_revoked_at) await retireObserved(r.id)
+  return principal
+}
+
+async function retireObserved(id: string): Promise<void> {
+  if (id === systemUserId()) return
+  await withWrite(async (conn) => {
+    await conn.run(
+      `UPDATE users SET token_revoked_at = now(), status = 'revoked', link_watermark = ?, updated_at = now()
+        WHERE id = ? AND kind = 'agent' AND status <> 'revoked'`,
+      [Date.now(), id],
+    )
+  })
+  console.info(`agents: retired "${id}" (its file in data/config/agents/ is missing or invalid)`)
+}
+
+const PRINCIPAL_COLUMNS = `id, nickname, first_name, role, status, kind, CAST(token_revoked_at AS VARCHAR) AS token_revoked_at`
 
 /**
  * Resolve a presented access token to an ACTIVE principal. Decrypts each non-revoked user's token
@@ -48,8 +100,8 @@ const roleOf = (v: string | null | undefined): UserRole => (v === 'admin' ? 'adm
  */
 export async function authenticatePrincipal(presented: string): Promise<Principal | null> {
   if (!presented) return null
-  const rows = await withRead<{ id: string; nickname: string; first_name: string; role: string; token_ciphertext: string | null }>(
-    `SELECT id, nickname, first_name, role, token_ciphertext
+  const rows = await withRead<PrincipalRow & { token_ciphertext: string | null }>(
+    `SELECT ${PRINCIPAL_COLUMNS}, token_ciphertext
        FROM users
       WHERE token_ciphertext IS NOT NULL AND token_revoked_at IS NULL AND status <> 'revoked'`,
   )
@@ -63,6 +115,10 @@ export async function authenticatePrincipal(presented: string): Promise<Principa
     const a = Buffer.from(presented)
     const b = Buffer.from(actual)
     if (a.length === b.length && timingSafeEqual(a, b)) {
+      // The token is right, but an agent whose file is gone or invalid is retired NOW, not at the
+      // next boot: no use stamp, no principal.
+      const principal = await judge(r)
+      if (!principal) return null
       await withWrite(async (conn) => {
         await conn.run(
           `UPDATE users SET token_last_used_at = now(),
@@ -70,7 +126,7 @@ export async function authenticatePrincipal(presented: string): Promise<Principa
           [r.id],
         )
       })
-      return { id: r.id, display: display(r), role: r.id === systemUserId() ? agentIdentity().role : roleOf(r.role) }
+      return principal
     }
   }
   return null
@@ -82,13 +138,33 @@ export async function authenticatePrincipal(presented: string): Promise<Principa
  */
 export async function resolvePrincipalById(id: string): Promise<Principal | null> {
   if (!id) return null
-  const rows = await withRead<{ id: string; nickname: string; first_name: string; status: string; role: string }>(
-    `SELECT id, nickname, first_name, status, role FROM users WHERE id = ?`,
-    [id],
+  const rows = await withRead<PrincipalRow>(`SELECT ${PRINCIPAL_COLUMNS} FROM users WHERE id = ?`, [id])
+  return rows[0] ? judge(rows[0]) : null
+}
+
+/** Every agent that may act right now (the eligibility predicate), the system principal first. */
+export async function activeAgentPrincipals(): Promise<Principal[]> {
+  const rows = await withRead<PrincipalRow>(
+    `SELECT ${PRINCIPAL_COLUMNS} FROM users WHERE kind = 'agent' OR id = ? ORDER BY id`,
+    [systemUserId()],
   )
-  const r = rows[0]
-  if (!r || r.status === 'revoked') return null
-  return { id: r.id, display: display(r), role: r.id === systemUserId() ? agentIdentity().role : roleOf(r.role) }
+  const system = systemUserId()
+  return rows
+    .map(principalOf)
+    .filter((p): p is Principal => p !== null && p.kind === 'agent')
+    .sort((a, b) => Number(b.id === system) - Number(a.id === system))
+}
+
+/**
+ * The person a session cookie names, or null. The one cookie resolver every transport uses (the
+ * Nest guard, the /agent mount, path mounts, the dev proxy): a session is a person at a browser,
+ * so a cookie naming an agent is refused here, whenever and however it was issued.
+ */
+export async function resolveSessionPrincipal(cookieHeader: string | undefined): Promise<Principal | null> {
+  const claims = verifySession(parseCookies(cookieHeader)[SESSION_COOKIE])
+  if (!claims) return null
+  const principal = await resolvePrincipalById(claims.sub)
+  return principal?.kind === 'human' ? principal : null
 }
 
 /**
@@ -98,8 +174,17 @@ export async function resolvePrincipalById(id: string): Promise<Principal | null
 export async function issuePrincipalToken(id: string, actor?: string): Promise<string> {
   // A plain existence check, NOT resolvePrincipalById - that one rejects status='revoked', which
   // would make reactivating a disabled user impossible (the whole point of re-issuing).
-  const rows = await withRead<{ id: string }>(`SELECT id FROM users WHERE id = ?`, [id])
+  const rows = await withRead<{ id: string; kind: string | null; status: string; token_revoked_at: string | null }>(
+    `SELECT id, kind, status, CAST(token_revoked_at AS VARCHAR) AS token_revoked_at FROM users WHERE id = ?`,
+    [id],
+  )
   if (!rows[0]) throw new Error(`no user "${id}"`)
+  // An agent is restored through its file (boot reconciliation), never by issuing it a token: this
+  // rotates an ACTIVE agent's token on the host and refuses a retired one.
+  if (kindOf(rows[0].kind) === 'agent') {
+    const problem = agentRowProblem(rows[0])
+    if (problem) throw new Error(`${problem}; an agent is restored by restoring its file and restarting, not by issuing a token`)
+  }
   if (actor) await assertKnownActor(actor)
   const token = generateAccessToken()
   const ciphertext = encryptToken(token)
@@ -112,6 +197,47 @@ export async function issuePrincipalToken(id: string, actor?: string): Promise<s
     )
   })
   return token
+}
+
+/**
+ * The access token a server-owned session (chat agent, trigger job, wiki job) carries for `id`:
+ * the principal's existing token, or a first one when none exists. One read-check-write under the
+ * warehouse write lock, so two sessions starting at once share one token instead of rotating each
+ * other's. Refuses a missing or revoked principal: unlike `issuePrincipalToken`, which is the
+ * operator's explicit restore, this never reactivates anyone and never rotates a working token.
+ */
+export async function sessionPrincipalToken(id: string): Promise<string> {
+  return withWrite(async (conn) => {
+    const reader = await conn.runAndReadAll(
+      `SELECT id, kind, status, token_ciphertext, CAST(token_revoked_at AS VARCHAR) AS token_revoked_at FROM users WHERE id = ?`,
+      [id],
+    )
+    const r = reader.getRowObjectsJson()[0] as { id: string; kind: string | null; status: string; token_ciphertext: string | null; token_revoked_at: string | null } | undefined
+    if (!r) throw new Error(`no user "${id}"`)
+    // The eligibility predicate: a retired agent (file gone or invalid) gets no session token.
+    const problem = agentRowProblem(r)
+    if (problem) {
+      if (kindOf(r.kind) === 'agent' && r.status !== 'revoked' && !r.token_revoked_at && id !== systemUserId()) {
+        await conn.run(
+          `UPDATE users SET token_revoked_at = now(), status = 'revoked', link_watermark = ?, updated_at = now() WHERE id = ?`,
+          [Date.now(), id],
+        )
+        console.info(`agents: retired "${id}" (its file in data/config/agents/ is missing or invalid)`)
+      }
+      throw new Error(`${problem}; a session cannot act as it`)
+    }
+    if (r.status === 'revoked' || r.token_revoked_at) throw new Error(`"${id}" has been revoked; a session cannot act as them until an admin restores their access`)
+    if (r.token_ciphertext) {
+      try {
+        return decryptToken(r.token_ciphertext)
+      } catch {
+        // Undecryptable (the token secret changed): no holder can use it, so a fresh one costs nothing.
+      }
+    }
+    const token = generateAccessToken()
+    await conn.run(`UPDATE users SET token_ciphertext = ?, token_issued_at = now(), updated_at = now() WHERE id = ?`, [encryptToken(token), id])
+    return token
+  })
 }
 
 /** Return ANY user's current plaintext access token (re-copying an invite without rotating), or
@@ -150,9 +276,10 @@ export async function issueSigninLink(
     // file; a sign-in link for it would only ever be a way to borrow its seat.
     throw new Error(`"${systemUserId()}" is the agent principal - it signs in with a bearer token, not a link`)
   }
-  const rows = await withRead<{ id: string; status: string }>(`SELECT id, status FROM users WHERE id = ?`, [id])
+  const rows = await withRead<{ id: string; status: string; kind: string | null }>(`SELECT id, status, kind FROM users WHERE id = ?`, [id])
   const row = rows[0]
   if (!row) throw new Error(`no user "${id}"`)
+  if (kindOf(row.kind) === 'agent') throw new Error(`"${id}" is an agent - it signs in with a bearer token, not a link`)
   if (row.status === 'revoked') throw new Error(`"${id}" has been revoked - restore their access first`)
   if (opts.actor) await assertKnownActor(opts.actor)
   const minted = mintSigninGrant(id, { ttlMs: opts.ttlMs })
@@ -201,15 +328,16 @@ export async function consumeSigninGrant(grant: string, now: number = Date.now()
       `UPDATE users SET link_watermark = ?,
          status = CASE WHEN status = 'invited' THEN 'active' ELSE status END,
          updated_at = now()
-       WHERE id = ? AND status <> 'revoked'
+       WHERE id = ? AND status <> 'revoked' AND coalesce(kind, 'human') <> 'agent' AND id <> ?
          AND (link_watermark IS NULL OR link_watermark < ?)`,
-      [iat, sub, iat],
+      [iat, sub, systemUserId(), iat],
     )
     return res.rowsChanged
   })
 
   if (changed === 1) {
     const principal = await resolvePrincipalById(sub)
+    if (principal?.kind !== 'human') return { ok: false, reason: 'revoked' }
     // Resolvable in every normal case - the UPDATE just proved the row exists and is not revoked.
     // A null here means the row changed underneath us between the two statements; refuse rather
     // than invent a principal.
@@ -219,9 +347,10 @@ export async function consumeSigninGrant(grant: string, now: number = Date.now()
   }
 
   // The UPDATE matched nothing. Find out which of the two reasons it was, so the screen can differ.
-  const rows = await withRead<{ status: string }>(`SELECT status FROM users WHERE id = ?`, [sub])
+  const rows = await withRead<{ status: string; kind: string | null }>(`SELECT status, kind FROM users WHERE id = ?`, [sub])
   const row = rows[0]
-  if (!row || row.status === 'revoked') return { ok: false, reason: 'revoked' }
+  // An agent never gets a session, even from a grant minted while the account was a person's.
+  if (!row || row.status === 'revoked' || kindOf(row.kind) === 'agent' || sub === systemUserId()) return { ok: false, reason: 'revoked' }
   return { ok: false, reason: 'used' }
 }
 
@@ -240,13 +369,13 @@ export async function revokePrincipalToken(id: string, actor?: string): Promise<
 }
 
 /**
- * Count active human admins. The machine cannot replace a person's recovery access.
+ * Count active human admins. An agent cannot replace a person's recovery access.
  * "Active" excludes revoked users, because a revoked admin cannot sign in and
  * so cannot be the one who restores the others (docs/core/AUTH.md § 3.2, invariant 5).
  */
 export async function activeAdminCount(): Promise<number> {
   const rows = await withRead<{ n: number }>(
-    `SELECT count(*) AS n FROM users WHERE role = 'admin' AND status <> 'revoked' AND id <> ?`,
+    `SELECT count(*) AS n FROM users WHERE role = 'admin' AND status <> 'revoked' AND coalesce(kind, 'human') <> 'agent' AND id <> ?`,
     [systemUserId()],
   )
   return Number(rows[0]?.n ?? 0)
@@ -275,7 +404,12 @@ export async function setPrincipalRole(id: string, role: UserRole, actor?: strin
   if (actor) await assertKnownActor(actor)
   const target = await resolvePrincipalById(id)
   if (!target) throw new Error(`no user "${id}"`)
-  if (id !== systemUserId() && target.role === 'admin' && role !== 'admin' && (await activeAdminCount()) <= 1) {
+  // Every agent's role is config's: box.json for the system principal, its file for the others.
+  if (target.kind === 'agent' && id !== systemUserId()) {
+    if (role !== target.role) throw new Error(`the role of agent "${id}" is controlled by data/config/agents/${id}.md`)
+    return
+  }
+  if (target.kind === 'human' && target.role === 'admin' && role !== 'admin' && (await activeAdminCount()) <= 1) {
     throw new Error(`"${id}" is the last admin - promote someone else first`)
   }
   await withWrite(async (conn) => {
@@ -293,6 +427,6 @@ export async function setPrincipalRole(id: string, role: UserRole, actor?: strin
  */
 export async function assertNotLastAdmin(id: string, what: string): Promise<void> {
   const target = await resolvePrincipalById(id)
-  if (target?.role !== 'admin') return
+  if (target?.role !== 'admin' || target.kind === 'agent') return
   if ((await activeAdminCount()) <= 1) throw new Error(`"${id}" is the last admin - ${what} would lock the Box out`)
 }

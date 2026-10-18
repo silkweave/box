@@ -36,6 +36,14 @@ export function todayLocal(): string {
 /** Today as a UTC calendar date - for the surfaces that store UTC buckets (signal points). */
 export const todayUtc = (): string => new Date().toISOString().slice(0, 10)
 
+let defaultToday: () => string = todayLocal
+
+/** Set the clock a DateInput's "today" is read on when it is given none (the app sets the team's
+ *  day). The browser's local day until then. */
+export function setDefaultToday(today: () => string): void {
+  defaultToday = today
+}
+
 /** `2026-08-11` -> {y, m, d} (m is 1-based), or null when it is not a well-formed ISO date. */
 function parseIso(v: string): { y: number; m: number; d: number } | null {
   if (!ISO.test(v)) return null
@@ -58,8 +66,8 @@ export function DateInput({
   ariaLabel,
   className,
   disabled,
-  /** Resolve "Today" in UTC rather than local time - for fields explicitly labelled UTC. */
-  utc = false,
+  /** The day "today" means here, `YYYY-MM-DD`; the default clock (setDefaultToday) when absent. */
+  today: todayProp,
   /** Card-scale: no "today" shortcut and no width floor, for a field living inside a task card. */
   compact = false,
   /** Full size without the "today" shortcut, for several dates side by side in a narrow row: the
@@ -76,13 +84,13 @@ export function DateInput({
   ariaLabel: string
   className?: string
   disabled?: boolean
-  utc?: boolean
+  today?: string
   compact?: boolean
   noToday?: boolean
   inline?: boolean
   inputClassName?: string
 }) {
-  const today = utc ? todayUtc() : todayLocal()
+  const today = todayProp ?? defaultToday()
   const [open, setOpen] = useState(false)
 
   // Typing is buffered locally so a half-finished date ("2026-08") is not committed on every

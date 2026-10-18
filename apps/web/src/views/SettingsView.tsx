@@ -91,7 +91,7 @@ function ProfileSection() {
         <p className='text-body-sm text-muted-foreground'>Not signed in.</p>
       ) : me ? (
         <div className='flex flex-col gap-8'>
-          <ProfileForm key={`${me.id}:${me.updated_at}`} me={me} onSignOut={() => void logout()} />
+          <ProfileForm key={`${me.id}:${me.updated_at}`} me={me} admin={principal.role === 'admin'} onSignOut={() => void logout()} />
           <AgentAccountsPanel user={me} isAgent={false} />
         </div>
       ) : (
@@ -108,7 +108,7 @@ function ProfileSection() {
 
 /** The self-edit form - the same form as the Users editor. Buffered state with an explicit Save;
  *  the parent re-keys it on `updated_at` so a save reseeds it. */
-function ProfileForm({ me, onSignOut }: { me: User; onSignOut: () => void }) {
+function ProfileForm({ me, admin, onSignOut }: { me: User; admin: boolean; onSignOut: () => void }) {
   const stored = React.useMemo(() => userFormValues(me), [me])
   const [values, setValues] = React.useState(stored)
   const [error, setError] = React.useState<string | null>(null)
@@ -153,6 +153,9 @@ function ProfileForm({ me, onSignOut }: { me: User; onSignOut: () => void }) {
       onChange={(patch) => setValues((v) => ({ ...v, ...patch }))}
       onSubmit={submit}
       meta={<span className='truncate'>@{values.nickname.trim() || me.id}</span>}
+      emailReadOnly={!admin}
+      emailHint={admin ? undefined : 'Ask an administrator to change it.'}
+      phoneHint={admin ? 'International form. WhatsApp treats this number as a team member.' : 'Ask an administrator to change it.'}
       error={error}
       onError={setError}
     />

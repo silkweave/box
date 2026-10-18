@@ -100,7 +100,7 @@ test('custom agent tokens work without browser links, and host role changes pres
   expect(minted.stdout).not.toMatch(/^\s+[A-Za-z0-9_-]{32}\s*$/m)
   const initial = state('orion')
   expect(initial.user?.first_name).toBe('Orion')
-  expect(initial.user?.nickname).toBe('orion')
+  expect(initial.user?.nickname).toBe('Orion')
   expect(initial.authenticatedName).toBe('Orion')
   expect(initial.authenticatedRole).toBe('admin')
   ok('alice') // The system admin must not prevent first-human bootstrap.

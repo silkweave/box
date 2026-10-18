@@ -18,7 +18,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { ensureSchema, withWrite } from '../warehouse/db.js'
 import { upsertUser, systemUserId } from '../users/state.js'
-import { ensureSystemPrincipal } from './bootstrap.js'
+import { ensureAgentPrincipals } from './bootstrap.js'
 import { consumeSigninGrant, issuePrincipalToken, issueSigninLink, revokePrincipalToken } from './principal.js'
 import { mintSigninGrant, SIGNIN_LINK_TTL_MS } from './link.js'
 import { resetInstanceDir, setInstanceDir } from '../testing.js'
@@ -29,7 +29,7 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-link-consume-'))
   setInstanceDir(dir)
   await ensureSchema()
-  await ensureSystemPrincipal()
+  await ensureAgentPrincipals()
 })
 
 afterAll(() => {
@@ -68,7 +68,7 @@ describe('issueSigninLink', () => {
   it('refuses the agent principal', async () => {
     // The agent has no browser. A link for it would only ever be a way to borrow its seat, and its
     // seat is an admin one.
-    await ensureSystemPrincipal()
+    await ensureAgentPrincipals()
     await expect(issueSigninLink(systemUserId())).rejects.toThrow(/bearer token, not a link/)
   })
 

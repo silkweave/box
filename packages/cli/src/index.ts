@@ -56,9 +56,10 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box auth token <id> [--name "Full Name"] [--create] [--rotate] [--admin] [--quiet]
   box auth login <id>                         short-lived, single-use browser sign-in
   box auth reveal <id>                        re-print an access token, breaking nothing
+  box auth replace <old> <new> [--name "Name"] a new agent takes over an agent's config; the old one retires
   box db backup                               a safety copy of the warehouse, kept generationally
   box db list                                 every restore point, with its time and size
-  box db restore [name]                       restore one over the live warehouse (previous parked)
+  box db restore [name] [--keep-agent-files]  restore one (warehouse + agent files) over the live Box (previous parked)
   box db snapshot [name]                      a named dev seed you own; nothing ever prunes it
   box tools                                   browse and invoke MCP tools interactively
   box where                                   which Box this acts on, and why
@@ -80,7 +81,7 @@ const DEV_HELP = `  box dev [--log-level <level>] [--plain]
   Vite hot module replacement remains automatic.
 `
 
-const AUTH = { token: 'auth-token.ts', login: 'auth-login.ts', reveal: 'auth-reveal.ts' } as const
+const AUTH = { token: 'auth-token.ts', login: 'auth-login.ts', reveal: 'auth-reveal.ts', replace: 'auth-replace.ts' } as const
 // `seeds` stays as an alias for `list` so older AGENT recipes and muscle memory keep working.
 const DB = { backup: 'backup', list: 'list', seeds: 'list', restore: 'restore', snapshot: 'snapshot' } as const
 

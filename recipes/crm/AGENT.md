@@ -91,6 +91,11 @@ In descending order of how wrong the defaults will be:
    `features/crm/web/index.tsx`; the offered grid columns, their widths, hints and footer
    aggregates in `lib/crmView.ts`; the display label maps in `crm-types.ts`.
 
+8. **What other features add** - nothing to do in the CRM itself. Another recipe adds sections,
+   buttons, alerts, table columns and Needs attention reasons through the CRM's extension points
+   (SPEC.md, "Extension points"). When integrating such a recipe, check its contributions render on
+   an account page and the accounts table; never wire it in by importing it from `features/crm`.
+
 There is no `env` to set and no seed to run.
 
 ## 3. Prove it
@@ -104,7 +109,7 @@ box dev
   layout toggle swaps the grid for the pipeline kanban, where a deal card drags between stage
   columns (drag one to Won and its lead account becomes a customer).
 - `http://localhost:8190/crm/<account-id>` - the detail page: the summary strip, **Add deal** and a
-  deal edited in place, contacts, the markdown doc (type in **Next move**, then check
+  deal edited in place (change its stage and the row grows a "1 stage move" line), contacts, the markdown doc (type in **Next move**, then check
   `data/docs/crm/<account-id>.md` on disk - the heading and the prose are really there,
   and the row's `next_action` now matches; set its due date and **Log a touch** from the same
   block), the conversation stream, the meetings and money sections, and a section folding shut by
@@ -120,6 +125,8 @@ bun run cli crm-account-upsert   # create or patch a company
 bun run cli crm-deals            # every deal, or one account's
 bun run cli crm-deal-upsert      # open or move a deal
 bun run cli crm-deal-delete
+bun run cli crm-deal-stage-changes  # a deal's (or account's) stage history, or moves in a date range
+bun run cli crm-deal-moves       # stage moves per owner between two days
 bun run cli crm-contact-upsert   # a person at it
 bun run cli crm-meetings         # filtered, newest first
 bun run cli crm-revenue-events
@@ -128,7 +135,7 @@ bun run cli crm-doc-read / crm-doc-save
 bun run cli crm-activities / crm-activity-log / crm-activity-delete
 ```
 
-Twenty tools in total (every procedure except `crmDocRegionsSave`, which is the dashboard's
+Twenty-two tools in total (every procedure except `crmDocRegionsSave`, which is the dashboard's
 region autosave and deliberately has no MCP name). Remember what comes back: `crm-accounts` returns
 real people's names and emails. They must never land in a public-facing draft.
 

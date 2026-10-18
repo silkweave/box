@@ -72,7 +72,7 @@ The wiki has no web backend of its own. A job uses its engine's own web tools wh
 allows them (Claude WebSearch and WebFetch, Codex web search), only for public facts, sending only
 the public topic. Under the unattended `auto` mode a fetch may be refused unless the run-as
 profile's settings allow it; without web tools the answer says the web could not be checked. Any
-other web provider joins Box-wide as an `agentMcp` server granted through a toolset.
+other web provider joins Box-wide as an MCP connection (the mcp recipe) granted through a toolset.
 
 Search inside the wiki uses the base recipe's search: by meaning and keyword when the OpenAI
 embeddings key (`credentials.openai["*"].OPENAI_API_KEY`) is set, keyword-only otherwise.
@@ -100,8 +100,8 @@ with `WikiSettings`. The next ask reads it; no restart.
 ### Without the powerup
 
 `WikiStatus` reports `powerups.ask: false`. The graph has no Ask box: Find is its only input.
-Settings > Wiki lists Ask under Powerups as not set up, with an "Add the Ask powerup" Builder brief
-for administrators (members are told to ask an administrator), and shows no Ask prompt field. Any
+Settings > Wiki shows the Ask powerup note in place of the Ask prompt field, with an "Add the Ask
+powerup" Builder brief for administrators (members are told to ask an administrator). Any
 agent still answers from the wiki by driving the page and search tools through the `wiki` skill.
 
 ## Gotchas

@@ -51,6 +51,22 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - Editing pages on disk with the server running is safe for the pages, but bypasses `log.md` and
   the reindex; the next boot's sync picks the change up. Prefer the tools.
 
+## Backup
+
+- **Box backups do not cover the wiki.** The warehouse, chat and artifacts backups leave
+  `data/wiki/` and `data/config/wiki.json` out; only the `wiki-backup` action archives them. A Box
+  without a `wiki-backup` trigger (or another schedule for it) has no wiki backup.
+- **The archive never holds the search index.** A restore rebuilds `.search/` on the next boot, and
+  with an embeddings key that re-embeds every section: minutes and API usage.
+- **Archives are as sensitive as the vault.** They carry every page, raw source and upkeep record,
+  including the text people submitted to `WikiUpdate`. Keep the bucket private.
+- **One remote object, overwritten.** `wiki/wiki-latest.tar.gz` keeps history only when the bucket
+  has object versioning and a noncurrent-version lifecycle rule (docs/WAREHOUSE.md). Local archives
+  share the Box's disk; the bucket is the offsite copy.
+- **The action runs in the server.** The vault lock is in-process, so the archive is consistent only
+  when the server takes it: `box run-now` and `box wiki-backup` go through the server. A host
+  script that tars `data/wiki/` while the server runs can catch a page write half done.
+
 ## The graph (sigma 4)
 
 - Node and edge sizes default to graph units in sigma 4; `itemSizesReference: 'screen'` keeps them

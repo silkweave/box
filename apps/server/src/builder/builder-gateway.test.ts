@@ -9,10 +9,10 @@ import { BUILDER_ATTACHMENT_MAX_BYTES, createBuilderGateway, type BuilderGateway
 import type { BuilderSupervisorAuthResult } from './builder-auth.js'
 import { SupervisedApplication, type SupervisedChild } from './supervised-application.js'
 
-type Principal = { id: string; display: string; role: 'admin' | 'member' }
+type Principal = { id: string; display: string; role: 'admin' | 'member'; kind: 'human' | 'agent' }
 type Current = { session: { id: string } | null }
 
-const admin = (id: string): Principal => ({ id, display: id, role: 'admin' })
+const admin = (id: string): Principal => ({ id, display: id, role: 'admin', kind: 'human' })
 const denied = { ok: false as const, state: 'denied' as const, reason: 'revoked' as const }
 
 class RuntimeChild extends EventEmitter implements SupervisedChild {

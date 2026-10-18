@@ -64,10 +64,18 @@ export class OpsController {
   transport itself demands a bearer token**, not just the individual tools: a per-tool guard cannot
   gate `tools/list`, which is a transport route rather than a controller method, so without
   transport auth an anonymous client could enumerate every tool the Box has. `verifyToken` calls
-  core's `authenticatePrincipal`.
+  core's `authenticatePrincipal`. The adapter's `filterActions` is the passthrough hook
+  (`agent/mcp-passthrough.ts`): a registered source (the `mcp` recipe) adds, per request, the outside
+  MCP servers' tools the calling person may use. Without one, and for a request carrying
+  `?passthrough=0` (a server-owned session's own `box` server), `/mcp` is the Box's own actions; a
+  passthrough action never shadows a Box action.
+- **Connection endpoints:** `POST /mcp/connections/<id>` serves one connection's tools under their
+  upstream names to agent sessions (core port `mcp-connections.ts`, dispatched in `main.ts` with a
+  bearer token, answered by the `mcp` recipe's relay; 404 without the recipe).
 - **CLI:** `box <tool-name>` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
   a running server's `/mcp` - one subcommand per tool. Configure `mcp.url` and `mcp.token` in
-  `box.local.json`. Without an explicit URL, the proxy uses the configured `server.port`.
+  `box.local.json`. Without an explicit URL, the proxy uses the configured `server.port`. Its
+  requests carry `x-box-surface: cli`, which the `mcp` recipe's audit log records.
   Its `@silkweave/box-core/box-json` import reads configuration without loading the warehouse.
 - Incidental REST routes sit behind a global `/api` prefix (`setGlobalPrefix('api')`) so they do not
   shadow the SPA's client routes. `/trpc` and `/mcp` are registered by the adapters and are **not**
@@ -108,7 +116,7 @@ dirties the tree.
 
 ## 3. Auth, at the server level
 
-The design is [`docs/AUTH.md`](./AUTH.md); the operator's view is [`AUTH.md`](./AUTH.md). What
+The design and the operator's view are in [`AUTH.md`](./AUTH.md). What
 belongs here is **where the guard sits and why**.
 
 `AuthGuard` (`apps/server/src/auth/auth.guard.ts`) resolves the principal from a `Bearer` token
@@ -171,8 +179,10 @@ is proxied without a guard: Vite creates the browser environment with `fetchModu
 the socket carries no file reads. Widen `DEV_SOURCE_DIRS` and `fs.allow` together, never the
 guard alone.
 
-Before Nest is created at all, `bootstrap()` awaits `ensureSystemPrincipal()`. It seeds the machine
-account (identity and role from host config, fresh default Nova/admin) and, as a side effect, applies the warehouse schema, which is
+Before Nest is created at all, `bootstrap()` awaits `ensureAgentPrincipals()`. It seeds the agent
+principals (the system principal from `box.json` `agent`, fresh default Nova/admin, and one per file
+in `data/config/agents/`), retires agent rows whose file is gone and, as a side effect, applies the
+warehouse schema, which is
 otherwise lazy. It is deliberately **not** wrapped in a try: a Box that cannot write its own
 warehouse should fail at boot, loudly, rather than at the first request.
 
@@ -190,8 +200,9 @@ simultaneously a dashboard button, an MCP tool and a CLI subcommand.
 
 **The registry is not a hand-maintained list.** `ops/registry.ts` is core's own `CORE_ACTIONS` plus
 `FEATURE_LIST.flatMap(f => f.actions ?? [])`, indexed once and cached. Two ids from two different
-owners throw at index time, naming both owners. A blank Box has one action of its own,
-`warehouse-backup`. **A feature contributes an action by listing it in `actions` on its core
+owners throw at index time, naming both owners. A blank Box has core's own actions:
+`warehouse-backup`, `sources-sync` and `source-sync` (the data source syncs, see
+[SIGNALS.md](SIGNALS.md)). **A feature contributes an action by listing it in `actions` on its core
 manifest** (`defineCoreFeature`) - nothing outside the feature is edited.
 
 **The funnel** is `ops/run.ts`. Every execution - a cron fire, a dashboard "Run now", an MCP call
@@ -477,7 +488,7 @@ an administrator still edits with hot reload in Builder.
   `br`/`gzip`, `Vary: Accept-Encoding`), so assets load even while the application restarts. Nest
   serves the SPA fallback (`index.html` with `no-cache`, other release files, a 404 for a missing
   hashed chunk) from plain middleware in `main.ts`; reserved prefixes and path mounts take
-  precedence as before.
+  precedence.
 - **Per-request routing.** The supervisor strips any client `x-box-frontend` header and sets
   `x-box-frontend: dev` only when a signed-in administrator has a Builder session open, Vite is
   running, and the request is either a framed document load (`Sec-Fetch-Dest: iframe`, which only the
@@ -505,7 +516,7 @@ an administrator still edits with hot reload in Builder.
 
 **Boot a throwaway Box** without touching your real data. The instance directory is always
 `<checkout>/data` and no variable moves it, so a throwaway is a SECOND CHECKOUT of the repo. In it,
-give `server.port` and `server.vitePort` in its own `box.json` unused numbers, leave every
+give `server.port` and `server.vitePort` in its gitignored `box.local.json` unused numbers, leave every
 `background` switch false, then:
 
 ```bash
@@ -533,7 +544,7 @@ export interface ServerFeature {
 `features/<id>/server/index.ts` default-exports one `defineServerFeature({...})`. The
 maintained registration `apps/server/src/generated/features.ts` is the **only** file outside the feature that names it, and `app.module.ts`
 spreads `SERVER_FEATURE_LIST.map(f => f.module)` into its imports after core's own modules
-(`AuthModule`, `UsersModule`, `ChangesModule`, `OpsModule`, `AgentModule`) and before
+(`AuthModule`, `UsersModule`, `ChangesModule`, `OpsModule`, `AgentModule`, `SignalsModule`) and before
 `SilkweaveModule.forRoot`.
 
 The smallest possible feature is one line:

@@ -21,8 +21,8 @@ LinkedIn pieces, and trailing-hour traction spikes ("Polls" below).
 
 - **dependsOn**: `content`.
   - From **core's browser lease** (`docs/BROWSERS.md`): `browserIdentity`
-    (`@silkweave/box-core/browser/browsers`, `box.json browsers.users`: `users.id` → chromatrix
-    identity) and `connectCDP` / `firstContext` / `detach` (`@silkweave/box-core/browser/cdp`) -
+    (`@silkweave/box-core/browser/browsers`, `box.json browsers.users`: `users.id` → Shuttle
+    agent id) and `connectCDP` / `firstContext` / `detach` (`@silkweave/box-core/browser/cdp`) -
     the whole browser half of `verify/strategies.ts`. The inbox build reads core's `snapshots`
     table directly (`github-engagement`, `hackernews`, `reddit-engagement`, latest row per
     channel); those snapshots are written by the Data Sync recipe's pulls (`hackernews` in its
@@ -275,13 +275,13 @@ curated content, the inbox and recording an engagement are a member's.
 ## What needs a real browser
 
 `x:like`, `x:repost`, `linkedin:react` and `linkedin:comment` (and their `linkedin-article`
-twins) verify by opening the page in **the engager's own logged-in Chrome**, reached over CDP
-through chromatrix, with the identity looked up in `box.json browsers.users` by `users.id`.
+twins) verify by opening the page in **the engager's own logged-in browser storage**, a Shuttle
+agent reached over CDP, with the agent looked up in `box.json browsers.users` by `users.id`.
 Operationally that means:
 
-- a machine with a persistent, human-logged-in headed Chrome per participant, and the chromatrix
-  gateway reachable from the server;
-- an undeclared identity, an unreachable gateway or a logged-out session is an `unknown` verdict
+- a Shuttle browser with one human-logged-in agent per participant, its MCP endpoint reachable
+  from the server;
+- an undeclared identity, an unreachable Shuttle or a logged-out session is an `unknown` verdict
   with an actionable message - never an exception, so the card's manual-record fallback always
   stays available;
 - these checks are inherently brittle against platform DOM drift, which is why each strategy keeps

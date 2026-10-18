@@ -45,6 +45,11 @@
         }
       }
     },
+    "timeZone": {
+      "type": "string",
+      "default": "UTC",
+      "description": "The team's IANA time zone (for example \"Europe/Vienna\" or \"Asia/Jakarta\"). \"Today\", \"this week\" and day-based ages are read on this clock by the server and every browser, so the whole team shares one day. Data-sync API windows and exchange rates stay in UTC."
+    },
     "brand": {
       "type": "object",
       "description": "Product name and artwork. Baked into the SPA at build time (rebuild after editing) and read by the server at call time. Artwork paths are origin-relative files under apps/web/public.",
@@ -173,7 +178,7 @@
     },
     "background": {
       "type": "object",
-      "description": "Background work is OFF unless armed here. A dev checkout holding production credentials would otherwise run real schedules and real agent turns off test data. Core never reads these; the automation, chat and relay apps do, and typegen forces all three off.",
+      "description": "Background work is OFF unless armed here. A dev checkout holding production credentials would otherwise run real schedules and real agent turns off test data. Core never reads these; the automation, chat, relay and WhatsApp apps do, and typegen forces them all off.",
       "additionalProperties": false,
       "patternProperties": {
         "^_": {}
@@ -190,6 +195,10 @@
         "relay": {
           "type": "boolean",
           "description": "Arms the webhook relay."
+        },
+        "whatsapp": {
+          "type": "boolean",
+          "description": "Arms the WhatsApp connection (comms whatsapp powerup), only on the Box that holds the linked devices: two Boxes must never share one session."
         }
       }
     },
@@ -322,23 +331,23 @@
     },
     "browsers": {
       "type": "object",
-      "description": "The browser lease: the chromatrix service that hands out headed Chrome tabs.",
+      "description": "The browser lease: the Shuttle browser whose agents hold each person's logins.",
       "properties": {
         "url": {
           "type": "string",
-          "description": "chromatrix origin (default http://127.0.0.1:8830)."
+          "description": "Shuttle MCP endpoint (default http://127.0.0.1:9222/mcp); an origin without a path gets /mcp appended."
         },
         "identity": {
           "type": "string",
-          "description": "Default browser identity (default 'default')."
+          "description": "Default Shuttle agent id (default 'default')."
         },
         "token": {
           "type": "string",
-          "description": "chromatrix bearer token; keep it in box.local.json."
+          "description": "Bearer token for Shuttle network mode only (loopback needs none); keep it in box.local.json."
         },
         "users": {
           "type": "object",
-          "description": "users.id -> that person's browser identity.",
+          "description": "users.id -> that person's Shuttle agent id.",
           "additionalProperties": {
             "type": "string"
           }
@@ -348,23 +357,8 @@
     },
     "agentMcp": {
       "type": "object",
-      "description": "MCP servers and the toolsets that grant them to server-owned agent sessions (chat rooms, agent triggers). A session gets the Box's own tools plus its toolset's servers; no toolset means the Box's tools only.",
+      "description": "The toolsets that grant server-owned agent sessions (chat rooms, agent triggers) more than the Box's own tools. A toolset's servers are connections of the mcp recipe (features.mcp.connections); no toolset means the Box's tools only.",
       "properties": {
-        "servers": {
-          "type": "object",
-          "description": "Server id -> connection. The id is the tool prefix (mcp__<id>__<Tool>).",
-          "additionalProperties": {
-            "type": ["object", "null"],
-            "properties": {
-              "url": { "type": "string", "description": "HTTP or SSE endpoint." },
-              "type": { "type": "string", "enum": ["http", "sse"], "description": "Transport (default http)." },
-              "label": { "type": "string", "description": "Display name." },
-              "token": { "type": "string", "description": "Bearer token sent as Authorization; keep it in box.local.json." }
-            },
-            "required": ["url"],
-            "additionalProperties": false
-          }
-        },
         "toolsets": {
           "type": "object",
           "description": "Toolset id -> grant.",
@@ -373,8 +367,8 @@
             "properties": {
               "label": { "type": "string" },
               "description": { "type": "string" },
-              "servers": { "type": "array", "items": { "type": "string" }, "description": "Server ids this toolset attaches." },
-              "allow": { "type": "array", "items": { "type": "string" }, "description": "Tools that run without approval: mcp__<server> or mcp__<server>__<Tool>." },
+              "servers": { "type": "array", "items": { "type": "string" }, "description": "Connection ids this toolset attaches (the mcp recipe's)." },
+              "allow": { "type": "array", "items": { "type": "string" }, "description": "Tools that run without approval: mcp__<connection> or mcp__<connection>__<tool>." },
               "deny": { "type": "array", "items": { "type": "string" }, "description": "Tools the session never gets: an MCP tool or server, or a built-in tool such as Bash." }
             },
             "additionalProperties": false

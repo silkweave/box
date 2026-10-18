@@ -1,7 +1,7 @@
 # Branding a Box
 
-Branding is the `brand` section of `box.json`, the one file a Box is configured in, alongside
-the agent identity, the ports and the background switches ([SETUP](SETUP.md)). It is still a
+Branding is the `brand` section of `box.json`, the Box's shared configuration file, alongside
+the agent identity and the background switches ([CONFIGURATION](CONFIGURATION.md)). It is still a
 BUILD-TIME choice: the SPA bakes these values into the bundle, so a change reaches the browser only
 after a rebuild. The section supplies the product name, short install name, description, wordmark
 text, optional suffix (use an empty string to omit it), artwork URLs and installed-app colours.

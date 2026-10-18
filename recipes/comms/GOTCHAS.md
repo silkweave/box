@@ -4,7 +4,7 @@ Sending failures are recorded rows (`status: failed`, with the transport's messa
 inbound fetch failures stay visible as `fetching` or `failed`. Check `comms-status` and the table
 before reading code.
 
-The feature id (`comms`, the same as the recipe id) and the channel ids (`email`) are part of runtime
+The feature id (`comms`, the same as the recipe id) and the channel ids (`email`, `whatsapp`) are part of runtime
 registration, warehouse rows and event kinds. Keep them stable.
 The recipe's reference implementation is adapted by the receiving agent, so build and type errors are expected integration
 work. Record any local exception or custom path in the Box's docs/GOTCHAS.md and leave current
@@ -46,9 +46,16 @@ operation state in _docs/INTEGRATION.md.
 - **The hourly cap counts `occurred_at`, per channel account.** An approved send's `occurred_at` is
   its approval time, so a send held for days counts in the hour it went out; held, denied, failed and
   expired rows never count. `maxPendingApprovals`, by contrast, counts held sends across channels.
-- **Agent triggers need `workerdeck` and `agentProfiles[<agent.id>]`.** A `<channel>.received`
-  trigger runs as the agent; trigger validation refuses it without the agent surface (`box.json`
-  `workerdeck`) and a profile for the agent.
+- **Agent triggers need `workerdeck` and `agentProfiles[<agent id>]`.** A `<channel>.received`
+  trigger runs as the agent it names in `run_as`; trigger validation refuses it without the agent
+  surface (`box.json` `workerdeck`) and a profile for that agent. The event's `fields.agent` says
+  who the message is for; filter on it, nothing runs as that agent implicitly.
+- **A conversation's scope is its account id, so renaming an account splits its threads.** A
+  conversation id is `conversationKey(channel, scope, peer)` with scope = the account id (or
+  `shared:<id>`, or `group` for a group chat). Changing an account's `id` leaves its stored rows and
+  conversations under the old id, and new messages start new conversations under the new one. A
+  rename needs a backed-up transition script that rewrites `account`, the scope and the ids
+  together. `group` is reserved and refused as an account id.
 - **Ports** are Nest **8190** / Vite **5190**. A second Box needs its own `server.port` / `server.vitePort`.
 
 ## Email channel
@@ -57,10 +64,12 @@ operation state in _docs/INTEGRATION.md.
   addresses and `*@domain` are valid (`@domain` is an alias). `*@example.com` does not match
   `sub.example.com`. A typo such as `*example.com` is reported in `configProblems` rather than
   matching too much.
-- **Email: the mailbox is the agent's.** An `accounts.email` entry whose `user` is not `agent.id` is
-  refused. With several email accounts, exactly one must be `"default": true`.
+- **Email: one mailbox per agent, and no default.** An `accounts.email` entry's `user` must be an
+  active agent; one owned by a person or a retired agent still receives but never sends or wakes
+  anyone. Each agent has at most one account. With several accounts, an inbound email belongs to
+  the first one addressed, and a person's new send must name `from`.
 - **Email: the Resend key is per account, with a channel fallback.** `credentials.email.<account id>`
-  wins over `credentials.email["*"]`. Settings > Comms and tRPC `commsEmailStatus` `keyPath` name
+  wins over `credentials.email["*"]`. Settings > Communications and tRPC `commsEmailStatus` `keyPath` name
   where it goes.
 - **Email: Resend replaces a custom Message-ID.** Observed 2026-10-08: a send carrying `Message-ID:
   <<row id>@<domain>>` was delivered with an SES id (`<...@<region>.amazonses.com>`), which is what
@@ -89,3 +98,67 @@ operation state in _docs/INTEGRATION.md.
 - **Email inbound: SPF can fail on genuine mail; trust keys on DMARC.** Observed 2026-10-08: a
   Gmail-hosted reply arrived with `spf: fail`, `dkim: pass`, `dmarc: pass`. DMARC passes through DKIM
   alignment, which is why `trusted` reads `dmarc` only and never `spf`.
+
+## WhatsApp channel
+
+- **WhatsApp: the settle window times arrival, not WhatsApp's timestamp.** `messageTimestamp` has
+  whole seconds and the sender's clock; the window reads each live row's `seq` (arrival in
+  microseconds). Its timers live in the server process; a restart re-arms windows from the last
+  hour and settles overdue ones once. Typing extends a window only where the connection asked for
+  presence (`presenceSubscribe`, sent for a chat once a message there woke an agent) and never past
+  the cap.
+- **WhatsApp: an answer stops a window, not a draft already running.** A reply or a team member's
+  message before the window closes records no settled event. A draft job that already started
+  still writes its held draft; a person rejects it in Comms.
+
+- **WhatsApp: a QR pairing leaves `creds.registered` false.** Observed 2026-10-13 on Baileys
+  7.0.0-rc14: only the pairing-code flow sets `registered`; every successful pairing writes
+  `creds.account` (the signed device identity). A session counts as paired when either is set.
+  Checking `registered` alone makes a QR-linked Box come up "unlinked" after a restart.
+- **WhatsApp: never refuse every history sync type.** The bootstrap, push-name and non-blocking
+  syncs right after linking carry the LID-to-phone mappings and contact names; Baileys warns
+  ("DISABLING ALL SYNC") when `shouldSyncHistoryMessage` refuses all of them. The Box accepts those,
+  takes RECENT only when the owner chose a history import and never FULL; history messages are
+  stored only with that choice. A device linked while all syncs were refused needs a re-pair to
+  get the mappings.
+- **WhatsApp: group JIDs in settings are taken as they are.** `allowedRecipients` and
+  `trustedSenders` accept `<digits>@g.us` and `<digits>@lid` unchanged; number formatting (spaces,
+  dots, dashes) is stripped from phone entries only. Managed groups are not configuration: they are
+  picked in Settings and kept in the warehouse.
+- **WhatsApp: only managed chats exist for the Box.** A group is handled once it is ticked in
+  Settings > Communications > WhatsApp > Groups; a direct chat only when a Box user carries the
+  number as their phone. Everything else (client direct messages, other groups, a chat WhatsApp
+  names only by LID) is dropped, not held: its messages are never stored, so managing the chat
+  later does not bring them back. The WhatsApp settings count what was dropped since boot.
+- **WhatsApp: a person's own number keeps only what they pick, and is private.** Nothing of it is
+  stored until its owner picks a chat; a chat dropped before the pick does not come back. Its
+  messages are hidden from other people everywhere (lists, counts, media, pictures), never wake an
+  agent, and an agent's send from it waits for its owner alone. Two people who both linked their
+  numbers and pick their chat with each other: each message is stored once, in whichever mailbox
+  stored it first, so a chat with one of our numbers cannot be picked at all.
+- **WhatsApp: the linked number's own messages are outbound.** When the agent's number is a
+  person's phone, what that person types on the phone or in a group lands in Sent (`sentFrom:
+  phone`), not the Inbox. A group message from another of our numbers is that account's outbound
+  message too, whichever of our connections stores it first.
+- **WhatsApp: mentions are `@<number>` on the wire.** WhatsApp puts the mentioned person's number
+  (or LID, `@227947621400745`) in the text and their JID in the message context's `mentionedJid`;
+  the phone shows the contact's name only because it resolves the JID itself. Comms stores the
+  readable form (`@Nova` in `body_text`, who each is in `meta.mentions`) and turns `@<name>` of a
+  conversation member back into a WhatsApp mention when sending. A mention of our own number arrives
+  as our LID, which the LID mapping may not hold: the connection's own `sock.user.lid` resolves it.
+- **WhatsApp: a mention of one of our numbers can arrive as its LID**, which another connection's
+  LID mapping may not hold: each connection writes its own LID to `link.json` on open, and every
+  connection resolves our LIDs from those records, so a stored mention reads the same whichever
+  connection stored it. A number paired before this was recorded gains its LID on its next connect.
+- **WhatsApp: a group message reaches every connection of ours in the group.** It is stored once:
+  the row id is `wa:<chat>:<WhatsApp id>` and a WhatsApp id already stored (by any connection, in
+  any form of its chat) is a duplicate. The connections share one process, so ingest is
+  serialized per WhatsApp id; two servers on one Box would race.
+- **WhatsApp: sessions and media are not in backups.** `data/comms/whatsapp/<agent>/` (the device
+  session and `link.json`) is never copied, so a restored Box pairs each number again and two
+  Boxes never run one session. Media files under `data/comms/media/whatsapp/` are not backed up
+  either: the rows keep each item's metadata, and opening one downloads it again from WhatsApp
+  while WhatsApp still holds it.
+- **WhatsApp: one Box arms the connections.** `background.whatsapp` belongs in `box.local.json` of
+  the Box that holds the linked devices. A second Box with the same session would fight over the
+  device; a development Box pairs its own numbers or stays off.

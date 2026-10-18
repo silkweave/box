@@ -15,7 +15,10 @@ The recipe has two powerups: Alerts (`recipes/automation/powerups/alerts/`, deli
 
 Migrations: `automation:001-import-schedules` (imports `features.automation.schedules` from
 `box.json` / `box.local.json` as time triggers), `automation:002-trigger-permission-mode` (adds the
-nullable `triggers.permission_mode` column) plus core's `004-runs-trigger-id` and
+nullable `triggers.permission_mode` column), `automation:003-trigger-toolset` and
+`automation:004-trigger-groups` (the `trigger_groups` table's Default row and `triggers.group_id`,
+so every trigger is in a folder), `automation:005-trigger-concurrency-key` (the nullable
+`triggers.concurrency_key` column) plus core's `004-runs-trigger-id` and
 `005-runs-event-id`, which arrive with core. Back up the warehouse first, then boot a restored copy
 and confirm every configured schedule is a trigger (`triggers-list`) before the live Box takes it.
 After the live boot, remove `features.automation.schedules` from the config files: it is no longer

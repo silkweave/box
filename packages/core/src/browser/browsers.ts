@@ -1,11 +1,11 @@
-// Browser identities: users.id → the chromatrix IDENTITY whose persistent, human-logged-in headed
-// Chrome belongs to that person (`browsers.users` in box.json). Identities are names, not
-// endpoints - a tab is leased per job and its CDP URL is minted per lease (browser/cdp.ts) - and
+// Browser identities: users.id → the Shuttle AGENT whose persistent, human-logged-in storage
+// belongs to that person (`browsers.users` in box.json). Agents are names, not endpoints - a
+// session is opened per job and its CDP endpoint is minted per session (browser/cdp.ts) - and
 // they are read at call time.
 
 import { boxJson } from '../box-config.js'
 
-/** users.id → chromatrix identity (the name that person's headed Chrome is registered under). */
+/** users.id → Shuttle agent id (the agent holding that person's logins). */
 export type BrowsersFile = Record<string, string>
 
 
@@ -19,7 +19,7 @@ export function readBrowsersFile(): BrowsersFile {
   return out
 }
 
-/** The chromatrix identity backing a user's own headed Chrome, or null when none is declared. */
+/** The Shuttle agent holding a user's own logins, or null when none is declared. */
 export function browserIdentity(userId: string): string | null {
   return readBrowsersFile()[userId] ?? null
 }

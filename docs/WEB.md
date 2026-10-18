@@ -19,11 +19,11 @@ Related reading: [`../packages/ui/README.md`](../packages/ui/README.md) (the com
 
 ```bash
 bun install                              # from the repo root (the bun run workspace)
-box dev                                  # turbo run dev: Nest on :8190 + Vite on :5190
+box dev                                  # supervisor + Nest on :8190, Vite on :5190
 bun run --filter @silkweave/box-ui storybook       # the component library on its own, :6006
 ```
 
-**Point the browser at :8190, never at :5190.** Nest is the single origin. Both ports come from
+**Point the browser at :8190, never at :5190.** The supervisor on that port is the single origin. Both ports come from
 `box.json` (`server.port` 8190, `server.vitePort` 5190). Per-Box overrides belong in the
 gitignored `box.local.json`. In dev `box dev` starts the server with `--dev`, so it builds the Vite URL
 from that port itself, and `apps/server/src/main.ts` registers a reverse proxy ahead of Nest's
@@ -35,11 +35,11 @@ no CORS anywhere. Under `box start` there is no `--dev` flag: everyone gets the 
 [SERVER.md](SERVER.md#built-mode-one-release-for-everyone-vite-for-the-builder-preview).
 
 Hitting the bare Vite port still works - `apps/web/vite.config.ts` carries a reciprocal proxy for
-`/trpc`, `/mcp` and `/api` back to the server - but it is a fallback, not the supported path.
+`/agent`, `/trpc`, `/mcp` and `/api` back to the server - but it is a fallback, not the supported path.
 
-A second Box uses distinct port values in its gitignored `box.local.json`. Pick the port deliberately: a Box that
-lands beside another service on the same number, or on the other address family of the same
-number, so keep each Box's configured ports distinct.
+A second Box uses distinct port values in its gitignored `box.local.json`. Pick the ports
+deliberately: a Box that lands on a number another service already uses, on either address family,
+collides with it, so check the ports before booting.
 
 Vite's `server.allowedHosts` carries `.ts.net` because Nest proxies with `changeOrigin: false`: the
 original Host reaches Vite, and over tailscale that Host is the tailnet name, which Vite's host
@@ -78,7 +78,7 @@ and the aside panel), `UsersProvider` (the user directory as data), and `DocEdit
 `src/lib/userMenu.tsx` is the fourth, prop-shaped: `AccountMenu` takes who is signed in, what
 sign-out does and where the active user is persisted, because all three are policy the library
 should hold no opinion about. The "Only my items" filter is rendered into its `extra` slot from
-here too - it is one app's feature, and it used to be `filterMine` props on the library component.
+here too, because it is one app's feature rather than a library prop.
 
 Two files here are aliases, not rivals: `src/lib/utils.ts` re-exports `cn` and
 `src/lib/usePersistedState.ts` re-exports the persisted-state hook, both from
@@ -149,13 +149,14 @@ server's `index.html` fallback. Settings uses the hash so the application page s
 
 | Section | Destinations |
 | --- | --- |
-| Workspace | Dashboard, Chat, Artifacts, Sink |
+| Workspace | Dashboard, Comms, Chat, Artifacts, Sink |
 | Reporting | Signals, Circuit Boards |
-| Operations | Initiatives, Sprints, Reminders |
+| Operations | Goals, Initiatives, Sprints, Reminders |
 | Sales | Accounts |
 | Marketing | Content, Engagement |
+| Support | Support Tickets, Help Articles |
 
-Absent features create no empty headings; additional unassigned entries appear under Other.
+Absent features create no empty headings; unassigned entries (Wiki, for one) appear under Other.
 The UI library accepts optional `NavGroup.section` labels and renders a heading when the section
 changes. Selecting a group navigates to its overview and automatically shows its sub-navigation
 in a rounded panel with a solid header. `--sidebar-primary` controls the header fill and the
@@ -282,8 +283,8 @@ Deep links are plain paths: `http://localhost:8190/crm/acme`, `/chat/general`,
 `/initiatives/<slug>/<task>`. The SPA uses `createBrowserHistory()` and the server fallback serves
 `index.html` for application paths.
 
-Moving to `createBrowserHistory()` needed **no server change and no SSR**, because the SPA fallback
-both topologies need already existed:
+Browser history needs **no server change and no SSR**, because both topologies already serve an SPA
+fallback:
 
 - **Built:** the release middleware in `main.ts` (`serveWebApp`, `apps/server/src/web/web-release.ts`)
   serves release files and sends `index.html` for every other path. `RESERVED` is the contract -
@@ -296,9 +297,8 @@ both topologies need already existed:
 
 Two consequences worth holding on to:
 
-1. **The URL namespace is shared with the server now.** A top-level client route may not collide
-   with the reserved prefixes (`/api`, `/trpc`, `/mcp`, `/agent` - `RESERVED` in `main.ts` and the
-   `exclude` list in `app.module.ts` are two spellings of one set), with a real file the SPA ships
+1. **The URL namespace is shared with the server.** A top-level client route may not collide
+   with the reserved prefixes (`/api`, `/trpc`, `/mcp`, `/agent`, `RESERVED` in `main.ts`), with a real file the SPA ships
    (`/assets/*`, `/manifest.webmanifest`, `/push-icon.png`, `/apple-touch-icon.png`,
    `/app-icon-512.png`), or with what Vite owns in dev (`/src`, `/node_modules`, `/@vite`, `/@fs`).
    A name clash is a silent break, so a feature that adds a route must check its path against these
@@ -309,14 +309,13 @@ Two consequences worth holding on to:
    client route: the auth gate renders `LoginView` on any path, and the grant is scrubbed from the
    visible URL after the login view reads it. `box auth token` and `box auth reveal` print the root.
 
-An `<a href='/'>` is now a full document reload, not a route change - the sidebar wordmark links
+An `<a href='/'>` is a full document reload, not a route change - the sidebar wordmark links
 through the shell seam's `homeLink`, which this app fills with TanStack's `<Link to='/'>` in
 `lib/shell.tsx` (the library's default is a plain anchor, because `packages/ui` may not import a
-router). The push chain moved with it: web push carries `url: '/chat/<slug>'`, and the service
-worker's "never push to the room you are looking at" check reads `pathname`, not `hash`. **A service
-worker and the notifications it has shown are cached on the client**, so a click on a notification
-delivered before the change still posts `/#/chat/<slug>`, so the notifications app's
-`listenPushNavigate()` accepts both spellings on purpose. If you adapt a recipe whose feature shows
+router). Web push carries `url: '/chat/<slug>'`, and the service worker's "never push to the room
+you are looking at" check reads `pathname`, not `hash`. **A service worker and the notifications it
+has shown are cached on the client**, so an old cached worker can still post `/#/chat/<slug>`, and
+the notifications app's `listenPushNavigate()` accepts both spellings on purpose. If you adapt a recipe whose feature shows
 notifications, it inherits this problem and this answer.
 
 ## The feature registry, and the ports a feature fills
@@ -434,13 +433,13 @@ no mutation can be missed. Bearer clients are exempt.
 `src/generated/appRouter.d.ts` is written by **`bun run typegen`**, which boots the Nest app far enough
 to register the adapters (`NestFactory.create` + `app.init()`, no `listen()`, no port) and dumps the
 router type. It is a generated file - never hand-edit it. `bun run typegen --check` fails instead of
-writing and restores the file; it runs inside `box verify`, so **a controller change no longer
-needs a running server** for the SPA's types to catch up.
+writing and restores the file; it runs inside `box verify`, so **a controller change needs no
+running server** for the SPA's types to catch up.
 
 ### Data stores
 
-`src/lib/dataStore.ts` is the ONE module-level cache and subscription store, replacing the seven
-hand-rolled copies each domain hook used to carry. `createDataStore(fetcher)` gives you `load`,
+`src/lib/dataStore.ts` is the ONE module-level cache and subscription store; domain hooks do not
+keep their own. `createDataStore(fetcher)` gives you `load`,
 `reload`, `peek`, `set` (optimistic patch + notify) and a `useData(enabled?)` hook. One shared fetch
 per store, deduped while in flight; every subscriber re-renders on every emit; a mutation patches
 through `set()` and reconciles with `reload()`.

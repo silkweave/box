@@ -1,11 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { PassThrough, type Duplex } from 'node:stream'
 import type { SessionInfo } from '@workerdeck/protocol'
-import { AGENT_SESSION_APP, SESSION_COOKIE, agentEnginesFor, agentSessionAccess, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, authenticatePrincipal, parseCookies, resolvePrincipalById, verifySession, type Principal } from '@silkweave/box-core'
+import { AGENT_SESSION_APP, agentEnginesFor, agentSessionAccess, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, authenticatePrincipal, resolvePrincipalById, resolveSessionPrincipal, type Principal } from '@silkweave/box-core'
 import { AGENT_AUTH, agentWorkerUrl, workerdeckHost, type AgentAuth, type AuthedRequest } from './workerdeck.host.js'
 import { relayReadOnly } from './session-relay.js'
 import { applyBuilderSessionPolicy, BuilderSessionPolicyError } from './builder-session-policy.js'
-import { trackBuilderControl } from './builder-control.js'
+import { applyWorkSessionPolicy, WorkSessionError } from './work-session.js'
+import { trackAgentControl } from './agent-control.js'
 import { repoRoot } from '@silkweave/box-core'
 
 /**
@@ -120,8 +121,7 @@ async function authorize(req: IncomingMessage, mutating: boolean): Promise<Authz
     principal = await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim())
     viaBearer = true
   } else {
-    const claims = verifySession(parseCookies(req.headers.cookie)[SESSION_COOKIE])
-    principal = claims ? await resolvePrincipalById(claims.sub) : null
+    principal = await resolveSessionPrincipal(req.headers.cookie)
   }
   if (!principal) return { principal, rejection: { status: 401, error: 'sign in required' } }
   if (mutating && !viaBearer && !req.headers['x-box-csrf']) {
@@ -298,9 +298,16 @@ export function createAgentMount(): AgentMount | undefined {
     delete body.profile
     try {
       await applyBuilderSessionPolicy(body, principal, engine, repoRoot())
+      // A member's Work session: sandbox cwd, Box tools per their settings, the guard's grant
+      // stamped on meta (work-session.ts). An admin's is left as Builder policy pinned it.
+      await applyWorkSessionPolicy(body, principal, engine)
     } catch (error) {
       if (error instanceof BuilderSessionPolicyError) {
         respond(res, error.status, { error: error.message })
+        return
+      }
+      if (error instanceof WorkSessionError) {
+        respond(res, error.status, { error: error.code, message: error.message })
         return
       }
       throw error
@@ -458,11 +465,20 @@ export function createAgentMount(): AgentMount | undefined {
         // GET that opens a channel that writes. The room reader's case is served without ever
         // handing the worker this socket.
         const auth = agentAuthFor(principal, false)
-        // Track authenticated sockets so a role change closes existing control channels too.
-        // Tracking all of an admin's agent sockets covers a dormant Builder session waking below.
-        if (principal?.role === 'admin') {
-          const untrack = trackBuilderControl(principal.id, () => socket.destroy())
+        // Track every authenticated socket, member or admin, writable or reader relay: WorkerDeck
+        // authenticates an attach once, so revoking, deleting or demoting a user must close the
+        // channels they already hold (users.controller), not only refuse their next request.
+        if (principal) {
+          const untrack = trackAgentControl(principal.id, () => socket.destroy())
           socket.once('close', untrack)
+          // Re-read the user AFTER registering: a revoke that ran while this attach authenticated
+          // swept before the socket was tracked, and authentication answered from the earlier row.
+          const current = await resolvePrincipalById(principal.id)
+          if (!current || current.role !== principal.role) {
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+            socket.destroy()
+            return
+          }
         }
         const relay = auth.via === 'box' ? readerRelayUrl(req.url ?? '/', auth.user) : null
         if (relay !== null) {

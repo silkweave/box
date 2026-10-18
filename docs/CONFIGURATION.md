@@ -13,7 +13,7 @@ keys fail with an error. The schema is `packages/core/box.schema.json`.
   "$schema": "./packages/core/box.schema.json",
   "agent": { "id": "nova", "name": "Nova", "role": "admin" },
   "server": { "host": "127.0.0.1", "port": 8190, "vitePort": 5190 },
-  "background": { "automation": false, "chatAgent": false, "relay": false }
+  "background": { "automation": false, "chatAgent": false, "relay": false, "whatsapp": false }
 }
 ```
 
@@ -29,12 +29,30 @@ development server also accepts requests for its host, and the mobile app script
 when no `--server` is given; see [MOBILE.md](MOBILE.md). Brand changes require a frontend rebuild.
 Keep automation and agent hosts disabled in runtime tests.
 
-`background` arms work that runs without a request: `automation` (time and event triggers),
-`chatAgent` (agent replies in chat) and `relay` (the automation recipe's webhook relay connection,
-see `recipes/automation/powerups/relay/`). All default to false and are forced off in maintenance.
-Arm `relay` on exactly one Box per relay Worker: a second connection takes the Worker over.
+`server.vscodeRemoteHost` names the ssh host (`box` or `you@box`) for Open-in-VS-Code links over
+Remote-SSH when the dashboard is viewed from another machine; null keeps local file links.
+`server.viteDevUrl` sends every SPA request to the Vite dev server at that address, as `box dev`
+does, instead of serving the promoted release. `backup.gcsBucket` names a private GCS bucket (no `gs://` prefix) that every
+backup is also uploaded to with the host's ambient gcloud credentials; null keeps backups local
+(see [WAREHOUSE.md](WAREHOUSE.md)).
 
-Core sections include `agent`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
+`background` arms work that runs without a request: `automation` (time and event triggers),
+`chatAgent` (agent replies in chat), `relay` (the automation recipe's webhook relay connection,
+see `recipes/automation/powerups/relay/`) and `whatsapp` (the comms recipe's WhatsApp connection,
+see `recipes/comms/powerups/whatsapp/`). All default to false and are forced off in maintenance.
+Arm `relay` on exactly one Box per relay Worker: a second connection takes the Worker over. Arm
+`whatsapp` only on the Box that holds the linked devices: two Boxes must never share one session.
+WhatsApp accounts are not configured in `accounts`: each agent's number is paired in Settings >
+Communications > WhatsApp, and its session lives in `data/comms/whatsapp/<agent>/`.
+
+`timeZone` is the team's clock, an IANA zone name such as `Europe/Vienna` (default `UTC`). The
+server and every browser read "today", "this week" and day-based ages on it, so the whole team
+shares one day wherever the host or a person sits. Choose the zone where most of the team works.
+Core exports `teamDay()` (server, reads `box.json` at call time), `dayInZone()` and `addTeamDays()`
+(pure, `@silkweave/box-core/team-day`); the web app reads the zone from `/api/auth/me` through
+`apps/web/src/lib/teamDay.ts`. API windows of external services and exchange rates stay in UTC.
+
+Core sections include `agent`, `timeZone`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
 `stack`, `recipes`, `signals`, `browsers`, `agentMcp`, `accounts`, `credentials`, `agentProfiles` and
 `workerdeck`. Feature settings live under `features.<id>`, keyed by the feature id, and are
 described in the documentation of the recipe the feature came from (`recipes/<id>/`). For example,
@@ -61,21 +79,23 @@ at the next read.
 
 ## Browsers
 
-`browsers` configures the browser lease ([BROWSERS.md](BROWSERS.md)): `url` (the chromatrix origin,
-default `http://127.0.0.1:8830`), `identity` (the default identity, default `default`), `token` (the
-chromatrix bearer token, in `box.local.json` only) and `users` (`users.id` -> that person's
-browser identity).
+`browsers` configures the browser lease ([BROWSERS.md](BROWSERS.md)): `url` (Shuttle's MCP endpoint,
+default `http://127.0.0.1:9222/mcp`; an origin without a path gets `/mcp` appended), `identity` (the
+default Shuttle agent, default `default`), `token` (bearer token for Shuttle network mode only, in
+`box.local.json`) and `users` (`users.id` -> that person's Shuttle agent id).
 
 ```json
-{ "browsers": { "url": "http://127.0.0.1:8830", "users": { "alice": "alice" } } }
+{ "browsers": { "url": "http://127.0.0.1:9222/mcp", "users": { "alice": "alice" } } }
 ```
 
 ## Agent tools
 
-`agentMcp` holds the MCP servers and toolsets that chat rooms and agent triggers grant to their
-agent sessions ([AGENT-TOOLS.md](AGENT-TOOLS.md)): `servers` (id -> `url`, `type`, `label`, and
-`token` in `box.local.json` only) and `toolsets` (id -> `servers`, `allow`, `deny`). Settings > Agent
-tools writes it to `box.local.json`.
+`agentMcp.toolsets` holds the toolsets that chat rooms and agent triggers grant to their agent
+sessions ([AGENT-TOOLS.md](AGENT-TOOLS.md)): id -> `label`, `description`, `servers` (connection
+ids), `allow`, `deny`. Settings > Agent tools writes it to `box.local.json`. Built-in toolsets (such
+as `comms-draft`) come from features and are not configured here. The servers a toolset attaches are
+connections of the MCP connections recipe, configured under `features.mcp` with their secrets in
+`credentials.mcp.<connection>` ([recipes/mcp/SPEC.md](../recipes/mcp/SPEC.md)).
 
 ## Recipe ledger
 
@@ -139,11 +159,12 @@ Use `auth.sessionSecret` and `auth.tokenSecret` only in `box.local.json`. Missin
 generated there at first use. Changing them invalidates sessions or encrypted access tokens.
 `mcp.url` defaults to the local server; set `mcp.token` locally to the intended principal's token.
 Never print permanent tokens into logs. `credentials` is keyed by channel, account, then key;
-the account `*` supplies channel-wide defaults. `accounts` declares the corresponding channel
-accounts. Agent engine configuration belongs in `workerdeck` and user-to-profile mappings in
+the account `*` supplies channel-wide defaults. `accounts` declares channel accounts by channel,
+one per owning agent (for example `accounts.email`: `{ id, user, login }`); WhatsApp accounts come
+from pairing instead (above). Agent engine configuration belongs in `workerdeck` and user-to-profile mappings in
 `agentProfiles`. Claude logins for agent profiles are connected in Settings > Profile and
-kept by WorkerDeck beside each profile's config dir; `workerdeckTokens` and
-`workerdeck.claudeTokens` were removed and are refused.
+kept by WorkerDeck beside each profile's config dir; configuration that sets `workerdeckTokens`
+or `workerdeck.claudeTokens` is refused.
 
 Runtime settings edits and credential refreshes write only the relevant overrides to
 `box.local.json`, atomically with owner-only permissions. Shared settings remain unchanged.

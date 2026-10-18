@@ -7,7 +7,7 @@ import type { DocEditorProps } from './types.ts'
 // a static re-export of DocEditorInner would pull TipTap back into the main graph.
 const DocEditorInner = lazy(() => import('./DocEditorInner.tsx').then((m) => ({ default: m.DocEditor })))
 
-export function DocEditor({ doc, docKey, variant, placeholder, compact }: DocEditorProps) {
+export function DocEditor({ doc, docKey, variant, placeholder, compact, upload }: DocEditorProps) {
   return (
     <Suspense
       fallback={
@@ -19,7 +19,7 @@ export function DocEditor({ doc, docKey, variant, placeholder, compact }: DocEdi
           Loading editor…
         </div>
       }>
-      <DocEditorInner doc={doc} docKey={docKey} variant={variant} placeholder={placeholder} compact={compact} />
+      <DocEditorInner doc={doc} docKey={docKey} variant={variant} placeholder={placeholder} compact={compact} upload={upload} />
     </Suspense>
   )
 }

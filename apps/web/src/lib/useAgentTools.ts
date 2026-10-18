@@ -1,16 +1,13 @@
-// Agent tools (Settings > Agent tools): the MCP servers and toolsets chat rooms and agent triggers
-// grant to their sessions (core agent-tools.ts). Admin settings in box.local.json; tokens are
-// hand-edited there and only reported as set or not.
+// Agent tools (Settings > Agent tools): the toolsets chat rooms and agent triggers grant to their
+// sessions (core agent-tools.ts), and the connections a toolset can attach (the mcp recipe's,
+// Settings > Connections). Admin settings in box.local.json.
 
 import { createDataStore } from './dataStore.ts'
 import { trpc } from './trpc.ts'
 
-export interface AgentMcpServer {
+export interface AgentMcpConnection {
   id: string
-  url: string
-  type: 'http' | 'sse'
   label: string
-  hasToken: boolean
 }
 
 export interface AgentToolset {
@@ -20,10 +17,16 @@ export interface AgentToolset {
   servers: string[]
   allow: string[]
   deny: string[]
+  /** Built in: the only Box tools its sessions keep; null keeps them all. */
+  boxTools: string[] | null
+  /** Registered by a feature; not editable. */
+  builtIn: boolean
 }
 
 export interface AgentToolsSettings {
-  servers: AgentMcpServer[]
+  connections: AgentMcpConnection[]
+  /** Whether this Box has the mcp recipe (connections at all). */
+  connectionsAvailable: boolean
   toolsets: AgentToolset[]
   problems: string[]
 }
@@ -39,9 +42,6 @@ async function apply(work: Promise<unknown>): Promise<void> {
   await store.reload()
 }
 
-export const saveAgentMcpServer = (input: { id: string; url: string; type?: 'http' | 'sse'; label?: string }) =>
-  apply(trpc.agentToolsServerSave.mutate(input))
-export const deleteAgentMcpServer = (id: string) => apply(trpc.agentToolsServerDelete.mutate({ id }))
-export const saveAgentToolset = (input: Omit<AgentToolset, 'label' | 'description'> & { label?: string; description?: string }) =>
+export const saveAgentToolset = (input: Pick<AgentToolset, 'id' | 'servers' | 'allow' | 'deny'> & { label?: string; description?: string }) =>
   apply(trpc.agentToolsToolsetSave.mutate(input))
 export const deleteAgentToolset = (id: string) => apply(trpc.agentToolsToolsetDelete.mutate({ id }))

@@ -119,8 +119,8 @@ automation's `background.automation`.
 ### Without the powerup
 
 `WikiStatus` reports `powerups.upkeep: false`. Wiki > Health shows a Maintenance section with the
-upkeep powerup note, and Settings > Wiki lists Upkeep as not set up, each with an "Add the Upkeep
-powerup" Builder brief for administrators (members are told to ask an administrator). A page tool
+upkeep powerup note, and Settings > Wiki shows the same note in place of the Update and sweep
+prompt fields, each with an "Add the Upkeep powerup" Builder brief for administrators (members are told to ask an administrator). A page tool
 call with `job` is refused. Agents still maintain the wiki by driving the page tools through the
 `wiki` skill, and `WikiLintFix` applies the safe fixes by hand.
 

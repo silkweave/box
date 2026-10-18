@@ -12,13 +12,14 @@ rebuild step - writes UPSERT straight into it.
   `<checkout>/data`; no environment variable moves it, so a second
   tenant or a scratch Box is a second checkout. **Gitignored** - the durable copy is the GCS backup
   below, never git.
-- **Ownership:** core owns the engine, the record layer, the schema lifecycle and nine tables,
+- **Ownership:** core owns the engine, the record layer, the schema lifecycle and ten tables,
   declared in [`warehouse/core-models.ts`](../packages/core/src/warehouse/core-models.ts)
-  (`CORE_MODELS`): `users`, `kv_state`, `events` and `automation_runs`, plus the signal tables
+  (`CORE_MODELS`): `users`, `kv_state`, `events` and `automation_runs`, the signal tables
   `signals`, `signal_points`, `snapshots`, `data_sources` and `signal_boards`
-  ([`signals/models.ts`](../packages/core/src/signals/models.ts), described in
-  [SIGNALS.md](SIGNALS.md)). Every other table belongs to a feature and is documented in the recipe
-  it came from, `recipes/<id>/SPEC.md`. A Box with no features installed has exactly those nine.
+  ([`signals/models.ts`](../packages/core/src/signals/models.ts)), and the currency rates table
+  `fx_rates` ([`fx/rates.ts`](../packages/core/src/fx/rates.ts)), all described in
+  [SIGNALS.md](SIGNALS.md). Every other table belongs to a feature and is documented in the recipe
+  it came from, `recipes/<id>/SPEC.md`. A Box with no features installed has exactly those ten.
 
 This document is core's half. For what a feature's table means, read its feature's SPEC.
 
@@ -65,7 +66,7 @@ export const INBOX_STATE: ModelSpec = {
 }
 ```
 
-`ColumnKind` is `text | int | float | json | timestamp | date`. A column is **NOT NULL unless
+`ColumnKind` is `text | int | bigint | float | json | timestamp | date`. A column is **NOT NULL unless
 declared `nullable`** (PK columns always are). `default` is emitted verbatim into the DDL, so quote
 string literals yourself (`default: "'draft'"`).
 
@@ -199,6 +200,9 @@ Rules that hold the whole thing together:
   Cross-feature reads belong inside `run`, through a declared dependency's exported reader, so
   a skipped version does not replay SQL against a dependency's obsolete column names.
   `schema:check` warns on common table references; complex SQL and hooks still need review.
+  A table the feature once owned and its migrations now drop or reshape (a retired model, a
+  renamed table) goes in the feature's `retiredTables`: never baselined, but counted as its own
+  by the ownership check, so `DROP TABLE old_name` is not read as a cross-feature write.
 - **`ensureSchema` refuses a ledger row with no feature prefix**, with "this is not a Box
   warehouse". The original app's unprefixed ledger is deliberately unsupported.
 - **One table-altering statement per migration.** DuckDB is happiest that way, and it is the rule
@@ -295,7 +299,7 @@ that keep a change recoverable rather than the rules that keep it approved.
 box db backup                                   # on the Box with the real data
 box db list                                      # copy the name
 
-# in a SECOND CHECKOUT of the repo - its own data/, its own ports in its own box.json
+# in a SECOND CHECKOUT of the repo - its own data/, its own ports in its own box.local.json
 git clone git@github.com:silkweave/box.git box-scratch && cd box-scratch && bun install
 cp /path/to/real/box/data/backups/<name> data/backups/   # or fetch a version from the GCS copy
 box db restore <name>
@@ -320,7 +324,7 @@ file exists; only a boot proves it is a database with your data in it.
 - Never edit an applied migration in place. Append a new one. The checksum guard exists because the
   alternative is a database whose history is fiction.
 - Never point two servers at one checkout's `data/`. A scratch Box gets its own checkout, and its
-  own ports in that checkout's `box.json`.
+  own ports in that checkout's `box.local.json`.
 - Never hand a `.duckdb` copy to anyone casually. With `crm` installed it holds names, emails and
   correspondence, and a backup inherits the sensitivity of everything installed.
 - Never leave a restore that needed a restart un-restarted. `ensureSchema()` is memoized per
@@ -436,7 +440,15 @@ box db snapshot [name]   # data.db -> seeds/<name>.db, a fixture you own (defaul
 ```
 
 `box db backup | list | restore [name] | snapshot [name]` are the same four from anywhere on the
-host. `box db seeds` still works as an alias for `list`.
+host. `box db seeds` is an alias for `list`.
+
+**Agent files travel with the warehouse.** The users rows of the Box's agents and the files that
+say which agents exist (`data/config/agents/<id>.md`, see [AUTH.md](AUTH.md)) belong together, so
+every restore point the machine writes (`manual`, `pre-migrate`, `pre-restore`) and every
+`box db snapshot` also writes `<name>.agents.json` beside the `.db`: the regular `.md` files by name,
+marked `"format": "box-agent-files/1"`, written even when there are none. The agent files are read
+under the same lock as the copy, and a backup whose sidecar cannot be written is removed, so a
+restore point is published only as a pair. Retention removes the sidecar with its `.db`.
 
 ### Consistency: the copy happens inside the write lock
 
@@ -456,7 +468,7 @@ until a human removes the sidecar.
 
 ### Restore
 
-`box db restore <name>` takes a name from either directory and does four things in order:
+`box db restore <name>` takes a name from either directory and does five things in order:
 
 1. **Stage.** Copy the restore point (and its WAL) to `data.db.restoring-<id>` beside the live file,
    open it read-write, `CHECKPOINT`, close. This proves the restore point is a database this DuckDB
@@ -467,7 +479,18 @@ until a human removes the sidecar.
 3. **Swap.** Still under the lock, remove any `data.db.wal` and `rename()` the staged file over
    `data.db`. Same directory, so the rename is atomic: a process dying anywhere in this sequence
    leaves either the old checkpointed file or the new one, never a half-written warehouse.
-4. **Prove it.** Open the restored file read-only and count its tables, so a restore that does not
+4. **Agent files.** The sidecar is validated in full before step 1, and the restored
+   `data/config/agents/` (its `.md` files plus the live directory's other files) is staged beside
+   the live one. Under the lock, after parking (the park carries the current files), the staged
+   directory replaces the live one, then the database is swapped; a failed database swap puts the
+   previous files back. The file swap writes `config/agents.restore-in-progress.json` first and
+   removes it once the database is in place, so a process that dies between the two leaves the
+   marker (and the previous files in `config/agents.pre-restore-<id>/`), and the Box refuses to boot
+   until you restore again or put the files back and delete the marker. A previous directory that
+   cannot be removed after a successful restore is named in the summary and is safe to delete. A backup without a sidecar (taken before agent files
+   were backed up, or interrupted) is refused unless `--keep-agent-files` says to keep the live
+   files; a seed without one keeps them.
+5. **Prove it.** Open the restored file read-only and count its tables, so a restore that does not
    open is an error now rather than a surprise on the next request.
 
 Restoring a point whose schema is **older** than the running code is fine: `ensureSchema()` migrates
@@ -528,10 +551,12 @@ tree) in the bucket, overwritten each run; the history comes from the bucket's o
 | Object | Written by | What |
 |---|---|---|
 | `warehouse/analytics-latest.duckdb` | `warehouse-backup`, `box db backup` | `data.db` |
+| `warehouse/agents/<restore-point>.agents.json` | `warehouse-backup`, `box db backup` | the agent files of that backup, uploaded first and never overwritten; `analytics-latest.duckdb` names its pair in the object metadata `restore-point` (`gsutil stat`) |
 | `chat/chat-latest.sqlite` | `chat-backup` | `chat.db` |
 | `chat/uploads/` | `chat-backup` | copy of `chat-uploads/` |
 | `artifacts/artifacts-latest.sqlite` | `artifacts-backup` | `artifacts.db` (page kv, view counts), latest copy |
 | `artifacts/files/` | `artifacts-backup` | copy of `data/artifacts/` (published pages) |
+| `wiki/wiki-latest.tar.gz` | `wiki-backup` | archive of the vault `data/wiki/` and `data/config/wiki.json`, the same file as the local one in `backups/wiki/` (see `recipes/wiki/INSTALL.md`) |
 
 The SQLite copies go through `VACUUM INTO`, never `cp`. The file trees go up with `gsutil rsync -r`
 (`uploadDirToGcs`): new and changed files are copied and **nothing is deleted remotely**, so a host

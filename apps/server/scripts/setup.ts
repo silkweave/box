@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
-import { ensureSystemPrincipal, hasHumanUsers } from '@silkweave/box-core/auth/bootstrap'
+import { ensureAgentPrincipals, hasHumanUsers } from '@silkweave/box-core/auth/bootstrap'
 import { issuePrincipalToken, issueSigninLink, setPrincipalRole } from '@silkweave/box-core/auth/principal'
 import { agentIdentity, systemUserId } from '@silkweave/box-core/box-config'
 import { readBoxConfig, writeBoxJsonIfAbsent, writeBoxLocal, type BoxJson } from '@silkweave/box-core/box-json'
@@ -230,7 +230,7 @@ async function run(argv: string[]): Promise<void> {
 
   // Refuse before writing profile configuration or rotating anything. A partially completed first
   // run with only the machine principal remains safe to resume.
-  await ensureSystemPrincipal()
+  await ensureAgentPrincipals()
   if (await hasHumanUsers()) {
     throw new Error('this Box already has a human user; setup will not replace profiles or rotate credentials. Use box auth login <id>.')
   }

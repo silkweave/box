@@ -4,11 +4,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBuilderBrowser } from './builder-browser.js'
 import type { BuilderSupervisorAuthResult } from './builder-auth.js'
 
-type Principal = { id: string; display: string; role: 'admin' | 'member' }
+type Principal = { id: string; display: string; role: 'admin' | 'member'; kind: 'human' | 'agent' }
 type Current = { session: { id: string } | null }
 type Message = Record<string, unknown>
 
-const admin = (id: string): Principal => ({ id, display: id, role: 'admin' })
+const admin = (id: string): Principal => ({ id, display: id, role: 'admin', kind: 'human' })
 const denied: BuilderSupervisorAuthResult = { ok: false, state: 'denied', reason: 'revoked' }
 
 const nextMessage = (socket: WebSocket, predicate: (message: Message) => boolean): Promise<Message> => new Promise((resolve, reject) => {
@@ -183,7 +183,7 @@ describe('Builder browser broker', () => {
     expect(tab.path).toBe('/unavailable')
     await expect(current.broker.execute('session-1', { op: 'snapshot' })).rejects.toThrow('No Builder Preview tab')
     const member = await setup()
-    member.setIdentity({ id: 'alice', display: 'alice', role: 'member' })
+    member.setIdentity({ id: 'alice', display: 'alice', role: 'member', kind: 'human' })
     const memberSocket = new WebSocket(member.url, { headers: { origin: member.origin, cookie: 'sid=1' } })
     sockets.push(memberSocket)
     await expect(waitForHandshakeFailure(memberSocket)).resolves.toBeUndefined()

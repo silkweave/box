@@ -8,7 +8,10 @@ remains reachable when an application build is unhealthy.
 
 The current slice provides one shared Builder session for all administrators. Every administrator
 in Builder can send turns, edit files, navigate their own Preview, review changes and use host
-controls. Members are blocked from the Builder navigation and control APIs.
+controls. Members are blocked from the Builder navigation and control APIs by the server: `/builder`
+answers 403 and the worker refuses them a Builder session. A member's everyday session is **Work**,
+which runs in their own sandbox and cannot edit the Box source; its capabilities are set per user in
+Settings > Users ([AUTH.md](AUTH.md#work-sessions)).
 
 ## Start and use a session
 
@@ -27,7 +30,7 @@ controls; provider permission requests remain visible in the shared conversation
 A new session starts on its profile's `defaults.model` when one is declared, otherwise on
 `gpt-5.6-luna` for Codex and `opus[1m]` (Opus 5.5) for Claude. The model select in the bottom
 status bar switches the running session. It offers only current models: GPT-5.6 Luna, Terra and Sol
-and GPT-6 Astra for Codex; Opus 5.5, Sonnet 5 and Fable 5.1 for Claude. A session already on
+and GPT-6 Astra for Codex; Opus 5.5, Sonnet 5.5 and Fable 5.1 for Claude. A session already on
 another model keeps that model listed. The curated set lives in `apps/web/src/lib/builderModels.ts`
 and the start defaults in `apps/server/src/builder/builder-host.ts`.
 
@@ -140,6 +143,13 @@ The supervisor exposes the current application state and these administrator act
   operation. Restore replaces Box instance data and configuration; the server requires
   an idle Builder runner and a clean Box at the matching source revision. It stops the editable
   process before restoring and rejects the operation when those preconditions are not met.
+
+Builder backups live in `data/backups/builder/<id>/` and each holds a full copy of the instance.
+After every start and every manual backup, Builder keeps the newest three per reason (`start`,
+`checkpoint`/manual, `pre-restore`) and deletes the other directories, including completed backup
+directories the control state no longer lists. A restore never prunes, so the point being restored
+from and its safety backup stay in place until the next start or backup. A directory that cannot be
+removed is left for the next prune and does not block the operation.
 
 ## Preview and Promote under box start
 

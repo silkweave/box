@@ -83,6 +83,34 @@ export const Compact: Story = {
   },
 }
 
+/**
+ * Media: images and videos are markdown images; a video URL (by extension) draws a player. With
+ * `upload`, paste or drop a file, or use the Media button. This stand-in keeps images in memory
+ * (an object URL has no extension, so it would not read as a video) and refuses videos, which also
+ * shows the upload error.
+ */
+export const WithMedia: Story = {
+  args: {} as never,
+  render: () => {
+    const doc = useMockDoc(`# Media
+
+![A placeholder image](https://placehold.co/640x240.png)
+
+![A short clip](https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4)
+`)
+    const upload = async (file: File): Promise<string> => {
+      await new Promise((r) => setTimeout(r, 800))
+      if (!file.type.startsWith('image/')) throw new globalThis.Error('this story stores images only')
+      return URL.createObjectURL(file)
+    }
+    return (
+      <div className='h-[36rem] p-6'>
+        <DocEditor doc={doc} docKey='article/media' variant='card' upload={upload} />
+      </div>
+    )
+  },
+}
+
 /** `content: null` is loading. The Suspense fallback for the TipTap chunk sits behind this too. */
 export const Loading: Story = {
   args: {} as never,

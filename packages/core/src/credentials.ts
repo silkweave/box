@@ -1,7 +1,7 @@
 // Channel/account credentials are configured in gitignored box.local.json.
 import { boxJson } from './box-config.js'
 import { configRoot } from './io.js'
-import { writeBoxLocal } from './box-json.js'
+import { removeBoxLocal, writeBoxLocal } from './box-json.js'
 
 export type CredentialsFile = Record<string, Record<string, Record<string, string>>>
 
@@ -73,6 +73,14 @@ export function writeCredentials(channel: string, account: string, updates: Reco
   writeBoxLocal(configRoot(), {
     credentials: { [channel]: { [account]: Object.fromEntries(entries.map(([key, value]) => [key, value.trim()])) } },
   })
+}
+
+/**
+ * Remove ONE channel account's credentials from box.local.json (a disconnected MCP connection, say),
+ * leaving every other channel and account untouched. Atomic and owner-only, like writeCredentials.
+ */
+export function deleteCredentials(channel: string, account: string): void {
+  removeBoxLocal(configRoot(), ['credentials', channel, account])
 }
 
 /** A channel account's full key set (non-blank), e.g. to inject into a plugin subprocess env.

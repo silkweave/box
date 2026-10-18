@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module.js'
 import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { ChangesModule } from './changes/changes.module.js'
 import { SignalsModule } from './signals/signals.module.js'
+import { filterMcpActions } from './agent/mcp-passthrough.js'
 
 @Module({
   imports: [
@@ -36,9 +37,12 @@ import { SignalsModule } from './signals/signals.module.js'
         // action is callable by agents and the `cli` proxy (bun run cli). The TRANSPORT itself demands
         // a valid bearer, because the per-tool @UseGuards on the @Mcp methods cannot gate
         // tools/list - that is the transport route, not a controller method - so without this an
-        // anonymous client could enumerate every tool the app has.
+        // anonymous client could enumerate every tool the app has. `filterActions` is the passthrough
+        // hook (agent/mcp-passthrough.ts): a registered source (the mcp recipe) adds the outside MCP
+        // servers' tools the caller may use; without one the list is the Box's own.
         mcp({
           basePath: '/mcp',
+          filterActions: filterMcpActions,
           auth: {
             required: true,
             verifyToken: async (token: string) => {

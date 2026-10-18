@@ -7,8 +7,9 @@ import { createFileSessionStore, createMemoryProfileStore, createWorkerServer, t
 import type { CreateJobRequest, JobEvent, JobInfo, ProfileInfo, SessionEvent, SessionInfo } from '@workerdeck/protocol'
 import { agentProfileMapFor, agentSessionAccess, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
 import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
-import { revokeBuilderControl, trackBuilderControl } from './builder-control.js'
+import { revokeAgentControl, trackAgentControl } from './agent-control.js'
 import { NO_SESSION_TOOLS, sessionToolCapsOf, type SessionToolCaps } from './box-mcp.js'
+import { workRunnerConfig } from './work-session.js'
 
 /**
  * Boots workerdeck INSIDE this server's process (see docs/SERVER.md).
@@ -187,15 +188,23 @@ export function onSessionEvent(sessionId: string, listener: (event: SessionEvent
  * permission mode) instead of this process handing the queue an unchecked request.
  */
 export async function submitAgentJob(request: CreateJobRequest): Promise<JobInfo> {
-  if (!host) throw new Error('the agent surface is not running (box.json workerdeck)')
+  if (!host) throw new AgentJobRefusedError('the agent surface is not running (box.json workerdeck)')
   const res = await fetch(`${host.url}/v1/jobs`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${host.key}` },
     body: JSON.stringify(request),
   })
   const body = (await res.json().catch(() => ({}))) as { job?: JobInfo; error?: string }
-  if (!res.ok || !body.job) throw new Error(`job refused (${res.status}): ${body.error ?? 'no detail'}`)
+  // A 4xx means the worker did not take the job. Anything else (no response, a 5xx, an unreadable
+  // body) leaves open whether a job started, so it is a plain error.
+  if (res.status >= 400 && res.status < 500) throw new AgentJobRefusedError(`job refused (${res.status}): ${body.error ?? 'no detail'}`)
+  if (!res.ok || !body.job) throw new Error(`job submission outcome unknown (${res.status}): ${body.error ?? 'no job in the response'}`)
   return body.job
+}
+
+/** submitAgentJob's error when the job certainly was not started. */
+export class AgentJobRefusedError extends Error {
+  override name = 'AgentJobRefusedError'
 }
 
 /** A configured profile with its live account state, for Settings > Profile. */
@@ -252,6 +261,17 @@ export async function profileSessionToolCaps(profile: string): Promise<SessionTo
   } catch {
     return NO_SESSION_TOOLS
   }
+}
+
+/**
+ * The queue's jobs whose `meta[key]` is `value` (a run id, to reconcile a submission whose
+ * response was lost). Throws when the queue cannot be read, so a caller never takes an unread
+ * queue for an empty one.
+ */
+export async function findAgentJobs(key: string, value: string): Promise<JobInfo[]> {
+  const queue = host?.worker.queue
+  if (!queue) throw new Error('the agent queue is not running')
+  return (await queue.list()).filter((j) => j.meta?.[key] === value)
 }
 
 /** Cancel a queued or running job. Null when the queue does not know it. */
@@ -430,7 +450,10 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
       const createdByOperator = (req as { createdByOperator?: boolean }).createdByOperator === true
       const settingSources =
         req.settingSources ?? (profile?.engine === 'claude' && !createdByOperator ? (['user', 'project'] as const) : undefined)
-      return { ...req, env, ...(settingSources ? { settingSources: [...settingSources] } : {}) } as ReturnType<
+      // A member's Work session (meta.work, stamped by the mount's gateCreate) gets its priming
+      // text and the PreToolUse guard here: instructions and SDK hooks are host-only runner
+      // config, refused on the wire and settable only from this hook (work-session.ts).
+      return workRunnerConfig({ ...req, env, ...(settingSources ? { settingSources: [...settingSources] } : {}) }) as ReturnType<
         NonNullable<WorkerServerOptions['buildRunnerConfig']>
       >
     },
@@ -442,7 +465,7 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
     const info = runner.info()
     if (info.meta?.kind !== 'builder' || typeof info.meta.user !== 'string') return
     const user = info.meta.user
-    const untrack = trackBuilderControl(user, () => runner.close('server'))
+    const untrack = trackAgentControl(user, () => runner.close('server'))
     // User-management calls revoke immediately. This also catches host-side role/token changes
     // while a browser is connected or a turn continues without a browser.
     let checking = false
@@ -455,8 +478,8 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
       if (checking) return
       checking = true
       void resolvePrincipalById(user).then((principal) => {
-        if (principal?.role !== 'admin') revokeBuilderControl(user)
-      }).catch(() => revokeBuilderControl(user)).finally(() => { checking = false })
+        if (principal?.role !== 'admin') revokeAgentControl(user)
+      }).catch(() => revokeAgentControl(user)).finally(() => { checking = false })
     }, 1000)
     timer.unref()
     return () => { clearInterval(timer); untrack() }

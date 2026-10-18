@@ -3,6 +3,7 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import { currentWebRelease } from '../web/web-release.js'
+import { APP_RESTART_EXIT_CODE } from './restart-exit.js'
 
 export type SupervisedApplicationStatus = {
   status: 'starting' | 'running' | 'stopped' | 'failed'
@@ -342,11 +343,20 @@ export class SupervisedApplication {
     child.once('exit', (code, signal) => {
       diagnostic('lifecycle', 'app.exit', { childPid: child.pid, code, signal, expected: this.#stopRequested })
       if (this.#child !== child) return
+      // Only a server that finished booting may ask for a restart; an exit during readiness is a
+      // failed start, reported by the readiness wait below.
+      const restartRequested = !this.#stopRequested && code === APP_RESTART_EXIT_CODE && this.#status.status === 'running'
       this.#child = undefined
       this.#status = this.#stopRequested ? { status: 'stopped' } : { status: 'failed', message: exitMessage(code, signal) }
       this.#stopRequested = false
       this.#exitPromiseResolve?.()
       this.#exitPromiseResolve = undefined
+      if (restartRequested) {
+        diagnostic('lifecycle', 'app.restart-requested', { childPid: child.pid, maintenance: this.#maintenance })
+        void this.start(this.#maintenance).catch((error: unknown) => {
+          diagnostic('lifecycle', 'app.restart-failed', { error: errorKind(error) })
+        })
+      }
     })
     try {
       await new Promise<void>((resolve, reject) => {

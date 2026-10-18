@@ -54,6 +54,7 @@ Box"), never stored half-working.
 | `daily_cap` | runs per UTC day that event fires stop at; null = 50 for an agent trigger, none for an action; refused on a delivery |
 | `max_depth` | event: the chain depth it still fires at, 0-5; null = 2 |
 | `owner` | the admin the trigger belongs to; null only for triggers imported from config |
+| `group_id` | the group (folder) the Triggers list shows it under: a `trigger_groups` id, `default` unless moved; a write naming no such group is refused |
 | `webhook_source` | reserved for webhook triggers; null |
 
 `created_by` / `updated_by` record the principal that made the change. When an agent acts for an
@@ -69,6 +70,14 @@ not read; the scheduler logs a warning at boot while it is still present, and th
 **Migration `automation:002-trigger-permission-mode`** adds `permission_mode` (nullable, no
 constraint: an ALTER cannot carry one, so the value is checked on write). Existing triggers keep
 null, the unattended mode.
+
+**`trigger_groups`** (owned, `timestamps`, `audit`): the folders of the Triggers list. `id` is a
+slug derived from the first name and frozen; `name` is unique (case-insensitive) and may change.
+The `default` group ("Default") always exists and cannot be deleted; any other group is deleted
+only once it holds no trigger.
+
+**Migration `automation:004-trigger-groups`** adds `triggers.group_id` (`DEFAULT 'default'`),
+backfills it, and inserts the `default` group (the table is baselined before any migration runs).
 
 **Runs** are core's `automation_runs`. Core migrations `core:004-runs-trigger-id` (adds
 `trigger_id`, backfilled from the legacy `schedule_id`) and `core:005-runs-event-id` link a run to
@@ -130,7 +139,12 @@ fresh event runs through every candidate trigger's guards, cheapest first:
    and day; later events that day leave no row.
 5. **Busy**: an agent trigger whose previous run is in flight, or an action trigger whose action is
    queued or running, records a `skipped` row. An action trigger therefore never fires on an event
-   its own action records while it runs.
+   its own action records while it runs. An agent event trigger with a **concurrency key**
+   (`concurrency_key`, migration `automation:005-trigger-concurrency-key`: a template rendered from
+   the event, such as `{{fields.conversation_id}}`) is busy per rendered key instead: another key
+   runs beside it, and a fire while its key runs waits and starts once that run ends (the trigger
+   re-read then). One fire waits per key; a newer one replaces it and the replaced one records a
+   `skipped` row. Waiting fires live in the server process, like the job queue.
 6. **Gate** (agent triggers): below.
 
 A guard after the filters records a `skipped` run (with `event_id`), so the history says why
@@ -253,12 +267,14 @@ like any agent session.
 
 | tRPC | MCP | who | what |
 |---|---|---|---|
-| `automationTriggers` (query) | `triggers-list` | member | every trigger, validated (`valid`, `problem`), cron humanized (`cronstrue`), with the scheduler's `nextFire` and the guards in force (`dailyCap`, `maxDepth`); agent triggers with their resolved `engine`, `cwd` and `profile`; plus `disabled`, `eventKinds` (kinds recorded in the last 30 days, with counts), `agent` (`available`, `cwdRoots`, `runners`: admins with an agent profile and their engines) and `deliver` (`available`: a runner is registered) |
+| `automationTriggers` (query) | `triggers-list` | member | every trigger (with its `group_id`) and `groups` (Default first), validated (`valid`, `problem`), cron humanized (`cronstrue`), with the scheduler's `nextFire` and the guards in force (`dailyCap`, `maxDepth`); agent triggers with their resolved `engine`, `cwd` and `profile`; plus `disabled`, `eventKinds` (kinds recorded in the last 30 days, with counts), `agent` (`available`, `cwdRoots`, `runners`: admins with an agent profile and their engines) and `deliver` (`available`: a runner is registered) |
 | `automationTriggerUpsert` (mutation) | `trigger-upsert` | admin | partial merge of one trigger; validated before anything is written. `params` is a JSON object string and `filters` a JSON array string (`""` clears either; `""` also clears the agent and gate text fields); `daily_cap` / `max_depth` are numbers, null for the default. A delivery sets `route`, `message`, `notify` (`realtime`/`""` or `digest`), `cooldown_min`, `debounce_sec`. `owner` defaults to the caller; the system agent must name the admin it acts for; the owner must be an admin. An agent trigger's `run_as` must be an admin with a profile for the engine (an admin may name another admin) |
 | `automationTriggerDelete` (mutation) | `trigger-delete` | admin | remove one; unknown id throws |
+| `automationTriggerGroupUpsert` (mutation) | `trigger-group-upsert` | admin | create a group (`name`; the id is derived and frozen) or rename one (`id`, `name`); refuses an empty, duplicate or taken name |
+| `automationTriggerGroupDelete` (mutation) | `trigger-group-delete` | admin | remove an empty group; refuses the `default` group and one that still holds triggers |
 | `automationTriggerRun` (mutation) | `trigger-run` | admin | run a trigger now regardless of its time or enabled state, attributed to the caller; returns the `runId` at once (follow with `run-get`). An agent trigger submits its job. A delivery has no run: it delivers at once (outside its debounce) and returns `runId: ""` with the outcome in `message`. Optional `event`: a sample event as a JSON object string (`{"kind", "fields", "actor", ...}`), handed to the run like a real one (placeholders, prompt, gate, chain depth); the guards do not apply, and the reply says whether its kind, depth and filters would have fired the trigger |
 | `automationStatus` (query) | - | member | `loadedAt`, `disabled`, `armed`, `listening` (event triggers), and the runs in flight: core's `activeRuns()` plus agent runs as `agent:<trigger>` |
-| `automationRestart` (mutation) | `service-restart` | admin | drain agent sessions, then exit 86 for a supervisor to respawn. Refuses with `ok:false` while a session is mid-turn unless `force:true` |
+| `automationRestart` (mutation) | `service-restart` | admin | drain agent sessions, then exit 86 (`APP_RESTART_EXIT_CODE`); the Box supervisor starts a fresh server. Refuses with `ok:false` while a session is mid-turn unless `force:true` |
 
 The registry, the run history and Run Now are core's `opsActions` / `opsRuns` / `opsRun` (`run-get`)
 / `opsRunNow` (`run-now`, which takes `trigger_id` to link a manual run to a trigger).
@@ -322,7 +338,12 @@ least 1, `max_depth` 0-5. A gate needs an agent trigger, a prompt and a one-line
   `#settings/automation/webhooks` (relay state, sources with a copyable hook URL, the delivery ledger
   with each envelope, Send test, Reconnect; admins) and, with the Alerts powerup,
   `#settings/automation/alerts` (the alert history).
-- **Triggers**: one card per trigger (When, Do, next fire, owner, problem). A delivery's Do reads
+- The section's explanation sits behind an info icon in the title bar (`SettingsInfo`), not an
+  intro line.
+- **Triggers**: a table whose rows sit under collapsible group folders (collapsed state kept in the
+  browser). Every trigger is in a group; an admin drags a row by its grip onto a folder to move it,
+  renames a group inline, deletes an empty one from its row and creates one with the footer's "New
+  group"; the editor picks the group in a "Trigger group" select. One row per trigger (When, Do, next fire, owner, problem). A delivery's Do reads
   "deliver to <route>" (or "count in the daily digest for") with the start of its message, and its
   When shows the cooldown and debounce instead of a daily cap. An event trigger's When
   shows the kind, its filters, the daily cap and the chain depth in force; Run now opens a sample
@@ -339,8 +360,13 @@ least 1, `max_depth` 0-5. A gate needs an agent trigger, a prompt and a one-line
   ask an admin).
   Create, edit, delete and the enabled toggle show for admins only; the server enforces it regardless.
 - **Runs**: a run fired by a trigger shows the trigger id; a manual run shows who ran it, plus the
-  trigger id when it was a trigger's Run now. Agent runs are labelled "Agent prompt"; their log
+  trigger id when it was a trigger's Run now. The footer's left side filters the list by trigger
+  (or to manual runs). Agent runs are labelled "Agent prompt"; their log
   starts with the WorkerDeck session id. Run detail shows the event that fired a run.
+- **Actions**: the same grouped table (the registry's groups as collapsible folders) with a Run
+  button per row, plus a "Server" folder for admins holding the restart control (`service-restart`;
+  triggers never need it, a `box.json` change the server reads at boot does). The output is a
+  pinned footer bar, collapsed until a run starts; it expands on Run and collapses on click.
 - **Legacy routes**: `/automation`, `/automation/$section`, `/automation/$section/$runId` redirect to
   the Settings sub-page over Dashboard.
 - **Data layer**: `lib/useAutomationData.ts` owns the triggers store (reloaded on `table:triggers`)
@@ -382,18 +408,23 @@ too, named explicitly in `run_as` and shown beside the owner ("runs as Dan, owne
 **The Box MCP server in a job.** A job on an engine that takes per-session MCP servers (Claude,
 Codex) gets `box`, this Box's `/mcp` authenticated as the trigger's `run_as` user, so a run as toby uses
 the Box as toby. The token is that user's existing one, revealed rather than rotated (issued only
-when they have none), so it is readable by any shell command the job may run. `mcp__box` is
+when they have none, atomically, and never for a revoked user), so it is readable by any shell
+command the job may run. `mcp__box` is
 auto-approved; the floor `ServiceRestart`, `UserDelete`, `UserSetRole`, `UserAccessRevoke` is
 disallowed (the same floor as the chat agent, `apps/server/src/agent/box-mcp.ts`). A `box` entry in
 the person's own profile config is replaced for the job, not run beside it. Codex honours only the
 MCP entries of the tool lists, which the floor is; a toolset denying a non-MCP tool is refused on
-Codex (docs/AGENT-TOOLS.md "Engines"). When the token cannot be read the job starts without `box` and the run log says so.
+Codex (docs/AGENT-TOOLS.md "Engines"). The token goes to `127.0.0.1` only after the loopback check confirms that address is this
+server (checked again before a gated job's main phase). A revoked `run_as`, a toolset the engine
+cannot enforce or a failed loopback check refuses the run.
 
 **The trigger's toolset.** An agent trigger may name a toolset (`toolset`, migration
 `automation:003-trigger-toolset`; [docs/AGENT-TOOLS.md](../../docs/AGENT-TOOLS.md)): its servers,
 `allow` and `deny` are added beside `box` for the gate and the main job. Saving refuses an id that is
 not configured and a toolset on a trigger that does not run an agent; starting refuses a toolset on
-a profile without session servers. Null gives the job the Box's tools only.
+a profile without session servers. Null gives the job the Box's tools only. A built-in toolset (one
+a feature registers, such as comms' `comms-draft`) can keep only some Box tools: the job is denied
+every other Box tool by name, from the server's live tool list.
 
 ## What a team customises
 
@@ -407,4 +438,6 @@ a profile without session servers. Null gives the job the Box's tools only.
 - **Which actions are armed.** Whatever the installed features contribute; a trigger naming a
   missing action is listed as invalid with its reason, not dropped.
 - **Labels and order.** Band 800 in `features/automation/web/index.tsx`.
-- **The restart story.** `service-restart` assumes a supervisor that respawns a non-clean exit.
+- **The restart story.** `service-restart` relies on the Box supervisor (`box dev`, `box start`), which
+  starts a fresh server when a running one exits with code 86. Any other exit stays `failed` until
+  `box app restart`.

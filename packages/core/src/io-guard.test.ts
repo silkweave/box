@@ -13,3 +13,19 @@ it('refuses the live instance directory under Vitest, but not the checkout confi
     setInstanceDir(redirected)
   }
 })
+
+it('refuses the live instance directory under bun test too (NODE_ENV=test, no VITEST)', () => {
+  const redirected = instanceDir()
+  const vitest = process.env.VITEST
+  const nodeEnv = process.env.NODE_ENV
+  try {
+    resetInstanceDir()
+    delete process.env.VITEST
+    process.env.NODE_ENV = 'test'
+    expect(() => instanceDir()).toThrow(/Refusing to use the live Box instance/)
+  } finally {
+    process.env.VITEST = vitest
+    process.env.NODE_ENV = nodeEnv
+    setInstanceDir(redirected)
+  }
+})

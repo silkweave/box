@@ -1,8 +1,8 @@
 # Bun runtime and package manager
 
 Stack and the core-only Box use Bun 1.4.2, pinned in `package.json` and CI. Bun runs the CLI,
-Nest server, generation scripts and JavaScript build/test tools. The runtime SWC loader is
-removed; SWC remains a compiler for the server's production build. Node-compatible imports
+Nest server, generation scripts and JavaScript build/test tools. SWC is used only as the
+compiler for the server's production build. Node-compatible imports
 and `@types/node` remain useful APIs and types, not a requirement to launch Box with Node.
 
 ## Setup and commands
@@ -30,20 +30,18 @@ includes child output and `--force` bypasses Turbo's cache. `bun run verify` rem
 ## Dependency and configuration contract
 
 - `package.json` declares `workspaces: ["apps/*", "packages/*"]` and the Bun version.
-- Each repo has one `bun.lock`. The pnpm lock and workspace YAML are removed. Use
-  `bun install --frozen-lockfile` for reproducible installation. Existing `workspace:*`
+- Each repo has one `bun.lock`. Use `bun install --frozen-lockfile` for reproducible installation. Existing `workspace:*`
   dependencies and source export conditions are retained.
 - `bunfig.toml` selects the isolated dependency linker and Bun execution for JavaScript tool
-  shebangs, with no-orphans handling for launcher shutdown. `trustedDependencies` explicitly permits SWC, esbuild and better-sqlite3 install
-  scripts. Other dependency lifecycle scripts are not implicitly trusted.
+  shebangs, with no-orphans handling for launcher shutdown. `trustedDependencies` in `package.json` explicitly permits the SWC, esbuild,
+  better-sqlite3 and `@ladybugdb/core` install scripts. Other dependency lifecycle scripts are not implicitly trusted.
 - Automatic dotenv loading is disabled with `env = false`. Public entry points also pass
   `--no-env-file`. Box settings still come from `box.json` and `box.local.json`; no environment
   configuration or replacement instance-data location is introduced.
 - Each actual workspace owns its package dependencies. Features have no dependency manifests.
 
-When moving an existing checkout, a clean dependency install can remove obsolete pnpm links
-and stores under `node_modules`; never remove `data/` or local configuration as part of a
-package-manager migration.
+A clean dependency install may delete and recreate `node_modules`; never remove `data/` or local
+configuration as part of it.
 
 ## Local WorkerDeck development
 

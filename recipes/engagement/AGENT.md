@@ -34,7 +34,7 @@ No shipped migrations currently. A future schema change must be a new migration.
    card for it.
 3. **Set each member's channel handles** in Settings → Users (`users.channels`, keyed by
    platform). Comment verification hard-requires them; like/react verification does not.
-4. **Map browsers** in `box.json browsers.users` (`users.id` → chromatrix identity) if the team wants
+4. **Map browsers** in `box.json browsers.users` (`users.id` → Shuttle agent id) if the team wants
    x/linkedin verification rather than manual attestation. The browser lease is core
    (`docs/BROWSERS.md`).
 5. **Vocabularies** in `verify/types.ts` (`EngagementAction`) and `inbox/types.ts`

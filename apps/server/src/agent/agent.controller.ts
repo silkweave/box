@@ -1,6 +1,7 @@
 import { Controller, ForbiddenException, Get, Query, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
-import { DEFAULT_AGENT_ENGINE, agentEnginesFor, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, repoRoot, type Principal } from '@silkweave/box-core'
+import { DEFAULT_AGENT_ENGINE, agentEnginesFor, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, readUser, repoRoot, type Principal } from '@silkweave/box-core'
+import { isGuardedPrincipal } from './work-session.js'
 import { CurrentPrincipal } from '../auth/auth.decorators.js'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { agentAccountProfiles, agentWorkerUrl } from './workerdeck.host.js'
@@ -15,9 +16,18 @@ class AgentEngineDto {
   @ApiProperty({ description: 'Profile this user runs under on that engine.' }) profile!: string
 }
 
+class AgentWorkDto {
+  @ApiProperty({ description: 'Whether this person may start a Work session (admins always; members per Settings > Users).' })
+  enabled!: boolean
+  @ApiProperty({ description: 'Whether the session is guarded: sandbox cwd, file tools inside the granted folders only, no source or git writes. False for admins.' })
+  guarded!: boolean
+}
+
 class AgentConfigDto {
   @ApiProperty({ description: 'Whether the agent sidebar is available (AGENT_WORKER_URL configured).' })
   enabled!: boolean
+  @ApiProperty({ type: AgentWorkDto, description: "This person's Work access (docs/AUTH.md § Work sessions)." })
+  work!: AgentWorkDto
   @ApiProperty({ description: 'Checkout directory sessions are rooted at.' }) cwd!: string
   @ApiProperty({
     nullable: true,
@@ -82,11 +92,14 @@ class AgentAccountsDto {
 export class AgentController {
   @Get('config')
   @ApiOkResponse({ type: AgentConfigDto })
-  config(@CurrentPrincipal() principal: Principal | null): AgentConfigDto {
+  async config(@CurrentPrincipal() principal: Principal | null): Promise<AgentConfigDto> {
     const engines = principal ? agentEnginesFor(principal.id) : []
     const byEngine = principal ? agentProfileMapFor(principal.id) : {}
+    const guarded = isGuardedPrincipal(principal)
+    const work = guarded ? { enabled: (await readUser(principal.id))?.work.enabled === true, guarded: true } : { enabled: true, guarded: false }
     return {
       enabled: agentWorkerUrl() !== undefined,
+      work,
       cwd: repoRoot(),
       // null for the same reason as `model` below: the worker owns the per-profile default, and
       // naming one here would override it for whichever engine the session lands on. The codex

@@ -6,7 +6,7 @@
 //
 //   box auth reveal <user-id>
 
-import { ensureSchema, ensureSystemPrincipal, resolvePrincipalById, revealPrincipalToken } from '@silkweave/box-core'
+import { ensureSchema, ensureAgentPrincipals, resolvePrincipalById, revealPrincipalToken } from '@silkweave/box-core'
 import { appUrl } from '../src/auth/app-url.js'
 import { commandError, commandHeader, commandLine, commandValue, commandWarning } from '../../../packages/cli/src/command-ui.js'
 
@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     process.exit(1)
   }
   await ensureSchema()
-  await ensureSystemPrincipal()
+  await ensureAgentPrincipals()
   const principal = await resolvePrincipalById(id)
   if (!principal) {
     commandError(`No active user "${id}". Check Settings -> Users.`)

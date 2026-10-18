@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import { revokeBuilderControl, trackBuilderControl } from './builder-control.js'
+import { revokeAgentControl, trackAgentControl } from './agent-control.js'
 
-describe('Builder control revocation', () => {
+describe('agent control revocation', () => {
   it('revokes all of one user’s controls without affecting another user', () => {
     const first = vi.fn()
     const second = vi.fn()
     const other = vi.fn()
-    trackBuilderControl('alice', first)
-    trackBuilderControl('alice', second)
-    const detach = trackBuilderControl('bob', other)
-    revokeBuilderControl('alice')
-    revokeBuilderControl('alice')
+    trackAgentControl('alice', first)
+    trackAgentControl('alice', second)
+    const detach = trackAgentControl('bob', other)
+    revokeAgentControl('alice')
+    revokeAgentControl('alice')
     expect(first).toHaveBeenCalledTimes(1)
     expect(second).toHaveBeenCalledTimes(1)
     expect(other).not.toHaveBeenCalled()
@@ -19,11 +19,11 @@ describe('Builder control revocation', () => {
 
   it('detaches closed controls and continues after an individual failure', () => {
     const closed = vi.fn()
-    trackBuilderControl('alice', closed)()
-    trackBuilderControl('alice', () => { throw new Error('already closed') })
+    trackAgentControl('alice', closed)()
+    trackAgentControl('alice', () => { throw new Error('already closed') })
     const active = vi.fn()
-    trackBuilderControl('alice', active)
-    revokeBuilderControl('alice')
+    trackAgentControl('alice', active)
+    revokeAgentControl('alice')
     expect(closed).not.toHaveBeenCalled()
     expect(active).toHaveBeenCalledTimes(1)
   })

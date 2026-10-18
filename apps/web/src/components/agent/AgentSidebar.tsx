@@ -340,6 +340,7 @@ export function AgentToggle() {
   const [menuOpen, setMenuOpen] = React.useState(false)
   if (!config?.enabled && !canBuild) return null
   const pending = (session?.pendingPermissionCount ?? 0) > 0
+  const workOff = config?.enabled === true && config.work?.enabled === false
   const openGallery = (): void => { setMenuOpen(false); void navigate({ to: '/recipes' }) }
   const openBuilder = (): void => {
     const preview = window.location.pathname + window.location.search + window.location.hash
@@ -351,8 +352,8 @@ export function AgentToggle() {
         variant='ghost'
         size='sm'
         className={cn('relative', canBuild && 'rounded-r-none')}
-        disabled={!config?.enabled}
-        title='Open Assistant'
+        disabled={!config?.enabled || workOff}
+        title={workOff ? 'Work is turned off for your account; ask an administrator' : 'Open Assistant'}
         aria-label='Work: open Assistant'
         aria-expanded={open && config?.enabled === true}
         onClick={() => setAgentOpen(true)}>

@@ -52,6 +52,10 @@ actual state before recording or updating it:
   `powerups` says which powerups the running server carries.
 - `data/wiki/` holds `schema.md`, `purpose.md` and `index.md` once the server has started with the
   feature registered.
+- The backup: `features/wiki/core/manifest.ts` lists `WIKI_BACKUP_ACTION` in `actions`,
+  `data/backups/wiki/` holds recent archives, and with automation `box triggers-list` lists a valid
+  time trigger whose `action_id` is `wiki-backup`. Without archives or a schedule the wiki has no
+  backup; tell the owner.
 
 If it is already adapted, this is an update: compare with the recorded upstream SHA and keep the
 Box's `schema.md`, `purpose.md`, pages and local customizations.
@@ -74,6 +78,11 @@ Ask these together:
    `mcp__box__WikiPageRename`, `mcp__box__WikiLintFix` (docs/AGENT-TOOLS.md).
 4. **Starting conventions.** Whether to keep the shipped `schema.md` page types and `purpose.md`,
    or edit them for this team after the first boot seeds them.
+5. **Backup.** The time of the daily `wiki-backup` trigger (04:10 in the Box's zone unless the owner
+   names another; it needs the automation recipe), and whether archives also go offsite: they do
+   when `backup.gcsBucket` is set in `box.json` (docs/WAREHOUSE.md for the bucket setup). Without
+   automation, someone runs the backup by hand or from the host's scheduler with
+   `box run-now --action-id wiki-backup`.
 
 ## Integration
 
@@ -90,8 +99,8 @@ Ask these together:
      only its search.
    - upkeep: in `server/wiki/wiki.module.ts` the `WikiUpkeepController` and `WikiUpkeepService`
      imports and entries; in `core/index.ts` the `wikiUpkeep` namespace export; in
-     `core/manifest.ts` the `WIKI_UPKEEP_ACTIONS` import and `actions: WIKI_UPKEEP_ACTIONS` (leave
-     `actions` out); in `web/views/WikiHealthView.tsx` the `UpkeepHistory` import and its use
+     `core/manifest.ts` the `WIKI_UPKEEP_ACTIONS` import and its spread (keep
+     `actions: [WIKI_BACKUP_ACTION]`); in `web/views/WikiHealthView.tsx` the `UpkeepHistory` import and its use
      (keep the `WikiPowerupNote` branch).
    Leave the base's powerup ports (`core/powerups.ts`) and the `WikiPowerupNote` component in place:
    they are how the base reports an absent powerup.
@@ -130,7 +139,26 @@ Ask these together:
    The key is read when the server opens the index, so add it before boot or restart afterwards.
 6. Check that no new core export collides with another feature's by importing the source barrel at
    runtime: `cd apps/server && bun --conditions=@silkweave/box-source -e "await import('@silkweave/box-core')"`.
-7. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Update
+7. With the automation recipe, create the backup trigger with `trigger-upsert` (MCP
+   `TriggerUpsert`, `box trigger-upsert`, or Settings > Automation > Triggers), at the owner's time
+   and zone. `owner` is an admin; the system agent must name the admin it acts for.
+   ```json
+   {
+     "id": "wiki-backup",
+     "name": "Wiki backup",
+     "description": "Daily wiki archive (recipes/wiki).",
+     "enabled": true,
+     "when_kind": "time",
+     "cron": "10 4 * * *",
+     "timezone": "<IANA zone, or omit for the server's>",
+     "do_kind": "action",
+     "action_id": "wiki-backup",
+     "owner": "<admin id>"
+   }
+   ```
+   It fires only while `background.automation` is `true`; on a rehearsal checkout leave it off and
+   use `box run-now --action-id wiki-backup`.
+8. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Update
    _docs/INTEGRATION.md as each step completes. Advance the completed upstream SHA in
    docs/UPSTREAM.md only after the full validation and boot pass.
 
@@ -140,13 +168,40 @@ in the background.
 
 ### Data layout
 
-| Path | Kept in backups | What |
+| Path | In the wiki backup | What |
 |---|---|---|
 | `data/wiki/` (pages, `index.md`, `log.md`, `log/`, `schema.md`, `purpose.md`, `raw/`) | yes | the vault: the team's knowledge and its history |
-| `data/wiki/.search/` | optional | the search index, rebuilt from the pages (re-embedding costs API usage) |
+| `data/wiki/.search/` | no | the search index, rebuilt from the pages (re-embedding costs API usage) |
 | `data/config/wiki.json` | yes | prompt additions for the powerups' jobs, edited in Settings > Wiki |
+| `data/backups/wiki/` | no | the local archives `wiki-backup` writes |
 
-Check that the Box's backup covers `data/wiki/` and `data/config/`.
+The warehouse, chat and artifacts backups do not cover the wiki; the `wiki-backup` action does
+(SPEC.md "Backup").
+
+## Restore
+
+Restore is manual and replaces the whole vault. On the live Box it is an owner decision; rehearse
+it on a scratch checkout first.
+
+1. Pick the archive. Local: `ls -t data/backups/wiki/`. Offsite, the newest:
+   `gsutil cp gs://<bucket>/wiki/wiki-latest.tar.gz /tmp/`; an older one:
+   `gsutil ls -a gs://<bucket>/wiki/wiki-latest.tar.gz` lists every version with its
+   `#<generation>`, and `gsutil cp 'gs://<bucket>/wiki/wiki-latest.tar.gz#<generation>' /tmp/`
+   fetches it.
+2. Check it: `tar -tzf <archive>` lists `wiki/...` and, when the Box had one, `config/wiki.json`.
+3. Take a fresh `wiki-backup` first if the vault still opens, then stop the Box server: the search
+   index admits one process, and a running server would write pages and the index during the swap.
+4. From the checkout root, move the current state aside (`<date>` as `YYYY-MM-DD`):
+   `mv data/wiki data/wiki.pre-restore-<date>`, and, if the archive carries `config/wiki.json`,
+   `cp data/config/wiki.json data/config/wiki.json.pre-restore-<date>`.
+5. Extract into `data/`: `tar -xzf <archive> -C data`. This writes `data/wiki/` and
+   `data/config/wiki.json`.
+6. Start the server. It opens the vault and rebuilds `data/wiki/.search/` in the background; with
+   an embeddings key that re-embeds every section (minutes and API usage on a vault of a few
+   hundred pages). `box wiki-status` reports the page count and `pending` falls to 0;
+   `box wiki-lint` should match what the vault had.
+7. Once the team has confirmed the restored wiki, delete `data/wiki.pre-restore-<date>/` and the
+   `wiki.json` copy.
 
 ## Verify
 
@@ -170,6 +225,16 @@ Check that the Box's backup covers `data/wiki/` and `data/config/`.
    at `/wiki/page/<slug>` and save an edit, and load `/wiki/health` (tiles, the keyword-only
    callout when there is no key, lint findings) and Settings > Wiki (powerup presence). Check the
    console for errors and toggle light and dark once.
-7. Record the actual commands and results. After these pass, add `wiki` to the `box.json`
+7. Backup: `box run-now --action-id wiki-backup` and `box wiki-backup` each answer with a summary
+   naming `backups/wiki/wiki-<stamp>-<id>.tar.gz` and the file count, and say whether it was
+   uploaded; both appear in the automation run history. `tar -tzf` on the newest archive lists
+   `wiki/index.md` and `config/wiki.json` (when present) and nothing under `wiki/.search/`. With a
+   bucket, `gsutil ls -l gs://<bucket>/wiki/` shows `wiki-latest.tar.gz` with the run's time.
+   With automation, `box triggers-list` shows the `wiki-backup` trigger `valid` with the expected
+   `nextFire`.
+8. Restore rehearsal, on a second scratch checkout, never the live Box: follow "Restore" below with
+   the newest archive, boot, and check `box wiki-status` reports the same page count, `box wiki-lint`
+   matches the source Box, and a recently changed page reads the same.
+9. Record the actual commands and results. After these pass, add `wiki` to the `box.json`
    `recipes` ledger, with each powerup under `powerups` only once its own Verify steps pass:
    `"wiki": { "powerups": [] }`.

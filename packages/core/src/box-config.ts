@@ -15,6 +15,7 @@ import {
   type BoxJson,
 } from './box-json.js'
 import { configPath, configRoot, warehousePath } from './io.js'
+import { dayInZone } from './team-day.js'
 import type { UserRole } from './users/types.js'
 
 export { readBoxConfig } from './box-json.js'
@@ -41,6 +42,11 @@ export function clearMaintenanceOverride(): void {
   maintenanceOverride = false
 }
 
+/** Whether this process is the supervisor's maintenance boot (background off, repair in progress). */
+export function isMaintenanceBoot(): boolean {
+  return maintenanceOverride
+}
+
 const label = (file: string): string => file.endsWith('box.local.json') ? 'box.local.json' : 'box.json'
 const readRaw = (file: string): unknown => parseBoxJsonText(readFileSync(file, 'utf8'), label(file))
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -54,7 +60,7 @@ export function boxJson(): BoxJson {
   if (!maintenanceOverride) return parsed
   return {
     ...parsed,
-    background: { automation: false, chatAgent: false, relay: false },
+    background: { automation: false, chatAgent: false, relay: false, whatsapp: false },
   }
 }
 
@@ -91,6 +97,17 @@ export function agentIdentity(): AgentIdentity {
 }
 
 export function systemUserId(): string { return agentIdentity().id }
+
+/** The team's IANA time zone, box.json `timeZone` (default UTC), read at call time. */
+export function teamTimeZone(): string { return boxJson().timeZone }
+
+/**
+ * The team's calendar day of a moment (now by default), `YYYY-MM-DD`: what "today" means for
+ * planning weeks, deal and stage dates and day-based ages. Reads box.json each call; in a loop,
+ * take `teamTimeZone()` once and use `dayInZone(zone, at)`. API windows of external services and
+ * exchange rates are UTC by their own contract and do not use this.
+ */
+export function teamDay(at: Date | string | number = new Date()): string { return dayInZone(teamTimeZone(), at) }
 
 /**
  * Persist defaults and bind the ID before opening the warehouse.

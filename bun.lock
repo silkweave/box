@@ -152,6 +152,7 @@
         "@storybook/react-vite": "^10.6.0",
         "@tailwindcss/vite": "^4.3.3",
         "@tiptap/core": "^3.31.3",
+        "@tiptap/extension-image": "^3.31.3",
         "@tiptap/extension-list": "^3.31.3",
         "@tiptap/extension-table": "^3.31.3",
         "@tiptap/extensions": "^3.31.3",
@@ -171,6 +172,7 @@
         "@dnd-kit/sortable": "^10.0.0",
         "@dnd-kit/utilities": "^3.2.2",
         "@tiptap/core": "^3.27.1",
+        "@tiptap/extension-image": "^3.27.1",
         "@tiptap/extension-list": "^3.27.1",
         "@tiptap/extension-table": "^3.27.1",
         "@tiptap/extensions": "^3.27.1",
@@ -187,6 +189,7 @@
         "@dnd-kit/sortable",
         "@dnd-kit/utilities",
         "@tiptap/core",
+        "@tiptap/extension-image",
         "@tiptap/extension-list",
         "@tiptap/extension-table",
         "@tiptap/extensions",
@@ -812,6 +815,8 @@
     "@tiptap/extension-heading": ["@tiptap/extension-heading@3.31.4", "", { "peerDependencies": { "@tiptap/core": "3.31.4" } }, "sha512-KqlSeLathpdxCc3kVHBCA/RkHvb+V7u5vgiSEu1Cv3L70r7F19COMGODav/k1AGYBgEXKL6lM9cy8cloE5/28g=="],
 
     "@tiptap/extension-horizontal-rule": ["@tiptap/extension-horizontal-rule@3.31.4", "", { "peerDependencies": { "@tiptap/core": "3.31.4", "@tiptap/pm": "3.31.4" } }, "sha512-ws0Kh8kfHL7ESILSXj0HJAXs8G10ewlW1sedXKm8dm0op9L8il+xl8bEJVoqG/jMf77900Fc2CaQldcCGRpF1g=="],
+
+    "@tiptap/extension-image": ["@tiptap/extension-image@3.32.0", "", { "peerDependencies": { "@tiptap/core": "3.32.0" } }, "sha512-nv/YlOMwFUp2ItffQbHb14yAJjrn9sdxKl0WK5rH8PPiNoXVkvasieoBLNTHan9gjhrSp7LjVG2ZsMoSe/I7gg=="],
 
     "@tiptap/extension-italic": ["@tiptap/extension-italic@3.31.4", "", { "peerDependencies": { "@tiptap/core": "3.31.4" } }, "sha512-pftTQBPYZocNDAj/u6OyDIp7YxmN0+N895cQPogJQ6qMHdLiRhzgawiEewJkniyN1w8k3Wx/Etp8pTKrxaOOBQ=="],
 

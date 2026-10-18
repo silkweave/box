@@ -1,13 +1,24 @@
+import { mkdirSync } from 'node:fs'
 import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpException, Post, Req, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
-import { IsIn, IsInt, IsOptional, IsString } from 'class-validator'
+import { IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
+import { WORK_FS } from '../agent/work-session.js'
 import { z } from 'zod/v4'
-import { boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, issuePrincipalToken, issueSigninLink, readUser, readUsers, revealPrincipalToken, revokePrincipalToken, sameEmail, setPrincipalRole, upsertUser, type User, type UserRole } from '@silkweave/box-core'
-import { revokeBuilderControl } from '../agent/builder-control.js'
+import { AgentFileError, createAgent, isConfiguredAgent, type PrincipalCredential, boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, issuePrincipalToken, issueSigninLink, readUser, readUsers, normalizePhone, revealPrincipalToken, revokePrincipalToken, sameEmail, setPrincipalRole, upsertUser, type User, type UserRole, workFolderCreateProblem, workFolderProblem, workFolderSuggestions, type WorkAccess } from '@silkweave/box-core'
+import { revokeAgentControl } from '../agent/agent-control.js'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { Admin } from '../auth/auth.decorators.js'
 import { appUrl, signinLinkUrl } from '../auth/app-url.js'
+
+/** Whether a typed phone names the stored one (an invalid typed form never does). */
+function samePhone(typed: string, stored: string | null): boolean {
+  try {
+    return normalizePhone(typed) === stored
+  } catch {
+    return false
+  }
+}
 
 const userOutput = z.object({
   id: z.string(),
@@ -15,10 +26,12 @@ const userOutput = z.object({
   last_name: z.string(),
   nickname: z.string(),
   email: z.string().nullable(),
+  phone: z.string().nullable(),
   image: z.string().nullable(),
   color: z.string().nullable(),
   status: z.enum(['invited', 'active', 'revoked']),
   role: z.enum(['admin', 'member']),
+  kind: z.enum(['human', 'agent']),
   tailscale_login: z.string().nullable(),
   channels: z.record(z.string(), z.string()),
   agent_profile: z.string().nullable(),
@@ -30,6 +43,8 @@ const userOutput = z.object({
 const usersOutput = z.object({ generatedAt: z.string(), users: z.array(userOutput) })
 const inviteOutput = z.object({ token: z.string(), url: z.string(), message: z.string(), user: userOutput })
 const linkOutput = z.object({ url: z.string(), expiresAt: z.string(), message: z.string(), user: userOutput })
+const workFoldersOutput = z.object({ parent: z.string().nullable(), directories: z.array(z.string()), create: z.string().nullable() })
+const workFolderOutput = z.object({ path: z.string() })
 
 // DTOs document the REST/Swagger surface and drive the generated tRPC input/output types, exactly
 // like the sink/planning controllers. @Mcp() input fields are scalar-only so the cli proxy can build
@@ -40,18 +55,24 @@ class UserDto {
   @ApiProperty() last_name!: string
   @ApiProperty() nickname!: string
   @ApiProperty({ required: false, nullable: true }) email!: string | null
+  @ApiProperty({ required: false, nullable: true, description: 'Phone in E.164; how WhatsApp recognises this person as a team member' })
+  phone!: string | null
   @ApiProperty({ required: false, nullable: true }) image!: string | null
   @ApiProperty({ required: false, nullable: true }) color!: string | null
   @ApiProperty({ description: 'Access lifecycle: active | invited | revoked' })
   status!: string
   @ApiProperty({ enum: USER_ROLES, description: 'Trust tier: admin | member (docs/core/AUTH.md § 3)' })
   role!: string
+  @ApiProperty({ enum: ['human', 'agent'], description: 'human | agent: agents come from box.json agent and data/config/agents/<id>.md' })
+  kind!: string
   @ApiProperty({ required: false, nullable: true, description: 'Tailscale login this user signs in as, when the Box runs behind tailscale serve' })
   tailscale_login!: string | null
   @ApiProperty({ type: Object, description: 'channel → handle map' })
   channels!: Record<string, string>
   @ApiProperty({ required: false, nullable: true, description: 'Default agent profile (`<person>:<engine>`); null = Claude first. The agent principal runs on it only' })
   agent_profile!: string | null
+  @ApiProperty({ type: Object, description: 'Work capabilities: { enabled, data, sandbox, folders, folder_paths } (docs/AUTH.md § Work sessions). Admin-set; ignored for admins and agents' })
+  work!: WorkAccess
   @ApiProperty({ description: 'Whether an access token has been issued (never the token itself)' })
   has_token!: boolean
   @ApiProperty() sort!: number
@@ -69,6 +90,8 @@ class UpsertUserDto {
   @ApiProperty({ required: false }) @IsOptional() @IsString() nickname?: string
   @ApiProperty({ required: false, description: 'Identity email ("" clears it). Admin-only to change; unique across users' })
   @IsOptional() @IsString() email?: string
+  @ApiProperty({ required: false, description: 'Phone in international form ("" clears it). Admin-only to change; unique across users' })
+  @IsOptional() @IsString() phone?: string
   @ApiProperty({ required: false, description: 'Avatar image URL or data: URI ("" clears it)' })
   @IsOptional() @IsString() image?: string
   @ApiProperty({ required: false, description: "Swatch name ('indigo', 'cyan', …; '' clears it)" })
@@ -80,6 +103,8 @@ class UpsertUserDto {
   @IsOptional() @IsString() tailscale_login?: string
   @ApiProperty({ required: false, description: 'Default agent profile, one of the user\'s agentProfiles ("" clears it)' })
   @IsOptional() @IsString() agent_profile?: string
+  @ApiProperty({ required: false, description: 'ADMIN-only: JSON object of Work capabilities, merged over the stored value: { enabled?, data?, sandbox?, folders?, folder_paths? }' })
+  @IsOptional() @IsString() work?: string
 }
 class SetRoleDto {
   @ApiProperty() @IsString() id!: string
@@ -88,6 +113,20 @@ class SetRoleDto {
 }
 class IdDto {
   @ApiProperty() @IsString() id!: string
+}
+class WorkFolderQueryDto {
+  @ApiProperty({ description: 'A partial absolute path on the Box host, as typed' }) @IsString() query!: string
+}
+class WorkFolderPathDto {
+  @ApiProperty({ description: 'The absolute directory to create; its parent must exist' }) @IsString() path!: string
+}
+class WorkFoldersDto {
+  @ApiProperty({ nullable: true, description: 'The directory whose children were listed' }) parent!: string | null
+  @ApiProperty({ type: [String], description: 'Grantable directories completing the query' }) directories!: string[]
+  @ApiProperty({ nullable: true, description: 'The query when it could be created as a Work folder' }) create!: string | null
+}
+class WorkFolderDto {
+  @ApiProperty() path!: string
 }
 class LinkRequestDto {
   @ApiProperty() @IsString() id!: string
@@ -111,7 +150,16 @@ class UserInviteDto {
 }
 
 interface PrincipalRequest {
-  principal?: { id: string; role?: string } | null
+  principal?: { id: string; role?: string; kind?: string } | null
+  credential?: PrincipalCredential
+}
+
+class AgentCreateDto {
+  @ApiProperty({ description: 'The agent id: a lowercase slug (a-z, 0-9, -), new to this Box' }) @IsString() @MaxLength(63) id!: string
+  @ApiProperty({ description: 'Display name' }) @IsString() @MaxLength(64) name!: string
+  @ApiProperty({ enum: USER_ROLES, description: 'admin or member, as for a person' }) @IsIn(USER_ROLES) role!: UserRole
+  @ApiProperty({ required: false, description: 'Instructions appended to the engine system prompt at each session start' })
+  @IsOptional() @IsString() @MaxLength(20_000) instructions?: string
 }
 
 /**
@@ -166,9 +214,9 @@ export class UsersController {
    *
    * Self-or-admin, checked here rather than with `@Admin()` because the answer depends on the BODY:
    * a member may edit their own profile fields and nothing else. Creating a user is an admin's, so
-   * a member cannot mint themselves a second identity, and `tailscale_login` and `email` are an
-   * admin's on every row, because each decides who a person is somewhere else (a tailscale login,
-   * an SSO sign-in).
+   * a member cannot mint themselves a second identity, and `tailscale_login`, `email` and `phone` are
+   * an admin's on every row, because each decides who a person is somewhere else (a tailscale login,
+   * an SSO sign-in, a WhatsApp number).
    */
   @Post('upsert')
   @ApiOkResponse({ type: UserDto })
@@ -185,6 +233,13 @@ export class UsersController {
       if (body.email !== undefined && !sameEmail(body.email, (await readUser(body.id))?.email)) {
         throw new ForbiddenException('changing email is admin-only')
       }
+      // The phone is an identity too: WhatsApp treats its number as a team member.
+      if (body.phone !== undefined && !samePhone(body.phone, (await readUser(body.id))?.phone ?? null)) {
+        throw new ForbiddenException('changing phone is admin-only')
+      }
+      // Work capabilities bound what a person's own agent may touch; letting them widen it would
+      // make the guard decorative.
+      if (body.work !== undefined) throw new ForbiddenException('work is admin-only')
     }
     let channels: Record<string, string> | undefined
     try {
@@ -192,12 +247,59 @@ export class UsersController {
     } catch {
       throw new BadRequestException('channels must be a JSON object of channel→handle')
     }
+    let work: Partial<WorkAccess> | undefined
+    if (body.work !== undefined) {
+      try {
+        const parsed: unknown = JSON.parse(body.work)
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('not an object')
+        work = parsed as Partial<WorkAccess>
+      } catch {
+        throw new BadRequestException('work must be a JSON object of Work capabilities')
+      }
+      // Folders are checked when granted too (work-access.ts), but a path that can never be granted
+      // is the admin's mistake to hear about now, not the member's at their next session.
+      const paths = Array.isArray(work.folder_paths) ? work.folder_paths : []
+      for (const p of paths) {
+        const problem = typeof p === 'string' ? workFolderProblem(p, WORK_FS) : 'folder paths must be strings'
+        if (problem) throw new BadRequestException(`work folder: ${problem}`)
+      }
+    }
     try {
-      return (await upsertUser({ ...body, channels })) as User as UserDto
+      return (await upsertUser({ ...body, channels, work })) as User as UserDto
     } catch (e) {
       // Domain refusals (a taken email or tailscale login, an invalid id) are the caller's to fix.
       throw new BadRequestException(e instanceof Error ? e.message : String(e))
     }
+  }
+
+  /**
+   * tRPC query `usersWorkFolders` - the directories an admin could grant that complete a typed
+   * path, for the Work folder picker. ADMIN-only, like setting `work`: it lists host directories.
+   * The classification (work-access.ts) is the same one `usersUpsert` applies, so the picker never
+   * offers what the admin could not type by hand.
+   */
+  @Post('work-folders')
+  @ApiOkResponse({ type: WorkFoldersDto })
+  @Admin()
+  @Trpc({ output: workFoldersOutput })
+  workFolders(@Body() body: WorkFolderQueryDto): WorkFoldersDto {
+    return workFolderSuggestions(body.query, WORK_FS)
+  }
+
+  /**
+   * tRPC mutation `usersWorkFolderCreate` - make one new directory for a Work grant, when its parent
+   * exists and the result would be grantable. ADMIN-only; one level, never recursive.
+   */
+  @Post('work-folder-create')
+  @ApiOkResponse({ type: WorkFolderDto })
+  @Admin()
+  @Trpc({ kind: 'mutation', output: workFolderOutput })
+  workFolderCreate(@Body() body: WorkFolderPathDto): WorkFolderDto {
+    const path = body.path.trim()
+    const problem = workFolderCreateProblem(path, WORK_FS)
+    if (problem) throw new BadRequestException(`work folder: ${problem}`)
+    mkdirSync(path)
+    return { path }
   }
 
   /**
@@ -212,6 +314,11 @@ export class UsersController {
   @Trpc({ kind: 'mutation', output: inviteOutput })
   @Mcp({ name: 'user-invite' })
   async invite(@Body() body: IdDto, @Req() req: PrincipalRequest): Promise<UserInviteDto> {
+    // An agent's credential is never handed out or restored here: its sessions get their token from
+    // the server, its access follows its file, and the host rotates it (`box auth token <id> --rotate`).
+    if ((await readUser(body.id))?.kind === 'agent') {
+      throw new BadRequestException(`"${body.id}" is an agent; agents are restored through data/config/agents/${body.id}.md, not invited`)
+    }
     try {
       const token = await issuePrincipalToken(body.id, req.principal?.id)
       return this.buildInvite(token, (await readUser(body.id))!)
@@ -259,10 +366,14 @@ export class UsersController {
     if (body.id === systemUserId()) {
       throw new BadRequestException(`"${systemUserId()}" is the system principal - rotate its token instead of disabling it`)
     }
-    if (!(await readUser(body.id))) throw new BadRequestException(`no user "${body.id}"`)
+    const target = await readUser(body.id)
+    if (!target) throw new BadRequestException(`no user "${body.id}"`)
+    if (target.kind === 'agent') {
+      throw new BadRequestException(`"${body.id}" is an agent - retire it by deleting data/config/agents/${body.id}.md, or rotate its token on the host`)
+    }
     await assertNotLastAdmin(body.id, 'disabling them')
     await revokePrincipalToken(body.id, req.principal?.id)
-    revokeBuilderControl(body.id)
+    revokeAgentControl(body.id)
     return (await readUser(body.id)) as User as UserDto
   }
 
@@ -282,12 +393,38 @@ export class UsersController {
   async setRole(@Body() body: SetRoleDto, @Req() req: PrincipalRequest): Promise<UserDto> {
     try {
       await setPrincipalRole(body.id, body.role, req.principal?.id)
-      if (body.role !== 'admin') revokeBuilderControl(body.id)
+      if (body.role !== 'admin') revokeAgentControl(body.id)
     } catch (e) {
       if (e instanceof HttpException) throw e
       throw new BadRequestException(e instanceof Error ? e.message : String(e))
     }
     return (await readUser(body.id)) as User as UserDto
+  }
+
+  /**
+   * tRPC mutation `usersAgentCreate` - create an agent at runtime: its file in
+   * `data/config/agents/` and its principal, reconciled like a boot (core `createAgent`).
+   *
+   * tRPC only, no MCP tool, and only for a PERSON who is an admin at a browser session: an agent
+   * (every agent is a principal, the admin system principal included) must never mint more agents,
+   * and a bearer token is what an agent or a script holds. The same credential rule as approval
+   * decisions (docs/AUTH.md). The new agent's engine profile stays host configuration.
+   */
+  @Post('agent-create')
+  @ApiOkResponse({ type: UserDto })
+  @Admin()
+  @Trpc({ kind: 'mutation', output: userOutput })
+  async agentCreate(@Body() body: AgentCreateDto, @Req() req: PrincipalRequest): Promise<UserDto> {
+    const principal = req.principal
+    if (!principal) throw new ForbiddenException('not signed in')
+    if (principal.kind === 'agent' || isConfiguredAgent(principal.id)) throw new ForbiddenException('an agent cannot create agents; a person does, in Settings > Users')
+    if (req.credential !== 'session') throw new ForbiddenException('agents are created by a person in Settings > Users (signed-in browser session), not with an API token')
+    try {
+      return (await createAgent({ id: body.id, name: body.name, role: body.role, ...(body.instructions ? { instructions: body.instructions } : {}) })) as User as UserDto
+    } catch (e) {
+      if (e instanceof AgentFileError) throw new BadRequestException(e.message)
+      throw e
+    }
   }
 
   /**
@@ -366,7 +503,7 @@ export class UsersController {
     await assertNotLastAdmin(body.id, 'deleting them')
     try {
       await deleteUser(body.id)
-      revokeBuilderControl(body.id)
+      revokeAgentControl(body.id)
     } catch (e) {
       if (e instanceof HttpException) throw e
       throw new BadRequestException(e instanceof Error ? e.message : String(e))

@@ -94,3 +94,13 @@ it('ownership checks static reads and writes, ignores literals/comments, and rej
     "SELECT 'FROM users' FROM demo -- JOIN missing\n /* UPDATE users */",
   ] }] }])).toEqual([])
 })
+
+it('ownership counts retired tables as the feature\'s own and reads IS DISTINCT FROM as a comparison', () => {
+  const feature = demo()
+  expect(migrationOwnershipErrors([{ ...feature, retiredTables: ['old_demo'], migrations: [{ name: 'x', statements: [
+    'DROP TABLE IF EXISTS old_demo',
+    'UPDATE demo SET value = l.v FROM (SELECT 1 AS v) l WHERE demo.value IS DISTINCT FROM l.v',
+    'UPDATE demo SET value = 1 WHERE value IS NOT DISTINCT FROM 2',
+  ] }] }])).toEqual([])
+  expect(migrationOwnershipErrors([{ ...feature, migrations: [{ name: 'x', statements: ['DROP TABLE IF EXISTS old_demo'] }] }])).toEqual([expect.stringContaining('old_demo')])
+})

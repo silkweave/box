@@ -11,4 +11,5 @@
  * Only the lazy boundary is exported, so TipTap stays in its own chunk at runtime too.
  */
 export * from './types.ts'
+export * from './media.ts'
 export * from './DocEditor.tsx'

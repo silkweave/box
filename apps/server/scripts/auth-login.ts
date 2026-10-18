@@ -13,7 +13,7 @@
 // Works with no server running: it talks to the warehouse directly, like the other auth scripts.
 // It never CREATES a user - that is `box auth token`, and only on a Box that has none yet.
 
-import { ensureSchema, ensureSystemPrincipal, issueSigninLink, resolvePrincipalById } from '@silkweave/box-core'
+import { ensureSchema, ensureAgentPrincipals, issueSigninLink, resolvePrincipalById } from '@silkweave/box-core'
 import { signinLinkUrl } from '../src/auth/app-url.js'
 import { commandError, commandHeader, commandLine, commandValue, offerBrowserOpen } from '../../../packages/cli/src/command-ui.js'
 
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   }
 
   await ensureSchema()
-  await ensureSystemPrincipal()
+  await ensureAgentPrincipals()
   const principal = await resolvePrincipalById(id)
   if (!principal) {
     commandError(`No active user "${id}". Check Settings -> Users.`)

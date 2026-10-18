@@ -1,7 +1,8 @@
-// Active controls are revoked along with Box authorization, not only at the next page load.
+// Live agent channels (every authenticated /agent WebSocket, and Builder runners) per user, so they
+// are closed along with Box authorization (revoke, delete, demotion), not only at the next request.
 const controls = new Map<string, Set<() => void>>()
 
-export function trackBuilderControl(user: string, revoke: () => void): () => void {
+export function trackAgentControl(user: string, revoke: () => void): () => void {
   const owned = controls.get(user) ?? new Set<() => void>()
   owned.add(revoke)
   controls.set(user, owned)
@@ -11,7 +12,7 @@ export function trackBuilderControl(user: string, revoke: () => void): () => voi
   }
 }
 
-export function revokeBuilderControl(user: string): void {
+export function revokeAgentControl(user: string): void {
   const owned = controls.get(user)
   if (!owned) return
   controls.delete(user)

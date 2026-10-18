@@ -32,7 +32,7 @@
 
 import {
   ensureSchema,
-  ensureSystemPrincipal,
+  ensureAgentPrincipals,
   hasHumanUsers,
   issuePrincipalToken,
   resolvePrincipalById,
@@ -41,7 +41,6 @@ import {
   upsertUser,
   issueSigninLink,
   readUser,
-  systemUserId,
 } from '@silkweave/box-core'
 import { appUrl, signinLinkUrl } from '../src/auth/app-url.js'
 import { commandError, commandHeader, commandLine, commandSuccess, commandValue, commandWarning } from '../../../packages/cli/src/command-ui.js'
@@ -68,7 +67,7 @@ async function main(): Promise<void> {
   await ensureSchema()
   // The machine account every Box needs (scheduler attribution, the agent's seat):
   // its name and role are chosen on the host in box.json.
-  await ensureSystemPrincipal()
+  await ensureAgentPrincipals()
 
   // Principal resolution deliberately hides revoked rows. Creation must check the directory so
   // --create never rewrites or reactivates an existing identity by mistake.
@@ -114,7 +113,7 @@ async function main(): Promise<void> {
     // instead of nothing: short-lived and single-use, so it is safe there, and the person can
     // actually get in without a second round trip.
     commandSuccess(`Access token ${verb} for ${principal.display}; the token itself is not printed.`)
-    if (id === systemUserId()) return
+    if (principal.kind === 'agent') return
     const { grant, claims } = await issueSigninLink(id)
     commandLine('Sign in once:', 'muted')
     commandValue(signinLinkUrl(grant))
@@ -128,7 +127,7 @@ async function main(): Promise<void> {
   // A fresh Box's first act should not be "paste a 32-character secret into a browser". Mint the
   // link here so the very first sign-in is a click, and the token can go straight to a password
   // manager without ever being retyped.
-  if (id === systemUserId()) return
+  if (principal.kind === 'agent') return
   const { grant } = await issueSigninLink(id)
   commandLine('Sign in once:', 'muted')
   commandValue(signinLinkUrl(grant))

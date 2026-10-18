@@ -8,7 +8,7 @@ stop only for the owner decisions.
 
 `features/wiki/server/ask/` exists and `features/wiki/server/wiki/wiki.module.ts` lists
 `WikiAskController` and `WikiAskService`. On a running Box, `box wiki-status` reports
-`powerups.ask: true`, and Settings > Wiki shows Ask under Powerups with a check mark. `box.json`
+`powerups.ask: true`, and Settings > Wiki shows an Ask field under Prompt additions. `box.json`
 `recipes.wiki.powerups` lists `ask` once it was verified. Source present with `powerups.ask: false`
 means the module wiring below is incomplete.
 
@@ -80,8 +80,8 @@ connects it in Settings > Profile or the Users detail. Never copy a token by han
 
 1. Run `box verify`, then boot a disposable instance (background work off) and load `/wiki` and
    Settings > Wiki.
-2. `box wiki-status`: `powerups.ask` is `true`. Settings > Wiki shows Ask with a check mark and an
-   Ask field under Prompt additions.
+2. `box wiki-status`: `powerups.ask` is `true`. Settings > Wiki shows an Ask field under Prompt
+   additions.
 3. CLI: `box wiki-ask` with a question the vault can answer. Within the wait it returns
    `status: "done"`, an answer with `[[slug]]` citations, a confidence and `usage`. If it returns
    `queued` or `running`, follow it with `box wiki-ask-get --ask-id <id> --wait-seconds 60`.
@@ -103,4 +103,4 @@ connects it in Settings > Profile or the Users detail. Never copy a token by han
 3. Remove `ask` from `recipes.wiki.powerups`. `features.wiki.ask` and `prompts.ask` in
    `data/config/wiki.json` stay unused unless the owner removes them; saved query pages stay in the
    vault.
-4. Run `box verify` and load Settings > Wiki: Ask shows the powerup note.
+4. Run `box verify` and load Settings > Wiki: the Ask powerup note stands where the Ask field was.

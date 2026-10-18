@@ -22,14 +22,15 @@ in the **assign queue**, because a row written nowhere visible is a row lost.
   page). Nothing in `features/crm/core` or `features/crm/server` imports another feature. The
   `stripe` powerup reads the key of a Stripe data source, which the Data Sync `stripe` powerup
   provides.
-- **Depended on by**: nothing, since `relay` was removed on 2026-09-13. `relay` was the
+- **Depended on by**: nothing in the Stack today. A feature that builds on the CRM plugs in through
+  its extension points (**Extension points** below) without the CRM importing it. Since `relay` was removed on 2026-09-13, `relay` was the
   predecessor's webhook glue and the only caller of its outreach-tool sync; both went in the same
   commit. **The template ships no sync at all** - the machine write path above is the door a team's
   own sync calls into (see `AGENT.md` § 2, item 6).
 
 ## Tables
 
-Six, all prefixed `crm_`. The prefix is load-bearing: it is what keeps "no `crm_*` table is ever
+Seven, all prefixed `crm_`. The prefix is load-bearing: it is what keeps "no `crm_*` table is ever
 publicly reachable" a greppable, scannable claim. Every table carries `timestamps: true` and
 `audit: true`, so the record layer manages `created_at` / `updated_at` and `created_by` /
 `updated_by` (from the call's `actor`) on top of the declared columns.
@@ -38,6 +39,7 @@ publicly reachable" a greppable, scannable claim. Every table carries `timestamp
 |---|---|---|
 | `crm_accounts` | `id` (a slug, `acme-uk`) | one company. `status` (the relationship), `owner`, `source`, `referral_partner`, `mrr_usd` (what the customer pays per month today as the operator knows it, **not** a finance number), `waiting_on`, `next_action(_at)`, `last_contacted_at`, subscription window, `website`, `tags`, `notes`, pause window, the renewal-risk triple, the three external links (`stripe_customer_id`, `supabase_space_id`, `whatsapp_group_jid`), an `external` JSON bag and the derived `name_key` |
 | `crm_deals` | `id` (a slug, unique across accounts) | one attempt to sell to an account: `account_id`, `name`, `stage`, `owner` (falls back to the account's for display), `mrr_usd` (what it would be worth per month - an estimate, typed rather than derived, see **What a team customises**), `close_probability`, `expected_close_at`, `closed_at` and `loss_stage` (stamped on the stage move), `loss_reason`, `notes`, and a reserved `external` bag |
+| `crm_deal_stage_changes` | `id` (`<deal id>:<uuidv7>`, so ids sort in write order) | one stage move of one deal, append-only: `deal_id`, `account_id`, `from_stage`, `to_stage`, `owner` (whose pipeline moved: the deal's owner at the time, else its account's), `changed_at`; `created_by` is who made the move. What pipeline analytics read |
 | `crm_contacts` | `id` (the source's lead id verbatim, or a slug) | one human at exactly one account: `account_id`, `name`, `headline`, `email`, `phone`, `linkedin_url`, `role`, `is_primary` (int 0/1, at most one per account), `external_stage`, `tags`, `notes`, the derived `linkedin_key`, `last_activity_at` |
 | `crm_meetings` | `id` (idempotency IS the pk; machine rows are namespaced, e.g. `gcal:<event>`) | one sales conversation with a lifecycle: `account_id`/`contact_id` (nullable - null means the assign queue), `kind`, `scheduled_at`, `duration_min`, `outcome`, `rescheduled_count`, `source`, `meet_code`, `attendee_email`, `title`, `matched_by`, `notes`, `external` (organizer, attendees, transcript path, `rescheduled_from[]`) |
 | `crm_revenue_events` | `id` (namespaced, `hubspot:inv:...` / `stripe:inv:...`) | one money event at invoice grain: `account_id` (nullable = queue), `provider`, `kind`, `status`, `amount` + `currency` + `amount_usd` (frozen at `issued_at`'s rate) + `collected_usd` (struck once, at `paid_at`'s rate) + `fx_rate`/`fx_rate_month`, `issued_at`/`due_at`/`paid_at`/`refunded_at`, `period_months` and the **stored** coverage window `covers_from`/`covers_to`, `payer_email`, the external invoice/payment/subscription ids, `invoice_number`, `superseded_by`, `description`, `matched_by`, `notes` |
@@ -56,6 +58,16 @@ also carries `deals_deleted`.
 stage it left as `loss_stage`; and a win promotes a `lead` (or a `lost` / `churned` account being
 won back) to `customer`. That promotion is the only automatic account-status move, and it only ever
 moves an account INTO the paying base.
+
+**Every stage move is recorded** (`crm_deal_stage_changes`). Each `upsertCrmDeal` that changes a
+deal's stage appends one row: deal, account, from and to stage, the owner, `changed_at` and the
+audit `created_by`. Creating a deal is not a move and records nothing, even straight into a later
+stage: a deal's first stage is its first row's `from_stage`, or its current stage while it has
+never moved. A write that keeps the stage records nothing. History starts when a Box first runs the
+table; nothing earlier is reconstructed. Deleting a deal deletes its rows (a deal deleted as a
+mistake must not count as pipeline work), and deleting an account deletes its deals' rows. The
+table and column names are the ones PiBo's Box first wrote, so a Box carrying that history keeps it.
+A new table needs no migration: `ensureSchema()` creates it from its `ModelSpec` on the next boot.
 
 **Baseline DDL: none.** `migrations: []` in `manifest.ts` - the tables are created from the
 `ModelSpec`s by `ensureSchema()`, and there is no bootstrap SQL, no index declaration and no DDL
@@ -142,8 +154,8 @@ effect of removing a directory.
 
 ## Procedures and tools
 
-`CrmController` (`@Controller('crm')`, class-level `@UseGuards(AuthGuard)`). Twenty-one procedures,
-twenty of them also MCP tools.
+`CrmController` (`@Controller('crm')`, class-level `@UseGuards(AuthGuard)`). Twenty-three
+procedures, twenty-two of them also MCP tools.
 
 | tRPC | MCP | what |
 |---|---|---|
@@ -152,7 +164,9 @@ twenty of them also MCP tools.
 | `crmAccountDelete` (mutation) | `crm-account-delete` | remove a company and report what went with it - its deals, its contacts AND their activities (`deals_deleted`, `contacts_deleted`, `activities_deleted`) |
 | `crmDeals` (mutation) | `crm-deals` | every deal, or one account's, flat - the agent's and a report's read |
 | `crmDealUpsert` (mutation) | `crm-deal-upsert` | create or partially update a deal; `account_id` required on create. Stamps `closed_at` / `loss_stage` on the stage move; a win promotes a lead account |
-| `crmDealDelete` (mutation) | `crm-deal-delete` | remove one deal; warns when it was closed, because closed deals are the win rate |
+| `crmDealDelete` (mutation) | `crm-deal-delete` | remove one deal and its stage history; warns when it was closed, because closed deals are the win rate |
+| `crmDealStageChanges` (mutation) | `crm-deal-stage-changes` | stage moves, oldest first: one deal's (`deal_id`), one account's (`account_id`), and/or a range of team days (`from`, `to`, inclusive, on box.json `timeZone`) |
+| `crmDealMoves` (mutation) | `crm-deal-moves` | moves per owner between two team days (`from`, `to`, inclusive): `moved` (into any stage but won) and `won`; unowned moves are not counted |
 | `crmContactUpsert` (mutation) | `crm-contact-upsert` | create or partially update a person; `account_id` required on create, re-parents on update; first contact becomes primary |
 | `crmContactDelete` (mutation) | `crm-contact-delete` | remove a person and their activities (`activities_deleted`) and report: will the source re-send them, who was promoted to primary, is the account now uncallable |
 | `crmActivities` (mutation) | `crm-activities` | every message with an account across all its contacts, oldest first |
@@ -191,7 +205,9 @@ event-driven.
   before `$id` so the static segment reads as the statement it is. Contacts get no route of their
   own; they live on the account page.
 - **Nav**: one entry, `CRM`, icon `Contact`, order band **600**.
-- **Settings / shell / slots / onSession**: none. `defineWebFeature` passes `routes` and `nav` only.
+- **Settings / shell / onSession**: none. `defineWebFeature` passes `routes` and `nav` only. The
+  CRM owns four slots and two registries others fill (**Extension points** below); it contributes
+  to none.
   The top-bar cluster on the accounts table is filled per-view with `TopBarActions` from
   `@silkweave/box-ui`, which is the shell extension seam rather than a manifest field.
 - **Inside the layout**: a sidebar that is NAVIGATION, not a filter - the saved views (from core's
@@ -210,12 +226,52 @@ event-driven.
   it (lazy - `CrmAccountDocLazy`, because TipTap is large). The doc opens with the **Next move**
   block: the move itself, a size up in a tinted box, then its due date, whose turn it is and the
   last contact, then shortcuts that open Conversation with its log form or Deals with a new deal
-  started. The fold state is one global per-browser preference (`CardCollapse`).
+  started. The fold state is one global per-browser preference (`CardCollapse`). A deal row with
+  stage moves shows them folded to one line (how many, and the last); opened, each move with its
+  day and who made it.
 - **Live reload**: `useCrmData` registers `table:crm_accounts`, `table:crm_contacts` and
   `table:crm_deals`;
-  `useCrmEvents` subscribes to `table:crm_meetings`, `table:crm_revenue_events` and
-  `table:crm_activities`. Meetings, revenue and activities are fetched PER ACCOUNT and not folded
+  `useCrmEvents` subscribes to `table:crm_meetings`, `table:crm_revenue_events`,
+  `table:crm_activities` and `table:crm_deal_stage_changes`. Meetings, revenue, activities and
+  stage moves are fetched PER ACCOUNT and not folded
   into the accounts payload, which is already ~294KB.
+
+## Extension points
+
+How another feature (a `support` recipe, comms, a team's own) adds to the CRM. The dependent
+registers into the dependency (`docs/core/SEAM.md` § 4.2, § 5.6): the CRM never imports a
+contributor, reads contributions lazily at render, and shows nothing extra when none is present.
+The contract lives in `features/crm/web/lib/crmExtensions.ts` (names, prop types, `CRM_SLOTS`);
+`components/CrmSlots.tsx` hosts the slots.
+
+**Slots** (core's web slots: list components under the name in `defineWebFeature({ slots })`):
+
+| slot | props | where it renders |
+|---|---|---|
+| `crm.account.card` | `{ account }` | a folding section on the account page, after Money, one per component. Attach `crmCard = { id, title, applies? }` to the component: `id` (`<feature>-<name>`) keys its fold state, `title` heads it, `applies(account)` leaves it out for accounts it has nothing to say about |
+| `crm.account.actions` | `{ account }` | controls beside the account's name on its page (a "Log support ticket" button) |
+| `crm.touch.actions` | `{ activity }` | controls under one touch in the Conversation section, synced and hand-logged alike (a "Make a ticket" link) |
+| `crm.overview.alerts` | `{ accounts }` (every account, unfiltered) | banners above the accounts index; each decides whether it has anything to say and returns null otherwise |
+
+**Registries** (call when the contributor's web module loads, for example from its `index.tsx`;
+each returns its unregister, and registering the same key again replaces it):
+
+- `registerCrmColumn({ key, label, width, hint?, numeric?, Cell, useData?, sortValue?, sortLabel?,
+  sortDir? })` offers a column on the accounts table. `key` is `ext:<feature>-<name>` and is what a
+  saved view stores. `Cell` renders `{ account }` from the feature's own store; `useData` is a hook
+  the table calls on every render so the column re-renders when that data moves; `sortValue`
+  (read synchronously, null sorts last) also puts it in the sort menu. Optional like every column:
+  people add it from the column picker.
+- `registerCrmAttention({ key, label, matches })` adds a reason an account needs attention, beside
+  the CRM's own (next action overdue, at risk). It becomes a chip in the view bar's **Needs
+  attention** filter, which matches an account with any picked reason. The chip **Any reason**
+  covers every reason, registered ones included; the seeded Needs attention view uses it, so a
+  reason added later shows there without editing the view. `matches` reads the feature's store
+  synchronously; pair it with a column's `useData` or a slot that loads the same store.
+
+A saved view that names an `ext:` column, sort or reason whose feature is gone drops it on read.
+Importing `registerCrmColumn` from `features/crm/web/lib/crmExtensions.ts` makes the contributor
+depend on the CRM (declare `dependsOn: ['crm']`); a slot contribution alone needs no import.
 
 ## Settings
 

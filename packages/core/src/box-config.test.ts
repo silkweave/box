@@ -31,10 +31,10 @@ test('setInstanceDir redirects configRoot and ignores environment paths', () => 
   try { expect(configRoot()).toBe(dir); expect(boxJson().agent.id).toBe('nova') } finally { delete process.env.BOX_DATA_DIR }
 })
 test('maintenance override disables background work without changing configuration', () => {
-  write({ background: { automation: true, chatAgent: true, relay: true } })
+  write({ background: { automation: true, chatAgent: true, relay: true, whatsapp: true } })
   setMaintenanceOverride(true)
-  expect(boxJson().background).toEqual({ automation: false, chatAgent: false, relay: false })
+  expect(boxJson().background).toEqual({ automation: false, chatAgent: false, relay: false, whatsapp: false })
   clearMaintenanceOverride()
-  expect(boxJson().background).toEqual({ automation: true, chatAgent: true, relay: true })
+  expect(boxJson().background).toEqual({ automation: true, chatAgent: true, relay: true, whatsapp: true })
   expect(readFileSync(join(dir, 'box.json'), 'utf8')).toContain('"automation":true')
 })

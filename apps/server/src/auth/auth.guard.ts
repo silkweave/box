@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
-import { SESSION_COOKIE, authenticatePrincipal, parseCookies, resolvePrincipalById, verifySession, type Principal, type PrincipalCredential } from '@silkweave/box-core'
+import { authenticatePrincipal, resolveSessionPrincipal, type Principal, type PrincipalCredential } from '@silkweave/box-core'
 import { IS_ADMIN, IS_PUBLIC } from './auth.decorators.js'
 
 interface GuardRequest {
@@ -40,8 +40,7 @@ export class AuthGuard implements CanActivate {
     if (authz && /^Bearer\s+/i.test(authz)) {
       return { principal: await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim()), viaBearer: true }
     }
-    const claims = verifySession(parseCookies(req.headers.cookie)[SESSION_COOKIE])
-    return { principal: claims ? await resolvePrincipalById(claims.sub) : null, viaBearer: false }
+    return { principal: await resolveSessionPrincipal(req.headers.cookie), viaBearer: false }
   }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {

@@ -333,6 +333,11 @@
 .tiptap ul[data-type='taskList'] li > div > p { margin: 0; }
 .tiptap input[type='checkbox'] { accent-color: var(--accent); cursor: pointer; }
 .tiptap .ProseMirror-selectednode { outline: 2px solid var(--accent); }
+/* Media (images, and videos written as markdown images) fit the column; in the editor each is a block. */
+.markdown-body img,
+.markdown-body video { max-width: 100%; height: auto; }
+.tiptap img,
+.tiptap video { display: block; margin: 0.75em 0; border-radius: 6px; }
 .tiptap .selectedCell:after {
   content: '';
   position: absolute;

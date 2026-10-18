@@ -4,6 +4,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { BUILT_FRONTEND_RESTART_MESSAGE, SupervisedApplication, type SupervisedChild } from './supervised-application.js'
+import { APP_RESTART_EXIT_CODE } from './restart-exit.js'
+
+const waitUntil = async (condition: () => boolean, timeoutMs = 1_000): Promise<void> => {
+  const deadline = Date.now() + timeoutMs
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('condition not reached')
+    await new Promise(resolve => setTimeout(resolve, 2))
+  }
+}
 
 class FakeChild extends EventEmitter implements SupervisedChild {
   readonly pid = 4242
@@ -163,6 +172,61 @@ describe('SupervisedApplication', () => {
     expect(app.status.status).toBe('failed')
     await expect(app.restart()).resolves.toMatchObject({ status: 'running' })
     expect(launches).toBe(2)
+  })
+
+  it('starts a fresh server when a running one exits with the restart code, keeping maintenance', async () => {
+    const children: FakeChild[] = []
+    const argsSeen: string[][] = []
+    const app = new SupervisedApplication({
+      repoRoot: '/box', internalPort: 8191, vitePort: 5191,
+      readinessPollMs: 1,
+      probe: async () => true,
+      spawn: (_command, args) => {
+        argsSeen.push(args)
+        const child = new FakeChild()
+        children.push(child)
+        child.spawn()
+        return child
+      },
+      killProcessGroup: () => undefined,
+    })
+    await app.start(true)
+    children[0]!.exit(APP_RESTART_EXIT_CODE, null)
+    expect(app.status.status).not.toBe('running')
+    await waitUntil(() => app.status.status === 'running')
+    expect(children).toHaveLength(2)
+    expect(argsSeen[1]).toContain('--maintenance')
+  })
+
+  it('leaves a crashed server failed, and a restart code during boot is a failed start', async () => {
+    const children: FakeChild[] = []
+    let ready = true
+    const app = new SupervisedApplication({
+      repoRoot: '/box', internalPort: 8191, vitePort: 5191,
+      readinessPollMs: 1,
+      probe: async () => ready,
+      spawn: () => {
+        const child = new FakeChild()
+        children.push(child)
+        child.spawn()
+        return child
+      },
+      killProcessGroup: () => undefined,
+    })
+    await app.start()
+    children[0]!.exit(1, null)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(app.status.status).toBe('failed')
+    expect(children).toHaveLength(1)
+
+    ready = false
+    const booting = app.start()
+    await new Promise(resolve => setTimeout(resolve, 5))
+    children[1]!.exit(APP_RESTART_EXIT_CODE, null)
+    await expect(booting).rejects.toThrow()
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(app.status.status).toBe('failed')
+    expect(children).toHaveLength(2)
   })
 
   it('does not start Vite again for application restarts', async () => {

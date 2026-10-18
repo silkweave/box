@@ -7,7 +7,7 @@ only for the owner-only steps.
 ## Detect
 
 Run `box comms-status`. A channel with `id: "email"` in `channels` means the powerup's code is in
-the Box; its `accountProblem`, `configProblems` and `sending.problem` name what is still missing,
+the Box; its accounts' `problem`, its `configProblems` and `sending.problem` name what is still missing,
 each with its fix. `box.json` `recipes.comms.powerups` lists `email` once it was verified. A Box
 whose `email` channel is present but not sending needs repair, not a new install.
 
@@ -53,7 +53,7 @@ Ask for each when it is needed, then wait:
    `core/approvals.test.ts` exercises the base through this channel; bring it along.
 2. **Configure** `box.json` (shared; no secrets):
    ```json
-   "accounts": { "email": [{ "id": "<agent.id>", "user": "<agent.id>", "login": "<address>", "default": true }] },
+   "accounts": { "email": [{ "id": "<agent id>", "user": "<agent id>", "login": "<address>" }] },
    "features": { "comms": { "email": {
      "allowedRecipients": ["*@example.com", "partner@elsewhere.test"],
      "trustedSenders": ["*@example.com"],
@@ -61,36 +61,42 @@ Ask for each when it is needed, then wait:
      "sharedMailboxes": [{ "id": "finance", "address": "finance@example.com", "name": "Finance", "inbound": ["finance@in.example.com"] }]
    } } }
    ```
-   `<agent.id>` is the Box's own agent id (`box.json` `agent.id`); never copy another Box's.
+   One entry per agent that has a mailbox: `<agent id>` is `box.json` `agent.id` or an agent file in
+   `data/config/agents/`; never copy another Box's.
    `trustedSenders` and `sharedMailboxes` matter only with Email inbound.
 3. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md` and the session in
    `_docs/INTEGRATION.md`. No secret goes in either.
 
-### Identity and settings
+### Accounts and settings
 
-- Address: the account's `login`, lowercased. Display name: `agent.name`. From header
-  `Name <address>`. With several `accounts.email` entries, exactly one is `"default": true`.
-- The account's `user` must equal `agent.id`; an account owned by a person is refused.
+- Address: the account's `login`, lowercased. Display name: the owner agent's name. From header
+  `Name <address>`. No account is special: each agent's mail goes out from its own account, and a
+  person names `from` when there are several.
+- The account's `user` must be an active agent, at most one account each; an account owned by a
+  person or a retired agent receives but sends nothing and wakes nobody.
 - The Resend key: `credentials.email.<account id>.RESEND_API_KEY`, with the channel-wide
-  `credentials.email["*"]` as fallback. tRPC `commsEmailStatus` reports `keyPresent` and `keyPath`.
+  `credentials.email["*"]` as fallback. tRPC `commsEmailStatus` reports `keyPresent` and `keyPath`
+  per account. One Resend account receives for every mailbox; the first account with a key fetches
+  received mail.
 - Allow and trust entries are an exact address or `*@domain` (`@domain` is accepted as an alias),
   matched case-insensitively on the bare address. `*@domain` matches that domain only, not its
   subdomains. Any other `*` (`*`, `*example.com`, `a*@example.com`, `*@*.example.com`) is invalid:
   it matches nothing, appears in `configProblems`, and an invalid `allowedRecipients` entry turns
   sending off.
 
-### Agent inbound alias
+### Inbound aliases
 
-The agent's account may carry `inbound`: addresses Resend actually receives for the agent.
+An account may carry `inbound`: addresses Resend actually receives for it.
 
 ```json
-"accounts": { "email": [{ "id": "nova", "user": "nova", "login": "nova@example.com", "default": true,
+"accounts": { "email": [{ "id": "nova", "user": "nova", "login": "nova@example.com",
   "inbound": ["nova@in.example.com"] }] }
 ```
 
 - `login` stays the public address: the From address of every send, and the `mailbox` of every row.
-  Mail whose envelope recipient is the login or an alias routes to the agent mailbox, under the same
-  trust rules.
+  Mail whose envelope recipient is the login or an alias routes to that account's mailbox, under
+  the same trust rules. An email addressed to several accounts belongs to the first public address
+  in envelope order (To before Cc when the envelope is missing), else the first alias.
 - Bare lowercase addresses only, deduplicated, the public address dropped. A malformed list is
   dropped whole and reported in `configProblems`. An alias a shared mailbox also claims is refused on
   the shared mailbox side (that entry is off). `commsEmailStatus` returns them as `inboundAliases`.
@@ -126,9 +132,9 @@ The agent's account may carry `inbound`: addresses Resend actually receives for 
 
 ## Verify
 
-1. Run `box verify`, then boot a disposable instance and load `/comms` and Settings > Comms.
-2. `box comms-status`: the `email` channel has `accountOk: true`, `sending.on: true`, no
-   `configProblems`; Settings > Comms > Email mailbox shows the Resend API key set.
+1. Run `box verify`, then boot a disposable instance and load `/comms` and Settings > Communications.
+2. `box comms-status`: the `email` channel's account has `problem: null` and `sending.on: true`, no
+   `configProblems`; Settings > Communications > Email mailbox shows the Resend API key set.
 3. Approval: `box comms-send --channel email` to an address outside `allowedRecipients` answers
    with `status: "pending_approval"` and a `notice`, and sends nothing. In Comms > Awaiting
    approval, a person at a browser denies it (`denied`). The same decision through an API token is

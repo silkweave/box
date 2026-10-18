@@ -31,4 +31,10 @@ export interface DocEditorProps {
   placeholder?: string
   /** A shorter writing area, for a surface that is not the whole page (a modal). */
   compact?: boolean
+  /**
+   * Store one image or video and resolve to the URL markdown should reference. Given, the editor
+   * uploads pasted and dropped media files and shows a media button; a rejection is shown in the
+   * header. Without it, media still renders and can be inserted by URL (`![alt](url)`).
+   */
+  upload?: (file: File) => Promise<string>
 }

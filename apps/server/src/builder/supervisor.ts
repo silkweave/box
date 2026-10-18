@@ -375,8 +375,12 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       json(res, 200, { ok: true }); return
     }
     if (url.pathname === '/api/auth/me' && req.method === 'GET') {
+      // While the app is healthy it answers /me itself (the full shape: agents, needsOwner). Only an
+      // admin repairing through an outage gets this answer from the lease, in the same shape.
       const checked = await auth.authenticate(req.headers.cookie)
-      if (checked.ok) { json(res, 200, { principal: checked.principal, agent: machine }); return }
+      if (checked.ok && checked.source === 'recovery') {
+        json(res, 200, { principal: { ...checked.principal, kind: 'human' }, agent: machine, agents: [], needsOwner: false, timeZone: config.timeZone }); return
+      }
     }
     if (readBuilderControl(paths).maintenance && !/^\/api\/auth\/(me|instance|login|link|logout)$/.test(url.pathname) && !/^\/login(?:\/|$)/.test(url.pathname)) {
       const checked = await auth.authenticate(req.headers.cookie)

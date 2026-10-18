@@ -1,7 +1,7 @@
 import { registerStoreReloads } from './changeFeed.ts'
 import { createDataStore } from './dataStore.ts'
 import { trpc } from './trpc.ts'
-import type { User } from '../user-types.ts'
+import type { User, WorkAccess } from '../user-types.ts'
 
 // One shared store (see dataStore.ts) so every Settings/picker consumer shares ONE fetch and
 // re-renders on mutation (mirrors usePlanningData). Users are small + rarely change, so a plain cache
@@ -37,12 +37,31 @@ export interface UserUpsert {
   sort?: number
   /** Default agent profile, one of the user's agentProfiles; '' clears. */
   agent_profile?: string
+  /** Admin-only: Work capabilities, merged over the stored value. */
+  work?: Partial<WorkAccess>
 }
 
 /** Create or update a user of any role (partial), then reload. Never flips an existing row's role
  */
-export async function upsertUser({ channels, ...input }: UserUpsert): Promise<void> {
-  await trpc.usersUpsert.mutate({ ...input, channels: channels ? JSON.stringify(channels) : undefined })
+export async function upsertUser({ channels, work, ...input }: UserUpsert): Promise<void> {
+  await trpc.usersUpsert.mutate({
+    ...input,
+    channels: channels ? JSON.stringify(channels) : undefined,
+    work: work ? JSON.stringify(work) : undefined,
+  })
+  await store.reload()
+}
+
+/** Create an agent (its file and principal, live), then reload. An admin at a browser session only. */
+export async function createAgent(input: { id: string; name: string; role: 'admin' | 'member'; instructions?: string }): Promise<User> {
+  const user = (await trpc.usersAgentCreate.mutate(input)) as unknown as User
+  await store.reload()
+  return user
+}
+
+/** Move a person between admin and member (admin only; never yourself, never an agent), then reload. */
+export async function setUserRole(id: string, role: 'admin' | 'member'): Promise<void> {
+  await trpc.usersSetRole.mutate({ id, role })
   await store.reload()
 }
 
@@ -109,3 +128,18 @@ export function useUsersData(enabled = true): { data: User[] | null; all: User[]
   const { data, error } = store.useData(enabled)
   return { data: data ?? null, all: data, error }
 }
+
+/** What the Work folder picker offers for a partial path (admin-only; see docs/AUTH.md § Work sessions). */
+export interface WorkFolderSuggestions {
+  parent: string | null
+  directories: string[]
+  /** The typed path when it could be created as a Work folder, else null. */
+  create: string | null
+}
+
+/** Grantable host directories completing `query`, as the admin types. Does not touch the user cache. */
+export const workFolderSuggestions = (query: string): Promise<WorkFolderSuggestions> =>
+  trpc.usersWorkFolders.mutate({ query })
+
+/** Make one new directory for a Work grant (its parent must exist). Returns the created path. */
+export const createWorkFolder = async (path: string): Promise<string> => (await trpc.usersWorkFolderCreate.mutate({ path })).path

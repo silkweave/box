@@ -114,6 +114,8 @@ export class BuilderLifecycleError extends Error {
 const CONTROL_VERSION = 1 as const
 const GIT_TIMEOUT_MS = 15_000
 const MAX_BACKUPS_IN_STATE = 32
+/** Builder backups copy the whole instance (hundreds of MB each), so disk keeps the newest few per reason. */
+const BACKUPS_KEPT_PER_REASON = 3
 const EXCLUDED_TOP_LEVEL = new Set(['backups', 'seeds', 'builder'])
 
 let mutexTail: Promise<void> = Promise.resolve()
@@ -323,6 +325,51 @@ const appendBackup = (state: BuilderControlState, manifest: BuilderBackupManifes
   updatedAt,
 })
 
+/**
+ * Keep the newest BACKUPS_KEPT_PER_REASON backups per reason (start, checkpoint, pre-restore, ...)
+ * and delete the rest from disk, including directories the control state no longer lists. Writes
+ * the pruned state first, so a directory that cannot be removed is only an orphan the next prune
+ * sweeps. Removal failures are swallowed: a full disk must not block a Builder start or backup.
+ * Never called by restore, which could otherwise delete the point it is restoring from.
+ */
+const pruneBackups = (paths: BuilderLifecyclePaths, state: BuilderControlState): BuilderControlState => {
+  try {
+    return applyRetention(paths, state)
+  } catch {
+    return state
+  }
+}
+
+const applyRetention = (paths: BuilderLifecyclePaths, state: BuilderControlState): BuilderControlState => {
+  const root = builderBackupRoot(paths)
+  const candidates = new Map<string, { id: string; createdAt: string; reason: string }>()
+  for (const backup of state.backups) candidates.set(backup.id, backup)
+  if (existsSync(root)) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !isSafeId(entry.name) || candidates.has(entry.name)) continue
+      try {
+        const manifest = JSON.parse(readFileSync(join(root, entry.name, 'manifest.json'), 'utf8')) as unknown
+        if (isRecord(manifest) && manifest.id === entry.name && typeof manifest.createdAt === 'string' && typeof manifest.reason === 'string') {
+          candidates.set(entry.name, { id: entry.name, createdAt: manifest.createdAt, reason: manifest.reason })
+        }
+      } catch { /* not a completed Builder backup: leave it alone */ }
+    }
+  }
+  const keep = new Set<string>()
+  const byReason = new Map<string, Array<{ id: string; createdAt: string }>>()
+  for (const candidate of candidates.values()) byReason.set(candidate.reason, [...(byReason.get(candidate.reason) ?? []), candidate])
+  for (const group of byReason.values()) {
+    group.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    for (const backup of group.slice(0, BACKUPS_KEPT_PER_REASON)) keep.add(backup.id)
+  }
+  const pruned = writeBuilderControl(paths, { ...state, backups: state.backups.filter((backup) => keep.has(backup.id)) })
+  for (const id of candidates.keys()) {
+    if (keep.has(id)) continue
+    try { rmSync(resolve(root, id), { recursive: true, force: true }) } catch { /* swept by the next prune */ }
+  }
+  return pruned
+}
+
 const relativeSafe = (root: string, candidate: string): string => {
   const rel = relative(root, candidate)
   if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new BuilderLifecycleError(503, 'Builder backup path escaped its root')
@@ -502,7 +549,7 @@ export async function backupBuilder(reasonOrOptions: string | BuilderOperationOp
     return withOfflineApp(options, async () => {
       const manifest = await createBackup(options, reason)
       const current = readBuilderControl(options.paths)
-      writeBuilderControl(options.paths, appendBackup(current, manifest, nowIso(options)))
+      pruneBackups(options.paths, writeBuilderControl(options.paths, appendBackup(current, manifest, nowIso(options))))
       return manifest
     })
   })
@@ -565,7 +612,7 @@ export async function startBuilder(options: BuilderStartOptions): Promise<Builde
         maintenance: false,
         }, backup, nowIso(options))
       writeBuilderControl(options.paths, state)
-      return { state, backup, createdBranch }
+      return { state: pruneBackups(options.paths, state), backup, createdBranch }
     } catch (error) {
       // A failed state write must not strand a newly-created live branch. Both branches share one
       // revision, so switching back carries any adopted changes with it; a detached source is

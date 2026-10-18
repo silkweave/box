@@ -27,7 +27,7 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   write path, keep both guards - the rows carry karma and evidence.
 - **Ambiguity is `unknown`, never `confirmed`.** A false positive corrupts the karma ledger
   permanently; a false negative costs one more click. Any new strategy inherits that rule.
-- **The browser strategies need a real, logged-in session** on a machine running chromatrix. An
+- **The browser strategies need a real, logged-in session** in a Shuttle agent on the browser host. An
   unreachable browser is an `unknown` verdict with a message, not an exception - do not "fix" that
   by throwing.
 - **Two identities on one screen.** The topbar karma badge is principal-scoped

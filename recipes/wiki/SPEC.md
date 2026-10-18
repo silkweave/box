@@ -17,8 +17,8 @@ change history, written by the server. A search index over the pages lives besid
 
 ## Tables
 
-None. `models: []`, `migrations: []`. With the upkeep powerup the manifest carries two actions
-(below); the base carries none.
+None. `models: []`, `migrations: []`. The manifest carries the `wiki-backup` action, and the
+upkeep powerup adds two more (below).
 
 ## Files on disk
 
@@ -36,6 +36,7 @@ The vault root is `data/wiki/` (`dataPath('wiki')`), fixed; there is no setting 
 | `raw/updates/<id>.md` | Upkeep powerup only: one durable record per update or sweep. |
 | `.search/` | The LadybugDB search index (full text plus 1536-dimension vectors). A cache, rebuilt from the pages. |
 
+Backups of the wiki are archives under `data/backups/wiki/` (see "Backup").
 Seeding copies a template only when the file is absent; existing files are never touched. A page
 path must end in `.md`, may not start with `raw/`, `log/`, `wiki/`, `schema.md` or `purpose.md`,
 and may not contain hidden or control-character segments. File names are unique across the whole
@@ -83,6 +84,7 @@ changing it needs a server restart; pages are then embedded in the background.
 | `wikiLintFix` (mutation) | `wiki-lint-fix` | with `apply: true`, the two safe fixes: stale index entries and directory-matching `type:` |
 | `wikiSettings` (query) | `wiki-settings` | the prompt additions in `data/config/wiki.json` |
 | `wikiSettingsSave` (mutation) | `wiki-settings-save` | replace named prompt additions; `@Admin()` |
+| `wikiBackup` (mutation) | `wiki-backup` | run the `wiki-backup` action now, recorded as an automation run; returns its `summary`; `@Admin()` |
 
 The four page mutations take an optional `summary` (recorded in `log.md`) and an optional `job`
 reserved for the upkeep powerup's jobs: with it the change is logged as
@@ -100,8 +102,35 @@ The powerups add their own controllers on the same `wiki` path: `WikiAsk`, `Wiki
 
 ## Actions
 
-None in the base. The upkeep powerup adds `wiki-sweep-daily` and `wiki-sweep-weekly` (group Wiki)
-to the core action registry; they only queue a sweep and return.
+The base adds `wiki-backup` (group Wiki) to the core action registry. An automation time trigger
+schedules it; `box run-now --action-id wiki-backup` and the `WikiBackup` tool run it by hand,
+neither needing the automation recipe. Every run is an automation run with its summary. The upkeep
+powerup adds `wiki-sweep-daily` and `wiki-sweep-weekly` (group Wiki); they only queue a sweep and
+return.
+
+## Backup
+
+Neither the warehouse, chat nor artifacts backups cover the wiki; `wiki-backup` does
+(`features/wiki/core/backup.ts`). One run writes one archive:
+
+- **Contents.** `data/wiki/` and `data/config/wiki.json` (when present), with entry paths relative
+  to `data/` (`wiki/...`, `config/wiki.json`), so a restore extracts into `data/`. Left out:
+  `wiki/.search/` (a cache the server rebuilds from the pages) and the temp files of atomic writes
+  in flight.
+- **Consistency.** The archive is taken inside the vault lock every page write queues on, so no
+  page write lands mid-archive. Upkeep records and `wiki.json` are written atomically, so a racing
+  write gives one version or the other, never a torn file.
+- **Refusal.** A missing vault, or one without a page, fails the run and writes nothing, rather
+  than archive nothing.
+- **Local.** `data/backups/wiki/wiki-<stamp>-<id>.tar.gz`, written as `.partial` and renamed when
+  complete. Retention after each run is the warehouse's: every archive from the last 24 hours, the
+  newest of each UTC day for 7 days, the newest of each ISO week for 28 days, and always the newest.
+  Only names the action wrote are listed or pruned.
+- **Offsite.** When `backup.gcsBucket` is set in `box.json` (the warehouse's private bucket), the
+  same archive is uploaded over `gs://<bucket>/wiki/wiki-latest.tar.gz`. History is the bucket's
+  object versioning, as for the warehouse. A failed upload fails the run and says the local archive
+  was written. Without a bucket the run is local-only and its summary says so.
+- **Restore** is a documented procedure (INSTALL.md "Restore"), never a tool or tRPC procedure.
 
 ## UI
 
@@ -120,9 +149,10 @@ to the core action registry; they only queue a sweep and return.
   and "apply safe fixes". Below, the upkeep powerup's maintenance history, or a note naming the
   powerup when it is absent.
 - **Nav**: one entry, `Wiki`, icon `Network`, order **720**.
-- **Settings**: Settings > Wiki (order 840): which powerups the Box has (an absent one is named,
-  and administrators get a Builder brief to add it) and the prompt additions for the jobs of the
-  powerups present, editable by administrators.
+- **Settings**: Settings > Wiki (order 840): the prompt additions, grouped by the powerup that
+  runs each job and editable by administrators. Where a powerup is absent its note stands in for
+  its fields: what it adds, and for administrators a Builder brief to add it. The Recipe Gallery,
+  not Settings, lists the powerups.
 
 ## Settings
 

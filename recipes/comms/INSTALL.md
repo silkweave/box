@@ -8,8 +8,9 @@ at `recipes/comms/`. The reference implementation does not: it lives in the Stac
 `<fetched stack>/features/comms/`, so the documents and the code come from the same Stack revision.
 
 The base recipe is the message store, the guardrails and the surfaces; channels are powerups:
-[email](./powerups/email/POWERUP.md) (sending through Resend) and
-[email-inbound](./powerups/email-inbound/POWERUP.md) (receiving email; it requires email). Ask the
+[email](./powerups/email/POWERUP.md) (sending through Resend),
+[email-inbound](./powerups/email-inbound/POWERUP.md) (receiving email; it requires email) and
+[whatsapp](./powerups/whatsapp/POWERUP.md) (a linked device per agent number). Ask the
 owner which to add now. The base is complete without them, but it carries no channel until one is
 added, and the Comms view says so.
 
@@ -27,7 +28,7 @@ added, and the Comms view says so.
 
 Ask these together:
 
-1. **Channels.** Which channel powerups to add now: Email, and Email inbound on top of it. Each
+1. **Channels.** Which channel powerups to add now: Email, Email inbound on top of it, WhatsApp. Each
    powerup's INSTALL.md lists its own decisions (address, allowed recipients, trusted senders,
    shared mailboxes); ask those together with these.
 2. **Approval limits.** `maxPendingApprovals` (default 20): held sends across channels at which a
@@ -47,7 +48,7 @@ Ask these together:
    catalogue entry.
 2. For each channel powerup the owner did not choose, leave its source out and remove its lines: in
    `core/index.ts` its barrel export, in `server/comms/comms.module.ts` its module import, in
-   `web/channels.ts` its entry in `WEB_CHANNELS`. The email powerup's INSTALL.md lists its files.
+   `web/channels.ts` its entry in `WEB_CHANNELS`. Each powerup's INSTALL.md lists its files.
    `core/approvals.test.ts` exercises the base through the email channel; without email, keep it
    out too.
 3. Configure `box.json` (shared; no secrets):
@@ -76,12 +77,13 @@ Ask these together:
    _docs/INTEGRATION.md as each step completes. Advance the completed upstream SHA in
    docs/UPSTREAM.md only after the full validation and boot pass.
 
-Migrations: none. `comms_messages` and `comms_address_rules` are created on boot. Back up the
-warehouse before the first boot anyway.
+Migrations: `comms:001` to `comms:011` (SPEC.md, Tables). On a fresh Box the tables are created on
+boot in their current shape and the migrations run as no-ops. Back up the warehouse
+before the first boot anyway, and before any upgrade that brings new comms migrations.
 
 ## Validation
 
-1. Run `box verify`, then boot a disposable instance and load `/comms` and Settings > Comms. The
+1. Run `box verify`, then boot a disposable instance and load `/comms` and Settings > Communications. The
    `box comms-*` commands below need a CLI token: a fresh Box has none, so ask the owner to set
    `mcp.token` in `box.local.json` to an admin's token (`box auth token <admin id> --quiet`, never
    printed into the transcript). The agent session that adapted the recipe does not list the new
@@ -91,4 +93,4 @@ warehouse before the first boot anyway.
 3. Each channel powerup's Verify steps prove sending, the held send and its decision end to end.
 4. Record the actual commands and results. After these pass, add `comms` to the `box.json`
    `recipes` ledger, with each channel powerup under `powerups` only once its own Verify steps pass:
-   `"comms": { "powerups": ["email", "email-inbound"] }`.
+   `"comms": { "powerups": ["email", "email-inbound", "whatsapp"] }`.

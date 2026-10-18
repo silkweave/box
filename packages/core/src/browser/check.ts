@@ -1,6 +1,6 @@
-// Browser lease diagnostics: can this Box lease a tab from chromatrix, and what does it see?
+// Browser lease diagnostics: can this Box open a Shuttle session, and what does it see?
 
-import { CHROMATRIX_URL, connectCDP, DEFAULT_IDENTITY, detach, firstContext } from './cdp.js'
+import { BROWSER_URL, connectCDP, DEFAULT_IDENTITY, detach, firstContext } from './cdp.js'
 
 export interface CdpCheckResult {
   url: string
@@ -9,7 +9,7 @@ export interface CdpCheckResult {
   summary: string
 }
 
-/** Attach to the stealth browser, report the contexts/pages it can see, detach. Service-agnostic. */
+/** Open a session for the default agent, report the contexts/pages it can see, detach. Service-agnostic. */
 export async function cdpCheck(): Promise<CdpCheckResult> {
   const browser = await connectCDP()
   try {
@@ -26,10 +26,10 @@ export async function cdpCheck(): Promise<CdpCheckResult> {
       out.push({ url: p.url(), title })
     }
     return {
-      url: `${CHROMATRIX_URL()} (identity ${DEFAULT_IDENTITY()})`,
+      url: `${BROWSER_URL()} (agent ${DEFAULT_IDENTITY()})`,
       contexts: browser.contexts().length,
       pages: out,
-      summary: `leased a tab in chromatrix identity "${DEFAULT_IDENTITY()}" - ${browser.contexts().length} context(s), ${pages.length} page(s) in scope`,
+      summary: `leased a Shuttle session for agent "${DEFAULT_IDENTITY()}" - ${pages.length} page(s) in scope`,
     }
   } finally {
     await detach(browser)

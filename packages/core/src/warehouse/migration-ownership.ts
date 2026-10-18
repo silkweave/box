@@ -14,12 +14,14 @@ import { dumpMigration } from './migration-digest.js'
 export function migrationOwnershipErrors(features: readonly CoreFeature[]): string[] {
   const errors: string[] = []
   for (const feature of features) {
-    const owned = new Set(feature.models.map((model) => model.table.toLowerCase()))
+    // A feature's own tables include the ones it retired (`retiredTables`): its migrations drop them.
+    const owned = new Set([...feature.models.map((model) => model.table.toLowerCase()), ...(feature.retiredTables ?? []).map((t) => t.toLowerCase())])
     for (const migration of feature.migrations) {
       for (const statement of dumpMigration(migration).statements) {
         // Remove comments and string literals before scanning identifiers. Quoted identifiers stay.
         const sql = statement.replace(/'(?:''|[^'])*'|--[^\n]*|\/\*[\s\S]*?\*\//g, ' ')
-        const target = /\b(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?((?:"[^"]+"|[a-z_][a-z0-9_]*)(?:\.(?:"[^"]+"|[a-z_][a-z0-9_]*))?)/gi
+        // `IS [NOT] DISTINCT FROM x` compares values; its FROM names no table.
+        const target = /\b(?<!DISTINCT\s+)(?:FROM|JOIN|UPDATE|INTO|TABLE)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?((?:"[^"]+"|[a-z_][a-z0-9_]*)(?:\.(?:"[^"]+"|[a-z_][a-z0-9_]*))?)/gi
         for (const [, raw] of sql.matchAll(target)) {
           const name = raw!.replaceAll('"', '').toLowerCase()
           if (!owned.has(name)) errors.push(`${feature.id}:${migration.name}: static SQL references unowned table "${name}"; cross-feature reads belong in run() through a declared dependency's reader`)

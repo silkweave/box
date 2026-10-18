@@ -10,12 +10,12 @@ The Email channel: the agent sends and replies through Resend from its own addre
 - Replies threaded by `In-Reply-To` and `References`, with Resend's Message-ID backfilled onto every sent message
 - Shared team mailboxes (e.g. finance@) configured here, received through the Email inbound powerup
 - Quoted reply history folded away in the conversation view; SPF, DKIM and DMARC badges on received mail
-- Settings > Comms names each missing piece: the account, the Resend key and where it goes, invalid entries
+- Settings > Communications names each missing piece: the account, the Resend key and where it goes, invalid entries
 
 ## Needs
 
 - A Resend account with a verified sending domain, and its API key
-- An `accounts.email` entry for the Box agent (`box.json` `agent`)
+- An `accounts.email` entry for each agent that has a mailbox
 
 ## How it works
 

@@ -51,7 +51,8 @@ Recipe adaptation is agent-driven; record the actual source revision used.
 11. Record the actual command, source state, dependency update date, test counts, warnings, and any
     limitations in `_docs/VALIDATION.md`. A passing lockfile build does not prove latest dependency
     freshness unless the update date and command are recorded.
-12. Configure identity, brand and ports in `box.json`, then run `bun setup`. Confirm the system
+12. Configure identity and brand in `box.json` and machine ports in `box.local.json`, then run
+    `bun setup`. Confirm the system
     principal, create the first owner, and select any detected Codex or Claude profiles. Setup keeps
     the owner token and generated secrets in gitignored mode-0600 `box.local.json`. Never commit
     credentials. Keep background automation, chat agents and relay off for the first boot. Keep

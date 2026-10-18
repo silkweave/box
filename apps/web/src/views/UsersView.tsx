@@ -1,6 +1,7 @@
 import { useSettingsDialog } from '../lib/settingsDialog.ts'
 import { useAuth } from '../lib/useAuth.tsx'
 import { AgentAccountsPanel } from '../components/agent/AgentAccountsPanel.tsx'
+import { slotComponents } from '../lib/slots.ts'
 import * as React from 'react'
 import {
   Check,
@@ -8,6 +9,7 @@ import {
   KeyRound,
   Link2,
   MoreHorizontal,
+  Bot,
   Plus,
   Send,
   ShieldCheck,
@@ -15,10 +17,13 @@ import {
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
-import { Avatar, Badge, type BadgeProps, Button, confirm, InlineDialog as Dialog, InlineDialogContent as DialogContent, InlineDialogDescription as DialogDescription, InlineDialogTitle as DialogTitle, Popover, PopoverContent, PopoverTrigger, SETTINGS_GUTTER, SettingsActions, SettingsFooterBar, SettingsIntro, SettingsList, SettingsListRow, settingsRowActionCls, useSettingsFooter } from '@silkweave/box-ui'
+import { Avatar, Badge, type BadgeProps, Button, Checkbox, confirm, InlineDialog as Dialog, InlineDialogContent as DialogContent, InlineDialogDescription as DialogDescription, InlineDialogTitle as DialogTitle, Popover, PopoverContent, PopoverTrigger, SETTINGS_GUTTER, SettingsActions, SettingsField, SettingsFooterBar, SettingsIntro, SettingsList, SettingsListRow, settingsInputCls, settingsRowActionCls, useSettingsFooter } from '@silkweave/box-ui'
 import { UserProfileForm, userFormValues, userUpsertInput } from '../components/UserProfileForm.tsx'
+import { WorkFoldersInput } from '../components/WorkFoldersInput.tsx'
 import {
+  createAgent,
   deleteUser,
+  setUserRole,
   inviteUser,
   signinLink,
   revealUserInvite,
@@ -28,13 +33,13 @@ import {
   type UserInvite,
   type UserSigninLink,
 } from '../lib/useUsersData.ts'
-import { USER_STATUS_META, userName, type User } from '../user-types.ts'
+import { DEFAULT_WORK_ACCESS, USER_STATUS_META, userName, type User, type WorkAccess } from '../user-types.ts'
 import { cn } from '@/lib/utils'
 
 /** nickname → slug id: lowercase, non-alphanumerics → '-', trimmed. Matches the server's slug rules. */
 const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
 
-type DialogState = { mode: 'new' } | { mode: 'edit'; user: User } | null
+type DialogState = { mode: 'new' } | { mode: 'new-agent' } | { mode: 'edit'; user: User } | null
 
 /**
  * Settings -> Users - the people directory. Create/edit/delete plus the invite lifecycle (sign-in link
@@ -45,8 +50,9 @@ export function UsersView() {
   const { all: users, error } = useUsersData()
   const { params, open } = useSettingsDialog()
   const selectedUser = users?.find((u) => u.id === params[0])
-  const dialog: DialogState = params[0] === 'new' ? { mode: 'new' } : selectedUser ? { mode: 'edit', user: selectedUser } : null
-  const setDialog = (next: DialogState) => open(next ? `users/${next.mode === 'new' ? 'new' : next.user.id}` : 'users')
+  const dialog: DialogState = params[0] === 'new' ? { mode: 'new' } : params[0] === 'new-agent' ? { mode: 'new-agent' } : selectedUser ? { mode: 'edit', user: selectedUser } : null
+  const setDialog = (next: DialogState) => open(next ? `users/${next.mode === 'edit' ? next.user.id : next.mode}` : 'users')
+  const { principal } = useAuth()
   const [failure, setFailure] = React.useState<string | null>(null)
   const [invite, setInvite] = React.useState<UserInvite | null>(null)
   const [link, setLink] = React.useState<UserSigninLink | null>(null)
@@ -56,12 +62,17 @@ export function UsersView() {
       ? null
       : (shadowed) => (
           <SettingsFooterBar shadowed={shadowed}>
+            {principal?.role === 'admin' && (
+              <Button size='sm' variant='outline' onClick={() => open('users/new-agent')}>
+                <Bot /> New agent
+              </Button>
+            )}
             <Button size='sm' onClick={() => open('users/new')}>
               <Plus /> New user
             </Button>
           </SettingsFooterBar>
         ),
-    [],
+    [principal?.role],
   )
 
   const shown = users ?? []
@@ -99,7 +110,14 @@ export function UsersView() {
         </SettingsList>
       )}
 
-      {dialog && (
+      {dialog?.mode === 'new-agent' && (
+        <AgentCreateDialog
+          existingIds={(users ?? []).map((u) => u.id)}
+          onClose={() => setDialog(null)}
+          onCreated={(u) => setDialog({ mode: 'edit', user: u })}
+        />
+      )}
+      {dialog && dialog.mode !== 'new-agent' && (
         <UserDialog
           key={dialog.mode === 'edit' ? dialog.user.id : 'new'}
           state={dialog}
@@ -113,8 +131,21 @@ export function UsersView() {
   )
 }
 
-// `nova` is the system principal (machine account) - the one badge left after roles were removed.
-const SYSTEM_BADGE: { variant: BadgeProps['variant']; label: string } = { variant: 'info', label: 'system' }
+/** What someone is, as a badge: an agent (the system principal included), else their role. */
+function roleBadge(user: User, systemId: string | undefined): { variant: BadgeProps['variant']; label: string; title: string } {
+  if (user.kind === 'agent' || user.id === systemId) {
+    return { variant: 'info', label: 'agent', title: user.id === systemId ? "The Box's system agent (box.json agent)" : `An agent (data/config/agents/${user.id}.md)` }
+  }
+  return user.role === 'admin'
+    ? { variant: 'accent', label: 'admin', title: 'Admin: manages users, credentials and the Box' }
+    : { variant: 'neutral', label: 'member', title: 'Member' }
+}
+
+function RoleBadge({ user }: { user: User }) {
+  const { agent } = useAuth()
+  const b = roleBadge(user, agent?.id)
+  return <Badge variant={b.variant} className='shrink-0' title={b.title}>{b.label}</Badge>
+}
 const STATUS_VARIANT: Record<string, BadgeProps['variant']> = {
   active: 'success',
   invited: 'warning',
@@ -127,7 +158,7 @@ const iconBtnCls = settingsRowActionCls
  * One directory row. The whole row opens the editor; Delete and the access lifecycle (sign-in
  * link, token view/rotate, disable/enable, behind More) sit at its end.
  *
- *   AVATAR  Full name  [system]   email            status   🗑 ⋯
+ *   AVATAR  Full name  [role]     email            status   🗑 ⋯
  *           @handle
  */
 function UserRow({
@@ -145,8 +176,6 @@ function UserRow({
   onInvited: (i: UserInvite) => void
   onSigninLink: (l: UserSigninLink) => void
 }) {
-  const { agent } = useAuth()
-  const systemBadge = user.id === agent?.id ? SYSTEM_BADGE : null
   const status = USER_STATUS_META[user.status as keyof typeof USER_STATUS_META]
 
   return (
@@ -155,7 +184,7 @@ function UserRow({
       <div className='min-w-0'>
         <p className='flex items-center gap-2'>
           <span className='truncate font-medium text-text'>{userName(user)}</span>
-          {systemBadge && <Badge variant={systemBadge.variant} className='shrink-0'>{systemBadge.label}</Badge>}
+          <RoleBadge user={user} />
         </p>
         <p className='truncate text-label text-muted-foreground'>@{user.nickname || user.id}</p>
       </div>
@@ -389,6 +418,15 @@ function UserDialog({ state, existingIds, onClose }: { state: NonNullable<Dialog
   const [values, setValues] = React.useState(() => userFormValues(editing))
   const [error, setError] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
+  // Work capabilities: an admin's to set, for people who are not admins (an admin's Work and every
+  // agent's sessions are not guarded). Sent only when touched, as a partial merged by the server.
+  const showWork = editing !== null && principal?.role === 'admin' && editing.role !== 'admin' && editing.kind !== 'agent'
+  const [work, setWork] = React.useState<WorkAccess>(() => editing?.work ?? DEFAULT_WORK_ACCESS)
+  const [workTouched, setWorkTouched] = React.useState(false)
+  const patchWork = (patch: Partial<WorkAccess>) => {
+    setWork((w) => ({ ...w, ...patch }))
+    setWorkTouched(true)
+  }
 
   // The id is the nickname slug on create, fixed once the user exists.
   const id = editing ? editing.id : slugify(values.nickname)
@@ -401,7 +439,7 @@ function UserDialog({ state, existingIds, onClose }: { state: NonNullable<Dialog
     if (!id) return setError('The nickname must contain a letter or digit.')
     if (duplicate) return setError(`A user with id "${id}" already exists.`)
     setSaving(true)
-    void upsertUser(userUpsertInput(id, values))
+    void upsertUser({ ...userUpsertInput(id, values), ...(showWork && workTouched ? { work } : {}) })
       .then(onClose)
       .catch((err) => {
         setSaving(false)
@@ -430,6 +468,7 @@ function UserDialog({ state, existingIds, onClose }: { state: NonNullable<Dialog
     last_name: '',
     nickname: '',
     email: null,
+    phone: null,
     image: null,
     color: null,
     status: 'active',
@@ -456,21 +495,150 @@ function UserDialog({ state, existingIds, onClose }: { state: NonNullable<Dialog
           autoFocusNickname={!editing}
           emailReadOnly={!!editing && principal?.role !== 'admin'}
           emailHint={principal?.role === 'admin' ? 'Identity for sign-in elsewhere; no mail is sent.' : 'Ask an administrator to change it.'}
+          phoneHint={principal?.role === 'admin' ? 'International form. WhatsApp treats this number as a team member.' : 'Ask an administrator to change it.'}
           meta={
             <>
               {id ? <code>id: {id}</code> : <span>The nickname seeds the id.</span>}
-              {editing?.id === agent?.id && <Badge variant={SYSTEM_BADGE.variant}>{SYSTEM_BADGE.label}</Badge>}
+              {editing && <RoleBadge user={editing} />}
               {editing && status && <Badge variant={STATUS_VARIANT[editing.status] ?? 'neutral'}>{status.label}</Badge>}
             </>
           }
           error={error}
           onError={setError}
         />
+        {showWork && (
+          <section className='mt-4 flex flex-col gap-3' aria-label='Work'>
+            <div>
+              <h3 className='text-body-sm font-semibold text-text'>Work</h3>
+              <p className='mt-0.5 max-w-prose text-label text-muted-foreground'>
+                What this person's Work session may touch. It never edits the Box source: its working directory is their own sandbox, and file tools stay inside the folders granted here.
+              </p>
+            </div>
+            <div className='flex flex-col gap-2 text-body-sm text-text'>
+              <label className='flex items-center gap-2'>
+                <Checkbox checked={work.enabled} onChange={(e) => patchWork({ enabled: e.target.checked })} />
+                <span>Work sessions allowed</span>
+              </label>
+              <label className='flex items-center gap-2'>
+                <Checkbox checked={work.data} disabled={!work.enabled} onChange={(e) => patchWork({ data: e.target.checked })} />
+                <span>Work with all data and modules <span className='text-muted-foreground'>(the Box tools)</span></span>
+              </label>
+              <label className='flex items-center gap-2'>
+                <Checkbox checked={work.sandbox} disabled={!work.enabled} onChange={(e) => patchWork({ sandbox: e.target.checked })} />
+                <span>Work in their sandbox folder <span className='text-muted-foreground'>(data/work/{editing.id})</span></span>
+              </label>
+              <label className='flex items-center gap-2'>
+                <Checkbox checked={work.folders} disabled={!work.enabled} onChange={(e) => patchWork({ folders: e.target.checked })} />
+                <span>Work in selected folders</span>
+              </label>
+              {work.folders && work.enabled && (
+                <SettingsField label='Folders' hint='Absolute paths on the Box host; existing directories are suggested as you type, and a missing folder can be created when its parent exists. The checkout and its data are never grantable.'>
+                  <WorkFoldersInput value={work.folder_paths} onChange={(folder_paths) => patchWork({ folder_paths })} />
+                </SettingsField>
+              )}
+            </div>
+          </section>
+        )}
+        {editing && principal?.role === 'admin' && editing.kind !== 'agent' && editing.id !== principal.id && <RoleSection user={editing} />}
         {showAccounts && editing && (
           <div className='mt-4'>
-            <AgentAccountsPanel user={editing} isAgent={editing.id === agent?.id} />
+            <AgentAccountsPanel user={editing} isAgent={editing.kind === 'agent' || editing.id === agent?.id} />
           </div>
         )}
+        {editing && slotComponents<{ user: User }>('users.detail').map((Panel, i) => <Panel key={i} user={editing} />)}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** An admin moves a person between admin and member (never themselves; an agent's role is its file's). */
+function RoleSection({ user }: { user: User }) {
+  const [error, setError] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  const role = user.role ?? 'member'
+  const change = async (next: 'admin' | 'member') => {
+    if (next === role) return
+    const ok = await confirm({
+      title: next === 'admin' ? `Make ${userName(user)} an admin?` : `Make ${userName(user)} a member?`,
+      message: next === 'admin' ? 'Admins manage users, credentials and every Box setting.' : 'Their admin sessions and tools stop at once.',
+      confirmLabel: next === 'admin' ? 'Make admin' : 'Make member',
+      danger: next === 'admin',
+    })
+    if (!ok) return
+    setBusy(true)
+    setError(null)
+    setUserRole(user.id, next).then(() => setBusy(false), (e: unknown) => { setBusy(false); setError(e instanceof Error ? e.message : String(e)) })
+  }
+  return (
+    <section className='mt-4 flex flex-col gap-2' aria-label='Role'>
+      <h3 className='text-body-sm font-semibold text-text'>Role</h3>
+      <div className='flex items-center gap-2'>
+        {(['member', 'admin'] as const).map((r) => (
+          <Button key={r} type='button' size='sm' variant={role === r ? 'default' : 'outline'} disabled={busy} onClick={() => void change(r)}>
+            {r === 'admin' ? 'Admin' : 'Member'}
+          </Button>
+        ))}
+      </div>
+      {error && <p className='text-label text-danger'>{error}</p>}
+    </section>
+  )
+}
+
+/** Settings > Users > New agent: its id, name, role and instructions; created live (an admin at a
+ *  browser session). Its engine profile stays host configuration (docs/AUTH.md). */
+function AgentCreateDialog({ existingIds, onClose, onCreated }: { existingIds: string[]; onClose: () => void; onCreated: (u: User) => void }) {
+  const [name, setName] = React.useState('')
+  const [idText, setIdText] = React.useState<string | null>(null)
+  const [role, setRole] = React.useState<'admin' | 'member'>('member')
+  const [instructions, setInstructions] = React.useState('')
+  const [error, setError] = React.useState<string | null>(null)
+  const [saving, setSaving] = React.useState(false)
+  const id = idText ?? slugify(name)
+  const duplicate = !!id && existingIds.includes(id)
+  const canSave = !saving && !!name.trim() && !!id && !duplicate
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canSave) return
+    setSaving(true)
+    setError(null)
+    createAgent({ id, name: name.trim(), role, ...(instructions.trim() ? { instructions: instructions.trim() } : {}) }).then(onCreated, (err: unknown) => {
+      setSaving(false)
+      setError(err instanceof Error ? err.message : String(err))
+    })
+  }
+  useSettingsFooter(
+    (shadowed) => (
+      <SettingsFooterBar shadowed={shadowed}>
+        <Button type='button' variant='ghost' size='sm' onClick={onClose}>Cancel</Button>
+        <Button type='submit' form='agent-form' size='sm' disabled={!canSave}>{saving ? 'Creating…' : 'Create agent'}</Button>
+      </SettingsFooterBar>
+    ),
+    [canSave, saving],
+  )
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogTitle>New agent</DialogTitle>
+        <DialogDescription>An agent is a principal with its own token, accounts and instructions. It is stored as data/config/agents/{id || '<id>'}.md.</DialogDescription>
+        <form id='agent-form' onSubmit={submit} className='mt-4 flex flex-col gap-4'>
+          <SettingsField label='Name'>
+            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={64} placeholder='Stella' className={settingsInputCls} />
+          </SettingsField>
+          <SettingsField label='Id' hint={duplicate ? `"${id}" is taken.` : 'Fixed once created: it names the agent everywhere.'}>
+            <input value={id} onChange={(e) => setIdText(slugify(e.target.value))} maxLength={63} className={cn(settingsInputCls, 'font-mono')} />
+          </SettingsField>
+          <SettingsField label='Role' hint='Admin agents get the admin tools; an agent never approves sends or creates agents.'>
+            <select value={role} onChange={(e) => setRole(e.target.value as 'admin' | 'member')} className={settingsInputCls}>
+              <option value='member'>Member</option>
+              <option value='admin'>Admin</option>
+            </select>
+          </SettingsField>
+          <SettingsField label='Instructions' hint='Added to the engine system prompt at each session start. Optional.'>
+            <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={5} placeholder={`You are ${name.trim() || 'Stella'}, the team's ...`} className={cn(settingsInputCls, 'min-h-24')} />
+          </SettingsField>
+          <p className='text-label text-muted-foreground'>To run sessions it needs an engine profile on the host: a workerdeck profile and agentProfiles.{id || '<id>'} in box.local.json, then a restart.</p>
+          {error && <p role='alert' className='text-label text-danger'>{error}</p>}
+        </form>
       </DialogContent>
     </Dialog>
   )

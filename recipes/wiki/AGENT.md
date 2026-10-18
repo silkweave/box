@@ -52,7 +52,9 @@ revision, lint, delete it) and check `log.md` names the caller for each change. 
 
 Agent-side: `box wiki-pages`, `wiki-page`, `wiki-search`, `wiki-grep`, `wiki-graph`,
 `wiki-conventions`, `wiki-lint`, `wiki-status`, `wiki-page-write`, `wiki-page-edit`,
-`wiki-page-delete`, `wiki-page-rename`, `wiki-lint-fix`, `wiki-settings`, `wiki-settings-save`.
+`wiki-page-delete`, `wiki-page-rename`, `wiki-lint-fix`, `wiki-settings`, `wiki-settings-save`,
+`wiki-backup`. Run the backup once (`box run-now --action-id wiki-backup`), schedule it, and
+rehearse a restore on a scratch checkout (INSTALL.md "Restore").
 
 ## 4. Adapt or remove
 

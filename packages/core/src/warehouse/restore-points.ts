@@ -76,6 +76,15 @@ function sidecar(dbPath: string): string {
   return `${dbPath}.wal`
 }
 
+/**
+ * The agent files taken with a restore point: `<name>.agents.json` beside `<name>.db`, a JSON map of
+ * file name to content. The users rows and the files that say which agents exist belong together,
+ * so a backup carries both and a restore puts both back (backup.ts).
+ */
+export function agentsSnapshotPath(dbPath: string): string {
+  return dbPath.replace(/\.db$/, '') + '.agents.json'
+}
+
 function sizeOf(file: string): number {
   return existsSync(file) ? statSync(file).size : 0
 }
@@ -252,6 +261,7 @@ export function pruneBackups(opts: { now?: Date; instance?: string } = {}): { re
     try {
       rmSync(point.path, { force: true })
       rmSync(sidecar(point.path), { force: true })
+      rmSync(agentsSnapshotPath(point.path), { force: true })
       removed.push(point.name)
     } catch (error) {
       failed.push(`${basename(point.path)}: ${String((error as Error)?.message ?? error)}`)

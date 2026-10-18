@@ -18,6 +18,7 @@ export interface UserFormValues {
   image: string
   color: string
   email: string
+  phone: string
   handles: Record<string, string>
 }
 
@@ -28,6 +29,7 @@ export const userFormValues = (u: User | null): UserFormValues => ({
   image: u?.image ?? '',
   color: u?.color ?? '',
   email: u?.email ?? '',
+  phone: u?.phone ?? '',
   handles: u?.channels ?? {},
 })
 
@@ -38,6 +40,7 @@ export const userFormDirty = (a: UserFormValues, b: UserFormValues): boolean =>
   a.image !== b.image ||
   a.color !== b.color ||
   a.email !== b.email ||
+  a.phone !== b.phone ||
   HANDLE_CHANNELS.some((ch) => (a.handles[ch] ?? '') !== (b.handles[ch] ?? ''))
 
 /** The upsert payload for these values. */
@@ -47,6 +50,7 @@ export const userUpsertInput = (id: string, v: UserFormValues) => ({
   last_name: v.lastName.trim(),
   nickname: v.nickname.trim(),
   email: v.email.trim(),
+  phone: v.phone.trim(),
   image: v.image.trim(),
   color: v.color,
   channels: v.handles,
@@ -54,7 +58,7 @@ export const userUpsertInput = (id: string, v: UserFormValues) => ({
 
 /**
  * The one person form, shared by Profile (self) and the Users editor: an identity header, then
- * names, email, avatar, handles and swatch on a three-column grid. The caller owns the values, the
+ * names, email, phone, avatar, handles and swatch on a three-column grid. The caller owns the values, the
  * submit and where Save lives (the settings footer, through `formId`).
  */
 export function UserProfileForm({
@@ -66,6 +70,7 @@ export function UserProfileForm({
   meta,
   emailHint,
   emailReadOnly = false,
+  phoneHint,
   autoFocusNickname = false,
   error,
   onError,
@@ -78,13 +83,15 @@ export function UserProfileForm({
   onSubmit: (e: React.FormEvent) => void
   meta?: React.ReactNode
   emailHint?: React.ReactNode
+  /** Read-only like the email: both are identities only an administrator changes. */
   emailReadOnly?: boolean
+  phoneHint?: React.ReactNode
   autoFocusNickname?: boolean
   error: string | null
   onError: (message: string | null) => void
 }) {
   const fileRef = React.useRef<HTMLInputElement>(null)
-  const { firstName, lastName, nickname, image, color, email, handles } = values
+  const { firstName, lastName, nickname, image, color, email, phone, handles } = values
   const preview: User = { ...base, first_name: firstName, last_name: lastName, nickname, image: image.trim() || null, color: color || null, channels: handles }
   const displayName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || nickname.trim() || base.id
 
@@ -145,7 +152,11 @@ export function UserProfileForm({
           <input name='email' autoComplete='email' value={email} readOnly={emailReadOnly} onChange={(e) => onChange({ email: e.target.value })} placeholder='name@example.com' className={settingsInputCls} />
         </SettingsField>
 
-        <div className='flex flex-col gap-1 text-label text-muted-foreground md:col-span-2'>
+        <SettingsField label='Phone' hint={phoneHint}>
+          <input name='phone' type='tel' autoComplete='tel' value={phone} readOnly={emailReadOnly} onChange={(e) => onChange({ phone: e.target.value })} placeholder='+43 660 1234567' className={settingsInputCls} />
+        </SettingsField>
+
+        <div className='flex flex-col gap-1 text-label text-muted-foreground md:col-span-3'>
           Avatar image
           <div className='flex items-center gap-1.5'>
             <input

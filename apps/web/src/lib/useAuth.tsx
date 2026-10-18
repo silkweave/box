@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { setActiveUser } from './useActiveUser.ts'
+import { setTeamTimeZone } from './teamDay.ts'
 
 // Client auth state. Probes GET /api/auth/me on mount; no principal means the login gate. The
 // authenticated principal drives the active-user scope (its id stamps `actor` on mutations) and
@@ -35,10 +36,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refetch = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
-      const data = (await res.json()) as { principal: Principal | null; agent: AuthState['agent']; needsOwner?: boolean }
+      const data = (await res.json()) as { principal: Principal | null; agent: AuthState['agent']; needsOwner?: boolean; timeZone?: string }
       setPrincipal(data.principal)
       setAgent(data.agent)
       setNeedsOwner(data.needsOwner === true)
+      setTeamTimeZone(data.timeZone)
       // The authenticated principal IS the active user (locks the actor to who is signed in).
       if (data.principal) setActiveUser(data.principal.id)
     } catch {
