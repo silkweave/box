@@ -11,8 +11,8 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `d0523b81009ce081db6888b6275f9f0946acd80e` (2026-10-18),
-materialized with `box:reset`; `box verify` passed 11/11. Core carries signals, signal events,
+Latest core refresh: Stack commit `91ef3dda6bda3a1198d53fae3e4ebcd73c1dc0ad` (2026-10-19),
+materialized with `box:reset` and `box:build`; `box verify` passed 11/11. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.
 

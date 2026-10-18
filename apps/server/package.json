@@ -20,6 +20,7 @@
     "@lydell/node-pty": "^1.2.0-beta.15",
     "@openai/codex": "~0.158.0",
     "@silkweave/box-core": "workspace:*",
+    "@silkweave/core": "^5.2.2",
     "@silkweave/nestjs": "^5.2.2",
     "@silkweave/trpc": "^5.2.2",
     "@silkweave/typegen": "^5.2.2",

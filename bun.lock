@@ -30,6 +30,7 @@
         "@nestjs/swagger": "^12.0.1",
         "@openai/codex": "~0.158.0",
         "@silkweave/box-core": "workspace:*",
+        "@silkweave/core": "^5.2.2",
         "@silkweave/nestjs": "^5.2.2",
         "@silkweave/trpc": "^5.2.2",
         "@silkweave/typegen": "^5.2.2",
