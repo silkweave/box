@@ -153,7 +153,7 @@ server's `index.html` fallback. Settings uses the hash so the application page s
 | Workspace | Dashboard, Comms, Chat, Artifacts, Sink |
 | Reporting | Signals, Circuit Boards |
 | Operations | Goals, Initiatives, Sprints, Reminders |
-| Sales | Accounts |
+| Sales | Accounts, Deals, Contacts |
 | Marketing | Content, Engagement |
 | Support | Support Tickets, Help Articles |
 
@@ -222,7 +222,7 @@ automatically. See [RECIPES.md](RECIPES.md#onboarding-and-the-recipe-gallery) an
 [BUILDER.md](BUILDER.md#draft-briefs-from-the-app).
 The artifacts gallery is the client route `/artifacts`; the pages themselves, `/artifacts/<slug>/`,
 are served by the server through a path mount and must be linked with a plain `<a href>`, never a
-router `Link`. Accounts is the display name for the CRM workspace; its `/crm` routes, feature identity and stored records retain their existing names.
+router `Link`. The CRM shows as three entries, Accounts (`/crm`), Deals (`/crm/deals`) and Contacts (`/crm/contacts`); its feature identity and stored records keep the name `crm`.
 
 Navigation reads the generated registry inside component calls, never at module scope, because
 feature views participate in a registry import cycle (`docs/core/SEAM.md` § 5.4).

@@ -200,11 +200,15 @@ event-driven.
 
 ## UI
 
-- **Routes**: `/crm` is a layout (`CrmLayout`) with three children - `/` (`CrmAccountsTable`, the
-  index), `queue` (`CrmAssignQueue`) and `$id` (`CrmAccountDetailView`). `queue` is registered
-  before `$id` so the static segment reads as the statement it is. Contacts get no route of their
-  own; they live on the account page.
-- **Nav**: one entry, `CRM`, icon `Contact`, order band **600**.
+- **Routes**: `/crm` (`CrmRoot`) is the one load and error state over the shared accounts payload,
+  with three children, each a shell group of its own: the pathless `accounts` layout (`CrmLayout`,
+  shell group `crm`) holding `/` (`CrmAccountsTable`), `queue` (`CrmAssignQueue`) and `$id`
+  (`CrmAccountDetailView`); `deals` (`CrmDealsLayout`, `crm-deals`) holding `CrmDealsView`; and
+  `contacts` (`CrmContactsLayout`, `crm-contacts`) holding `CrmContactsView`. The static segments
+  outrank `$id`, so an account slugged `queue`, `deals` or `contacts` is shadowed. A contact has no
+  page of its own; it is worked on its account's page.
+- **Nav**: three entries in order band **600**: Accounts (`crm`, `Building2`, 600), Deals
+  (`crm-deals`, `KanbanSquare`, 601) and Contacts (`crm-contacts`, `Contact`, 602).
 - **Settings / shell / onSession**: none. `defineWebFeature` passes `routes` and `nav` only. The
   CRM owns four slots and two registries others fill (**Extension points** below); it contributes
   to none.
@@ -212,14 +216,27 @@ event-driven.
   `@silkweave/box-ui`, which is the shell extension seam rather than a manifest field.
 - **Inside the layout**: a sidebar that is NAVIGATION, not a filter - the saved views (from core's
   view store) above, then the ten most recently opened accounts (per-browser `localStorage`; where
-  you have been is not team state), plus an assign-queue entry badged with its count. Filtering
-  lives in exactly one place, the view bar.
-- **The accounts index** is two layouts over one view model: a full-width grid with one row per
-  account and totallable columns (the leading open deal, the weighted pipeline, MRR), and a
-  pipeline kanban with one card per DEAL, dragged between deal stages (`CrmKanban` over the UI
-  library's `BoardKanban`). The account filters narrow both; the `stage` filter is the board's column list
-  and "has a deal at this stage" on the list; the owner scope reads the deal's owner on the board.
-  Saved views stored before deals existed are repaired on read (`normalizeCrmFilters`).
+  you have been is not team state), plus an assign-queue entry badged with its count. Deals and
+  Contacts carry only their saved views (`CrmPresetLayout`). Filtering lives in exactly one place,
+  each page's view bar. The archived eye is one CRM-wide toggle: it hides archived accounts and the
+  deals and people at them.
+- **Three view models, three preset modules** (`presetModules: ['crm', 'crm-deals',
+  'crm-contacts']`), each its own store, mounted only on its own page so none writes its preset
+  into another page's URL. Deals and Contacts land on their first built-in (Pipeline, Everyone).
+- **The accounts index** (`crmView.ts`) is a full-width grid with one row per account and
+  totallable columns (the leading open deal, the weighted pipeline, MRR). Its `stage` filter reads
+  "has a deal at this stage". Saved views stored before deals existed are repaired on read
+  (`normalizeCrmFilters`).
+- **Deals** (`dealsView.ts`) is every deal with its account, as a stage board (`CrmKanban` over the
+  UI library's `BoardKanban`, one card per deal, dragged between stages) or a list (stage and
+  owner edited in place, value, odds, weighted, expected close, the account's next action). On the
+  board the `stage` filter is the column list, with none picked the working stages
+  (`PIPELINE_STAGES`); on the list none picked means every deal. The owner filter reads the deal's
+  owner, falling back to its account's. **New deal** starts one at an existing account. A card or
+  row opens the account, where the deal is worked.
+- **Contacts** (`contactsView.ts`) is every person at every account as a list (role, email, phone,
+  LinkedIn, last activity, the account's status and owner), filtered by role, primary flag, how
+  they can be reached, account status and owner. A row opens the account; people are added there.
 - **The detail page** is a summary strip (owner, MRR, open pipeline, last contact) above unboxed
   sections that fold shut by their heading - deals, contacts, conversation, meetings, money,
   relationship, retention and a record section folded by default - with the markdown doc beside
@@ -327,8 +344,10 @@ in `migrations.ts` rewrites them.
   key; nothing reads it today; whether a sync should also open a deal is the team's call). Both are placeholders inherited from the predecessor's outreach tool - a team wiring a
   sync replaces them with the stages its source actually reports, and keeps a stage like
   "Interested" deliberately OUT of the CRM by simply not mapping it.
-- **Labels and order** - the nav label and order band in `features/crm/web/index.tsx`; the
-  grid's offered columns, widths, hints and aggregates in `lib/crmView.ts` (`CRM_COLUMNS`,
-  `PIPELINE_STAGES` - the board's default columns - the closed-status set, the MRR chip buckets);
+- **Labels and order** - the nav labels and order band in `features/crm/web/index.tsx`; the
+  accounts grid's offered columns, widths, hints and aggregates in `lib/crmView.ts` (`CRM_COLUMNS`,
+  the closed-status set, the MRR chip buckets); the Deals page's in `lib/dealsView.ts`
+  (`DEAL_COLUMNS`, `PIPELINE_STAGES` - the board's default columns - and its built-in presets);
+  the Contacts page's in `lib/contactsView.ts`;
   the display labels in `crm-types.ts` (`CRM_DEAL_STAGE_LABEL`, `CRM_ACCOUNT_SOURCE_LABEL`, `CRM_MEETING_KIND_LABEL`,
   `CRM_REVENUE_STATUS_LABEL`, ...).

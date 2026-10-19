@@ -53,7 +53,7 @@ In descending order of how wrong the defaults will be:
    ladder is `stale -> meeting_requested -> meeting_booked -> demo -> proposal -> confirmed -> won`,
    with `revisit` as a siding and `lost` as the other exit. Keep `CRM_OPEN_DEAL_STAGES` and
    `CRM_CLOSED_DEAL_STAGES` in step, mirror all three in `web/crm-types.ts`, and check
-   `PIPELINE_STAGES` in `features/crm/web/lib/crmView.ts` - the kanban's default columns. The
+   `PIPELINE_STAGES` in `features/crm/web/lib/dealsView.ts` - the Deals board's default columns. The
    account relationship (`CRM_ACCOUNT_STATUSES`: `lead -> customer -> onboarding`, with `at_risk` /
    `churned` / `lost` / `archived`) changes less often; keep `CRM_PAYING_STATUSES` beside it and
    `PROMOTED_ON_WIN` in `deals.ts` in step.
@@ -105,9 +105,11 @@ box dev
 ```
 
 - `http://localhost:8190/crm` - the accounts board. Empty is fine on a fresh Box. **New account**
-  writes a row; the sidebar shows the saved views and (once you open one) recent accounts; the
-  layout toggle swaps the grid for the pipeline kanban, where a deal card drags between stage
-  columns (drag one to Won and its lead account becomes a customer).
+  writes a row; the sidebar shows the saved views and (once you open one) recent accounts.
+- `http://localhost:8190/crm/deals` - the Deals board, where a deal card drags between stage
+  columns (drag one to Won and its lead account becomes a customer); **New deal** starts one at an
+  existing account, and the List layout shows every deal with its value and odds.
+- `http://localhost:8190/crm/contacts` - every person at every account; a row opens its account.
 - `http://localhost:8190/crm/<account-id>` - the detail page: the summary strip, **Add deal** and a
   deal edited in place (change its stage and the row grows a "1 stage move" line), contacts, the markdown doc (type in **Next move**, then check
   `data/docs/crm/<account-id>.md` on disk - the heading and the prose are really there,

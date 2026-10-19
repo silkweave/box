@@ -4,7 +4,7 @@ A lightweight CRM worked one company at a time. The account carries the relation
 
 ## Highlights
 
-- A totalling accounts grid and a pipeline kanban of deals over the same saved views
+- Three entries with their own saved views: a totalling accounts grid, Deals as a pipeline board or list across accounts, and Contacts to find anyone across accounts
 - Contacts, meetings with outcomes, invoice-level revenue events and an activity stream per account
 - Stripe invoices (Stripe powerup): every invoice imported into the revenue ledger, attributed to its account, with its coverage window
 - A markdown doc for each account, headed by the next move and its due date

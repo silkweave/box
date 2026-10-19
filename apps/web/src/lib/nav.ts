@@ -26,7 +26,7 @@ const SIDEBAR_SECTIONS = [
   { label: 'Workspace', ids: ['home', 'comms', 'chat', 'artifacts', 'sink'] },
   { label: 'Reporting', ids: ['signals', 'boards'] },
   { label: 'Operations', ids: ['goals', 'initiatives', 'sprints', 'reminders'] },
-  { label: 'Sales', ids: ['crm'] },
+  { label: 'Sales', ids: ['crm', 'crm-deals', 'crm-contacts'] },
   { label: 'Marketing', ids: ['content', 'engagement'] },
   { label: 'Support', ids: ['support', 'support-help'] },
 ]
