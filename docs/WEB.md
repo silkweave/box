@@ -101,6 +101,7 @@ Tailwind scans this app's sources.
 | `src/components/AppLayout.tsx` | the one persistent `AppShell`, route outlet, active group navigation, and safe fallback chrome |
 | `src/lib/routeShell.tsx` | `shellGroup` route metadata and the `RouteChrome` writer used by section layouts |
 | `src/lib/nav.ts` | the sidebar groups, `navEntries()`, `useGroupNav()` |
+| `src/lib/sidebarLayout.ts` | the signed-in person's own sidebar arrangement (Customize mode) |
 | `src/lib/shell.tsx` | this app's `ShellExtensions` value: top-bar slots, user menu, agent panel |
 | `src/views/HomeView.tsx` | the Dashboard placeholder at `/`, with onboarding's recommended recipes and a link to the Recipe Gallery |
 | `src/views/RecipeGalleryView.tsx` | the Recipe Gallery at `/recipes`: search, filter and every recipe card |
@@ -157,6 +158,20 @@ server's `index.html` fallback. Settings uses the hash so the application page s
 | Support | Support Tickets, Help Articles |
 
 Absent features create no empty headings; unassigned entries (Wiki, for one) appear under Other.
+
+Each person can rearrange this for themselves. The gear button at the top right of the expanded
+sidebar opens Customize mode: the same sidebar with every entry in place, where sections can be
+dragged, entries dragged within their own section (never into another), and entries hidden or shown
+with the eye button; hidden entries stay in place, muted, until Done. Outside Customize mode hidden
+entries are gone, and a section whose entries are all hidden goes with them; the collapsed rail
+follows the same arrangement. An entry you reach while it is hidden (a link, a bookmark) appears at
+its own place, with an eye-off mark, for as long as you are there. The arrangement is stored per
+person on the server (`users.sidebar`, migration `core:010-users-sidebar`, procedures `usersSidebar`
+and `usersSidebarSave`), so it follows the person across browsers; a copy in this browser only
+saves the first paint from jumping. Reset to default clears it. Ids the Box no longer shows are
+kept, so an entry that comes back finds its place, and a new entry starts at its default place.
+The UI library owns the arrangement (`arrangeSidebar`, `SidebarCustomization` on `GroupNav`); the
+app owns where it is stored (`src/lib/sidebarLayout.ts`).
 The UI library accepts optional `NavGroup.section` labels and renders a heading when the section
 changes. Selecting a group navigates to its overview and automatically shows its sub-navigation
 in a rounded panel with a solid header. `--sidebar-primary` controls the header fill and the

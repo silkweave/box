@@ -1,5 +1,5 @@
-import { ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { useEffect, useRef, type ComponentType, type ReactNode } from 'react'
+import { ChevronRight, Cog, EyeOff, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 import { storageKey } from '../lib/storage.ts'
 import { usePersistedState } from '../lib/usePersistedState.ts'
@@ -8,6 +8,8 @@ import { Button } from '../components/Button.tsx'
 import { ThemeToggle } from './ThemeToggle'
 import { NavAnchor } from '../components/NavAnchor.tsx'
 import { PlainHomeLink, useShellExtensions } from './ShellExtensions.tsx'
+import { arrangeSidebar, type SidebarCustomization } from './sidebarLayout.ts'
+import { SidebarCustomize } from './SidebarCustomize.tsx'
 
 /** Any icon component taking a className - lucide and tabler (brand) icons both satisfy this. */
 export type NavIcon = ComponentType<{ className?: string }>
@@ -60,6 +62,11 @@ export interface GroupNav {
   groups: NavGroup[]
   activeGroup: string
   onSelectGroup: (id: string) => void
+  /**
+   * The person's own arrangement (order of sections and groups, hidden groups) and its writer. When
+   * set, the full sidebar offers a Customize mode; without it the sidebar shows `groups` as given.
+   */
+  customization?: SidebarCustomization
 }
 
 interface SidebarProps extends GroupNav {
@@ -84,8 +91,9 @@ interface SidebarProps extends GroupNav {
 // top-level groups (Signals/Inbox/Automation). The active group automatically reveals its sub-nav
 // beneath it; the others collapse to a single header. App chrome sits in a row at the bottom.
 export function Sidebar({
-  groups,
+  groups: allGroups,
   activeGroup,
+  customization,
   onSelectGroup,
   items,
   activeId,
@@ -114,6 +122,8 @@ export function Sidebar({
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     activePanel.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
   }, [activeGroup, activeId, items.length])
+  const [customizing, setCustomizing] = useState(false)
+  const { shown: groups, revealed } = arrangeSidebar(allGroups, customization?.layout ?? null, activeGroup)
   const toggleSection = (section: string) =>
     setFoldedSections((prev) => (prev.includes(section) ? prev.filter((x) => x !== section) : [...prev, section]))
 
@@ -127,10 +137,28 @@ export function Sidebar({
         <HomeLink className='flex items-center rounded-md' aria-label='Home' onClick={onHomeClick}>
           <Wordmark size='full' />
         </HomeLink>
+        {customization &&
+          (customizing ? (
+            <Button variant='ghost' size='sm' className='ml-auto h-7 px-2 text-label' onClick={() => setCustomizing(false)}>
+              Done
+            </Button>
+          ) : (
+            <Button
+              variant='ghost'
+              size='icon'
+              className='ml-auto size-7 text-muted-foreground'
+              onClick={() => setCustomizing(true)}
+              aria-label='Customize sidebar'
+              title='Customize sidebar'>
+              <Cog className='size-4' />
+            </Button>
+          ))}
       </div>
 
-      <div className='flex-1 overflow-y-auto px-2 py-2'>
-        {groups.map((group, index) => {
+      <div className='flex-1 overflow-x-hidden overflow-y-auto px-2 py-2'>
+        {customization && customizing ? (
+          <SidebarCustomize groups={allGroups} customization={customization} />
+        ) : groups.map((group, index) => {
           const GroupIcon = group.icon
           const isActive = group.id === activeGroup
           const isOpen = group.expandable !== false && isActive && items.length > 0
@@ -186,6 +214,12 @@ export function Sidebar({
                       className='flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-3 py-2 text-left'>
                       <GroupIcon className={cn('size-4 shrink-0', isActive ? 'text-[var(--sidebar-group-active-icon)]' : 'text-muted-foreground')} />
                       <span className='line-clamp-1 flex-1'>{group.label}</span>
+                      {group.id === revealed && (
+                        // Hidden from this person's sidebar, shown only while they are here.
+                        <span title='Hidden from your sidebar: shown while you are here' className='flex shrink-0'>
+                          <EyeOff aria-label='Hidden from your sidebar' className='size-3.5 opacity-70' />
+                        </span>
+                      )}
                     </NavAnchor>
                     {isActive && groupAction && <span className='mr-1.5 flex shrink-0 items-center'>{groupAction}</span>}
                   </div>
@@ -273,15 +307,18 @@ export function Sidebar({
 /** The collapsed sidebar: an icon-only rail of the top-level groups (mark on top, expand at the
  *  bottom). Selecting a group navigates; the rail stays collapsed until expanded explicitly. */
 export function SidebarRail({
-  groups,
+  groups: allGroups,
   activeGroup,
   onSelectGroup,
+  customization,
   onExpand,
   storagePrefix,
   framed = false,
   onHomeClick,
 }: GroupNav & { onExpand: () => void; storagePrefix?: string; framed?: boolean; onHomeClick?: () => void }) {
   const { homeLink: HomeLink = PlainHomeLink, settingsControl: SettingsControl } = useShellExtensions()
+  // The person's arrangement, as in the full sidebar; customizing it is the full sidebar's.
+  const groups = arrangeSidebar(allGroups, customization?.layout ?? null, activeGroup).shown
   return (
     <nav className='flex h-full w-12 flex-col items-center bg-sidebar' aria-label='Views'>
       {/* The framed shell has the same 9px offset as the full sidebar. */}

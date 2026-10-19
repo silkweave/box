@@ -5,7 +5,7 @@ import { IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { WORK_FS } from '../agent/work-session.js'
 import { z } from 'zod/v4'
-import { AgentFileError, createAgent, isConfiguredAgent, type PrincipalCredential, boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, issuePrincipalToken, issueSigninLink, readUser, readUsers, normalizePhone, revealPrincipalToken, revokePrincipalToken, sameEmail, setPrincipalRole, upsertUser, type User, type UserRole, workFolderCreateProblem, workFolderProblem, workFolderSuggestions, type WorkAccess } from '@silkweave/box-core'
+import { AgentFileError, createAgent, isConfiguredAgent, type PrincipalCredential, boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, parseSidebarLayout, readSidebarLayout, writeSidebarLayout, issuePrincipalToken, issueSigninLink, readUser, readUsers, normalizePhone, revealPrincipalToken, revokePrincipalToken, sameEmail, setPrincipalRole, upsertUser, type User, type UserRole, workFolderCreateProblem, workFolderProblem, workFolderSuggestions, type WorkAccess } from '@silkweave/box-core'
 import { revokeAgentControl } from '../agent/agent-control.js'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { Admin } from '../auth/auth.decorators.js'
@@ -45,6 +45,7 @@ const inviteOutput = z.object({ token: z.string(), url: z.string(), message: z.s
 const linkOutput = z.object({ url: z.string(), expiresAt: z.string(), message: z.string(), user: userOutput })
 const workFoldersOutput = z.object({ parent: z.string().nullable(), directories: z.array(z.string()), create: z.string().nullable() })
 const workFolderOutput = z.object({ path: z.string() })
+const sidebarOutput = z.object({ layout: z.object({ sections: z.array(z.string()), groups: z.array(z.string()), hidden: z.array(z.string()) }).nullable() })
 
 // DTOs document the REST/Swagger surface and drive the generated tRPC input/output types, exactly
 // like the sink/planning controllers. @Mcp() input fields are scalar-only so the cli proxy can build
@@ -113,6 +114,19 @@ class SetRoleDto {
 }
 class IdDto {
   @ApiProperty() @IsString() id!: string
+}
+class SidebarLayoutDto {
+  @ApiProperty({ type: [String], description: 'Section headings, in the person\'s order' }) sections!: string[]
+  @ApiProperty({ type: [String], description: 'Entry ids, in the person\'s order' }) groups!: string[]
+  @ApiProperty({ type: [String], description: 'Entry ids the person hid' }) hidden!: string[]
+}
+class SidebarDto {
+  @ApiProperty({ type: SidebarLayoutDto, nullable: true, description: 'The person\'s sidebar layout; null is the Box default' })
+  layout!: SidebarLayoutDto | null
+}
+class SidebarSaveDto {
+  @ApiProperty({ required: false, description: 'The layout as a JSON object string ({ sections, groups, hidden }); omit to restore the default' })
+  @IsOptional() @IsString() @MaxLength(40_000) layout?: string
 }
 class WorkFolderQueryDto {
   @ApiProperty({ description: 'A partial absolute path on the Box host, as typed' }) @IsString() query!: string
@@ -493,6 +507,34 @@ export class UsersController {
 
   /** tRPC mutation `usersDelete` / MCP `user-delete` - remove a user (unassigns it everywhere).
    *  Self-deletion is refused. */
+  /**
+   * tRPC query `usersSidebar` - the caller's own sidebar layout (users/sidebar.ts), null for the
+   * Box's default. Only ever the caller's: nobody reads or sets another person's sidebar. No MCP
+   * tool: an arrangement of the web sidebar means nothing to an agent.
+   */
+  @Get('sidebar')
+  @ApiOkResponse({ type: SidebarDto })
+  @Trpc({ output: sidebarOutput })
+  async sidebar(@Req() req: PrincipalRequest): Promise<SidebarDto> {
+    if (!req.principal) throw new ForbiddenException('a signed-in principal is required')
+    return { layout: await readSidebarLayout(req.principal.id) }
+  }
+
+  /** tRPC mutation `usersSidebarSave` - store the caller's sidebar layout; no layout restores the default. */
+  @Post('sidebar-save')
+  @ApiOkResponse({ type: SidebarDto })
+  @Trpc({ kind: 'mutation', output: sidebarOutput })
+  async sidebarSave(@Body() body: SidebarSaveDto, @Req() req: PrincipalRequest): Promise<SidebarDto> {
+    if (!req.principal) throw new ForbiddenException('a signed-in principal is required')
+    let layout = null
+    try {
+      layout = body.layout ? parseSidebarLayout(JSON.parse(body.layout)) : null
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+    }
+    return { layout: await writeSidebarLayout(req.principal.id, layout) }
+  }
+
   @Post('delete')
   @ApiOkResponse({ type: UsersDto })
   @Admin()

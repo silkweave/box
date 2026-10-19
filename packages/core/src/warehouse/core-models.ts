@@ -47,6 +47,9 @@ export const USERS: ModelSpec = {
     // Work capabilities (work-access.ts WorkAccess), admin-set; NULL reads as the defaults. Added by
     // core:009 on an existing warehouse.
     work: { kind: 'json', nullable: true },
+    // The person's own sidebar layout (users/sidebar.ts); NULL is the Box's default. Added by core:010
+    // on an existing warehouse. Never part of the public User: only its owner reads it.
+    sidebar: { kind: 'json', nullable: true },
     // 'human' | 'agent': the durable record that a row is an agent (agents.ts). Added by core:007
     // on an existing warehouse (nullable there; reads narrow to 'human').
     kind: { kind: 'text', default: "'human'", enum: USER_KINDS },

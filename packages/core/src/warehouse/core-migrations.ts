@@ -94,4 +94,10 @@ export const CORE_MIGRATIONS: readonly Migration[] = [
     name: '009-users-work',
     statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS work JSON`],
   },
+  {
+    // A person's own sidebar layout (2026-10-19): section order, entry order and hidden entries, as
+    // a JSON object (users/sidebar.ts). Nullable, no backfill: NULL is the Box's default layout.
+    name: '010-users-sidebar',
+    statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS sidebar JSON`],
+  },
 ]

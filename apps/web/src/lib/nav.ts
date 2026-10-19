@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import type { GroupNav, NavGroup } from '@silkweave/box-ui'
 import type { NavEntry } from '../feature.ts'
 import { ALL_WEB_FEATURES } from '../web-features.ts'
+import { useSidebarCustomization } from './sidebarLayout.ts'
 
 const DASHBOARD: NavEntry = { id: 'home', label: 'Dashboard', icon: LayoutDashboard, to: '/', order: 0, expandable: false }
 
@@ -48,9 +49,12 @@ function sidebarGroups(): NavGroup[] {
 export function useGroupNav(activeGroup: string): GroupNav {
   const navigate = useNavigate()
   const groups = sidebarGroups()
+  // Each person may reorder sections and entries and hide entries (the sidebar's Customize mode).
+  const customization = useSidebarCustomization()
   return {
     groups,
     activeGroup,
+    customization,
     onSelectGroup: (id) => {
       const entry = navEntries().find((g) => g.id === id)
       // `to` is a path a present feature declared; TanStack's literal-constrained `ToPathOption`
