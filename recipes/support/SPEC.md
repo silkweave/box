@@ -53,7 +53,7 @@ Created from the ModelSpecs on boot (`CREATE TABLE IF NOT EXISTS`). Every table 
 
 | table | pk | what it holds |
 |---|---|---|
-| `support_tickets` | `id` (integer, the ticket number shown as `#42`, assigned as max + 1 inside the write) | `subject` (one line), `summary` (markdown: what was asked and what was said), `requester_id` (nullable: an anonymous or unknown asker; a `support_requesters` id, or with the `crm` powerup a `crm_contacts` id), `channel` (`email`, `phone`, `whatsapp`, `chat`, `form`, `in_person`, `other`), `type` (`how_to`, `problem`, `bug`, `feedback`, `billing`, `other`), `status` (`open`, `closed`), `resolution` (nullable free text: what closed it), `owner` (nullable `users.id`: who works it), `opened_on` (date, default team today), `closed_on` (date, set on close), `source` (`manual`, `agent`, `comms`, `crm`, `form`, `import`), `source_ref` (nullable text), `logged_by` (the principal), `external` (JSON provenance bag) |
+| `support_tickets` | `id` (integer, the ticket number shown as `#42`, assigned as max + 1 inside the write) | `subject` (one line), `summary` (markdown: what was asked and what was said), `requester_id` (nullable: an anonymous or unknown asker; a `support_requesters` id, or with the `crm` powerup a `crm_contacts` id), `channel` (`email`, `phone`, `whatsapp`, `chat`, `form`, `in_person`, `other`), `type` (`how_to`, `problem`, `bug`, `feedback`, `billing`, `other`), `status` (`pending`, `active`, `blocked`, `done`, `dropped`), `resolution` (nullable free text: what closed it), `owner` (nullable `users.id`: who works it), `opened_on` (date, default team today), `closed_on` (date, set when it becomes done or dropped), `source` (`manual`, `agent`, `comms`, `crm`, `form`, `import`), `source_ref` (nullable text), `logged_by` (the principal), `external` (JSON provenance bag) |
 | `support_requesters` | `id` (uuid) | `name` (optional), `email` (lower case, trimmed; nullable), `phone` (digits with country code, `4915112345678`; nullable), `organization` (free text: the requester's company, school or household as typed), `notes`, `merged_into` (nullable: a requester merged away points at the survivor), `external` |
 | `support_articles` | `id` (slug, made from the title, the public URL slug, never changes) | `type` (`article`, `faq`, `getting_started`; for an `faq` the title is the question and the body the answer), `title`, `one_liner`, `body` (markdown), `status` (`draft`, `published`, `retired`), `needs_update` (bool), `featured` (bool), `owner`, `team_notes` (markdown, never published), `sort`, `published_on`, `retired_on`, `content_updated_on`, `external` |
 | `support_ticket_articles` | `ticket_id` | `article_id`, `linked_by`, `linked_at`: the entry that answered the ticket |
@@ -136,7 +136,14 @@ no-op. A later change to a shipped table appends a new migration with the next f
   contact's name, phone and email are only filled when blank. A requester needs a name, an email or
   a phone as a contact; in the base an email or a phone.
 - **Bugs.** A bug report is a ticket of type `bug`; it is worked and closed like any other ticket.
-- **Close and reopen.** Closing stamps `closed_on` (team today unless given); reopening clears it.
+- **Statuses.** `pending` (logged, nobody on it yet), `active` (being worked), `blocked` (waiting on
+  someone else: the requester, a developer, a supplier), `done` (answered or fixed) and `dropped`
+  (needs no answer: spam, gone quiet, logged twice). Pending, active and blocked are **open**; done
+  and dropped are **closed**. A new ticket is `active` when logged with an owner, else `pending`;
+  `status` on the log sets it (a call answered on the spot is logged `done`, closed on its open
+  day). Becoming done or dropped stamps `closed_on` (team today unless given); done to dropped keeps
+  it; opening again clears it. The `status` filter takes one status, or `open` / `closed` for the
+  group. Late and the open counts cover the three open statuses.
 - **Possible duplicates** (same requester, same day, same channel) are shown in the form, never
   refused.
 - **Events.** `support.ticket.opened` (dedup `<id>`) and `support.ticket.closed` (dedup
@@ -211,22 +218,26 @@ navigation for both.
     channel edit in place. Groups collapse.
   - **Board**: one column per value of the group-by (status when grouping by nothing): every owner
     with Unassigned, every type or channel.
-    Dragging a card to another column sets that field through `support-ticket-update` (to Closed
-    closes the ticket). A filter on the board's own axis picks the columns.
+    Dragging a card to another column sets that field through `support-ticket-update` (to Done or
+    Dropped closes the ticket). A filter on the board's own axis picks the columns.
   - **Presets** are the team's, shared in the `support-tickets` preset module and seeded the first
-    time anybody opens the view: Open (oldest first, the landing view), Mine (open, owned by
-    whoever looks), Unassigned, Late (open past `lateAfterDays`, longest waiting first), Closed
-    (most recently updated first) and Everything. Which preset is on is `?preset=<name>`; arriving
+    time anybody opens the view: Open (pending, active and blocked, oldest first, the landing
+    view), Mine (open, owned by whoever looks), Unassigned, Late (open past `lateAfterDays`, longest
+    waiting first), Blocked, Closed (done and dropped, most recently updated first) and Everything. Which preset is on is `?preset=<name>`; arriving
     on `/support` without one lands on Open. The live view stays in this browser.
   - The sidebar lists the presets under **Presets**, then **Recent Tickets**: the last ten tickets
     opened in this browser. The `support.tickets.banner` slot renders above the tickets whatever
     the preset (the `help-center` powerup's held submissions).
   - `?requester=<id>` (with a preset) narrows the view to one requester's tickets, then the address
     returns to `?preset=` alone.
-- **A ticket** (`/support/tickets/<id>`): a page. Left: subject, summary (markdown editor), the
-  conversation excerpt or call notes it came from. Right: status and age, the **requester panel**
-  (with the requester's organization), the requester's other tickets, channel, type, owner (a user picker with avatars, as everywhere in Support), source,
-  and the `support.ticket.panel` slot (below).
+- **A ticket** (`/support/tickets/<id>`): a page laid out like a Help Article. The breadcrumb is
+  `Support Tickets > <subject>`, and the subject crumb is the subject field (click to edit). The top
+  bar carries the status select (each status with its icon and color) and, for administrators,
+  Delete, beside New ticket. Left: the number, open and close dates and age, then the details card:
+  the **requester panel** (with the requester's organization), the requester's other tickets,
+  owner (a user picker with avatars, as everywhere in Support), type, channel, the resolution once
+  done or dropped, the `support.ticket.panel` slot (below) and the source. Right, in a split pane
+  that can collapse: the summary, a markdown document saved as you type.
 - **New ticket** is a dialog styled like Planning's New initiative (`components/TicketDialog.tsx`),
   opened from the Support Tickets top bar; there is no page for it. The `crm` powerup opens it
   prefilled from an account or a touch. Creating the ticket opens its page.
@@ -313,9 +324,9 @@ require a signed-in user (`AuthGuard`, deny by default). A clearable field takes
 | `support-status` | member | powerups present, settings problems, counts (open, unassigned, late) |
 | `support-tickets` | member | newest first, with filters (`status`, `type`, `channel`, `owner` (an id, `me` or `none`), `requester`, `since`, `until`, `search`, `late`, `ids`, `limit`) |
 | `support-ticket` | member | one ticket with requester, the requester's other tickets, links and age |
-| `support-ticket-log` | member | create from a summary: `summary`, `subject`, `channel`, `type`, the requester as `requester_id` or `requester_email` / `requester_phone` / `requester_name` (with `requester_organization`, and `requester_account_id` with `crm`), `owner`, `opened_on`, `source_ref`; answers with the ticket, `created` (false when `source_ref` matched) and warnings |
+| `support-ticket-log` | member | create from a summary: `summary`, `subject`, `channel`, `type`, the requester as `requester_id` or `requester_email` / `requester_phone` / `requester_name` (with `requester_organization`, and `requester_account_id` with `crm`), `owner`, `status`, `resolution`, `opened_on`, `source_ref`; answers with the ticket, `created` (false when `source_ref` matched) and warnings |
 | `support-ticket-update` | member | partial update of subject, summary, channel, type, owner, status, resolution, dates and requester (the same `requester_*` keys, or `clear_requester`) |
-| `support-ticket-delete` | admin | for mistakes; closing is the normal end |
+| `support-ticket-delete` | admin | for mistakes; done or dropped is the normal end |
 | `support-requesters` | member | search by name, email, organization or phone (normalized before matching), with ticket counts; answers `{ directory: 'support' \| 'crm', requesters }` |
 | `support-requester-upsert` | member | create or edit a support requester; refuses a duplicate email or phone naming who has it |
 | `support-requester-merge` | member | `from`, `into` |

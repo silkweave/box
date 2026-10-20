@@ -14,7 +14,9 @@ import { createBuilderBrowser } from './builder-browser.js'
 import { startBuilderBrowserLocal } from './builder-browser-local.js'
 import { createBuilderHost } from './builder-host.js'
 import { createBuilderGateway, json, readJson, sameOrigin } from './builder-gateway.js'
-import { backupBuilder, builderControlPath, BuilderLifecycleError, readBuilderControl, readBuilderPendingChanges, recordBuilderSession, restoreBuilder, setBuilderMaintenance, startBuilder, stopBuilder } from './builder-lifecycle.js'
+import { backupBuilder, BuilderLifecycleError, readBuilderControl, readBuilderPendingChanges, recordBuilderSession, restoreBuilder, startBuilder, stopBuilder } from './builder-lifecycle.js'
+import { applyMaintenancePatch, MAINTENANCE_PAGE_PATH, MaintenanceError, type MaintenanceSource, maintenancePath, maintenanceReturnPath, publicNotice, readMaintenance, writeMaintenance } from './maintenance.js'
+import { maintenancePage } from './maintenance-page.js'
 import { checkpointBuilder, finishBuilder, reviewBuilder, finalizeCheckout } from './builder-review.js'
 import { createBuilderVerification } from './builder-verification.js'
 import { startBuilderLocalControl } from './builder-local-control.js'
@@ -90,10 +92,31 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   diagnostic('supervisor', 'boot.host.start')
   const host = await createBuilderHost(paths)
   diagnostic('supervisor', 'boot.host.ready')
-  const statusStream = createBoxStatusStream(builderControlPath(paths), () => ({
-    maintenance: readBuilderControl(paths).maintenance,
-    release: app.dev ? null : currentWebRelease(paths.instanceDir)?.version ?? null,
-  }))
+  const inMaintenance = (): boolean => readMaintenance(paths.instanceDir).enabled
+  const statusStream = createBoxStatusStream(maintenancePath(paths.instanceDir), () => {
+    const maintenance = readMaintenance(paths.instanceDir)
+    return { maintenance: maintenance.enabled, release: app.dev ? null : currentWebRelease(paths.instanceDir)?.version ?? null, notice: publicNotice(maintenance) }
+  })
+  /** One maintenance change from Builder or `box maintenance`. Switching on or off reboots the app
+   * into (or out of) its paused mode; notice edits only rewrite the file the page follows. */
+  const changeMaintenance = (patch: unknown, by: string | null, source: MaintenanceSource) => mutate(async () => {
+    const current = readMaintenance(paths.instanceDir)
+    const body = typeof patch === 'object' && patch !== null && !Array.isArray(patch) ? { ...patch, ...(by && { by }) } : patch
+    const next = writeMaintenance(paths.instanceDir, applyMaintenancePatch(current, body, new Date(), source))
+    // Locking admins out drops the connections they already hold (Builder, app sockets).
+    if (next.enabled && next.lockAdmins && !(current.enabled && current.lockAdmins)) {
+      browser.revoke('Admins locked out for maintenance')
+      gateway.disconnect()
+      for (const socket of appSockets) socket.destroy()
+    }
+    if (next.enabled !== current.enabled) {
+      browser.revoke(next.enabled ? 'Maintenance started' : 'Maintenance ended')
+      if (next.enabled) for (const socket of appSockets) socket.destroy()
+      busy = true
+      try { await app.restart(next.enabled) } finally { busy = false }
+    }
+    return next
+  })
   let stopping = false
   let operations = Promise.resolve()
   let operationSequence = 0
@@ -149,7 +172,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     diagnostic('supervisor', 'local-app-restart.start')
     browser.revoke('Box application restarting')
     busy = true
-    try { return await app.restart(readBuilderControl(paths).maintenance) }
+    try { return await app.restart(inMaintenance()) }
     finally { busy = false; diagnostic('supervisor', 'local-app-restart.finish') }
   })
   // Built mode: the release everyone outside Builder loads changes only here.
@@ -198,7 +221,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       mode: 'built' as const, promoting: webPromoting, error: webError,
       release: release ? { version: release.version, createdAt: release.createdAt, sourceSha: release.sourceSha, dirty: release.dirty } : null,
     }
-    return { ...current, session, unavailableSession: current.session && !session ? current.session : null, application: app.status, ui: { version: builderUiVersion(ui), building: uiBuilding, error: uiError }, web, principal, profiles: await host.availableProfiles(principal.id) }
+    return { ...current, maintenance: readMaintenance(paths.instanceDir), session, unavailableSession: current.session && !session ? current.session : null, application: app.status, ui: { version: builderUiVersion(ui), building: uiBuilding, error: uiError }, web, principal, profiles: await host.availableProfiles(principal.id) }
   }
   async function requireIdle(): Promise<void> {
     const current = readBuilderControl(paths)
@@ -213,9 +236,11 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     if (req.method === 'GET' && path === '/review') { json(res, 200, { review: await reviewBuilder(paths), verification: verification.read() }); return }
     if (req.method === 'GET' && path === '/pending-changes') { json(res, 200, readBuilderPendingChanges(paths)); return }
     if (req.method === 'GET' && path === '/state') { json(res, 200, await state(identity.principal)); return }
+    if (req.method === 'GET' && path === '/maintenance') { json(res, 200, readMaintenance(paths.instanceDir)); return }
     if (req.method !== 'POST' || req.headers['x-box-csrf'] !== '1' || !sameOrigin(req)) { json(res, 403, { message: 'Invalid Builder control request' }); return }
     let body: Record<string, unknown>
     try { body = await readJson(req) } catch { json(res, 400, { message: 'Invalid JSON body' }); return }
+    if (path === '/maintenance') { json(res, 200, await changeMaintenance(body, identity.principal.id, 'builder')); return }
     diagnostic('supervisor', 'control.queued', { requestId: requestId(req), action: path })
     const operation = mutate(async () => {
       diagnostic('supervisor', 'control.start', { requestId: requestId(req), action: path })
@@ -246,13 +271,6 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
             }
             break
           }
-          case '/maintenance': {
-            if (typeof body.enabled !== 'boolean') throw new BuilderLifecycleError(400, 'Expected enabled boolean')
-            await setBuilderMaintenance(body.enabled, lifecycle)
-            for (const socket of appSockets) socket.destroy()
-            await app.restart(body.enabled)
-            break
-          }
           case '/backup': await requireIdle(); await backupBuilder(lifecycle); break
           case '/restore':
             if (typeof body.id !== 'string') throw new BuilderLifecycleError(400, 'Expected backup id')
@@ -278,7 +296,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
               await finalizeCheckout(paths, { expectedBranch: integrated.checkedOutBranch, expectedSHA: integrated.integratedSHA, targetBranch: integrated.targetBranch })
             } catch (error) {
               // A failed completion must not leave background work resumed under a maintenance banner.
-              if (current.maintenance && app.status.status === 'running') await app.restart(true)
+              if (inMaintenance() && app.status.status === 'running') await app.restart(true)
               throw error
             }
             if (current.session) {
@@ -303,7 +321,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
               await runCommand(root, ['run', 'lint'])
               await runCommand(root, ['run', 'build'])
             }
-            await app.restart(current.maintenance)
+            await app.restart(inMaintenance())
             if (body.check !== false) await refreshUi()
             break
           case '/stop':
@@ -314,7 +332,8 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
             }
             await stopBuilder(lifecycle)
             await stopPreviewVite()
-            if (current.maintenance) await app.restart(false)
+            // Ending the Builder session ends a maintenance it was holding.
+            if (inMaintenance()) { writeMaintenance(paths.instanceDir, applyMaintenancePatch(readMaintenance(paths.instanceDir), { enabled: false, by: principal.id })); await app.restart(false) }
             break
           default: throw new BuilderLifecycleError(404, 'Unknown Builder control')
         }
@@ -343,10 +362,21 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       res.writeHead(response.statusCode ?? 502, outgoing)
       response.pipe(res)
     })
-    upstream.on('error', error => { diagnostic('supervisor', 'proxy.error', { requestId: requestId(req), error: errorKind(error) }); if (!res.headersSent) json(res, 503, { message: 'The Box application is restarting or needs repair. Admins can open /builder.' }); else res.destroy() })
+    upstream.on('error', error => {
+      diagnostic('supervisor', 'proxy.error', { requestId: requestId(req), error: errorKind(error) })
+      if (res.headersSent) { res.destroy(); return }
+      // A document gets the branded page, which reloads itself once the app answers again.
+      if (isDocument(req)) servePage(res, publicNotice(readMaintenance(paths.instanceDir)))
+      else json(res, 503, { message: 'The Box application is restarting or needs repair. Admins can open /builder.' })
+    })
     req.on('aborted', () => upstream.destroy())
     res.on('close', () => upstream.destroy())
     req.pipe(upstream)
+  }
+  const isDocument = (req: IncomingMessage): boolean => (req.method === 'GET' || req.method === 'HEAD') && !!req.headers.accept?.includes('text/html')
+  function servePage(res: ServerResponse, notice: ReturnType<typeof publicNotice>): void {
+    res.writeHead(503, { 'content-type': 'text/html; charset=utf-8', 'retry-after': notice ? '60' : '5', 'cache-control': 'no-store' })
+    res.end(maintenancePage(boxJson().brand, notice))
   }
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://local')
@@ -360,7 +390,21 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     setSecurityHeaders(res, { csp: !app.dev && !devRoute, hsts: requestIsSecure(req) })
     if (/^\/(api|builder-agent)(\/|$)/.test(url.pathname) && !rateLimit(`supervisor:${clientIp(req)}`, 1200, 60_000)) { json(res, 429, { message: 'Too many requests' }); return }
     if (url.pathname === '/api/box-status/events' && req.method === 'GET') { statusStream.open(res); return }
-    if (url.pathname === '/api/box-status' && req.method === 'GET') { json(res, 200, { maintenance: readBuilderControl(paths).maintenance }); return }
+    if (url.pathname === '/api/box-status' && req.method === 'GET') { const maintenance = readMaintenance(paths.instanceDir); json(res, 200, { maintenance: maintenance.enabled, notice: publicNotice(maintenance) }); return }
+    const maintenance = readMaintenance(paths.instanceDir)
+    // The page for app tabs that maintenance blocks (signed out, members, admins when locked out).
+    // Once maintenance ends it sends the tab back to where it was.
+    if (url.pathname === MAINTENANCE_PAGE_PATH && (req.method === 'GET' || req.method === 'HEAD')) {
+      if (maintenance.enabled) { servePage(res, publicNotice(maintenance)); return }
+      res.writeHead(303, { location: maintenanceReturnPath(url.searchParams.get('return')), 'cache-control': 'no-store' }); res.end(); return
+    }
+    // Admins locked out: nothing past this point answers anyone. The page, its logo and the status
+    // stream stay; the host acts through `box maintenance` on the local socket.
+    if (maintenance.enabled && maintenance.lockAdmins && !url.pathname.startsWith('/builder-assets/') && !url.pathname.startsWith('/assets/')) {
+      if (isDocument(req)) servePage(res, publicNotice(maintenance))
+      else json(res, 503, { message: 'This Box is in maintenance mode' })
+      return
+    }
     if (url.pathname.startsWith('/api/builder-control/')) { await control(req, res, url.pathname.slice('/api/builder-control'.length)); return }
     if (url.pathname.startsWith('/builder-agent/')) { await gateway.handle(req, res); return }
     if (url.pathname === '/builder' || url.pathname === '/builder/' || url.pathname.startsWith('/builder-assets/')) {
@@ -382,12 +426,11 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
         json(res, 200, { principal: { ...checked.principal, kind: 'human' }, agent: machine, agents: [], needsOwner: false, timeZone: config.timeZone }); return
       }
     }
-    if (readBuilderControl(paths).maintenance && !/^\/api\/auth\/(me|instance|login|link|logout)$/.test(url.pathname) && !/^\/login(?:\/|$)/.test(url.pathname)) {
+    if (maintenance.enabled && !/^\/api\/auth\/(me|instance|login|link|logout)$/.test(url.pathname) && !/^\/login(?:\/|$)/.test(url.pathname)) {
       const checked = await auth.authenticate(req.headers.cookie)
       if (!checked.ok) {
-        if (req.headers.accept?.includes('text/html')) {
-          res.writeHead(503, { 'content-type': 'text/html; charset=utf-8', 'retry-after': '60', 'cache-control': 'no-store' })
-          res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>Box maintenance</title></head><body style="margin:0;background:#101018;color:#e8e7ff;font:18px system-ui;display:grid;place-items:center;min-height:100vh"><main style="max-width:32rem;padding:2rem"><p style="color:#a5a1ff">BOX MAINTENANCE</p><h1>We’re making your Box better.</h1><p>Your team’s Builder is working on an update. Please check back shortly.</p><a style="color:#a5a1ff" href="/builder">Admin access</a></main></body></html>')
+        if (req.headers.accept?.includes('text/html') || req.method === 'HEAD') {
+          servePage(res, publicNotice(maintenance))
         } else json(res, 503, { message: 'This Box is in maintenance mode' })
         return
       }
@@ -402,14 +445,16 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const server = createServer((req, res) => { traceHttp('supervisor', req, res); void handle(req, res).catch(error => {
     diagnostic('supervisor', 'http.error', { requestId: requestId(req), error: errorKind(error) })
     if (res.headersSent) { res.destroy(); return }
-    json(res, error instanceof BuilderLifecycleError ? error.statusCode : 500, { message: error instanceof Error ? error.message : 'Builder request failed' })
+    json(res, error instanceof BuilderLifecycleError || error instanceof MaintenanceError ? error.statusCode : 500, { message: error instanceof Error ? error.message : 'Builder request failed' })
   }) })
   server.on('connection', socket => { publicSockets.add(socket); socket.once('close', () => publicSockets.delete(socket)) })
   server.on('upgrade', (req, socket, head) => { traceSocket('supervisor', req, socket); void (async () => {
     const path = new URL(req.url ?? '/', 'http://local').pathname
+    const maintenance = readMaintenance(paths.instanceDir)
+    if (maintenance.enabled && maintenance.lockAdmins) { socket.destroy(); return }
     if (path === '/builder-browser') { await browser.upgrade(req, socket, head); return }
     if (path.startsWith('/builder-agent/')) { await gateway.upgrade(req, socket, head); return }
-    if (readBuilderControl(paths).maintenance && !(await auth.authenticate(req.headers.cookie)).ok) { socket.destroy(); return }
+    if (maintenance.enabled && !(await auth.authenticate(req.headers.cookie)).ok) { socket.destroy(); return }
     const upgradeHeaders: OutgoingHttpHeaders = { ...applicationHeaders(req), 'x-box-request-id': requestId(req) }
     if (!app.dev && isViteSocket(req.headers)) {
       if (!(await devAllowed(req))) { socket.destroy(); return }
@@ -453,12 +498,13 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       restartFrontend,
       refresh: () => mutate(refreshUi),
       promote: promoteLocal,
+      maintenance: { read: () => readMaintenance(paths.instanceDir), change: patch => changeMaintenance(patch, null, 'host') },
     })
     if (closing) throw new Error('Box supervisor is stopping')
     if (app.dev) await app.startVite().catch(error => report('error', `Box frontend needs repair: ${String(error)}`))
     else if (readBuilderControl(paths).session) await startPreviewVite()
     if (closing) throw new Error('Box supervisor is stopping')
-    await app.start(readBuilderControl(paths).maintenance).catch(error => report('error', `Box app needs repair: ${String(error)}`))
+    await app.start(inMaintenance()).catch(error => report('error', `Box app needs repair: ${String(error)}`))
     // Outside a Builder session the checkout is the integrated state: publish it when the current
     // release was built from something else. During a session the checkout holds unpromoted work,
     // so the last release (or apps/web/dist before the first one) stays.
@@ -517,7 +563,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     supervisor = await startBuilderSupervisor({ signals: true, ...(view && { devView: view }) })
     view?.setActions({
-      restart: () => supervisor!.app.restart(readBuilderControl({ repoRoot: repoRoot(), instanceDir: dataPath() }).maintenance),
+      restart: () => supervisor!.app.restart(readMaintenance(dataPath()).enabled),
       restartFrontend: () => supervisor!.app.restartVite(),
       quit: async () => { await supervisor!.close(); setDiagnosticSink(undefined); view?.stop() },
     })

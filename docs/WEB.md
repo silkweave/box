@@ -150,14 +150,14 @@ server's `index.html` fallback. Settings uses the hash so the application page s
 
 | Section | Destinations |
 | --- | --- |
-| Workspace | Dashboard, Comms, Chat, Artifacts, Sink |
+| Workspace | Dashboard, Comms, Chat, Artifacts, Sink, Wiki |
 | Reporting | Signals, Circuit Boards |
 | Operations | Goals, Initiatives, Sprints, Reminders |
 | Sales | Accounts, Deals, Contacts |
 | Marketing | Content, Engagement |
 | Support | Support Tickets, Help Articles |
 
-Absent features create no empty headings; unassigned entries (Wiki, for one) appear under Other.
+Absent features create no empty headings; entries no section names appear under Other.
 
 Each person can rearrange this for themselves. The gear button at the top right of the expanded
 sidebar opens Customize mode: the same sidebar with every entry in place, where sections can be

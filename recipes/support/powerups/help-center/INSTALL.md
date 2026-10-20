@@ -92,6 +92,7 @@ Run from the Box root. With a temporary token, prefix each `bunx wrangler` comma
      "accentColor": "#7b7ef5",
      "theme": "system",
      "websiteUrl": "https://www.example.com",
+     "language": "en",
      "autoPublish": true,
      "publishDelaySeconds": 120,
      "form": {
@@ -107,6 +108,8 @@ Run from the Box root. With a temporary token, prefix each `bunx wrangler` comma
    ```
    Leave out `form` until step 6 (publishing refuses a form without its KV namespace and site key),
    and leave it out for good without the form. Test checkouts set `autoPublish: false`.
+   `language` is the site's language (`en`, `id`; POWERUP.md "One language"); a language the Stack
+   does not ship needs its strings file first.
 4. **First publish without the form.** `box support-site-publish`, then open `publicUrl`: the
    published articles are there.
 

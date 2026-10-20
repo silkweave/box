@@ -48,6 +48,7 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box app restart                             restart the app; preserve supervisor and Builder
   box app restart --frontend                  restart the Vite dev server (box dev, or a Builder session)
   box app promote                             typecheck, build and publish the web release (box start)
+  box maintenance [show|on|off|note|...]     maintenance mode and its public page (status, checklist, estimate)
   box builder refresh                        refresh Builder UI without restarting its session
   box builder browser --session <session-id> <operation> [JSON object]
   box start                                  start the Box: promoted web release, Vite for Builder Preview
@@ -115,6 +116,7 @@ function main(argv: string[]): void {
   if (verb === 'stack') runScript(root, 'packages/cli/src/stack.ts', rest)
 
   if (verb === 'app') runScript(root, 'packages/cli/src/app-control.ts', rest)
+  if (verb === 'maintenance') runScript(root, 'packages/cli/src/maintenance.ts', rest)
 
   if (verb === 'verify') runScript(root, 'packages/cli/src/verify.ts', rest)
   if (verb === 'setup') runScript(root, 'apps/server/scripts/setup.ts', rest, true)

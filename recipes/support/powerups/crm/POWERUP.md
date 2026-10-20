@@ -25,8 +25,11 @@ registration functions. It replaces the base requester directory with the CRM's 
 organization is the contact's account name, so the base tables stay the same as in a Box without CRM
 and `support_requesters` is not read. A requester named by details is found by email, then phone,
 among the contacts; otherwise a contact is created under `requester_account_id` when given, else the
-account its organization names (found case-insensitively by name, or created with source `inbound`),
-else an account named after the person. The requester tools `support-requester-upsert`,
+account its organization names (found case-insensitively by name), else, when
+`features.support.crm.fallbackAccount` names an account, that one (the organization they named goes
+into the contact's notes as `Organization: <name>`), else a new account with source `inbound`, named
+after the organization or the person. The fallback suits a team whose CRM holds only some of the
+organizations its requesters come from: a support request never creates a CRM account then. The requester tools `support-requester-upsert`,
 `support-requester-merge` and `support-requester-delete` refuse; edit contacts with the CRM tools.
 
 It owns one link table, `support_ticket_crm` (ticket to the touch it came from; the touch is

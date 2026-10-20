@@ -66,14 +66,16 @@ Run `box verify` (build, typecheck, lint, tests, `schema:check`), then boot a di
 with background work off and exercise the surface:
 
 1. `box support-ticket-log --summary "Cannot reset password" --channel email --type how_to
-   --requester_email Pat@Example.com` creates ticket 1 and a requester `pat@example.com`; the same
-   call with `--source_ref call-1` twice returns `created: false` the second time.
+   --requester-email Pat@Example.com` creates ticket 1 and a requester `pat@example.com`; the same
+   call with `--source-ref call-1` twice returns `created: false` the second time.
 2. A requester with phone `0151 2345678` (with `defaultCountryCode` `49`) is stored as
    `491512345678`; creating another requester with `+49 151 2345678` is refused naming the first.
 3. In the browser: the sidebar shows Support Tickets under a "Support" heading, with the presets
-   Open, Mine, Unassigned, Late, Closed and Everything. `/support` lands on Open with the ticket at
-   age 0. Set its owner in the grid; switch to the board, group by Status and drag the card to
-   Closed: it leaves Open and shows under Closed. Opening the ticket adds it to Recent Tickets.
+   Open, Mine, Unassigned, Late, Blocked, Closed and Everything. `/support` lands on Open with the
+   ticket at age 0 and status Pending. Set its owner in the grid; switch to the board, group by
+   Status and drag the card to Done: it leaves Open and shows under Closed. Opening the ticket adds
+   it to Recent Tickets; on its page rename it in the breadcrumb, set Blocked from the top bar, and
+   type in the summary on the right.
 4. On the ticket page, edit the requester's phone to one another requester has: the panel offers
    the merge; keep one and the ticket follows. "All tickets from ..." opens the view filtered to
    that requester. New ticket (the dialog from the top bar) with a known email offers the known requester instead of a second.

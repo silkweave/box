@@ -126,7 +126,9 @@ The supervisor exposes the current application state and these administrator act
 
 - **Maintenance pause** pauses Box automation, chat and relay/background work while the host is
   being reviewed or changed. The server enforces the pause and blocks non-admin access while it
-  is active.
+  is active. Builder and `box maintenance` share one control (the supervisor's `/maintenance`
+  operation) and one state file; see "Maintenance mode" in [SERVER.md](SERVER.md). Builder cannot
+  lock admins out, and cannot change a maintenance the host runs with admins locked out.
 - **Backup** creates a host snapshot and reports its timestamp.
 - **Restart** runs the repository's typecheck, lint and build checks, then asks the supervisor to
   restart the editable application and reports the resulting state. The authenticated control

@@ -22,6 +22,10 @@ possible yourself; there are no owner-only steps.
 1. **Moving existing requesters.** Whether to move the tickets of existing support requesters
    to CRM contacts now (the agent proposes the matches; the owner confirms them). Until they move,
    `support-status` reports the tickets that name requesters outside the CRM.
+2. **Unknown organizations.** Whether a requester whose organization is not in the CRM gets a new
+   account (the default) or goes under one existing catch-all account: set
+   `features.support.crm.fallbackAccount` in `box.json` to its id (create it first, e.g.
+   "Helpdesk"). `support-status` reports a fallback that names no account.
 
 ## Owner-only steps
 
@@ -36,7 +40,7 @@ None.
    registrations in `web/index.tsx` (the column and attention reason register in the feature's
    `onSession`, once a session exists, and unregister when it ends).
 2. **Restart** (`box app restart`); the link table is created on boot.
-3. **Move existing requesters**, if the owner chose it: `box support-crm-adopt --dry_run` lists
+3. **Move existing requesters**, if the owner chose it: `box support-crm-adopt --dry-run` lists
    each support requester a ticket names, matched to a contact by email, then phone, or to be
    created under the account its organization names; after the owner confirms, run it without
    `dry_run`. It moves those tickets to the contacts.

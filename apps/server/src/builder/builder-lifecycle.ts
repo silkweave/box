@@ -58,7 +58,6 @@ export interface BuilderBackupSummary {
 export interface BuilderControlState {
   version: 1
   session: BuilderSessionState | null
-  maintenance: boolean
   branch: string | null
   baseRevision: string | null
   /** The branch that was checked out before Builder created its live branch. */
@@ -150,7 +149,6 @@ const nowIso = (options: Pick<BuilderOperationOptions, 'now'>): string => (optio
 const defaultState = (now: string): BuilderControlState => ({
   version: CONTROL_VERSION,
   session: null,
-  maintenance: false,
   branch: null,
   baseRevision: null,
   integrationBranch: null,
@@ -185,7 +183,7 @@ const parseState = (value: unknown): BuilderControlState => {
   if (integrationBranch !== null && !isGitBranch(integrationBranch)) throw new BuilderLifecycleError(503, 'Builder control integration branch is invalid')
   if (integrationRevision !== null && !isSha(integrationRevision)) throw new BuilderLifecycleError(503, 'Builder control integration revision is invalid')
   if ((integrationBranch === null) !== (integrationRevision === null)) throw new BuilderLifecycleError(503, 'Builder control integration branch and revision must be paired')
-  if (typeof value.maintenance !== 'boolean' || typeof value.updatedAt !== 'string') throw new BuilderLifecycleError(503, 'Builder control state is invalid')
+  if (typeof value.updatedAt !== 'string') throw new BuilderLifecycleError(503, 'Builder control state is invalid')
   const { driver: _legacyDriver, ...state } = value
   return { ...state, integrationBranch, integrationRevision } as unknown as BuilderControlState
 }
@@ -557,13 +555,6 @@ export async function backupBuilder(reasonOrOptions: string | BuilderOperationOp
 
 export const checkpointBuilder = backupBuilder
 
-export async function setBuilderMaintenance(maintenance: boolean, options: BuilderOperationOptions): Promise<BuilderControlState> {
-  return withBuilderMutex(async () => {
-    const current = readBuilderControl(options.paths)
-    return writeBuilderControl(options.paths, { ...current, maintenance, updatedAt: nowIso(options) })
-  })
-}
-
 /** Start the one shared live-checkout Builder session. A dirty checkout is adopted only when
  * `adoptChanges` matches `readBuilderPendingChanges`. The actual WorkerDeck session is recorded
  * separately with `recordBuilderSession`, after the caller has successfully created it. */
@@ -609,7 +600,6 @@ export async function startBuilder(options: BuilderStartOptions): Promise<Builde
         baseRevision,
         integrationBranch: targetBranch,
         integrationRevision: targetRevision,
-        maintenance: false,
         }, backup, nowIso(options))
       writeBuilderControl(options.paths, state)
       return { state: pruneBackups(options.paths, state), backup, createdBranch }
@@ -644,7 +634,7 @@ export async function stopBuilder(options: BuilderOperationOptions): Promise<Bui
     const current = readBuilderControl(options.paths)
     // Leave the dedicated branch checked out for inspection/recovery, but clear its lifecycle
     // identity so the next session always gets a fresh builder/live branch.
-    return writeBuilderControl(options.paths, { ...current, session: null, maintenance: false, branch: null, baseRevision: null, integrationBranch: null, integrationRevision: null, updatedAt: nowIso(options) })
+    return writeBuilderControl(options.paths, { ...current, session: null, branch: null, baseRevision: null, integrationBranch: null, integrationRevision: null, updatedAt: nowIso(options) })
   })
 }
 

@@ -95,6 +95,8 @@ export default defineConfig(({ mode }) => ({
       '/agent': { target: serverUrl, changeOrigin: true, ws: true },
       '/trpc': { target: serverUrl, changeOrigin: true },
       '/mcp': { target: serverUrl, changeOrigin: true },
+      // The supervisor's own assets (the maintenance page's logo, the Builder shell).
+      '/builder-assets': { target: serverUrl, changeOrigin: true },
       // Incidental REST routes the SPA calls directly (e.g. /api/content/asset images).
       '/api': { target: serverUrl, changeOrigin: true },
     },

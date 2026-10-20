@@ -6,6 +6,8 @@ import { ALL_WEB_ROUTES } from './web-features.ts'
 import { HomeView } from './views/HomeView.tsx'
 import { RecipeGalleryView } from './views/RecipeGalleryView.tsx'
 import { captureReturnPath } from './lib/returnPath.ts'
+// Must evaluate before the /login normalization below (imports run first).
+import './lib/loginEntry.ts'
 
 // The route tree is core's routes plus whatever the present features contribute. Every path
 // segment is real (`/crm/$id`, `/sink/$file`) so links are shareable and the back button

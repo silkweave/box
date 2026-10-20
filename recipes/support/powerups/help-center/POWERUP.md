@@ -52,6 +52,15 @@ allows no inline script or style, so a small blocking `theme.js` sets the theme 
 paint, and Inter is self-hosted under `fonts/` from the root package's `@fontsource-variable/inter`.
 A change to the design changes the content hash, so the next publish is not skipped as unchanged.
 
+**One language.** The site speaks the language set in `language` (default `en`): it becomes the
+`<html lang>` and picks the site's own words (search, navigation, headings, the contact form and
+its answers) from `features/support/core/help-center/strings/<language>.ts`. The Stack ships `en`
+and `id` (Bahasa Indonesia). For another language an agent copies `strings/en.ts`, translates every
+value and registers it in `strings.ts`; the type check refuses a missing key, and a strings change
+counts as a design change, so the next publish is not skipped. There is no settings page for it and
+no multi-language site: the entries are published as written, and the Box's own screens stay
+English. The contact Function answers with a `code` the page maps to its own words.
+
 **Writing goes through the relay.** The contact form posts to a Pages Function on the same site
 (`/api/contact`). The Function checks the request and forwards a signed submission to the Box's
 relay Worker, which holds it until the Box collects it over its own outbound connection. The

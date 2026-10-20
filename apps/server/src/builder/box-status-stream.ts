@@ -2,14 +2,15 @@ import { watchFile, unwatchFile } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 
 /** One file watcher and heartbeat for all tabs, owned by the stable supervisor. */
-export function createBoxStatusStream(file: string, read: () => { maintenance: boolean; release?: string | null }) {
+export function createBoxStatusStream(file: string, read: () => { maintenance: boolean; release?: string | null; notice?: unknown }) {
   const clients = new Set<ServerResponse>()
   let watching = false
   let heartbeat: ReturnType<typeof setInterval> | undefined
   let last: string | undefined
   const encode = () => {
-    const { maintenance, release } = read()
-    return `data: ${JSON.stringify(release === undefined ? { maintenance } : { maintenance, release })}\n\n`
+    // Undefined fields drop out of the frame: a dev Box has no release, a Box outside maintenance no notice.
+    const { maintenance, release, notice } = read()
+    return `data: ${JSON.stringify({ maintenance, release, notice: notice ?? undefined })}\n\n`
   }
   function stop() {
     if (watching) unwatchFile(file, refresh)

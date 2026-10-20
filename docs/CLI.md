@@ -122,6 +122,16 @@ built mode it restarts the Builder Preview's Vite, and is refused when no Builde
 same operation as **Promote** in Builder. Open tabs outside Builder are offered a reload. It is
 refused in `box dev`, where every page already comes from Vite.
 
+`box maintenance` shows and changes maintenance mode through the same local socket (see
+"Maintenance mode" in [SERVER.md](SERVER.md)). `on [--lock-admins] [--status <text>] [--eta <when>]
+[--task <label>]...` starts it, `off` ends it and clears the notice, `note <text>` sets the status,
+`eta <when>|none` the estimate (`20m`, `1h30m`, `14:30` or an ISO time), `tasks <label>...` replaces
+the checklist and `task add <label>` or `task start|done|skip|pending|remove <number|id>` edits it.
+`--eta` combines with any change, so revise the estimate with each tick. `lock-admins` and
+`unlock-admins` turn admins away too (Builder included) while the host works. `--json` prints the
+state document. The supervisor serves the page, so it stays reachable while the app restarts, but
+not while the supervisor itself is stopped.
+
 Do not stop, signal or relaunch `box dev` from a Builder turn, and do not start a second Box against
 the same instance. If `box app status` or `box app restart` cannot reach the supervisor, stop and ask
 the host operator to restore it. A supervisor started from older source than the checkout may lack

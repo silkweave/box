@@ -11,7 +11,11 @@ export interface BuilderLocalControls {
   refresh: () => Promise<void>
   /** Typecheck, build and publish the web release everyone outside Builder loads (built mode). */
   promote?: () => Promise<{ version: string; createdAt: string; sourceSha: string | null; dirty: boolean }>
+  /** Maintenance mode and its public notice (`box maintenance`). */
+  maintenance?: { read: () => unknown; change: (patch: unknown) => Promise<unknown> }
 }
+
+const MAX_BODY = 64 * 1024
 
 const failureStatus = (error: unknown): number => {
   const code = (error as { statusCode?: unknown } | null)?.statusCode
@@ -21,7 +25,7 @@ const failureStatus = (error: unknown): number => {
 /** Historical filename retained so a newly updated CLI can still refresh an older supervisor. */
 export const builderLocalControlPath = (instance: string): string => join(instance, 'builder', 'ui-refresh.sock')
 
-/** A bounded host-local capability: status, editable-app and frontend restart, web promote and Builder UI refresh only. */
+/** A bounded host-local capability: status, editable-app and frontend restart, web promote, maintenance and Builder UI refresh only. */
 export async function startBuilderLocalControl(instance: string, controls: BuilderLocalControls) {
   const path = builderLocalControlPath(instance)
   if (existsSync(path)) {
@@ -36,6 +40,27 @@ export async function startBuilderLocalControl(instance: string, controls: Build
         frontend => res.end(JSON.stringify({ ok: true, application, frontend })),
         () => res.end(JSON.stringify({ ok: true, application })),
       )
+      return
+    }
+    const maintenance = controls.maintenance
+    if (req.url === '/maintenance' && !maintenance) { res.writeHead(404); res.end(JSON.stringify({ message: 'Unknown local supervisor control' })); return }
+    if (req.url === '/maintenance' && req.method === 'GET') {
+      try { res.end(JSON.stringify({ ok: true, maintenance: maintenance!.read() })) }
+      catch (error) { res.writeHead(failureStatus(error)); res.end(JSON.stringify({ message: error instanceof Error ? error.message : 'Maintenance state unreadable' })) }
+      return
+    }
+    if (req.url === '/maintenance' && req.method === 'POST') {
+      let text = ''
+      req.setEncoding('utf8')
+      req.on('data', chunk => { text += chunk; if (text.length > MAX_BODY) req.destroy() })
+      req.on('end', () => {
+        let patch: unknown
+        try { patch = JSON.parse(text) } catch { res.writeHead(400); res.end(JSON.stringify({ message: 'Invalid JSON body' })); return }
+        void maintenance!.change(patch).then(
+          maintenance => res.end(JSON.stringify({ ok: true, maintenance })),
+          error => { res.writeHead(failureStatus(error)); res.end(JSON.stringify({ message: error instanceof Error ? error.message : 'Maintenance change failed' })) },
+        )
+      })
       return
     }
     const operation: (() => Promise<unknown>) | undefined = req.method === 'POST' && req.url === '/app-restart'

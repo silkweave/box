@@ -615,11 +615,38 @@ both proxy hops can stall the upgrade until the development client's timeout, ca
 The regression test exercises HTTP warm-up followed by repeated upgrades through a second proxy
 using the Bun runtime.
 
-Signed-in tabs receive maintenance changes through `/api/box-status/events`, an SSE endpoint owned
-by the supervisor. It sends the current maintenance flag on connection and after changes to the
-Builder control file, including atomic replacements. One shared 500ms file-stat watcher serves all connected tabs without native filesystem watchers;
+### Maintenance mode
+
+Maintenance is one file the supervisor owns, `data/builder/maintenance.json`: the switch
+(`enabled`), whether admins are locked out too (`lockAdmins`), and a public notice (a short
+`status`, a checklist of `tasks` that are pending, active, done or skipped, an `eta` and when it
+started). Builder changes it through its control API (`/api/builder-control/maintenance`), the host
+through `box maintenance` on the local supervisor socket; both send the same change document, so a
+task tick and a revised estimate land together. Switching on or off restarts the app into or out
+of its paused boot (background work off); editing the notice only rewrites the file. Switching off
+clears the notice and the lock.
+
+While it is on, the supervisor answers signed-out documents with a branded, self-contained page
+(name, logo and accent from `box.json`, light and dark) that renders the notice, counts down to the
+estimate, follows the status stream and reloads once the Box answers again. Other requests get a
+503. Admins pass unless `lockAdmins` is set; then everything except the page, its logo, release
+assets and the status stream is refused, including Builder, and open admin connections are
+dropped. Only the host can set or clear the lock. A document request that reaches the app while it
+is restarting gets the same page in a "restarting" state instead of a JSON error. The notice is
+public: write it for the team, without internal detail.
+
+Open app tabs, signed in or not, follow maintenance through `/api/box-status/events`, an SSE
+endpoint owned by the supervisor. A tab that maintenance blocks (signed out, a member, or an admin
+while admins are locked out) moves to the page's own address, `/api/box-status/page?return=<path>`,
+which serves the same page while maintenance lasts and then sends the tab back to the same-origin
+path it came from. A tab opened on `/login` keeps the sign-in form while admins are not locked out,
+so the page's Admin sign-in link works. The page and its logo sit under `/api` and `/builder-assets`,
+which the bare Vite port proxies to the supervisor, so the page looks the same on either port in
+`box dev`. The stream sends the current maintenance flag and public notice on connection and after
+changes to the maintenance file, including atomic replacements. One shared 500ms file-stat watcher serves all connected tabs without native filesystem watchers;
 a 15-second keepalive also reconciles missed filesystem notifications. EventSource reconnects
 automatically and receives a fresh snapshot after interruption. The endpoint remains available
 during application restarts. Slow clients are disconnected instead of accumulating buffered data.
-The JSON `/api/box-status` snapshot remains available for diagnostics. Both expose only the public
-maintenance flag; application access and admin exceptions remain independently authenticated.
+The JSON `/api/box-status` snapshot remains available for diagnostics. Both expose only the
+maintenance flag and the public notice (never its author); application access and admin
+exceptions remain independently authenticated.

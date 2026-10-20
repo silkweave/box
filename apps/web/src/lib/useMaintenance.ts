@@ -1,48 +1,67 @@
 import { useEffect, useState } from 'react'
 import { whilePageActive } from './pageLifecycle.ts'
+import { openedOnLogin } from './loginEntry.ts'
+
+/** The supervisor's maintenance page (apps/server/src/builder/maintenance.ts MAINTENANCE_PAGE_PATH). */
+const MAINTENANCE_PAGE = '/api/box-status/page'
 
 /** The web release this document was served from; absent under Vite and before the first release. */
 const loadedRelease = (): string | null =>
   document.querySelector<HTMLMetaElement>('meta[name="box-web-release"]')?.content || null
 
+/** Who is looking: unknown while the session probe runs, then signed out or signed in with a role. */
+export type BoxStatusViewer = { loading: true } | { loading: false; role: 'admin' | 'member' | null }
+
 /**
- * The supervisor's status stream. Existing member tabs enter maintenance too, without depending on
- * the restarting app's feeds, and a tab served from a release learns when a newer one is promoted.
+ * Whether maintenance keeps this viewer out. Admins pass unless the host locked them out too. A
+ * signed-out tab passes only when opened on /login while admins are not locked out, so an admin can sign in.
  */
-export function useBoxStatus(signedIn: boolean): { maintenance: boolean; updateAvailable: boolean } {
+export function maintenanceBlocks(maintenance: boolean, lockAdmins: boolean, role: 'admin' | 'member' | null, onLogin: boolean): boolean {
+  if (!maintenance) return false
+  if (lockAdmins) return true
+  if (role === 'admin') return false
+  if (role === null) return !onLogin
+  return true
+}
+
+/**
+ * The supervisor's status stream, followed by every tab (signed in or not), so an open tab enters
+ * maintenance without depending on the restarting app's feeds, and a tab served from a release
+ * learns when a newer one is promoted. A blocked tab moves to the supervisor's maintenance page,
+ * the same page a fresh visit gets, which brings it back here once maintenance ends.
+ */
+export function useBoxStatus(viewer: BoxStatusViewer): { known: boolean; maintenance: boolean; updateAvailable: boolean } {
+  // False until the first status arrives (or a short wait passes), so the login view does not flash first.
+  const [known, setKnown] = useState(false)
   const [maintenance, setMaintenance] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
+  const role = viewer.loading ? undefined : viewer.role
   useEffect(() => {
-    if (!signedIn) { setMaintenance(false); return }
+    if (role === undefined) return
     const loaded = loadedRelease()
     return whilePageActive(() => {
-      let disposed = false
-      let revision = 0
-      let retry: ReturnType<typeof setTimeout> | undefined
       const events = new EventSource('/api/box-status/events')
-      const apply = async (data: string, current: number): Promise<void> => {
+      const fallback = setTimeout(() => setKnown(true), 1_500)
+      events.onmessage = event => {
+        clearTimeout(fallback)
         try {
-          const status = JSON.parse(data) as { maintenance?: boolean; release?: string | null }
+          const status = JSON.parse(event.data) as { maintenance?: boolean; release?: string | null; notice?: { lockAdmins?: boolean } }
           if (typeof status.maintenance !== 'boolean') return
-          if (loaded && typeof status.release === 'string' && !disposed) setUpdateAvailable(status.release !== loaded)
-          let blocked = status.maintenance
+          if (loaded && role !== null && typeof status.release === 'string') setUpdateAvailable(status.release !== loaded)
+          const blocked = maintenanceBlocks(status.maintenance, !!status.notice?.lockAdmins, role, openedOnLogin)
+          setMaintenance(blocked)
+          setKnown(true)
           if (blocked) {
-            const identity = await fetch('/api/auth/me', { signal: AbortSignal.timeout(3_000), cache: 'no-store' })
-            const body = identity.ok ? await identity.json() as { principal?: { role?: string } } : null
-            blocked = body?.principal?.role !== 'admin'
+            events.close()
+            location.replace(`${MAINTENANCE_PAGE}?return=${encodeURIComponent(location.pathname + location.search + location.hash)}`)
           }
-          if (!disposed && current === revision) setMaintenance(blocked)
         } catch {
-          // An app restart may interrupt the admin check while the supervisor stream stays open.
-          if (!disposed && current === revision) retry = setTimeout(() => { void apply(data, current) }, 3_000)
+          // A malformed event is skipped; the next one carries the full state again.
+          setKnown(true)
         }
       }
-      events.onmessage = event => {
-        if (retry) clearTimeout(retry)
-        void apply(event.data, ++revision)
-      }
-      return () => { disposed = true; if (retry) clearTimeout(retry); events.close() }
+      return () => { clearTimeout(fallback); events.close() }
     })
-  }, [signedIn])
-  return { maintenance, updateAvailable }
+  }, [role])
+  return { known, maintenance, updateAvailable }
 }

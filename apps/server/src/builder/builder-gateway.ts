@@ -254,5 +254,6 @@ export function createBuilderGateway(options: {
       upstream.on('error', () => client.close(1011, 'Builder connection failed'))
     })
   }
-  return { handle, upgrade, close: () => { for (const socket of sockets) socket.terminate(); wss.close() } }
+  const disconnect = (): void => { for (const socket of sockets) socket.terminate() }
+  return { handle, upgrade, disconnect, close: () => { disconnect(); wss.close() } }
 }

@@ -30,10 +30,11 @@ function AppUsers({ children }: { children: ReactNode }) {
 // app. See docs/AUTH.md.
 function AuthGate() {
   const { loading, principal } = useAuth()
+  // Every tab follows maintenance, signed in or not; a blocked tab moves to the supervisor's page.
+  const { known, maintenance, updateAvailable } = useBoxStatus(loading ? { loading: true } : { loading: false, role: principal ? principal.role ?? 'member' : null })
   // Start the live-refresh feed (lib/changeFeed.ts) once a session is established - the SSE
   // subscription would just 401 before that. Idempotent, so re-renders are free. Each feature's
   // `onSession` (a chat feed, a notification poller, a push-click listener) starts on the same gate.
-  const { maintenance, updateAvailable } = useBoxStatus(!loading && !!principal)
   const startFeed = !loading && !!principal && !maintenance
   useEffect(() => {
     if (!startFeed) return
@@ -41,21 +42,11 @@ function AuthGate() {
     const teardowns = ALL_WEB_FEATURES.map((f) => f.onSession?.()).filter((t): t is () => void => typeof t === 'function')
     return () => teardowns.forEach((t) => t())
   }, [startFeed])
-  if (loading) return <div className='h-dvh w-full bg-bg' />
-  if (!principal) return <LoginView />
+  // Blocked by maintenance: the tab is on its way to the supervisor's maintenance page.
+  if (loading || maintenance) return <div className='h-dvh w-full bg-bg' />
+  if (!principal) return known ? <LoginView /> : <div className='h-dvh w-full bg-bg' />
   // Back to a server-served path mount (`/artifacts/<slug>/`) that sent this browser to sign in.
   if (followReturnPath()) return <div className='h-dvh w-full bg-bg' />
-  if (maintenance) return (
-    <main className='grid min-h-dvh place-items-center bg-bg px-6 text-text'>
-      <div className='max-w-md text-center'>
-        <img src={brand.logoUrl.startsWith('/builder-assets/') ? brand.logoUrl : `/builder-assets${brand.logoUrl}`} alt='' className='mx-auto mb-8 h-14 w-14' />
-        <p className='text-xs font-medium uppercase tracking-[0.2em] text-primary'>Maintenance</p>
-        <h1 className='mt-4 text-3xl font-semibold tracking-tight'>A little work. A better Box.</h1>
-        <p className='mt-4 leading-relaxed text-muted-foreground'>Your team is making an update. We’ll bring you back automatically when your Box is ready.</p>
-        <div className='mx-auto mt-8 h-1 w-20 animate-pulse rounded-full bg-gradient-to-r from-primary/20 via-primary to-primary/20' />
-      </div>
-    </main>
-  )
   return (
     <AppUsers>
       {principal.role === 'admin' && <BuilderPreviewBridge />}

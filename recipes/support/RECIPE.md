@@ -5,7 +5,7 @@ Every question, problem and complaint the team hears from its users, recorded on
 ## Highlights
 
 - Tickets logged by hand, or by an agent from a call or chat summary through the Support tools
-- One tickets view built like Initiatives: presets (Open, Mine, Unassigned, Late, Closed, Everything), search, filters, grouping, sort and columns, as a grid or a board you drag cards across
+- One tickets view built like Initiatives: five statuses (Pending, Active, Blocked, Done, Dropped), presets (Open, Mine, Unassigned, Late, Blocked, Closed, Everything), search, filters, grouping, sort and columns, as a grid or a board you drag cards across
 - Requesters kept once per person, found again by email or phone however the number was typed, edited and merged right on the ticket
 - A ticket age in working days, with a late flag past the team's threshold
 - Help Articles: articles, FAQ answers and getting-started guides in one list, each drafted, published, flagged for update or retired, with images and videos, and linked to the tickets it answered
