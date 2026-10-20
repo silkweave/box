@@ -6,7 +6,7 @@ import type { IncomingMessage } from 'node:http'
 import { createFileSessionStore, createMemoryProfileStore, createWorkerServer, type WorkerServer, type WorkerServerOptions } from '@workerdeck/server'
 import type { CreateJobRequest, JobEvent, JobInfo, ProfileInfo, SessionEvent, SessionInfo } from '@workerdeck/protocol'
 import { agentProfileMapFor, agentSessionAccess, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
-import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
+import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, workerdeckProfileInfo, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
 import { revokeAgentControl, trackAgentControl } from './agent-control.js'
 import { NO_SESSION_TOOLS, sessionToolCapsOf, type SessionToolCaps } from './box-mcp.js'
 import { workRunnerConfig } from './work-session.js'
@@ -311,11 +311,7 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
   // `connectors: false` on every profile (owner decision 2026-10-08): claude.ai connectors never run
   // in Box sessions, which use Box-managed MCP servers instead. A setup-token carries no connector
   // scope anyway; this also stops a full login's connectors from appearing.
-  const profiles: ProfileInfo[] = deployment.profiles.map((p) =>
-    p.engine === 'codex'
-      ? { name: p.name, engine: 'codex', codexHome: p.home, defaults: p.defaults, description: p.description }
-      : { name: p.name, engine: 'claude', configDir: p.home, description: p.description, connectors: false },
-  ) as ProfileInfo[]
+  const profiles: ProfileInfo[] = deployment.profiles.map(workerdeckProfileInfo)
 
   const byName = new Map<string, WorkerdeckProfile>(deployment.profiles.map((p) => [p.name, p]))
   const canConnectAccount = (auth: AgentAuth | undefined, profile: string): boolean => {

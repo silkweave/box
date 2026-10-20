@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_QUEUE, parseWorkerdeckConfig } from './workerdeck.config.js'
+import { DEFAULT_QUEUE, parseWorkerdeckConfig, workerdeckProfileInfo } from './workerdeck.config.js'
 
 const ctx = (existing: string[] = []) => ({
   repoRoot: '/repo',
@@ -62,6 +62,26 @@ describe('parseWorkerdeckConfig', () => {
     expect(config.profiles[0]?.mcpTokensPath).toBe('/home/alice/.codex/mcp-tokens.env')
   })
 
+  it('carries claude defaults with per-model efforts and maps them for WorkerDeck', () => {
+    const config = parseWorkerdeckConfig(
+      { profiles: [profile({ defaults: { model: 'haiku', efforts: { haiku: ' low ' } } })] },
+      ctx(['/home/alice/.claude']),
+    )
+    const declared = config.profiles[0]!
+    expect(declared.defaults).toEqual({ model: 'haiku', efforts: { haiku: 'low' } })
+    expect(workerdeckProfileInfo(declared)).toMatchObject({
+      engine: 'claude',
+      configDir: '/home/alice/.claude',
+      defaults: { model: 'haiku', efforts: { haiku: 'low' } },
+      connectors: false,
+    })
+  })
+
+  it('maps a profile without defaults to none', () => {
+    const config = parseWorkerdeckConfig({ profiles: [profile()] }, ctx(['/home/alice/.claude']))
+    expect(workerdeckProfileInfo(config.profiles[0]!)).not.toHaveProperty('defaults')
+  })
+
   it('honours explicit cwdRoots and stateDir', () => {
     const config = parseWorkerdeckConfig(
       { profiles: [profile()], cwdRoots: ['/srv/box'], stateDir: '/srv/state' },
@@ -84,6 +104,10 @@ describe('parseWorkerdeckConfig', () => {
     ['a missing home', { profiles: [profile({ home: undefined })] }],
     ['an unknown key (a typo must not be silently dropped)', { profiles: [profile({ hoem: '/x' })] }],
     ['a non-object defaults', { profiles: [profile({ defaults: 'acceptEdits' })] }],
+    ['an unknown defaults key', { profiles: [profile({ defaults: { modle: 'opus' } })] }],
+    ['an unknown permission mode', { profiles: [profile({ defaults: { permissionMode: 'yolo' } })] }],
+    ['a blank default model', { profiles: [profile({ defaults: { model: ' ' } })] }],
+    ['efforts that are not a map of strings', { profiles: [profile({ defaults: { efforts: { haiku: 1 } } })] }],
     ['a non-string cwdRoots entry', { profiles: [profile()], cwdRoots: [1] }],
     ['the removed claudeTokens key', { profiles: [profile()], claudeTokens: false }],
     ['a non-object queue', { profiles: [profile()], queue: 2 }],

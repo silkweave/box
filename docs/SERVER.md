@@ -336,6 +336,11 @@ memory profile store rebuilt on every boot, not as declared profiles, because Wo
 account connect for declared ones. `allowedConfigDirRoots` is the set of each config dir's parent.
 No principal may manage profiles over the API, so `box.json` stays the only place they are defined.
 Every profile carries `connectors: false` (claude.ai connectors never run in Box sessions).
+A profile's `defaults` (`model`, `permissionMode`, and `efforts`, the reasoning effort per model)
+reach WorkerDeck for both engines and apply when a session names no value of its own; an unknown
+key or permission mode fails the boot of the agent surface. The chat agent names its own model and
+effort (`features.chat.agentModels`, recipes/chat/SPEC.md), so profile defaults govern Work and
+Builder sessions and unattended runs.
 Settings > Profile (your own) and the Users detail (an admin, for anyone including the agent) list
 a person's profiles from `GET /api/agent/accounts?user=<id>` (another person's list is an
 admin's) and connect them with WorkerDeck's `AccountConnectDialog` over the mount:

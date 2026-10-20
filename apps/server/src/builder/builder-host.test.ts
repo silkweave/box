@@ -37,7 +37,8 @@ const fake = vi.hoisted(() => {
 vi.mock('@silkweave/box-core', () => ({
   boxJson: () => ({ agentProfiles: { alice: { codex: 'alice:codex', claude: 'alice:claude' } } }),
 }))
-vi.mock('../agent/workerdeck.config.js', () => ({
+vi.mock('../agent/workerdeck.config.js', async (importOriginal) => ({
+  workerdeckProfileInfo: (await importOriginal<typeof import('../agent/workerdeck.config.js')>()).workerdeckProfileInfo,
   readWorkerdeckConfig: () => ({
     profiles: [
       { name: 'alice:codex', engine: 'codex', person: 'alice', home: '/codex' },

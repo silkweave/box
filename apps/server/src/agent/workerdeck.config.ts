@@ -22,6 +22,7 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import type { PermissionMode, ProfileInfo } from '@workerdeck/protocol'
 import { boxJson, dataPath } from '@silkweave/box-core'
 
 /** One declared profile. `name` is the contract with box.json's agentProfiles. */
@@ -43,8 +44,12 @@ export interface WorkerdeckProfile {
    * wrong config dir, reading none of that person's settings, memory, skills or credentials.
    */
   home: string
-  /** Per-profile engine defaults. A service account is usually pinned read-only here. */
-  defaults?: { model?: string; permissionMode?: string }
+  /**
+   * Per-profile engine defaults, for either engine: the model a new session starts on, its
+   * permission mode, and the reasoning effort per model (`{ "haiku": "low" }`). A session or client
+   * that names its own value wins. A service account is usually pinned read-only here.
+   */
+  defaults?: WorkerdeckProfileDefaults
   /** Shown in the profile picker. */
   description?: string
   /**
@@ -55,6 +60,14 @@ export interface WorkerdeckProfile {
    */
   mcpTokensPath?: string
 }
+
+export interface WorkerdeckProfileDefaults {
+  model?: string
+  permissionMode?: PermissionMode
+  efforts?: Record<string, string>
+}
+
+const PERMISSION_MODES = new Set<string>(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'])
 
 export interface WorkerdeckConfig {
   profiles: WorkerdeckProfile[]
@@ -172,21 +185,47 @@ function parseProfile(raw: unknown, index: number): WorkerdeckProfile {
   }
   if (raw['description'] !== undefined) profile.description = str('description')
   if (raw['mcpTokensPath'] !== undefined) profile.mcpTokensPath = str('mcpTokensPath')
-  if (raw['defaults'] !== undefined) {
-    const d = raw['defaults']
-    if (!isRecord(d)) return refuse(`${at}.defaults must be an object`)
-    const defaults: { model?: string; permissionMode?: string } = {}
-    if (d['model'] !== undefined) {
-      if (typeof d['model'] !== 'string') return refuse(`${at}.defaults.model must be a string`)
-      defaults.model = d['model']
-    }
-    if (d['permissionMode'] !== undefined) {
-      if (typeof d['permissionMode'] !== 'string') return refuse(`${at}.defaults.permissionMode must be a string`)
-      defaults.permissionMode = d['permissionMode']
-    }
-    profile.defaults = defaults
-  }
+  if (raw['defaults'] !== undefined) profile.defaults = parseDefaults(raw['defaults'], `${at}.defaults`)
   return profile
+}
+
+function parseDefaults(d: unknown, at: string): WorkerdeckProfileDefaults {
+  if (!isRecord(d)) return refuse(`${at} must be an object`)
+  const defaults: WorkerdeckProfileDefaults = {}
+  for (const key of Object.keys(d)) {
+    if (!['model', 'permissionMode', 'efforts'].includes(key)) refuse(`${at} has unknown key ${JSON.stringify(key)}`)
+  }
+  if (d['model'] !== undefined) {
+    if (typeof d['model'] !== 'string' || d['model'].trim() === '') return refuse(`${at}.model must be a non-empty string`)
+    defaults.model = d['model'].trim()
+  }
+  if (d['permissionMode'] !== undefined) {
+    const mode = d['permissionMode']
+    if (typeof mode !== 'string' || !PERMISSION_MODES.has(mode)) {
+      return refuse(`${at}.permissionMode must be one of ${[...PERMISSION_MODES].join(', ')} (got ${JSON.stringify(mode)})`)
+    }
+    defaults.permissionMode = mode as PermissionMode
+  }
+  if (d['efforts'] !== undefined) {
+    const efforts = d['efforts']
+    if (!isRecord(efforts) || Object.values(efforts).some((v) => typeof v !== 'string' || v.trim() === '')) {
+      return refuse(`${at}.efforts must map model names to effort levels`)
+    }
+    defaults.efforts = Object.fromEntries(Object.entries(efforts).map(([model, effort]) => [model, (effort as string).trim()]))
+  }
+  return defaults
+}
+
+/**
+ * The WorkerDeck profile for one declared profile, shared by the agent host and the Builder host.
+ * `defaults` reaches WorkerDeck for both engines; `connectors: false` keeps claude.ai connectors out
+ * of Box sessions (owner decision 2026-10-08).
+ */
+export function workerdeckProfileInfo(p: WorkerdeckProfile): ProfileInfo {
+  const defaults = p.defaults !== undefined && Object.keys(p.defaults).length > 0 ? { defaults: p.defaults } : {}
+  return p.engine === 'codex'
+    ? { name: p.name, engine: 'codex', codexHome: p.home, ...defaults, description: p.description }
+    : { name: p.name, engine: 'claude', configDir: p.home, ...defaults, description: p.description, connectors: false }
 }
 
 /**
