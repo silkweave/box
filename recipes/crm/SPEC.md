@@ -66,7 +66,7 @@ stage: a deal's first stage is its first row's `from_stage`, or its current stag
 never moved. A write that keeps the stage records nothing. History starts when a Box first runs the
 table; nothing earlier is reconstructed. Deleting a deal deletes its rows (a deal deleted as a
 mistake must not count as pipeline work), and deleting an account deletes its deals' rows. The
-table and column names are the ones PiBo's Box first wrote, so a Box carrying that history keeps it.
+table and column names are fixed, so a Box that already carries this history keeps it.
 A new table needs no migration: `ensureSchema()` creates it from its `ModelSpec` on the next boot.
 
 **Baseline DDL: none.** `migrations: []` in `manifest.ts` - the tables are created from the

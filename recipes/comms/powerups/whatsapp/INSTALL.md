@@ -36,6 +36,8 @@ Ask these together:
    decides for their number).
 6. **History import.** Whether pairing imports the last `historyDays` (default 30) of the managed
    chats WhatsApp sends right after linking. Imported messages are stored read and wake nobody.
+   On a person's own number, a kept group can also load older messages later ("Load older",
+   tRPC `commsWhatsappBackfill`): on-demand pages from the phone, back `historyDays`.
 7. **Limits.** `sendsPerHour` per number (default 10), `mediaRetentionDays` (default 30),
    `maxMediaMb` (default 25), `stopWords` (default `STOP`, `UNSUBSCRIBE`).
 8. **Auto-draft.** Whether an agent drafts a held reply once a client stops writing, and the settle

@@ -1,5 +1,6 @@
 // Compact, consistent receipts for Box commands that do not need verify's full-screen task view.
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { paint, type Tone } from './ui.js'
 
 const depth = (): number => process.env.NO_COLOR !== undefined ? 1 : (process.stdout.isTTY ? 24 : 1)
@@ -33,15 +34,40 @@ export function commandNotice(text: string): void {
   process.stderr.write(`${color(`  ${text}`, 'muted')}\n`)
 }
 
-function openBrowser(url: string): void {
-  const [program, args] = process.platform === 'darwin'
-    ? ['open', [url]]
-    : process.platform === 'win32'
-      ? ['cmd', ['/c', 'start', '', url]]
-      : ['xdg-open', [url]]
-  const child = spawn(program, args, { detached: true, stdio: 'ignore' })
-  child.on('error', error => commandError(`Could not open the browser: ${error.message}`))
-  child.unref()
+/** True inside Windows Subsystem for Linux, where the browser belongs to Windows. */
+function isWsl(): boolean {
+  if (process.platform !== 'linux') return false
+  try { return /microsoft/i.test(readFileSync('/proc/version', 'utf8')) } catch { return false }
+}
+
+/** The launchers to try in order: the platform opener, and on WSL the Windows side. */
+export function browserLaunchers(url: string, platform: NodeJS.Platform = process.platform, wsl = isWsl()): Array<[string, string[]]> {
+  if (platform === 'darwin') return [['open', [url]]]
+  if (platform === 'win32') return [['cmd', ['/c', 'start', '', url]]]
+  if (wsl) return [['wslview', [url]], ['cmd.exe', ['/c', 'start', '', url.replace(/&/g, '^&')]], ['xdg-open', [url]]]
+  return [['xdg-open', [url]]]
+}
+
+/**
+ * Open a URL in the user's browser. `quiet` reports nothing on failure, for callers that already
+ * printed the URL and are about to hand the terminal to a full-screen view.
+ */
+export function openBrowser(url: string, options: { quiet?: boolean } = {}): void {
+  const launchers = browserLaunchers(url)
+  const attempt = (index: number): void => {
+    const launcher = launchers[index]
+    if (!launcher) {
+      if (!options.quiet) commandError('Could not open the browser. Open the link above yourself.')
+      return
+    }
+    let failed = false
+    const next = () => { if (!failed) { failed = true; attempt(index + 1) } }
+    const child = spawn(launcher[0], launcher[1], { detached: true, stdio: 'ignore' })
+    child.on('error', next)
+    child.on('exit', code => { if (code !== 0 && code !== null) next() })
+    child.unref()
+  }
+  attempt(0)
 }
 
 /** Offer a short, non-blocking browser-open window. Piped/CI output never waits. */

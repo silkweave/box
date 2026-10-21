@@ -52,7 +52,7 @@ export function RecipeCard({ recipe, canAdapt, onOpen, compact = false }: { reci
   return (
     <article className='group flex flex-col overflow-hidden rounded-xl border border-border bg-surface transition-colors hover:border-accent/40'>
       <button type='button' onClick={onOpen} className='flex flex-1 flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-accent/40'>
-        <div className='aspect-[16/8] overflow-hidden border-b border-border bg-bg'>
+        <div className='aspect-[16/10] overflow-hidden border-b border-border bg-bg'>
           {cover ? <img src={cover.src} alt='' className='h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]' /> : <div className='flex h-full items-center justify-center text-fg-4'><ImageIcon className='size-6' /></div>}
         </div>
         <div className='flex flex-1 flex-col p-4'>

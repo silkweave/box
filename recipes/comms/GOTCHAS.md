@@ -121,6 +121,12 @@ operation state in _docs/INTEGRATION.md.
   takes RECENT only when the owner chose a history import and never FULL; history messages are
   stored only with that choice. A device linked while all syncs were refused needs a re-pair to
   get the mappings.
+- **WhatsApp: older messages come from the phone, one page at a time.** "Load older" sends
+  `fetchMessageHistory` anchored on the chat's oldest stored message; the phone answers with an
+  ON_DEMAND history sync that the connection hands to the waiting request, never to the pairing
+  import. It needs one stored message in the chat to anchor on and the phone online; a page that
+  does not come within 45 seconds ends the run, and WhatsApp decides how far back the phone answers.
+  Groups only: a direct chat's JID on the phone may be its LID, which the anchor cannot name.
 - **WhatsApp: group JIDs in settings are taken as they are.** `allowedRecipients` and
   `trustedSenders` accept `<digits>@g.us` and `<digits>@lid` unchanged; number formatting (spaces,
   dots, dashes) is stripped from phone entries only. Managed groups are not configuration: they are

@@ -1,6 +1,8 @@
 // First-run setup for a fresh Box. This is deliberately a host command: it writes local
 // configuration and the warehouse directly, without opening a network signup endpoint.
 import { createInterface } from 'node:readline/promises'
+import { spawn } from 'node:child_process'
+import { request } from 'node:http'
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -9,7 +11,7 @@ import { issuePrincipalToken, issueSigninLink, setPrincipalRole } from '@silkwea
 import { agentIdentity, systemUserId } from '@silkweave/box-core/box-config'
 import { readBoxConfig, writeBoxJsonIfAbsent, writeBoxLocal, type BoxJson } from '@silkweave/box-core/box-json'
 import { upsertUser } from '@silkweave/box-core/users/state'
-import { commandError, commandHeader, commandLine, commandSuccess, commandValue, commandWarning } from '../../../packages/cli/src/command-ui.js'
+import { commandError, commandHeader, commandLine, commandSuccess, commandValue, commandWarning, openBrowser } from '../../../packages/cli/src/command-ui.js'
 import { isMain, repoRoot } from '../../../packages/cli/src/repo.js'
 
 export type ProviderEngine = 'codex' | 'claude'
@@ -33,6 +35,7 @@ interface SetupArgs {
   profiles?: ProviderEngine[]
   yes: boolean
   noProfiles: boolean
+  noStart: boolean
 }
 
 const OWNER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/
@@ -132,7 +135,7 @@ function parseArgs(argv: string[]): SetupArgs {
     throw new Error('--profiles accepts codex, claude, or both as a comma-separated list')
   }
   if (argv.includes('--no-profiles') && rawProfiles) throw new Error('use either --profiles or --no-profiles')
-  const known = new Set(['--owner', '--name', '--profiles', '--yes', '--no-profiles', '--help', '-h'])
+  const known = new Set(['--owner', '--name', '--profiles', '--yes', '--no-profiles', '--no-start', '--help', '-h'])
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!
     if (!known.has(arg)) throw new Error(`unknown setup option ${JSON.stringify(arg)}`)
@@ -144,6 +147,7 @@ function parseArgs(argv: string[]): SetupArgs {
     profiles: profiles as ProviderEngine[] | undefined,
     yes: argv.includes('--yes'),
     noProfiles: argv.includes('--no-profiles'),
+    noStart: argv.includes('--no-start'),
   }
 }
 
@@ -154,7 +158,8 @@ const SETUP_HELP = `  bun setup [options]
   --name <display name>      owner display name (default: owner id)
   --profiles codex,claude    configure only these detected profiles
   --no-profiles              skip provider configuration
-  --yes                      accept defaults without prompting
+  --no-start                 print the sign-in link instead of starting the Box
+  --yes                      accept defaults without prompting (implies --no-start)
 `
 
 async function collectAnswers(args: SetupArgs, candidates: ProviderCandidate[]): Promise<SetupAnswers> {
@@ -260,11 +265,91 @@ async function run(argv: string[]): Promise<void> {
     }
   } else commandWarning('No Builder provider was configured. The dashboard will keep that quest open.')
   commandSuccess('Stored the owner credential for the local Box CLI; it was not printed')
-  commandLine('Start the Box:', 'muted')
-  commandValue('bun dev')
-  commandLine('Then open this single-use sign-in link:', 'muted')
+
+  const until = new Date(claims.exp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const expires = `Valid until ${until} · a new link any time: box auth login ${answers.ownerId}`
+  if (!startsDev(args)) {
+    commandLine('Start the Box:', 'muted')
+    commandValue('bun dev')
+    commandLine('Then open this single-use sign-in link:', 'muted')
+    commandValue(signIn)
+    commandLine(`${expires} · reveal the permanent token later with: box auth reveal ${answers.ownerId}`, 'muted')
+    return
+  }
+  commandLine('Starting the Box. Your browser opens the sign-in page as soon as it is ready.', 'muted')
+  commandLine('If it does not, open this single-use sign-in link:', 'muted')
   commandValue(signIn)
-  commandLine(`Expires ${new Date(claims.exp).toISOString()} · reveal the permanent token later with: box auth reveal ${answers.ownerId}`, 'muted')
+  commandLine(expires, 'muted')
+  commandLine('Stop the Box with q. Start it again later with: bun dev', 'muted')
+  await new Promise(done => setTimeout(done, 2_000))
+  process.exitCode = await startDevAndOpen(signIn)
+}
+
+/** Interactive setup hands straight over to `box dev`; automation keeps the printed instructions. */
+export function startsDev(args: Pick<SetupArgs, 'yes' | 'noStart'>, tty = Boolean(process.stdin.isTTY && process.stdout.isTTY)): boolean {
+  return tty && !args.yes && !args.noStart
+}
+
+const DEV_READY_TIMEOUT_MS = 10 * 60_000
+
+/** True once the supervisor reports both the application and the frontend running. */
+function devReady(socketPath: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const req = request({ socketPath, method: 'GET', path: '/app-status', timeout: 2_000 }, res => {
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', chunk => { text += chunk })
+      res.on('end', () => {
+        try {
+          const state = JSON.parse(text) as { application?: { status?: string }; frontend?: { mode?: string; status?: string } }
+          const frontend = state.frontend?.mode === 'dev' ? state.frontend.status === 'running' : state.frontend?.status === 'built'
+          resolve(res.statusCode === 200 && state.application?.status === 'running' && frontend)
+        } catch { resolve(false) }
+      })
+    })
+    req.on('timeout', () => req.destroy())
+    req.on('error', () => resolve(false))
+    req.end()
+  })
+}
+
+/**
+ * Run the dev supervisor in the foreground and open the sign-in link once both the application and
+ * the frontend report running through the supervisor's local control socket. Opening any earlier
+ * would spend the single-use grant on a page that cannot sign anyone in yet.
+ */
+async function startDevAndOpen(signIn: string): Promise<number> {
+  const socket = join(repoRoot, 'data', 'builder', 'ui-refresh.sock')
+  const child = spawn(process.execPath, ['--bun', '--no-env-file', '--no-orphans', 'run', '--silent', 'dev'], { cwd: repoRoot, stdio: 'inherit' })
+  // The terminal delivers Ctrl+C to the whole process group; the supervisor owns shutdown.
+  const ignore = () => {}
+  process.on('SIGINT', ignore)
+  const forward = () => child.kill('SIGTERM')
+  process.on('SIGTERM', forward)
+  let exited = false
+  let opened = false
+  const done = new Promise<number>(resolve => {
+    child.on('exit', (code, signal) => { exited = true; resolve(code ?? (signal === 'SIGINT' ? 130 : 1)) })
+    child.on('error', error => { exited = true; commandError(`Could not start the Box: ${error.message}`); resolve(1) })
+  })
+  const deadline = Date.now() + DEV_READY_TIMEOUT_MS
+  while (!exited && Date.now() < deadline) {
+    await new Promise(next => setTimeout(next, 1_000))
+    if (exited) break
+    if (await devReady(socket)) {
+      openBrowser(signIn, { quiet: true })
+      opened = true
+      break
+    }
+  }
+  const code = await done
+  process.off('SIGINT', ignore)
+  process.off('SIGTERM', forward)
+  if (!opened) {
+    commandWarning('The Box stopped before the sign-in page could open.')
+    commandLine('Start it with bun dev, then open the sign-in link above (or create a new one with box auth login).', 'muted')
+  }
+  return code
 }
 
 if (isMain(import.meta.url)) {

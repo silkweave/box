@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectProviderProfiles, setupProfilePatch, type ProviderCandidate } from './setup.js'
+import { detectProviderProfiles, setupProfilePatch, startsDev, type ProviderCandidate } from './setup.js'
 
 const candidate = (engine: 'codex' | 'claude', home = `/profiles/${engine}`): ProviderCandidate => ({
   engine,
@@ -61,5 +61,12 @@ describe('first-run setup', () => {
       workerdeck: { profiles: 'not-a-list' },
       agentProfiles: {},
     }, 'admin', [candidate('codex')])).toThrow(/not an array/)
+  })
+
+  it('hands over to box dev only in an interactive terminal without --yes or --no-start', () => {
+    expect(startsDev({ yes: false, noStart: false }, true)).toBe(true)
+    expect(startsDev({ yes: true, noStart: false }, true)).toBe(false)
+    expect(startsDev({ yes: false, noStart: true }, true)).toBe(false)
+    expect(startsDev({ yes: false, noStart: false }, false)).toBe(false)
   })
 })

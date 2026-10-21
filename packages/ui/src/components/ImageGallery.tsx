@@ -32,7 +32,7 @@ export function ImageGallery({ images, className }: { images: readonly GalleryIm
         if (event.key === 'ArrowRight') { event.preventDefault(); step(1) }
       }}>
       <div className='group relative overflow-hidden rounded-lg border border-border bg-bg'>
-        <img src={current.src} alt={current.alt} className='aspect-[16/10] w-full object-cover' />
+        <img src={current.src} alt={current.alt} className='aspect-[16/10] w-full object-contain' />
         {many && <>
           <button type='button' onClick={() => step(-1)} aria-label='Previous image' className='absolute top-1/2 left-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface/90 text-text opacity-0 shadow-(--shadow-sm) transition-opacity group-hover:opacity-100 focus-visible:opacity-100'><ChevronLeft className='size-4' /></button>
           <button type='button' onClick={() => step(1)} aria-label='Next image' className='absolute top-1/2 right-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-surface/90 text-text opacity-0 shadow-(--shadow-sm) transition-opacity group-hover:opacity-100 focus-visible:opacity-100'><ChevronRight className='size-4' /></button>

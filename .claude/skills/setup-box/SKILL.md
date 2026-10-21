@@ -80,8 +80,13 @@ Before opening the warehouse, review the machine principal in `box.json`. Its de
 (`nova`), admin. The ID cannot be renamed after initialization. Then run:
 
 ```bash
-bun setup
+bun setup --no-start
 ```
+
+An owner who runs plain `bun setup` (or the `box.silkweave.dev` installer) in their own terminal
+gets the same steps, after which setup starts `bun dev` and opens the sign-in link in the browser
+when the Box is ready. An agent passes `--no-start` and boots the Box itself in step 4, so the
+server stays visible and stoppable in the owner's shell tools.
 
 Setup is a host-only operation. It:
 
@@ -92,7 +97,8 @@ Setup is a host-only operation. It:
 5. writes `workerdeck` and `agentProfiles` to mode-0600 `box.local.json`;
 6. creates the first human as an administrator;
 7. stores the permanent owner token for the local Box CLI without printing it; and
-8. prints a short-lived, single-use sign-in link.
+8. prints a short-lived, single-use sign-in link (with `--no-start`; otherwise it starts the Box
+   and opens the link).
 
 Detection reads directory and normal login-marker existence only, never credential contents. A
 profile directory without its marker may still be selected, but setup says that provider sign-in

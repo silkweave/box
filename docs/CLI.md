@@ -15,9 +15,12 @@ for configuration. It never reads or prints provider credentials. Marker files a
 warn when provider sign-in may still be required.
 
 Setup creates the first administrator only when no human exists, stores the new access token in
-mode-0600 `box.local.json` for the local MCP proxy, and prints a single-use sign-in link. Re-running
-against a populated Box refuses without rotating anything. For automation and tests, use
-`--owner`, `--name`, `--profiles codex,claude`, `--no-profiles`, and `--yes`.
+mode-0600 `box.local.json` for the local MCP proxy, and issues a single-use sign-in link. In an
+interactive terminal it then runs `box dev` and opens that link in the browser as soon as the
+application and frontend are running; quitting the dev view ends setup. Re-running against a
+populated Box refuses without rotating anything. For automation and tests, use `--owner`,
+`--name`, `--profiles codex,claude`, `--no-profiles`, `--no-start` and `--yes` (which never starts
+the Box).
 
 `box verify` runs the checkout's complete validation chain with a four-phase progress view:
 

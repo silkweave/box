@@ -33,7 +33,9 @@ them and draft replies that go out when that person approves.
   mailboxes"): teammates do not see them, they never wake an agent, agents read them and draft from
   them, and only the person approves what goes out. Their own number writes as that team member
   wherever an agent's number sees it. A managed group and a chat with one of our numbers cannot be
-  picked: those are the team's
+  picked: those are the team's. The group list searches by name or teammate, sorts by recent
+  activity and names the teammates in each group. "Load older" on a kept group asks the phone for
+  its messages of the last `historyDays`, page by page, stored read and waking nobody
 
 ## Needs
 
