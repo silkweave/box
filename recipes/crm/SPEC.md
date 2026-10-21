@@ -39,7 +39,7 @@ publicly reachable" a greppable, scannable claim. Every table carries `timestamp
 |---|---|---|
 | `crm_accounts` | `id` (a slug, `acme-uk`) | one company. `status` (the relationship), `owner`, `source`, `referral_partner`, `mrr_usd` (what the customer pays per month today as the operator knows it, **not** a finance number), `waiting_on`, `next_action(_at)`, `last_contacted_at`, subscription window, `website`, `tags`, `notes`, pause window, the renewal-risk triple, the three external links (`stripe_customer_id`, `supabase_space_id`, `whatsapp_group_jid`), an `external` JSON bag and the derived `name_key` |
 | `crm_deals` | `id` (a slug, unique across accounts) | one attempt to sell to an account: `account_id`, `name`, `stage`, `owner` (falls back to the account's for display), `mrr_usd` (what it would be worth per month - an estimate, typed rather than derived, see **What a team customises**), `close_probability`, `expected_close_at`, `closed_at` and `loss_stage` (stamped on the stage move), `loss_reason`, `notes`, and a reserved `external` bag |
-| `crm_deal_stage_changes` | `id` (`<deal id>:<uuidv7>`, so ids sort in write order) | one stage move of one deal, append-only: `deal_id`, `account_id`, `from_stage`, `to_stage`, `owner` (whose pipeline moved: the deal's owner at the time, else its account's), `changed_at`; `created_by` is who made the move. What pipeline analytics read |
+| `crm_deal_stage_changes` | `id` (`<deal id>:<uuidv7>`, so ids sort in write order) | one stage row of one deal, append-only (a creation row with from = to, then one move per change): `deal_id`, `account_id`, `from_stage`, `to_stage`, `owner` (whose pipeline moved: the deal's owner at the time, else its account's), `changed_at`; `created_by` is who made the move. What pipeline analytics read |
 | `crm_contacts` | `id` (the source's lead id verbatim, or a slug) | one human at exactly one account: `account_id`, `name`, `headline`, `email`, `phone`, `linkedin_url`, `role`, `is_primary` (int 0/1, at most one per account), `external_stage`, `tags`, `notes`, the derived `linkedin_key`, `last_activity_at` |
 | `crm_meetings` | `id` (idempotency IS the pk; machine rows are namespaced, e.g. `gcal:<event>`) | one sales conversation with a lifecycle: `account_id`/`contact_id` (nullable - null means the assign queue), `kind`, `scheduled_at`, `duration_min`, `outcome`, `rescheduled_count`, `source`, `meet_code`, `attendee_email`, `title`, `matched_by`, `notes`, `external` (organizer, attendees, transcript path, `rescheduled_from[]`) |
 | `crm_revenue_events` | `id` (namespaced, `hubspot:inv:...` / `stripe:inv:...`) | one money event at invoice grain: `account_id` (nullable = queue), `provider`, `kind`, `status`, `amount` + `currency` + `amount_usd` (frozen at `issued_at`'s rate) + `collected_usd` (struck once, at `paid_at`'s rate) + `fx_rate`/`fx_rate_month`, `issued_at`/`due_at`/`paid_at`/`refunded_at`, `period_months` and the **stored** coverage window `covers_from`/`covers_to`, `payer_email`, the external invoice/payment/subscription ids, `invoice_number`, `superseded_by`, `description`, `matched_by`, `notes` |
@@ -59,18 +59,26 @@ stage it left as `loss_stage`; and a win promotes a `lead` (or a `lost` / `churn
 won back) to `customer`. That promotion is the only automatic account-status move, and it only ever
 moves an account INTO the paying base.
 
-**Every stage move is recorded** (`crm_deal_stage_changes`). Each `upsertCrmDeal` that changes a
-deal's stage appends one row: deal, account, from and to stage, the owner, `changed_at` and the
-audit `created_by`. Creating a deal is not a move and records nothing, even straight into a later
-stage: a deal's first stage is its first row's `from_stage`, or its current stage while it has
-never moved. A write that keeps the stage records nothing. History starts when a Box first runs the
-table; nothing earlier is reconstructed. Deleting a deal deletes its rows (a deal deleted as a
-mistake must not count as pipeline work), and deleting an account deletes its deals' rows. The
-table and column names are fixed, so a Box that already carries this history keeps it.
+**Every stage change is recorded** (`crm_deal_stage_changes`). Creating a deal writes a creation
+row (`from_stage` = `to_stage` = its first stage), so a deal created straight into `confirmed` or
+`won` still dates its entry into that stage. Each later `upsertCrmDeal` that changes a deal's stage
+appends a move: deal, account, from and to stage, the owner, `changed_at` and the audit
+`created_by`. A move never has from = to (`isCreationRow`), so move counts and the deal history
+skip creation rows ("Created as <stage>"). A write that keeps the stage records nothing. Deals that
+predate creation rows get one from migration `crm:001-stage-change-creation-backfill`, dated
+`closed_at` for won or lost deals, else `created_at`. Deleting a deal deletes its rows (a deal
+deleted as a mistake must not count as pipeline work), and deleting an account deletes its deals'
+rows. The table and column names are fixed, so a Box that already carries this history keeps it.
+**New MRR signed is a derived signal** (`new-mrr.ts`, registered as the CRM signal `derive` in
+`crm.module.ts`, run by `warehouse-derive`). `crm.new_mrr_signed` on the `crm` channel totals, per
+team week (Monday start, box.json `timeZone`), the `mrr_usd` of each deal in the week of its first
+entry into `confirmed`, or into `won` (dated by `closed_at`) when it never passed `confirmed`. Every
+week from the first signed one to the current one gets a point, zeros included.
+
 A new table needs no migration: `ensureSchema()` creates it from its `ModelSpec` on the next boot.
 
-**Baseline DDL: none.** `migrations: []` in `manifest.ts` - the tables are created from the
-`ModelSpec`s by `ensureSchema()`, and there is no bootstrap SQL, no index declaration and no DDL
+**Baseline DDL: none.** The tables are created from the `ModelSpec`s by `ensureSchema()`; the one
+migration (`001-stage-change-creation-backfill`) is data only, and there is no bootstrap SQL, no index declaration and no DDL
 foreign key (the warehouse has none anywhere; `account_id` integrity is enforced in the domain, in
 `upsertCrmContact` / `upsertCrmMeeting`).
 

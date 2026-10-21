@@ -1,6 +1,8 @@
 # WhatsApp powerup: install
 
-Adds the WhatsApp channel to Comms. Read [POWERUP.md](POWERUP.md), the recipe [SPEC.md](../../SPEC.md)
+Adds the WhatsApp channel to Comms. Connect only business WhatsApp numbers (the business's own, or
+a person's number used only for business, with nothing sensitive on it): everything on a connected
+number is stored and every member reads it. WhatsApp may ban numbers that automate. Read [POWERUP.md](POWERUP.md), the recipe [SPEC.md](../../SPEC.md)
 and [GOTCHAS.md](../../GOTCHAS.md) ("WhatsApp channel") first. Do as much as possible yourself; stop
 only for the owner-only steps.
 
@@ -25,19 +27,21 @@ Ask these together:
    the one that keeps the linked devices; a development Box stays off unless it has its own numbers.
 2. **Which agents get a number.** Each agent can have one, optionally. Use a secondary number per
    agent rather than a person's phone: what is typed on a linked phone shows as the agent's sent
-   messages, and WhatsApp may ban numbers that automate.
+   messages, and WhatsApp may ban numbers that automate. Connect only business numbers: everything
+   on a connected number is stored and every member of the Box reads it.
 3. **Send policy.** `approve-all` (the default: every agent message waits for a person) or
    `allowlist` (only sends outside `allowedRecipients` wait). People's replies never wait.
 4. **Trusted senders.** Who may wake an agent: numbers in E.164 (`+4366012345678`), group JIDs, or
    a country prefix (`+43*`). Empty means no WhatsApp message wakes an agent on its own.
 5. **Team phones.** Each team member's WhatsApp number on their user in Settings > Users: their
-   direct chats with an agent's number are handled, and their group messages count as the team's.
-   Whether people may also link their own numbers (My WhatsApp; nothing to configure, each person
-   decides for their number).
-6. **History import.** Whether pairing imports the last `historyDays` (default 30) of the managed
-   chats WhatsApp sends right after linking. Imported messages are stored read and wake nobody.
-   On a person's own number, a kept group can also load older messages later ("Load older",
-   tRPC `commsWhatsappBackfill`): on-demand pages from the phone, back `historyDays`.
+   messages in a group count as the team's. Whether people may also link their own business
+   numbers (Settings > Communications > WhatsApp, or their page in Settings > Users; nothing to
+   configure, each person decides for their number). Such a number is only for business: all of it
+   is stored and every member reads it.
+6. **History import.** Whether pairing imports the last `historyDays` (default 30) of the chats
+   WhatsApp sends right after linking. Imported messages are stored read and wake nobody. A group
+   can also load older messages later ("Load older" on the Groups page, tRPC
+   `commsWhatsappBackfill`): a background job paging from a connected phone, back `historyDays`.
 7. **Limits.** `sendsPerHour` per number (default 10), `mediaRetentionDays` (default 30),
    `maxMediaMb` (default 25), `stopWords` (default `STOP`, `UNSUBSCRIBE`).
 8. **Auto-draft.** Whether an agent drafts a held reply once a client stops writing, and the settle
@@ -52,13 +56,14 @@ Ask for each when it is needed, then wait:
 1. **Pairing.** For each agent: Settings > Communications > WhatsApp, Connect on the agent, then
    scan the QR code on that phone (WhatsApp > Linked devices > Link a device), or choose the code,
    enter the phone's number and type the 8-character code on the phone. Only a person at a browser
-   (an admin) can pair; an agent or a token cannot.
-2. **Groups.** Settings > Communications > WhatsApp > Groups: tick each group the Box handles, pick
-   who handles it when several of our agents are in it, and link it to a CRM account if the CRM
-   recipe is adapted.
+   (an admin) can pair an agent's number; an agent or a token cannot.
+2. **Groups.** Settings > Communications > WhatsApp > Groups: every group of a connected number is
+   listed. Pick who handles each ("Handled by", among our agents whose numbers are in it; none
+   leaves it stored for the team and waking nobody) and link it to a CRM account if the CRM recipe
+   is adapted.
 3. **A person's own number** (optional, each person for themselves): Settings > Communications >
-   WhatsApp > My WhatsApp, Connect, pair as above, then pick the chats to keep. Only that person can
-   pair it and pick its chats; an admin can unlink it.
+   WhatsApp, Connect on their number (or their page in Settings > Users), pair as above. Only that
+   person can pair it; an admin or that person can unlink it.
 
 ## Steps
 
@@ -105,25 +110,27 @@ Ask for each when it is needed, then wait:
 - An account is a linked device of an agent's number, or of a person's own number; its id is the
   owner's id. Its address is the number WhatsApp linked (E.164), recorded in
   `data/comms/whatsapp/<owner>/link.json` when the connection opens. Unlinking, or the phone
-  removing the device, deletes that directory; a person's picked chats and stored messages stay.
+  removing the device, deletes that directory; stored messages stay.
 - An agent's number is paired by an admin for an active agent; a retired agent's number receives
   (stored, waking nobody) but sends nothing. A person's own number is paired by that person (an
   active user), at a browser.
-- A person's own number stores only the chats they pick (`personal_chat` rules), privately (recipe
-  SPEC.md, "Private mailboxes").
+- A connected number, an agent's or a person's, stores every chat. A person's own number is the
+  team's mailbox like any other, never wakes an agent and is never a default sending account
+  (recipe SPEC.md, "People's own accounts").
 - Patterns in `allowedRecipients` and `trustedSenders`: an exact number in E.164 (spaces, dots and
   dashes are stripped), a group JID (`<digits>@g.us`) or a LID JID (`<digits>@lid`) as given, or a
   country prefix `+<digits>*`. Any other wildcard is invalid and reported in `configProblems`.
 - WhatsApp has no sender check beyond its transport: a message is trusted when its sender matches
   `trustedSenders`.
-- Managed groups are `managed_chat` address rules in the warehouse, not configuration.
+- A group's handler is stored on its conversation in the warehouse, not configuration.
 
 ### Who answers a group
 
-A group's handler is set to the agent whose connection picked it. Every inbound group message
-belongs to the handler, whoever it `@`-mentions; its `whatsapp.received`, reply and delegate follow
-the handler. A team member's message waits on the client and wakes nobody unless it mentions the handler. A message from one of our numbers never wakes anyone,
-so agents never loop through WhatsApp.
+A group's handler is set by a person on the Groups page (an agent whose number is in the group, or
+none). Every inbound group message belongs to the handler, whoever it `@`-mentions; its
+`whatsapp.received`, reply and delegate follow the handler. A team member's message waits on the
+client and wakes nobody unless it mentions the handler. A message from one of our numbers never
+wakes anyone, so agents never loop through WhatsApp. A group without a handler wakes nobody.
 
 ## Verify
 
@@ -132,16 +139,16 @@ so agents never loop through WhatsApp.
 2. `box comms-status`: the `whatsapp` channel has no `configProblems`; after pairing, each paired
    agent is in `accounts` with its number and `problem: null`. Settings shows each agent Connected.
 3. With the owner's go-ahead, from a team member's phone: a direct message to an agent's number
-   appears in that agent's inbox; a message in a managed group appears once in All communications
-   and in the handler's inbox, also when it mentions another of our agents.
-4. A held send: `box comms-send --channel whatsapp` to a managed chat answers with
+   appears in that agent's inbox; a message in a group appears once in All communications, and in
+   the handler's inbox when the group has one, also when it mentions another of our agents.
+4. A held send: `box comms-send --channel whatsapp` to a chat answers with
    `status: "pending_approval"` under `approve-all`; a person approves it in Comms and the message
    arrives on the phone. A person's reply from Comms goes out at once, from the conversation's
-   number. A send to a chat that is not managed is refused.
-5. When someone linked their own number: a chat they did not pick stores nothing; a picked chat
-   appears in their inbox and in no other person's Comms; `box comms-send --channel whatsapp
-   --from <their id>` from an agent waits, and only they can approve it.
-6. With auto-draft: a client writes three messages within a minute in a managed group; one
+   number.
+5. When someone linked their own number: its chats are stored and any member reads them in Comms;
+   a message there wakes no agent; `box comms-send --channel whatsapp --from <their id>` from an
+   agent waits, and any person at a browser can approve it.
+6. With auto-draft: a client writes three messages within a minute in a group with a handler; one
    `comms.conversation.settled` event names all three after the window, and one held draft
    follows. A team member who answers first leaves no event. A message while the draft runs
    redrafts once after it.

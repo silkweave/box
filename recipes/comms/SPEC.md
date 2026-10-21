@@ -12,7 +12,7 @@ message on every channel, in either direction, is a row of `comms_messages`.
 - **Powerups**: [email](./powerups/email/POWERUP.md) (the Email channel, sending through Resend),
   [email-inbound](./powerups/email-inbound/POWERUP.md) (receiving email through the relay),
   [whatsapp](./powerups/whatsapp/POWERUP.md) (the WhatsApp channel: a linked device per agent
-  number, managed groups and team chats).
+  number, every chat stored, groups handled by one agent, and people's own business numbers).
 
 Without a channel powerup the feature boots, `comms-status` returns `channels: []`, and the Comms
 view and Settings say no channel is added yet.
@@ -55,7 +55,7 @@ A channel powerup adds one line each to `core/index.ts` (its barrel), `server/co
 ## Accounts
 
 An account is a mailbox on one channel owned by one agent, or by a person where the channel offers
-people's own accounts (Private mailboxes) (core/accounts.ts, `CommsAccount`: `id`, `owner`,
+people's own accounts (People's own accounts) (core/accounts.ts, `CommsAccount`: `id`, `owner`,
 `ownerKind`, `address`, `name`, `problem`). Its `id` is the mailbox key stored in
 `comms_messages.account`. No account is special, and an owner has at most one account per channel.
 Entries in `accounts.<channel>` (`id`, `user` = the owner, `login` = the address) are validated with
@@ -110,8 +110,8 @@ conversation (ids recomputed and carried through messages and favourites).
 | table | pk | what it holds |
 |---|---|---|
 | `comms_messages` | `id` | one message: `channel`, `account` (the account id, `shared:<id>`, or empty for mail no mailbox has), `mailbox` (the mailbox's public address at the time), `direction` (`in`/`out`), `status`, `external_id` (the transport's id), `message_id` (the protocol id other messages reference), `in_reply_to`, `references_ids`, `thread_id`, `from_addr`, `to_addrs`, `cc_addrs`, `reply_to`, `subject`, `body_text`, `body_html`, `attachments` (metadata only), `verification` (the sender checks the transport reported), `trusted`, `error`, `fetch_attempts` (inbound fetches, or outbound follow-ups), `occurred_at`, `read_at`, `sent_by`, `decided_by`, `decided_at`, `released_by`, `released_at`, `conversation_id`, `kind` (`text` or the channel's media kind), `media` (stored media items), `meta` (channel detail: sender role, mentions, format, draft recommendation, completion marks), `edited_by` (who edited a held draft), `seq` (order within a conversation), timestamps |
-| `comms_conversations` | `id` | one email thread or chat in one mailbox: `id` = `conversationKey(channel, scope, peer)`, `scope` (the account id, `shared:<id>`, or `group`: a group chat is one conversation for the whole Box, whichever of our accounts stored its messages), `handler` (the agent that answers a group, whose inbox shows it, changeable among our agents in the group; null otherwise), `peer` (thread root or chat JID), `kind` (`direct`/`group`), `title`, `participants`, `contact_id`, `crm_account_id`, `status` (`open`/`waiting`/`done`), `assignee`, `delegated_by`, `delegated_at`, `delegate_job`, timestamps |
-| `comms_address_rules` | `channel`, `kind`, `pattern` | an exact address added in Comms: `kind` (`trusted_sender`/`allowed_recipient`, or `managed_chat`: a WhatsApp group the Box handles), `added_by`, `added_at`, `source_id` (the message it came from) |
+| `comms_conversations` | `id` | one email thread or chat in one mailbox: `id` = `conversationKey(channel, scope, peer)`, `scope` (the account id, `shared:<id>`, or `group`: a group chat is one conversation for the whole Box, whichever of our accounts stored its messages), `handler` (the agent that answers a group, whose inbox shows it, changeable among our agents in the group; null when nobody handles it, and for every other conversation), `peer` (thread root or chat JID), `kind` (`direct`/`group`), `title`, `participants`, `contact_id`, `crm_account_id`, `status` (`open`/`waiting`/`done`), `assignee`, `delegated_by`, `delegated_at`, `delegate_job`, timestamps |
+| `comms_address_rules` | `channel`, `kind`, `pattern` | an exact address added in Comms: `kind` (`trusted_sender`/`allowed_recipient`), `added_by`, `added_at`, `source_id` (the message it came from) |
 | `comms_optouts` | `channel`, `address` | an address never messaged again, by anyone: `reason` (`stop_word`/`manual`), `source_id`, `added_by`, `added_at` |
 | `comms_favorites` | `user_id`, `conversation_id` | a person's starred conversation, `added_at` |
 
@@ -148,18 +148,18 @@ UUIDs; a channel picks deterministic inbound ids so a replayed delivery is a no-
 
 ### Group handler
 
-A WhatsApp group is one conversation for the Box, answered by one of our agents: its `handler`.
-Every inbound group message belongs to the handler (`comms_messages.account`), whoever it
-`@`-mentions, so the row is the same whichever of our connections stores it. Everything follows the
+A WhatsApp group is one conversation for the Box, whichever of our numbers stores it. It is
+handled when an agent of ours is its `handler`. Every inbound group message belongs to the handler
+(`comms_messages.account`), whoever it `@`-mentions, so the row is the same whichever of our
+connections stores it; with no handler it belongs to the connection that stored it. Everything follows the
 handler: `whatsapp.received` carries it as `agent` and `account`, a reply goes out from its number,
 and delegate drafts as it. Mentions are stored readable on every connection (each records its own
 number's LID in `link.json`). A team member's group message waits on the client and records no
 event unless it mentions the handler: then it is a request to the handler, opens the conversation and wakes it. A message
-one of our numbers writes never wakes anyone. The handler is set when the group is picked (the
-picking connection's agent) and changed by a person in Settings > Communications > WhatsApp >
-Groups ("Handled by"; `comms-whatsapp/handler`, tRPC
-`commsWhatsappHandler`), only to one of our agents WhatsApp lists in the group now; with no
-connection live the change is refused.
+one of our numbers writes never wakes anyone. The handler is set by a person in Settings >
+Communications > WhatsApp > Groups ("Handled by"; tRPC `commsWhatsappHandler`), among our agents
+whose numbers WhatsApp lists in the group now, or cleared: a group without a handler is stored
+for the team and wakes nobody.
 
 ### Settle window
 
@@ -287,25 +287,21 @@ has `id`, `address`, `name`, `inbound`, `allowPeopleSend`, `allowSystemSend`). T
 - Their messages are never trusted and record no event of any kind, so they can never wake an agent.
 - A conversation stays inside its channel and mailbox: a shared thread never pulls in agent mail.
 
-## Private mailboxes
+## People's own accounts
 
-A channel may offer people's own accounts (WhatsApp: a person links their own number). The channel
-names the person who owns a mailbox from its account id alone (`CommsChannel.privateOwner`), so a
-mailbox stays private after its account is gone. A private mailbox:
+A channel may offer people's own accounts (WhatsApp: a person links their own business number).
+Such a mailbox is the team's like any other: every member reads it, in Comms and through the
+tools. It differs in who may act from it:
 
-- Is read by its owner and by agents only. For any other person, every read (`comms-status`
-  accounts and counts, `comms-list`, `comms-read`, `comms-thread`, `comms-conversations`,
-  `comms-conversation`, media, members, pictures) leaves it out or answers as if it did not exist,
-  and every conversation action (reply, favourite, status, assignee, delegate) is refused the same
-  way (`hiddenMailboxes`, `mailboxVisible`).
-- Never wakes an agent: no `<channel>.received`, nothing to trust or release, no Untrusted folder,
-  and a contact's stop word there opts nobody out of the Box.
-- Sends as its owner: the owner's own reply from Comms goes out at once, never held. An agent may
-  send or draft from it (`from`, or a reply in its conversation); every such send waits for a
-  person whatever the send policy, and only the owner can approve, edit or deny it (anyone else gets
-  "no held send"). Another person cannot send from it. It is never a default `from`.
+- It never wakes an agent: no `<channel>.received`, nothing to trust or release, no Untrusted
+  folder. Only agents run, so only an agent's account wakes one (`wakeAccount`).
+- Any person may send from it in Comms, at once, never held. An agent may send or draft from it
+  (`from`, or a reply in its conversation); every such send waits for a person whatever the send
+  policy, and any person at a browser session may approve, edit or deny it.
+- It is never the default sending account: it is used only when named with `from` or when
+  replying in its conversation.
 - Delegate on one of its conversations runs as the Box's agent (`box.json` `agent`), drafting for
-  the owner to approve.
+  a person to approve.
 
 ## Procedures and tools
 
@@ -400,9 +396,11 @@ exfiltration or to spam in the team's name. The layers, each enforced in code or
   as a list (each row opens the channel's page, `#settings/comms/<channel>`, with the breadcrumb
   "Communications › <channel>"), the held-send queue and its limits, and opt-outs. A channel's page
   starts with its status and problems, then compact groups of facts and address lists.
-  WhatsApp lists every agent under Numbers (number, state, Connect with pairing inline, or Unlink);
-  the same row shows on the agent's page in Settings > Users (the channel's `UserPanel`, contributed
-  to core's `users.detail` slot).
+  WhatsApp has an overview (status and problems, and one Numbers list of every agent's and person's
+  business number with Connect, pairing inline, or Unlink) and two pages, Groups and Guardrails; the
+  same number row shows on a user's page in Settings > Users (the channel's `UserPanel`,
+  contributed to core's `users.detail` slot). Email lists its mailboxes in one table, shared
+  mailboxes as "Receive-only mailboxes".
 
 Quoted reply history of a received message is folded behind a quiet `···` toggle where the channel
 provides `splitQuoted`; a quote written in the Box stays in the body. Display only: `comms-read` and `comms-thread` return the full body.
@@ -423,8 +421,7 @@ contract lives in `features/comms/web/lib/commsExtensions.ts` (`COMMS_SLOTS`, th
 
 `conversation` is the web `CommsConversation` (`lib/useCommsData.ts`). On the server a contributor
 reads conversations through the exported readers in `core/conversations.ts` and `core/accounts.ts`
-(`conversationOrRefuse`, `conversationMessages`, `conversationPage`, `assertConversationVisible`
-for the caller's private-mailbox gate) and `messageBodyText`; it never writes a Comms table.
+(`conversationOrRefuse`, `conversationMessages`, `conversationPage`) and `messageBodyText`; it never writes a Comms table.
 Importing them makes the contributor depend on Comms (declare `dependsOn: ['comms']`).
 
 ## What a team customises

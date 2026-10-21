@@ -121,31 +121,35 @@ operation state in _docs/INTEGRATION.md.
   takes RECENT only when the owner chose a history import and never FULL; history messages are
   stored only with that choice. A device linked while all syncs were refused needs a re-pair to
   get the mappings.
-- **WhatsApp: older messages come from the phone, one page at a time.** "Load older" sends
-  `fetchMessageHistory` anchored on the chat's oldest stored message; the phone answers with an
+- **WhatsApp: older messages come from the phone, one page at a time.** "Load older" is a
+  background job per group (any person at a browser), queued one at a time per phone. It pages
+  from a connected phone in the group (the handler's, else the first connected number in it) with
+  `fetchMessageHistory` anchored on the group's oldest stored message, back `historyDays`, storing
+  read and waking nobody. Its state shows on the Groups page and persists in
+  `data/comms/whatsapp/history.json`; a job a restart interrupted reads as stopped. Each page is
+  one request: anchored on the chat's oldest stored message, the phone answers with an
   ON_DEMAND history sync that the connection hands to the waiting request, never to the pairing
   import. It needs one stored message in the chat to anchor on and the phone online; a page that
   does not come within 45 seconds ends the run, and WhatsApp decides how far back the phone answers.
   Groups only: a direct chat's JID on the phone may be its LID, which the anchor cannot name.
 - **WhatsApp: group JIDs in settings are taken as they are.** `allowedRecipients` and
   `trustedSenders` accept `<digits>@g.us` and `<digits>@lid` unchanged; number formatting (spaces,
-  dots, dashes) is stripped from phone entries only. Managed groups are not configuration: they are
-  picked in Settings and kept in the warehouse.
-- **WhatsApp: only managed chats exist for the Box.** A group is handled once it is ticked in
-  Settings > Communications > WhatsApp > Groups; a direct chat only when a Box user carries the
-  number as their phone. Everything else (client direct messages, other groups, a chat WhatsApp
-  names only by LID) is dropped, not held: its messages are never stored, so managing the chat
-  later does not bring them back. The WhatsApp settings count what was dropped since boot.
-- **WhatsApp: a person's own number keeps only what they pick, and is private.** Nothing of it is
-  stored until its owner picks a chat; a chat dropped before the pick does not come back. Its
-  messages are hidden from other people everywhere (lists, counts, media, pictures), never wake an
-  agent, and an agent's send from it waits for its owner alone. Two people who both linked their
-  numbers and pick their chat with each other: each message is stored once, in whichever mailbox
-  stored it first, so a chat with one of our numbers cannot be picked at all.
-- **WhatsApp: the linked number's own messages are outbound.** When the agent's number is a
-  person's phone, what that person types on the phone or in a group lands in Sent (`sentFrom:
-  phone`), not the Inbox. A group message from another of our numbers is that account's outbound
-  message too, whichever of our connections stores it first.
+  dots, dashes) is stripped from phone entries only. A group's handler is not configuration: it is
+  set in Settings and kept in the warehouse.
+- **WhatsApp: a connected number stores every chat.** Every group and every direct chat of a linked
+  number is stored, live and (when chosen at pairing) the recent history WhatsApp sends right after
+  linking, up to `historyDays`. Nothing is dropped and nothing is picked per chat, so everything on
+  a connected number is stored and every member reads it: connect only business numbers (the
+  business's own, or a person's number used only for business). A group is one Box conversation
+  whichever number stores it; it wakes only its handler, and a group with no handler is stored for
+  the team and wakes nobody. A direct chat wakes the agent whose number holds it, and nobody on a
+  person's own number. One function decides this (`wakeAccount`) for completion, release, settle
+  (the handler at settle time) and the Untrusted folder. Two people who linked their numbers and
+  chat with each other: each message is stored once, in whichever mailbox stored it first.
+- **WhatsApp: authorship is the same whichever connection stores a message.** In a group, what an
+  agent's number wrote is that account's outbound message (in Sent), and what a person's own number
+  wrote is a team member's message (inbound, role team). In a direct chat, what the connection's
+  own number wrote is outbound (`sentFrom: phone` when typed on the phone).
 - **WhatsApp: mentions are `@<number>` on the wire.** WhatsApp puts the mentioned person's number
   (or LID, `@227947621400745`) in the text and their JID in the message context's `mentionedJid`;
   the phone shows the contact's name only because it resolves the JID itself. Comms stores the
