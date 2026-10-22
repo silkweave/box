@@ -5,7 +5,8 @@ description: Validate a Silkweave Box after source integration or upgrade, inclu
 
 # Verify a Box
 
-Read `docs/UPSTREAM.md`, `docs/INTEGRATION.md`, and `docs/GOTCHAS.md` first. Establish the source
+Read `docs/UPSTREAM.md`, `docs/INTEGRATION.md` (the rules), the record in `_docs/INTEGRATION.md`
+if one exists, and `docs/GOTCHAS.md` first. Establish the source
 revision, local changes, migration state, backup location, and unresolved work. Do not call a
 partial check a verified Box.
 

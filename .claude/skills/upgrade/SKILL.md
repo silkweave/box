@@ -5,7 +5,8 @@ description: Advance a consumer Box's source-linked core from one recorded Stack
 
 # Upgrade core
 
-Read `docs/UPSTREAM.md`, `docs/INTEGRATION.md`, and `docs/GOTCHAS.md` before comparing source.
+Read `docs/UPSTREAM.md`, `docs/INTEGRATION.md` (the rules), the record in `_docs/INTEGRATION.md`
+if one exists, and `docs/GOTCHAS.md` before comparing source.
 Record the old and target Stack SHAs and intended scope before changing files. A SHA identifies a
 committed upstream state; record consumer uncommitted changes separately and preserve them as the
 local side of the three-way comparison.
@@ -36,7 +37,7 @@ registry or an access key; only fetching new versions needs them. Keep `stack.so
 `registry` in `box.json` and any `box.local.json` override as the owner configured them.
 
 Use the latest available dependencies. Record any necessary pin and its reason in
-`docs/GOTCHAS.md`. Write resume state to `docs/INTEGRATION.md` before each migration or source
+`docs/GOTCHAS.md`. Write resume state to `_docs/INTEGRATION.md` before each migration or source
 mutation and reconcile actual files and ledgers after an interruption.
 
 Inspect migration identities and bodies before touching data. Preserve shipped migrations
@@ -47,7 +48,7 @@ minimum migration runner, registration, imports, and dependencies are present be
 
 Run focused checks and then the complete Box validation chain. Update `docs/UPSTREAM.md` with the
 completed core SHA only after the full chain and boot check pass. Put incomplete work, rollback, and
-decisions in `docs/INTEGRATION.md`; retain the prior completed SHA until then.
+decisions in `_docs/INTEGRATION.md`; retain the prior completed SHA until then.
 
 
 The warehouse ledger keys by `<feature>:<migration name>` and checks a digest. Chat's private

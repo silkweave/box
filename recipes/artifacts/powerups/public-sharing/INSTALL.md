@@ -91,7 +91,7 @@ Run from the Box root. With an API token, prefix each `bunx wrangler` command wi
    URL and `publicBaseUrl` to the public address (the same URL when there is no custom domain). The
    Box reads them on the next request; no restart.
 7. **Record** the powerup with the fetched version and sha256 in the `recipes` ledger of `box.json`, the Worker and bucket names and the public address
-   in `docs/UPSTREAM.md`, and the session in `docs/INTEGRATION.md`. No secret goes in either.
+   in `docs/UPSTREAM.md`, and the session in `_docs/INTEGRATION.md`. No secret goes in either.
 
 ## Verify
 

@@ -34,7 +34,8 @@ Most recipe documents also ship with core in `recipes/<id>/`. When this Box has 
 docs stay with the adapted feature. Read `RECIPE.md`, `SPEC.md`, `INSTALL.md`, `AGENT.md` and
 `GOTCHAS.md` from the version you fetched. The recipes listed under `## Builds on` in
 `RECIPE.md` must already be adapted; adapt them first, one at a time. Then read `docs/UPSTREAM.md`,
-`docs/INTEGRATION.md`, and `docs/GOTCHAS.md` in the Box before editing. Those records define
+`docs/INTEGRATION.md` (the rules), the record in `_docs/INTEGRATION.md` if one exists, and
+`docs/GOTCHAS.md` in the Box before editing. Those records define
 ancestry, incomplete work, local decisions, and known collisions.
 
 ## 2. Read the reference implementation
@@ -61,7 +62,7 @@ the answers with the plan.
 
 
 Write the intended scope, source commits, current local state, and planned backup to
-`docs/INTEGRATION.md` before editing. Update that record as each meaningful step completes so an
+`_docs/INTEGRATION.md` (gitignored; create `_docs/` if needed) before editing. Update that record as each meaningful step completes so an
 interrupted run can resume from actual files and database ledgers. Do not copy recipe documents
 into the feature tree; they live in `recipes/<id>/` (refreshed with core when core ships them).
 
@@ -105,7 +106,7 @@ Run focused build, typecheck, lint, tests, and schema checks before handing off.
 module, run `bun run test:mobile` and the app against the disposable Box; say plainly when Flutter
 is not installed and the mobile check only reported a skip. Record source SHAs,
 paths, preserved customizations, migration identities, backup location, validation, and remaining
-work in `docs/INTEGRATION.md` and `docs/UPSTREAM.md`. Do not record a completed source SHA until the
+work in `_docs/INTEGRATION.md`, and path decisions in `docs/UPSTREAM.md`. Do not record a completed source SHA until the
 full validation chain and boot check pass. Then record the outcome in the `recipes` ledger of
 `box.json`: add the recipe once the chain passes, with the `version` and `sha256` that
 `box recipe fetch` printed (`"<id>": { "powerups": [], "version": "<sha>", "sha256": "<digest>" }`),
