@@ -48,7 +48,7 @@ vi.mock('../agent/workerdeck.config.js', async (importOriginal) => ({
   }),
 }))
 vi.mock('@workerdeck/server', () => ({
-  createFileSessionStore: () => ({}),
+  createFileSessionRecordStore: () => ({}),
   createWorkerServer: vi.fn(() => fake.worker),
 }))
 

@@ -3,7 +3,7 @@ import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { IncomingMessage } from 'node:http'
-import { createFileSessionStore, createMemoryProfileStore, createWorkerServer, type WorkerServer, type WorkerServerOptions } from '@workerdeck/server'
+import { createFileSessionRecordStore, createMemoryProfileStore, createWorkerServer, type WorkerServer, type WorkerServerOptions } from '@workerdeck/server'
 import type { CreateJobRequest, JobEvent, JobInfo, ProfileInfo, SessionEvent, SessionInfo } from '@workerdeck/protocol'
 import { agentProfileMapFor, agentSessionAccess, repoRoot, resolvePrincipalById } from '@silkweave/box-core'
 import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, workerdeckProfileInfo, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
@@ -355,10 +355,10 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
     // the first turn. requireAvailableProfile stays unset: the probe produces standing false
     // negatives, and a 503 on a profile that works is worse than a late failure.
     checkCredentials: true,
-    // Parked/dormant session records inside the Box instance, beside the warehouse. STATED rather
+    // Session records inside the Box instance, beside the warehouse. STATED rather
     // than defaulted so it cannot drift onto workerdeck's own cwd-relative `.workerdeck/parked`,
     // which a second Box on this machine would also want.
-    parking: { store: createFileSessionStore({ dir: parkedDir(deployment) }) },
+    sessions: { store: createFileSessionRecordStore({ dir: parkedDir(deployment) }) },
     // The job queue runs agent triggers unattended (features/automation). In-memory: a restart
     // loses queued and running jobs, and the Box marks their runs orphaned at boot. Only the
     // loopback listener can submit (agent.mount.ts refuses /jobs and /queue from browsers).

@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { createFileSessionStore, createWorkerServer, type WorkerServerOptions } from '@workerdeck/server'
+import { createFileSessionRecordStore, createWorkerServer, type WorkerServerOptions } from '@workerdeck/server'
 import { supportsPermissionMode, type PermissionMode, type ProfileInfo, type SessionInfo } from '@workerdeck/protocol'
 import type { AttachmentInput, Runner } from '@workerdeck/core'
 import { boxJson } from '@silkweave/box-core'
@@ -31,7 +31,8 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
     basePath: '/v1', profiles, allowedCwdRoots: [paths.repoRoot],
     hostFiles: { roots: [paths.repoRoot], write: true, ignore: ['.git', 'data', 'node_modules', 'box.local.json', '.env', '.env.*'] },
     shell: { enabled: false }, disableBypassPermissions: true, checkCredentials: true,
-    parking: { store: createFileSessionStore({ dir: builderRunnerRoot(paths) }), persistLive: true },
+    sessions: { store: createFileSessionRecordStore({ dir: builderRunnerRoot(paths) }) },
+    parking: { persistLive: true },
     authenticate(req) {
       const supplied = req.headers['x-workerdeck-key'] ?? new URL(req.url ?? '/', 'http://local').searchParams.get('key')
       if (typeof supplied !== 'string' || supplied.length !== key.length || !timingSafeEqual(Buffer.from(supplied), Buffer.from(key))) return null

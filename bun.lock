@@ -38,11 +38,11 @@
         "@tiptap/starter-kit": "^3.31.3",
         "@trpc/client": "^11.19.0",
         "@trpc/server": "^11.19.0",
-        "@workerdeck/client": "^3.12.1",
-        "@workerdeck/core": "^3.12.1",
-        "@workerdeck/protocol": "^3.12.1",
-        "@workerdeck/server": "^3.12.1",
-        "@workerdeck/ui": "^3.12.1",
+        "@workerdeck/client": "^4.0.0",
+        "@workerdeck/core": "^4.0.0",
+        "@workerdeck/protocol": "^4.0.0",
+        "@workerdeck/server": "^4.0.0",
+        "@workerdeck/ui": "^4.0.0",
         "class-transformer": "^0.5.1",
         "class-validator": "^0.15.1",
         "http-proxy-middleware": "^4.2.0",
@@ -94,9 +94,9 @@
         "@silkweave/trpc": "^5.2.2",
         "@silkweave/typegen": "^5.2.2",
         "@trpc/server": "^11.19.0",
-        "@workerdeck/core": "^3.12.1",
-        "@workerdeck/protocol": "^3.12.1",
-        "@workerdeck/server": "^3.12.1",
+        "@workerdeck/core": "^4.0.0",
+        "@workerdeck/protocol": "^4.0.0",
+        "@workerdeck/server": "^4.0.0",
         "class-transformer": "^0.5.1",
         "class-validator": "^0.15.1",
         "http-proxy-middleware": "^4.2.0",
@@ -128,10 +128,10 @@
         "@tabler/icons-react": "^3.47.0",
         "@tanstack/react-router": "^1.170.38",
         "@trpc/client": "^11.19.0",
-        "@workerdeck/client": "^3.12.1",
-        "@workerdeck/protocol": "^3.12.1",
-        "@workerdeck/react": "^3.12.1",
-        "@workerdeck/ui": "^3.12.1",
+        "@workerdeck/client": "^4.0.0",
+        "@workerdeck/protocol": "^4.0.0",
+        "@workerdeck/react": "^4.0.0",
+        "@workerdeck/ui": "^4.0.0",
         "html-to-image": "^1.11.13",
         "lucide-react": "^1.47.0",
         "monaco-editor": "^0.56.0",
@@ -1071,23 +1071,23 @@
 
     "@webcontainer/env": ["@webcontainer/env@1.1.1", "", {}, "sha512-6aN99yL695Hi9SuIk1oC88l9o0gmxL1nGWWQ/kNy81HigJ0FoaoTXpytCj6ItzgyCEwA9kF1wixsTuv5cjsgng=="],
 
-    "@workerdeck/client": ["@workerdeck/client@3.12.1", "", { "dependencies": { "@workerdeck/protocol": "3.12.1" } }, "sha512-pDJLetr1LYxBzY/ng1I84jGFynJSiLMvhE+cUaDonsVJmCB5k9Rml2Yqse5Ei/SBDegqSw/5lA3jWrnmwMmhAw=="],
+    "@workerdeck/client": ["@workerdeck/client@4.0.0", "", { "dependencies": { "@workerdeck/protocol": "4.0.0" } }, "sha512-hfiPbaZx8Gl/z7qd6nDu0sOX9yzAQhUcTyZXa60x9S1v0sf3KLeDW2uY+n4pSijGJbYVw7xRCmoTVwu43o3clg=="],
 
-    "@workerdeck/core": ["@workerdeck/core@3.12.1", "", { "dependencies": { "@ai-sdk/mcp": "^2.0.53", "@anthropic-ai/claude-agent-sdk": "^0.3.293", "@workerdeck/protocol": "3.12.1", "@workerdeck/sandbox": "3.12.1", "ai": "^7.0.106" }, "peerDependencies": { "@openai/codex": ">=0.149.0 <0.163.0" }, "optionalPeers": ["@openai/codex"] }, "sha512-u4XetOaVW2tcCSBf28400n/VKdg4RlIRFOokEaqwoI0ROWGcjgwW8V2p0fAjfWL5SiuYaNlao8IbugJyJvryBg=="],
+    "@workerdeck/core": ["@workerdeck/core@4.0.0", "", { "dependencies": { "@ai-sdk/mcp": "^2.0.53", "@anthropic-ai/claude-agent-sdk": "^0.3.293", "@workerdeck/protocol": "4.0.0", "@workerdeck/sandbox": "4.0.0", "ai": "^7.0.106" }, "peerDependencies": { "@openai/codex": ">=0.149.0 <0.163.0" }, "optionalPeers": ["@openai/codex"] }, "sha512-TUXSBqKBhvTQQLWONU7CzOyV9bluU31AYa6dzJDgbQHkejBG2UwFjLmwP7AXJ85O+d2AV1Xc3EuFTHxP/IPnPA=="],
 
-    "@workerdeck/protocol": ["@workerdeck/protocol@3.12.1", "", {}, "sha512-PMGo4OAO7rZWJLUvWQphLVgkYUouYX+zXkNm/F6JGMd2FeFaF+tqZ2+Zw9fBWvbLAlJwlSU+p10CuDKzTKgtWQ=="],
+    "@workerdeck/protocol": ["@workerdeck/protocol@4.0.0", "", {}, "sha512-iZgUanlidH2ac1OkLUa6meMQuYaJm5HQ2Z2towu21G5uLhFVXoZHMFYyy/1n0BCJjxRovRR5ZhcbbyFhoUVDzQ=="],
 
-    "@workerdeck/queue": ["@workerdeck/queue@3.12.1", "", { "dependencies": { "@workerdeck/core": "3.12.1", "@workerdeck/protocol": "3.12.1" } }, "sha512-f/S/leW4ZL2FJA7gYjdCuFKw1A3I0dx2V80qXWrHsDcYKXZ3kaALx8ZDRMHfZxj8t3AtRRGA8GHfQTEBf/nsNw=="],
+    "@workerdeck/queue": ["@workerdeck/queue@4.0.0", "", { "dependencies": { "@workerdeck/core": "4.0.0", "@workerdeck/protocol": "4.0.0" } }, "sha512-YxRq9GMiD0gliJN4eRS/rXMlMhEB2H2NsYDTqPxl2YrY6z4P1w04Stv7j5eCNBVjp/XXME3t8Aw9JsBt2Xex5A=="],
 
-    "@workerdeck/react": ["@workerdeck/react@3.12.1", "", { "dependencies": { "@workerdeck/client": "3.12.1", "@workerdeck/protocol": "3.12.1", "@workerdeck/sandbox": "3.12.1" }, "peerDependencies": { "@jitl/quickjs-singlefile-browser-release-asyncify": "^0.31.0", "react": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["@jitl/quickjs-singlefile-browser-release-asyncify"] }, "sha512-oVHU3VOBUst79flWdEmLchxpClWxoW28cLCBHvR2tPY4JbVY1rnezuQN38i2QKLAYaejMCED7Vdq3wtC16s2yg=="],
+    "@workerdeck/react": ["@workerdeck/react@4.0.0", "", { "dependencies": { "@workerdeck/client": "4.0.0", "@workerdeck/protocol": "4.0.0", "@workerdeck/sandbox": "4.0.0" }, "peerDependencies": { "@jitl/quickjs-singlefile-browser-release-asyncify": "^0.31.0", "react": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["@jitl/quickjs-singlefile-browser-release-asyncify"] }, "sha512-GFw467iecEuJmIxV4PnrEAXsZAhFebUSQcmKPv11vzDEfn0+HXXKHW20IHt7IPKdH3jG6mTWbYWLOhHx8bF92Q=="],
 
-    "@workerdeck/relay-client": ["@workerdeck/relay-client@3.12.1", "", { "dependencies": { "@workerdeck/protocol": "3.12.1", "ws": "^8.21.3" } }, "sha512-fHZd+yQdb6qU6zZKZUJ1U4umXtj6KkN+w9RnD3SZpan7RXXh+/fIPzO3WOFKsJYB9+pb+/ZXAkJBbS418KyY9A=="],
+    "@workerdeck/relay-client": ["@workerdeck/relay-client@4.0.0", "", { "dependencies": { "@workerdeck/protocol": "4.0.0", "ws": "^8.21.3" } }, "sha512-1y53QRXZ6YJ9eFymTgW8+9Y22uG8rx0c5t6zFjrBpo6xlioIys8y8D/+d1A8ACypzAubykSQOdo1mHeKC9OEJg=="],
 
-    "@workerdeck/sandbox": ["@workerdeck/sandbox@3.12.1", "", { "dependencies": { "quickjs-emscripten-core": "^0.31.0" } }, "sha512-ng/Nze24qZXbKX1pphPBObTPN/1aBxySFYDOsEvlA/6Gs7SdtCg04d4nWFbZrBHdWPanLgtTHNklqOh+c+EPqg=="],
+    "@workerdeck/sandbox": ["@workerdeck/sandbox@4.0.0", "", { "dependencies": { "quickjs-emscripten-core": "^0.31.0" } }, "sha512-e8gzYsdQT1YjHQNL4P7l86t9g41PachDvM7kYjpSmBae52saZk4aVtIDBVzGFndf1OT0hJWKLS0R2nrdsWMLMg=="],
 
-    "@workerdeck/server": ["@workerdeck/server@3.12.1", "", { "dependencies": { "@workerdeck/core": "3.12.1", "@workerdeck/protocol": "3.12.1", "@workerdeck/queue": "3.12.1", "@workerdeck/relay-client": "3.12.1", "@xterm/headless": "^6.0.0", "ws": "^8.21.3" }, "optionalDependencies": { "@lydell/node-pty": "^1.2.0-beta.15" } }, "sha512-Geljso2k5oDayFakF0xln+T72IA5XUtahk7z3W2uHfcPknrn5uH/nFQyMc4ePS42BIg+G5WQBz30YRyOxU2loQ=="],
+    "@workerdeck/server": ["@workerdeck/server@4.0.0", "", { "dependencies": { "@workerdeck/core": "4.0.0", "@workerdeck/protocol": "4.0.0", "@workerdeck/queue": "4.0.0", "@workerdeck/relay-client": "4.0.0", "@xterm/headless": "^6.0.0", "ws": "^8.21.3" }, "optionalDependencies": { "@lydell/node-pty": "^1.2.0-beta.15" } }, "sha512-iWPlxZMurlBrISU01E+gO37TAP/OpxFqHqLAs7cuHYDd/tPoCaIOVmFdYkKQceXVx26yITocqZdd1bjAdobloQ=="],
 
-    "@workerdeck/ui": ["@workerdeck/ui@3.12.1", "", { "dependencies": { "@base-ui/react": "^1.8.0", "@tanstack/react-virtual": "^3.14.13", "@workerdeck/client": "3.12.1", "@workerdeck/protocol": "3.12.1", "@workerdeck/react": "3.12.1", "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "lucide-react": "^1.47.0", "sonner": "^2.0.8", "streamdown": "^2.6.0", "tailwind-merge": "^3.7.0", "use-stick-to-bottom": "^1.1.6" }, "peerDependencies": { "@xterm/addon-fit": "^0.11.0", "@xterm/xterm": "^6.0.0", "monaco-editor": "^0.56.0", "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["@xterm/addon-fit", "@xterm/xterm", "monaco-editor"] }, "sha512-lypBpWEPKA+eyYeZlpzeVVFx6+U/20SLhnEbeZt0mlA987/hwvkyI1qIY0+yfHUlsXpbl1cKE0LwHSf+QCbEmw=="],
+    "@workerdeck/ui": ["@workerdeck/ui@4.0.0", "", { "dependencies": { "@base-ui/react": "^1.8.0", "@tanstack/react-virtual": "^3.14.13", "@workerdeck/client": "4.0.0", "@workerdeck/protocol": "4.0.0", "@workerdeck/react": "4.0.0", "class-variance-authority": "^0.7.1", "clsx": "^2.1.1", "lucide-react": "^1.47.0", "sonner": "^2.0.8", "streamdown": "^2.6.0", "tailwind-merge": "^3.7.0", "use-stick-to-bottom": "^1.1.6" }, "peerDependencies": { "@xterm/addon-fit": "^0.11.0", "@xterm/xterm": "^6.0.0", "monaco-editor": "^0.56.0", "react": "^18.0.0 || ^19.0.0", "react-dom": "^18.0.0 || ^19.0.0" }, "optionalPeers": ["@xterm/addon-fit", "@xterm/xterm", "monaco-editor"] }, "sha512-IhsA0+uJpnbVDmJJeQpbrIExXdumTpMUHOmy1LE7nfyiRvMozR70tuwfPe1WRC41iWeBe4FfYycQ2hdua908tw=="],
 
     "@workflow/serde": ["@workflow/serde@4.1.0", "", {}, "sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ=="],
 
