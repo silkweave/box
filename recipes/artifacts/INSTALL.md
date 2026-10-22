@@ -3,9 +3,8 @@
 This is the adaptation guide for the artifacts recipe. Read [RECIPE.md](./RECIPE.md), [SPEC.md](./SPEC.md),
 the recipe [GOTCHAS.md](./GOTCHAS.md), the Box's docs/UPSTREAM.md, and its current
 _docs/INTEGRATION.md before changing files. These recipe documents ship with core, so a Box has them
-at `recipes/artifacts/`. The reference implementation does not: it lives in the Stack at
-`features/artifacts/`. In a Box, run `box stack fetch --ref <recorded Stack SHA>` and read
-`<fetched stack>/features/artifacts/`, so the documents and the code come from the same Stack revision.
+at `recipes/artifacts/`. The reference implementation does not: it is fetched from the recipe registry as `features/artifacts/`. In a Box, run `box recipe fetch artifacts` and read `<fetched recipe>/features/artifacts/` (`<fetched recipe>` is the path it prints),
+so the documents and the code come from the same version.
 
 ## Prerequisites
 
@@ -17,13 +16,13 @@ at `recipes/artifacts/`. The reference implementation does not: it lives in the 
 - Feature-specific package imports: `tar` and `lucide-static` (core), `better-sqlite3` (core, already
   a root dependency for chat), `pindrop.js` (toolbar). Install latest into the root workspace
   package. `react`, `lucide-react` and the shared UI come from the root workspace already.
-- A recorded source SHA in docs/UPSTREAM.md, and an integration entry with scope, target SHA,
+- The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes, and state in _docs/INTEGRATION.md.
 - A disposable instance for build, typecheck, tests, schema checks, and boot verification.
 
 ## Integration
 
-1. Copy/adapt `<fetched stack>/features/artifacts/{core,server,web,toolbar,skills}` into the Box's
+1. Copy/adapt `<fetched recipe>/features/artifacts/{core,server,web,toolbar,skills}` into the Box's
    `features/artifacts/`. `cloudflare/` and `mobile/` belong to powerups; leave them out.
    Replace the placeholder web route if the Box carried it.
 2. Register the feature in `packages/core/src/generated/features.ts`,
@@ -36,8 +35,7 @@ at `recipes/artifacts/`. The reference implementation does not: it lives in the 
 5. There are no migrations yet. The tables come from the baseline and `data/artifacts.db` creates
    itself. New schema behaviour gets a new migration (warehouse) or a new `STEPS` entry
    (`core/kv.ts`); never edit a shipped one.
-6. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Advance the
-   completed upstream SHA in docs/UPSTREAM.md only after full validation and a boot pass.
+6. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record the fetched version and sha256 in the `recipes` ledger of `box.json` only after full validation and a boot pass.
 
 ### Powerups (optional)
 

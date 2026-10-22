@@ -157,10 +157,40 @@ editable application lifecycle. **box dev** serves every page through Vite; **bo
 Preview, see [SERVER.md](SERVER.md#built-mode-one-release-for-everyone-vite-for-the-builder-preview). Builder control actions are authenticated Box operations and do not start a provider
 turn implicitly.
 
+## Recipes and the registry
+
+`box recipe` and `box registry` talk to the recipe registry named by `registry.url` in `box.json`,
+with the access key in `box.local.json` (`registry.token`) when one is set; see
+[CONFIGURATION.md](CONFIGURATION.md#recipe-registry) and [RECIPES.md](RECIPES.md#the-recipe-registry).
+
+```sh
+box recipe list [--json]
+box recipe fetch <id> [--version <sha>] [--quiet]
+box registry status
+box registry key [--stdin]
+box registry key --clear
+```
+
+`box recipe list` prints each recipe this Box may adapt: id, latest version, title, state (adapted
+and at which version, docs in this Box, or available) and powerups. `--json` prints the catalog.
+
+`box recipe fetch` resolves the version (default: the latest), downloads the archive, refuses it
+unless its sha256 matches the catalog, unpacks it with a bounded reader that accepts only regular
+files and directories inside the recipe's own `recipes/<id>/` and `features/<id>/`, and moves the
+result into `.recipes/<id>/<version>/` in one step. An already verified version is reused without a
+download. It prints the path, version, sha256, powerups and the docs and source paths; `--quiet`
+prints only the path, so an agent can use `$(box recipe fetch <id> --quiet)/features/<id>`. The
+`.recipes/` cache is gitignored and denied by the Vite dev server.
+
+`box registry key` reads the key from a hidden prompt (or stdin with `--stdin`; never from an
+argument, which would land in shell history), checks it against the registry and only then writes it
+to `box.local.json`. `--clear` removes it; adapted recipes keep working. `box registry status` prints
+the URL, whether a key is set (never the key) and how many recipes the registry offers this Box.
+
 ## Stack source
 
-`box stack where` and `box stack fetch` locate the Stack that this Box adapts recipes from. The
-recipe documents already ship in the Box under `recipes/`; these commands provide the reference
+`box stack where` and `box stack fetch` locate the Stack itself, for a Box that can read the Stack
+repository directly; other Boxes use `box recipe fetch`. These commands provide the reference
 implementation under `features/<id>/`. Both read `stack.source` from `box.json`, with any
 `box.local.json` override; see [CONFIGURATION.md](CONFIGURATION.md#stack-source).
 
@@ -188,7 +218,7 @@ The cache is disposable: the command refuses a `.stack/` that is not a checkout 
 source, and deleting it is always safe. `--quiet` prints only the path, so an agent can use
 `$(box stack fetch --ref <sha> --quiet)/features/<id>`. Pass the Stack revision recorded in the
 Box's `docs/UPSTREAM.md` so the implementation matches the recipe documents. Git runs with the
-user's own credentials; the Stack repository is private until it becomes public.
+user's own credentials; the Stack repository is private.
 
 ## Development console
 

@@ -130,10 +130,26 @@ Removing a recipe or powerup removes the entry or id. Keep it in `box.json`, not
 it is shared, reviewable state. It is a record, not a lock or an install mechanism: nothing
 installs from it and no script polices it. See [RECIPES.md](RECIPES.md#the-recipe-ledger).
 
+## Recipe registry
+
+`registry` names the recipe registry this Box lists and fetches recipes from (`box recipe`, the
+Recipe Gallery). `url` belongs in `box.json`; the default is `https://registry.silkweave.dev`, and
+it must be `https://` (`http://` only for `localhost` or `127.0.0.1`). `token` is an access key and
+belongs in the gitignored `box.local.json`; set it with `box registry key` (or the optional step in
+`bun setup`), which checks it with the registry before saving.
+
+```json
+{ "registry": { "url": "https://registry.silkweave.dev" } }
+```
+
+The key is read by the server and the CLI only. It never reaches a browser bundle or an API
+response, is never printed, and is never sent on a redirect. A malformed key or URL fails
+configuration loading. See [RECIPES.md](RECIPES.md#the-recipe-registry) and [CLI.md](CLI.md).
+
 ## Stack source
 
-`stack.source` names the Stack this Box adapts recipes from. `box stack fetch` reads it to find the
-reference implementation. The shared value belongs in `box.json`; the default is
+`stack.source` names the Stack repository, for a Box that reads it directly. `box stack fetch` reads
+it to find the reference implementation; a Box without Stack access uses the recipe registry. The shared value belongs in `box.json`; the default is
 `silkweave/stack`.
 
 ```json

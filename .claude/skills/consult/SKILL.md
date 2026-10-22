@@ -92,7 +92,7 @@ non-trivial.
 | "lost my token / my MCP config needs it" | - | Users/auth | an admin reveals it (Settings → Users → **View access token**, or `box auth reveal <id>` on the host). NEVER `user-invite` - that rotates. Read Step 2a first | `docs/AUTH.md` § First run |
 | "my MCP won't connect / no `box` tools / everything 401s" | - | Access | diagnose with Step 2b before anything else | `docs/SERVER.md` § 7 (running and serving) |
 | "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `recipes/automation/SPEC.md` + `recipes/automation/powerups/alerts/POWERUP.md` |
-| "add / install something this Box lacks" | - | Adapt a recipe | pick it in the Recipe Gallery (Work menu, `/recipes`; **Adapt recipe** drafts a Builder brief the owner sends), or run `$adapt`: read `recipes/<id>/`, `box stack fetch` the implementation, integrate it, update registration, run the validation chain, then record it in the `recipes` ledger of `box.json` | `../../../docs/RECIPES.md`, `recipes/README.md` |
+| "add / install something this Box lacks" | - | Adapt a recipe | pick it in the Recipe Gallery (Work menu, `/recipes`; **Adapt recipe** drafts a Builder brief the owner sends), or run `$adapt`: `box recipe fetch <id>` for its docs and implementation, integrate it, update registration, run the validation chain, then record it in the `recipes` ledger of `box.json` | `../../../docs/RECIPES.md`, `recipes/README.md` |
 | "how does the whole thing work" | - | Orientation | this skill's Step 4 output, plus the SPEC of each INSTALLED feature | `../../../docs/RECIPES.md`, then `recipes/<id>/SPEC.md` |
 
 An installed recipe can add rows of its own: for each installed feature, read the `## Consult

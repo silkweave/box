@@ -30,13 +30,13 @@ registered. Revenue events with ids starting `stripe:inv:` mean a previous impor
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `features/crm/core/stripe-sync.ts` (and its
+1. **Source.** `box recipe fetch crm --version <the version in the recipes ledger of box.json>`, then copy `features/crm/core/stripe-sync.ts` (and its
    test) into the Box. Add `export * from './stripe-sync.js'` to `features/crm/core/index.ts` and
    the `crm-stripe-sync` action to `features/crm/core/manifest.ts`. Add `'customer_id'` to
    `CrmRevenueMatchedBy` and `CRM_REVENUE_MATCHED_BY` in `core/types.ts` and `web/crm-types.ts`
    (an app-level enum; no migration).
 2. **Configure** `features.crm.stripe` in `box.json` (POWERUP.md).
-3. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+3. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`.
 
 ## Verify

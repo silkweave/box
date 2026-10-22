@@ -34,7 +34,7 @@ None. Creating the room and the triggers is done by the agent with the owner's c
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy these directories from `<fetched stack>` into
+1. **Source.** `box recipe fetch automation --version <the version in the recipes ledger of box.json>`, then copy these directories from `<fetched recipe>` into
    the Box, merging with any local copy:
    - `features/automation/core/alerts/`
    - `features/automation/server/alerts/`
@@ -59,7 +59,7 @@ None. Creating the room and the triggers is done by the agent with the owner's c
    `debounce_sec`) or in Settings > Automation > Triggers. For the digest, add a time trigger on
    `alerts-digest` (daily, morning) and a deliver trigger on `digest.daily` with route
    `{{fields.route}}`.
-6. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+6. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`.
 
 ## Verify

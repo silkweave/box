@@ -24,11 +24,12 @@ version, which you may paraphrase:
 
 - A **core** (DuckDB warehouse, auth and users, the events spine, the ops kernel, the app shell)
   plus **recipes**: capabilities the Stack offers, such as Planning, CRM or Chat.
-- A default consumer clone starts with core only. Every recipe's documentation ships in
-  `recipes/<id>/`, so the team can browse them all. The team chooses recipes and an agent adapts
-  each one: it fetches the reference implementation with `box stack fetch`, integrates
-  `features/<id>/` into the Box, and registers it as a feature. The result is owned and adapted by
-  the team; there is no package download, one-click install, or registry adoption.
+- A default consumer clone starts with core only. The open recipes' documentation ships in
+  `recipes/<id>/`, and the Recipe Gallery adds whatever the recipe registry offers this Box. The
+  team chooses recipes and an agent adapts each one: it fetches the recipe's docs and reference
+  implementation with `box recipe fetch <id>`, integrates `features/<id>/` into the Box, and
+  registers it as a feature. The result is source the team owns and adapts; there is no one-click
+  install.
 - Every Box also has a **mobile app** (`apps/mobile`, Flutter, optional). With core alone it is an
   empty shell with sign-in and Settings; recipes with a `mobile` powerup (chat, planning,
   notifications, artifacts) add their screens when the team chooses to include them. See
@@ -152,15 +153,17 @@ quest is complete too. Otherwise finish provider sign-in or configuration before
 change the Box.
 
 Now ask which working surface the team wants. Core alone is supported. The onboarding dashboard
-recommends a few recipes and links the Recipe Gallery (Work menu, `/recipes`), which lists every
-recipe from `recipes/*/RECIPE.md`; **Adapt recipe** opens Builder with a draft brief the
-owner reviews and sends. Whether it starts there or here, the adaptation follows `$adapt`: read
-`recipes/<id>/`, check `box stack where` and run `box stack fetch` for the implementation, adapt
-`features/<id>/{core,server,web}`, update maintained registration and exports, install actual
-imports, run `box verify`, and record the recipe in the `recipes` ledger of `box.json`. If `box stack fetch` cannot reach the Stack (it is private until it
-becomes public), ask the owner for access or for a local checkout path to put in `box.local.json`
-as `stack.source`. Migrations are the hard boundary: back up first and preserve every shipped
-identity and body byte-for-byte.
+recommends a few recipes and links the Recipe Gallery (Work menu, `/recipes`), which lists the
+recipes in `recipes/*/RECIPE.md` plus what the recipe registry offers this Box; **Adapt recipe**
+opens Builder with a draft brief the owner reviews and sends. Whether it starts there or here, the
+adaptation follows `$adapt`: run `box recipe fetch <id>` for the recipe's docs and implementation,
+adapt `features/<id>/{core,server,web}`, update maintained registration and exports, install actual
+imports, run `box verify`, and record the recipe with its fetched version and sha256 in the
+`recipes` ledger of `box.json`. If the owner has an access key for more recipes and setup did not
+store one (`box registry status` shows it), ask them to run `box registry key` in the Box folder
+themselves: it reads the key from a hidden prompt and checks it. Never ask for the key in the
+conversation and never print it. Migrations are the hard boundary: back up first and preserve every
+shipped identity and body byte-for-byte.
 
 When a recipe has powerups (folders under `recipes/<id>/powerups/`, such as `mobile`), ask which
 they want now; each can be added later, and the adapt skill covers the steps, including recording each verified

@@ -42,9 +42,9 @@ Ask for each when it is needed, then wait:
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `<fetched stack>/features/data-sync/core/reddit/`
+1. **Source.** `box recipe fetch data-sync --version <the version in the recipes ledger of box.json>`, then copy `<fetched recipe>/features/data-sync/core/reddit/`
    into the Box's `features/data-sync/core/reddit/` and
-   `<fetched stack>/features/data-sync/server/reddit-diagnostics.controller.ts` into
+   `<fetched recipe>/features/data-sync/server/reddit-diagnostics.controller.ts` into
    `features/data-sync/server/`.
 2. **Register.** In `features/data-sync/core/platforms.ts` add
    `import { reddit } from './reddit/index.js'` and `reddit` to the `installedPlatforms()` list. In
@@ -65,7 +65,7 @@ Ask for each when it is needed, then wait:
    ```json
    { "credentials": { "reddit": { "alice": { "REDDIT_FEED_TOKEN": "..." } } } }
    ```
-6. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+6. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`. No token goes in either.
 
 ## Verify

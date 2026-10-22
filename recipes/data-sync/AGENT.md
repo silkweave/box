@@ -5,10 +5,9 @@ into a Box and what to change afterwards.
 
 ## 1. Integrate
 
-The recipe documents ship with core at `recipes/data-sync/`; the reference implementation lives in
-the Stack at `features/data-sync/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and
+The recipe documents ship with core at `recipes/data-sync/`; the reference implementation is fetched from the recipe registry as `features/data-sync/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and
 [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with
-`box stack fetch --ref <recorded Stack SHA>`.
+`box recipe fetch data-sync`.
 
 **Builds on:** core only. Signals, data sources, boards, presets and the browser lease are core
 ([docs/SIGNALS.md](../../docs/SIGNALS.md), [docs/BROWSERS.md](../../docs/BROWSERS.md)), so Data Sync
@@ -17,7 +16,7 @@ only adds pulls.
 Copy the base recipe (everything except the powerup folders and the reddit diagnostics controller),
 then ask which powerups to add and follow each one's `powerups/<id>/INSTALL.md`. Keep
 `core/platforms.ts`, the `IngestController` methods and `server/index.ts` in step with the platform
-folders that are actually present. Record the source SHA, path mapping, and skipped upstream changes
+folders that are actually present. Record the fetched version and sha256 in the `recipes` ledger of `box.json`, and the path mapping, and skipped upstream changes
 in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
 No shipped migrations. Pulls write core's `snapshots` and `signal_points`. A future schema change
@@ -76,7 +75,7 @@ Each powerup's INSTALL.md has its own Verify section with real credentials.
 
 ## 4. Adapt or remove
 
-To update this feature, compare the target Box with the recorded upstream SHA, preserve local
+To update this feature, compare the target Box with the version recorded in the `recipes` ledger of `box.json` (fetch it with `box recipe fetch data-sync --version <that version>`), preserve local
 customizations, and apply the relevant source changes manually. Record the result in
 `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 

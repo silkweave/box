@@ -57,8 +57,8 @@ Run from the Box root. With an API token, prefix each `bunx wrangler` command wi
 `CLOUDFLARE_API_TOKEN=<token>` for this session. Do not write the token to `box.json`,
 `box.local.json`, a shell profile or a file.
 
-1. **Source.** `box stack fetch --ref <sha>` (the revision in `docs/UPSTREAM.md`), then copy
-   `<fetched stack>/features/artifacts/cloudflare/` to the Box's `features/artifacts/cloudflare/`.
+1. **Source.** `box recipe fetch artifacts --version <the version in the recipes ledger of box.json>`, then copy
+   `<fetched recipe>/features/artifacts/cloudflare/` to the Box's `features/artifacts/cloudflare/`.
    It imports `../../core/{runtime,rules,password}`, so it must sit beside the Box's artifacts core.
    If the Box already has a copy, merge rather than overwrite: it holds that Box's route and names.
 2. **Configure** the Box's `features/artifacts/cloudflare/wrangler.toml` with the chosen Worker
@@ -90,7 +90,7 @@ Run from the Box root. With an API token, prefix each `bunx wrangler` command wi
 6. **Connect the Box.** In `box.json`, set `features.artifacts.public.workerUrl` to the workers.dev
    URL and `publicBaseUrl` to the public address (the same URL when there is no custom domain). The
    Box reads them on the next request; no restart.
-7. **Record** the powerup, its Stack revision, the Worker and bucket names and the public address
+7. **Record** the powerup with the fetched version and sha256 in the `recipes` ledger of `box.json`, the Worker and bucket names and the public address
    in `docs/UPSTREAM.md`, and the session in `docs/INTEGRATION.md`. No secret goes in either.
 
 ## Verify

@@ -5,10 +5,9 @@ gets into a Box and what to change afterwards.
 
 ## 1. Integrate
 
-The recipe documents ship with core at `recipes/mcp/`; the reference implementation lives in the
-Stack at `features/mcp/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md) and
+The recipe documents ship with core at `recipes/mcp/`; the reference implementation is fetched from the recipe registry as `features/mcp/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md) and
 [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with
-`box stack fetch --ref <recorded Stack SHA>`.
+`box recipe fetch mcp`.
 
 **Builds on:** core only. Chat rooms and automation triggers reach connections through core's
 toolsets; neither imports this feature. A Box that defined servers under `agentMcp.servers` runs

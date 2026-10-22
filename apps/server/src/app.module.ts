@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module.js'
 import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { ChangesModule } from './changes/changes.module.js'
 import { SignalsModule } from './signals/signals.module.js'
+import { RecipesModule } from './recipes/recipes.module.js'
 import { filterMcpActions } from './agent/mcp-passthrough.js'
 
 @Module({
@@ -25,6 +26,7 @@ import { filterMcpActions } from './agent/mcp-passthrough.js'
     OpsModule,
     AgentModule,
     SignalsModule,
+    RecipesModule,
     ...SERVER_FEATURE_LIST.map((f) => f.module),
     SilkweaveModule.forRoot({
       // Evaluated when this module is imported (Nest module metadata is static), which main.ts

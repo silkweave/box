@@ -65,7 +65,7 @@ Run from the Box root. With a temporary token, prefix each `bunx wrangler` comma
 `box.local.json`, and never print it.
 
 1. **Source.** Copy/adapt `core/help-center/`, `server/help-center/`, `web/help-center/` and
-   `cloudflare/` (the Pages Function) from `<fetched stack>/features/support/`. The export renders
+   `cloudflare/` (the Pages Function) from `<fetched recipe>/features/support/`. The export renders
    markdown with `micromark` and `micromark-extension-gfm`: add them to the root package when the
    Box does not have them.
    Register them: `export * from './help-center/index.js'` in `core/index.ts`, the two models in
@@ -141,8 +141,8 @@ Run from the Box root. With a temporary token, prefix each `bunx wrangler` comma
    Box writes it into the generated `wrangler.toml` as the `FORM_LIMITS` binding. Rotating the form secret later is the first, third and last command again.
 7. **Reconnect and publish.** `box relay-reconnect`, then `box support-site-publish`: the export now
    includes the form and the Function.
-8. **Record** the powerup, its Stack revision, the project name, account id and public address in
-   `docs/UPSTREAM.md`, and the session in `_docs/INTEGRATION.md`. No secret goes in either.
+8. **Record** the powerup, the fetched version and sha256, the project name, account id and public address in
+   the `recipes` ledger of `box.json` and `docs/UPSTREAM.md`, and the session in `_docs/INTEGRATION.md`. No secret goes in either.
 
 ## Tools
 

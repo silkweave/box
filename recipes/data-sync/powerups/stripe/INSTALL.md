@@ -33,7 +33,7 @@ Ask these together:
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `features/data-sync/core/stripe/`
+1. **Source.** `box recipe fetch data-sync --version <the version in the recipes ledger of box.json>`, then copy `features/data-sync/core/stripe/`
    (`index.ts`, `provider.ts` and its test) into the Box's `features/data-sync/core/stripe/`.
 2. **Register** it in `features/data-sync/core/platforms.ts`:
    `import { stripe } from './stripe/index.js'` and `stripe` in the `installedPlatforms()` list. Its
@@ -46,7 +46,7 @@ Ask these together:
    ```
 4. **Bind signals.** Create a signal per chosen measure from the source's measure list (the signal
    dialog prefills label, interval and accumulation). Set the unit to `USD` if wanted.
-5. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+5. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`. No key goes in either.
 
 ## Verify

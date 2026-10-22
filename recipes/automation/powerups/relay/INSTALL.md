@@ -54,7 +54,7 @@ Ask for each when it is needed, then wait:
 Run from the Box root. With an API token, prefix each `bunx wrangler` command with
 `CLOUDFLARE_API_TOKEN=<token>` for this session. Never write a token to a file.
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `<fetched stack>/features/automation/cloudflare/`
+1. **Source.** `box recipe fetch automation --version <the version in the recipes ledger of box.json>`, then copy `<fetched recipe>/features/automation/cloudflare/`
    to the Box's `features/automation/cloudflare/`. It imports `../../core/relay-protocol`, so it sits
    beside the Box's automation core. Merge rather than overwrite an existing copy.
 2. **Configure** `features/automation/cloudflare/wrangler.toml` with the chosen `name`. With several
@@ -88,7 +88,7 @@ Run from the Box root. With an API token, prefix each `bunx wrangler` command wi
    `custom`; use the sender's for a third-party provider).
 6. **Arm** with the owner's consent: `background.relay: true` in this Box's `box.json`, then restart
    the server (or `box relay-reconnect` when only the relay settings changed).
-7. **Record** the powerup, its Stack revision and the Worker name and URL in `docs/UPSTREAM.md`, and
+7. **Record** the powerup, the fetched version and sha256 in the `recipes` ledger of `box.json`, the Worker name and URL in `docs/UPSTREAM.md`, and
    the session in `_docs/INTEGRATION.md`. No secret goes in either.
 
 ## Verify

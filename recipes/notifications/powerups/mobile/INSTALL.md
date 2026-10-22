@@ -7,8 +7,8 @@ mobile app. Read the module's `README.md` in the fetched Stack and [docs/MOBILE.
 ## Detect
 
 The Box has this powerup when `features/notifications/mobile/` exists and `box_notifications` is registered in
-`apps/mobile/lib/generated/modules.dart`. If it is, this is an update: compare against the recorded
-Stack revision instead of copying over local changes.
+`apps/mobile/lib/generated/modules.dart`. If it is, this is an update: compare against the version recorded in the
+`recipes` ledger of `box.json` instead of copying over local changes.
 
 ## Requires
 
@@ -25,11 +25,11 @@ when it imports another recipe's module, add that module first.
 
 ## Steps
 
-1. Copy/adapt `<fetched stack>/features/notifications/mobile/` into the Box's `features/notifications/mobile/`.
+1. Run `box recipe fetch notifications --version <the version in the recipes ledger of box.json>`, then copy/adapt `<fetched recipe>/features/notifications/mobile/` into the Box's `features/notifications/mobile/`.
 2. Add `box_notifications: {path: ../../features/notifications/mobile}` to the feature-module block of
    `apps/mobile/pubspec.yaml`, and register the module in `apps/mobile/lib/generated/modules.dart`.
 3. Native requirements: Firebase: `GoogleService-Info.plist` and `google-services.json` (gitignored), or Firebase options in code, plus the APNs key in the Firebase project for iOS. The README's "Firebase setup" lists both ways. Without them the module builds and stays inert, and its Settings row says why.
-4. Record the powerup and its source revision in `docs/UPSTREAM.md`.
+4. Record the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`.
 5. After Verify and the validation chain pass, record the powerup: add `mobile` to
    `recipes.notifications.powerups` in `box.json`.
 

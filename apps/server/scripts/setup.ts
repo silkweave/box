@@ -13,6 +13,7 @@ import { readBoxConfig, writeBoxJsonIfAbsent, writeBoxLocal, type BoxJson } from
 import { upsertUser } from '@silkweave/box-core/users/state'
 import { commandError, commandHeader, commandLine, commandSuccess, commandValue, commandWarning, openBrowser } from '../../../packages/cli/src/command-ui.js'
 import { isMain, repoRoot } from '../../../packages/cli/src/repo.js'
+import { readSecret, setRegistryKey } from '../../../packages/cli/src/recipe.js'
 
 export type ProviderEngine = 'codex' | 'claude'
 
@@ -265,6 +266,7 @@ async function run(argv: string[]): Promise<void> {
     }
   } else commandWarning('No Builder provider was configured. The dashboard will keep that quest open.')
   commandSuccess('Stored the owner credential for the local Box CLI; it was not printed')
+  if (process.stdin.isTTY && process.stdout.isTTY && !args.yes) await askRegistryKey()
 
   const until = new Date(claims.exp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const expires = `Valid until ${until} · a new link any time: box auth login ${answers.ownerId}`
@@ -283,6 +285,27 @@ async function run(argv: string[]): Promise<void> {
   commandLine('Stop the Box with q. Start it again later with: bun dev', 'muted')
   await new Promise(done => setTimeout(done, 2_000))
   process.exitCode = await startDevAndOpen(signIn)
+}
+
+/**
+ * Optional: an access key for the recipe registry, for recipes beyond the open ones. Hidden input,
+ * checked against the registry before it is saved to box.local.json; Enter skips. `box registry
+ * key` does the same later.
+ */
+async function askRegistryKey(): Promise<void> {
+  if (readBoxConfig(repoRoot).registry.token) { commandSuccess('A recipe registry access key is already set'); return }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const key = await readSecret('  Recipe access key (optional; paste it, input stays hidden, or press Enter to skip): ')
+    if (!key) { commandLine('No access key. Set one later with: box registry key', 'muted'); return }
+    try {
+      const { withKey, open } = await setRegistryKey(repoRoot, key)
+      commandSuccess(`Access key saved. This Box can adapt ${withKey} recipes (${withKey - open} beyond the open ones).`)
+      return
+    } catch (error) {
+      commandWarning(error instanceof Error ? error.message : String(error))
+    }
+  }
+  commandLine('Set the key later with: box registry key', 'muted')
 }
 
 /** Interactive setup hands straight over to `box dev`; automation keeps the printed instructions. */

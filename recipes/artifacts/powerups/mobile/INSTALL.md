@@ -7,8 +7,8 @@ mobile app. Read the module's `README.md` in the fetched Stack and [docs/MOBILE.
 ## Detect
 
 The Box has this powerup when `features/artifacts/mobile/` exists and `box_artifacts` is registered in
-`apps/mobile/lib/generated/modules.dart`. If it is, this is an update: compare against the recorded
-Stack revision instead of copying over local changes.
+`apps/mobile/lib/generated/modules.dart`. If it is, this is an update: compare against the version recorded in the
+`recipes` ledger of `box.json` instead of copying over local changes.
 
 ## Requires
 
@@ -25,11 +25,11 @@ when it imports another recipe's module, add that module first.
 
 ## Steps
 
-1. Copy/adapt `<fetched stack>/features/artifacts/mobile/` into the Box's `features/artifacts/mobile/`.
+1. Run `box recipe fetch artifacts --version <the version in the recipes ledger of box.json>`, then copy/adapt `<fetched recipe>/features/artifacts/mobile/` into the Box's `features/artifacts/mobile/`.
 2. Add `box_artifacts: {path: ../../features/artifacts/mobile}` to the feature-module block of
    `apps/mobile/pubspec.yaml`, and register the module in `apps/mobile/lib/generated/modules.dart`.
 3. Native requirements: `webview_flutter` is a native plugin (WKWebView on iOS, the system WebView on Android, minSdk 24). No permission strings or entitlements; prove a real device build.
-4. Record the powerup and its source revision in `docs/UPSTREAM.md`.
+4. Record the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`.
 5. After Verify and the validation chain pass, record the powerup: add `mobile` to
    `recipes.artifacts.powerups` in `box.json`.
 

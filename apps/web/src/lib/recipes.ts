@@ -1,10 +1,12 @@
 /**
- * The recipe catalog, read at build time from `recipes/<id>/RECIPE.md` and `recipes/<id>/screenshots/`.
+ * The recipe catalog, read at build time from `recipes/<id>/RECIPE.md` and `recipes/<id>/screenshots/`,
+ * plus the recipes the recipe registry offers beyond them at runtime (lib/registryRecipes.ts adds
+ * those through `setRemoteRecipes`).
  *
- * `recipes/` is a managed core path: it ships in every Box, so a core-only Box can show what the
- * Stack offers without carrying its implementation. A recipe is descriptive. Picking one only drafts
- * a Builder brief; Builder still reads the recipe docs, fetches the implementation with
- * `box stack fetch`, adapts it into `features/<id>/`, and runs the validation chain.
+ * `recipes/` is a managed core path: it ships in every Box, so a core-only Box can show what it can
+ * adapt without carrying the implementation. A recipe is descriptive. Picking one only drafts a
+ * Builder brief; Builder fetches the recipe with `box recipe fetch`, adapts it into `features/<id>/`,
+ * and runs the validation chain.
  *
  * What this Box has adapted comes from the `recipes` ledger in `box.json` (lib/recipeLedger.ts).
  *
@@ -24,6 +26,8 @@ export interface RecipeScreenshot { src: string; alt: string }
 export interface Recipe extends RecipeText {
   screenshots: RecipeScreenshot[]
   powerups: PowerupText[]
+  /** Offered by the recipe registry; its docs are not in this Box yet. */
+  remote?: boolean
 }
 
 const documents = import.meta.glob<string>('../../../../recipes/*/RECIPE.md', { query: '?raw', import: 'default', eager: true })
@@ -66,7 +70,23 @@ export const RECIPES: readonly Recipe[] = loadRecipes()
  */
 export const RECOMMENDED_RECIPES: readonly string[] = ['reminders', 'chat', 'artifacts']
 
-export const recipeTitles: ReadonlyMap<string, string> = new Map(RECIPES.map(recipe => [recipe.id, recipe.title]))
+const titles = new Map(RECIPES.map(recipe => [recipe.id, recipe.title]))
+export const recipeTitles: ReadonlyMap<string, string> = titles
+
+let remote: readonly Recipe[] = []
+
+/** Registry recipes whose docs are not in this Box. Ids already in `RECIPES` are ignored. */
+export function setRemoteRecipes(recipes: readonly Recipe[]): void {
+  const local = new Set(RECIPES.map(recipe => recipe.id))
+  for (const recipe of remote) if (!local.has(recipe.id)) titles.delete(recipe.id)
+  remote = recipes.filter(recipe => !local.has(recipe.id))
+  for (const recipe of remote) titles.set(recipe.id, recipe.title)
+}
+
+/** Every recipe the gallery can show: the shipped ones and the registry's extras, by title. */
+export function allRecipes(): readonly Recipe[] {
+  return remote.length ? [...RECIPES, ...remote].sort((a, b) => a.title.localeCompare(b.title)) : RECIPES
+}
 
 export function matchesRecipe(recipe: Recipe, query: string, titles: ReadonlyMap<string, string>): boolean {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)

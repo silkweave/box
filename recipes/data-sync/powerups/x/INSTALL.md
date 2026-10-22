@@ -32,7 +32,7 @@ is not set.
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `<fetched stack>/features/data-sync/core/x/`
+1. **Source.** `box recipe fetch data-sync --version <the version in the recipes ledger of box.json>`, then copy `<fetched recipe>/features/data-sync/core/x/`
    into the Box's `features/data-sync/core/x/`. Add `twitter-api-v2` (latest) to the root package if
    it is not there.
 2. **Register.** In `features/data-sync/core/platforms.ts` add `import { x } from './x/index.js'`
@@ -50,7 +50,7 @@ is not set.
    } } } }
    ```
 5. Restart the server (or `bun run typegen`) so the new tools appear and the event hook registers.
-6. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+6. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`. No key goes in either.
 
 ## Verify

@@ -66,7 +66,7 @@ Recipe adaptation is agent-driven; record the actual source revision used.
 ## Adapt a recipe
 
 14. Read the recipe's `recipes/<id>/INSTALL.md` and `GOTCHAS.md`, the Box's `docs/GOTCHAS.md`, and
-    the reference implementation and migrations from `box stack fetch --ref <sha>` before copying
+    the reference implementation and migrations from `box recipe fetch <id>` before copying
     anything. Identify the feature's imports and install the latest packages those imports require
     in the Box workspace.
 15. Copy and adapt the implementation's `core`, `server`, `web` and `skills` source into the Box's

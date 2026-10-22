@@ -5,11 +5,11 @@ Box and what to change afterwards.
 
 ## 1. Integrate
 
-The recipe documents ship with core at `recipes/notifications/`; the reference implementation lives in the Stack at `features/notifications/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
+The recipe documents ship with core at `recipes/notifications/`; the reference implementation is fetched from the recipe registry as `features/notifications/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box recipe fetch notifications`.
 
 **Builds on:** chat, automation (with its `alerts` powerup). Adapt those first; their features must already be registered in the target Box. Resolve imports from the Box's source tree and root workspace dependencies.
 
-Copy or adapt `<fetched stack>/features/notifications/` into the Box's `features/notifications/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
+Copy or adapt `<fetched recipe>/features/notifications/` into the Box's `features/notifications/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the fetched version and sha256 in the `recipes` ledger of `box.json`, and the path mapping and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
 No feature-owned migrations. Chat migrations remain in chat's private chain. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
@@ -97,7 +97,7 @@ own tools.
 
 ## 4. Adapt or remove
 
-To update this feature, compare the target Box with the recorded upstream SHA, preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
+To update this feature, compare the target Box with the version recorded in the `recipes` ledger of `box.json` (fetch it with `box recipe fetch notifications --version <that version>`), preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 
 To remove it, delete the feature's `core`, `server`, and `web` source directories (and `mobile`, with its `box_notifications` entries in `apps/mobile/pubspec.yaml` and `apps/mobile/lib/generated/modules.dart`, when the Box included it) only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
 

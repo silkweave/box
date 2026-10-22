@@ -54,7 +54,7 @@ them.
    distributed build.
 7. Register the feature mobile modules the Box wants by adding each recipe's `mobile` powerup
    (`recipes/<id>/powerups/mobile/`). Each is optional and can be added later.
-8. Record the source revision and any skipped upstream changes in docs/UPSTREAM.md, and durable
+8. Record any skipped upstream changes in docs/UPSTREAM.md, and durable
    findings in docs/GOTCHAS.md.
 9. Record `mobile` in the `recipes` ledger of `box.json`, for example
    `"recipes": { "mobile": { "powerups": [] } }`. Add this entry only after the Verify steps pass.

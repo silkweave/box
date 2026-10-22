@@ -45,7 +45,7 @@ Ask for the one that applies, then wait:
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `<fetched stack>/features/data-sync/core/substack/`
+1. **Source.** `box recipe fetch data-sync --version <the version in the recipes ledger of box.json>`, then copy `<fetched recipe>/features/data-sync/core/substack/`
    into the Box's `features/data-sync/core/substack/`.
 2. **Register.** In `features/data-sync/core/platforms.ts` add
    `import { substack } from './substack/index.js'` and `substack` to the `installedPlatforms()` list.
@@ -57,7 +57,7 @@ Ask for the one that applies, then wait:
    "browsers": { "users": { "alice": "<alice's browser identity>" } }
    ```
 4. Restart the server so the client registers. Then the owner-only step that applies.
-5. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+5. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`. No cookie or password goes in either.
 
 ## Verify

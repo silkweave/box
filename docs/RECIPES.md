@@ -98,6 +98,31 @@ adapts only the recipes its team chooses.
 
 [Builder](BUILDER.md) is a core administrator workspace, not a recipe.
 
+## The recipe registry
+
+A Box fetches recipes from the recipe registry named by `registry.url` in `box.json` (default
+`https://registry.silkweave.dev`). Each published version of a recipe is an archive of its docs
+(`recipes/<id>/`) and reference implementation (`features/<id>/`) at one Stack SHA, with its
+sha256 in the registry catalog.
+
+- `box recipe list` shows the recipes this Box may adapt, their latest version and powerups, and
+  whether the Box has adapted them (and at which version).
+- `box recipe fetch <id> [--version <sha>] [--quiet]` downloads one version, checks it against the
+  catalog sha256, and unpacks it once into the gitignored `.recipes/<id>/<version>/` cache, which is
+  never modified afterwards. Unpacking accepts only regular files and directories under
+  `recipes/<id>/`, `features/<id>/` and the archive's `registry.json`.
+- An access key (`registry.token` in `box.local.json`) lets the registry offer the Box more
+  recipes. `bun setup` asks for one (optional), and `box registry key` sets or replaces it later;
+  both read it hidden and check it with the registry before saving. `box registry status` shows
+  whether one is set. The key is used by the server and the CLI only: never in a browser bundle, an
+  API response or a log, and never sent on a redirect.
+
+The Recipe Gallery lists the recipes whose docs ship in `recipes/` plus the ones the registry
+offers beyond them; the server fetches those into the cache so their cards show the real docs,
+powerups and screenshots. If the registry is unreachable or rejects the key, the gallery shows the
+shipped recipes only. Adapted recipes never depend on the registry: their code is in the Box, and a
+missing or expired key only stops new fetches.
+
 ## The Stack source
 
 A Box names the Stack it adapts from with `stack.source` in `box.json`. The default is
@@ -113,14 +138,16 @@ inside a Stack checkout, also works, and `box.local.json` can override it for on
   defaulting to `origin/HEAD`, the remote's default branch. It prints the path and the resolved commit; `--quiet`
   prints only the path.
 
-See [CLI.md](CLI.md). The Stack repository is private today and will become public; a git source
-needs access until then.
+See [CLI.md](CLI.md). The Stack repository is private today; a git source needs access, so a Box
+without it adapts from the recipe registry. A registry version is the same Stack SHA.
 
 ## Adapting a recipe
 
-The agent reads `recipes/<id>/` locally, then runs `box stack fetch --ref <sha>` and reads
-`<fetched stack>/features/<id>/`. Use the Stack revision recorded in the Box's `docs/UPSTREAM.md`
-so the documents and code match; when adapting from a newer revision, record that revision instead.
+The agent runs `box recipe fetch <id>` and reads the fetched `recipes/<id>/` and `features/<id>/`
+(a Box with direct Stack access may use `box stack fetch --ref <sha>` instead). When the Box has no
+`recipes/<id>/` yet, the adaptation copies the fetched docs into it. For an update or a powerup it
+fetches the version recorded in the `recipes` ledger with `--version <sha>`, so the documents and
+code match, and records the new version and sha256 there once validation passes.
 The agent reads `docs/GOTCHAS.md` and the Box's local gotchas, then copies and adapts the relevant
 core, server, web and skill code into `features/<id>/`, adds required packages, updates
 `src/generated/features.ts` and `packages/core/src/generated/exports.ts`, and runs build, typecheck,

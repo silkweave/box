@@ -1,6 +1,6 @@
 ---
 name: adapt
-description: Adapt a Stack recipe into a Silkweave Box - read its recipe docs, fetch the reference implementation with box stack fetch, and integrate it into features/<id>/ while preserving local customizations, migration identity, and the Box's recorded decisions.
+description: Adapt a Stack recipe into a Silkweave Box - fetch its docs and reference implementation with box recipe fetch, and integrate it into features/<id>/ while preserving local customizations, migration identity, and the Box's recorded decisions.
 ---
 
 # Adapt a recipe
@@ -10,29 +10,44 @@ offers; adapting it puts its code into the Box's `features/<id>/` and registers 
 is a feature of this Box. The recipe id and the feature id are the same (the Mobile app recipe,
 `recipes/mobile/`, is the exception: its code ships with core and it has no feature to register).
 
-## 1. Read the recipe and the Box's records
+## 1. Fetch the recipe, then read it and the Box's records
 
-The recipe documents ship with core, so read them locally in `recipes/<id>/`: `RECIPE.md`,
-`SPEC.md`, `INSTALL.md`, `AGENT.md` and `GOTCHAS.md`. The recipes listed under `## Builds on` in
+Recipes come from the recipe registry (`registry.url` in `box.json`; an access key in
+`box.local.json` as `registry.token` adds recipes beyond the open ones). Fetch the one you are
+adapting first:
+
+```bash
+box recipe list
+box recipe fetch <id>                      # latest version
+box recipe fetch <id> --version <sha>      # a recorded version (updates, powerups)
+```
+
+It verifies the download against the registry's sha256 and unpacks it once into
+`.recipes/<id>/<version>/`, which is never modified afterwards; it prints the path, version and
+sha256. Inside are `recipes/<id>/` (the docs) and `features/<id>/` (the implementation). Never
+edit the cache. If the command says the registry has no such recipe, the Box may need an access
+key: the owner sets it with `box registry key` (hidden input); never ask them to paste it into the
+conversation.
+
+Most recipe documents also ship with core in `recipes/<id>/`. When this Box has no
+`recipes/<id>/`, copy the fetched `recipes/<id>/` into the Box as part of the adaptation, so the
+docs stay with the adapted feature. Read `RECIPE.md`, `SPEC.md`, `INSTALL.md`, `AGENT.md` and
+`GOTCHAS.md` from the version you fetched. The recipes listed under `## Builds on` in
 `RECIPE.md` must already be adapted; adapt them first, one at a time. Then read `docs/UPSTREAM.md`,
 `docs/INTEGRATION.md`, and `docs/GOTCHAS.md` in the Box before editing. Those records define
 ancestry, incomplete work, local decisions, and known collisions.
 
-## 2. Fetch the reference implementation
+## 2. Read the reference implementation
 
-The implementation is not in the Box. Fetch it from the Stack named by `stack.source`:
+The implementation is `<fetched path>/features/<id>/` (`box recipe fetch <id> --quiet` prints only
+the path). For an update, fetch both the version recorded for the recipe in the `recipes` ledger
+of `box.json` (or in `docs/UPSTREAM.md` for a Box that predates the ledger's `version`) and the
+target version, and compare old, local and new. Record the version you actually read; never guess
+a SHA.
 
-```bash
-box stack where
-box stack fetch --ref <recorded Stack SHA>
-```
-
-Use the Stack revision recorded in `docs/UPSTREAM.md` so the code matches the recipe documents in
-`recipes/`. When the adaptation deliberately targets a newer revision, fetch that one and record it
-as the target. `box stack fetch` prints the Stack path; read `<fetched stack>/features/<id>/`. A
-local path source is never modified and only warns when its `HEAD` differs from `--ref`; in that
-case, either check out the wanted revision there yourself with the owner's agreement, or record
-the revision you actually read. Never guess a SHA.
+A maintainer whose Box can read the Stack repository directly (`stack.source`) may use
+`box stack where` and `box stack fetch --ref <sha>` instead; the registry version is the same Stack
+SHA.
 
 ## 3. Ask about powerups, then record the plan
 
@@ -48,7 +63,7 @@ the answers with the plan.
 Write the intended scope, source commits, current local state, and planned backup to
 `docs/INTEGRATION.md` before editing. Update that record as each meaningful step completes so an
 interrupted run can resume from actual files and database ledgers. Do not copy recipe documents
-into the feature tree; they already live in `recipes/<id>/` and are refreshed with core.
+into the feature tree; they live in `recipes/<id>/` (refreshed with core when core ships them).
 
 ## 4. Integrate
 
@@ -92,8 +107,10 @@ is not installed and the mobile check only reported a skip. Record source SHAs,
 paths, preserved customizations, migration identities, backup location, validation, and remaining
 work in `docs/INTEGRATION.md` and `docs/UPSTREAM.md`. Do not record a completed source SHA until the
 full validation chain and boot check pass. Then record the outcome in the `recipes` ledger of
-`box.json`: add the recipe once the chain passes, and append each powerup id to
-`recipes.<recipe>.powerups` once its `## Verify` steps and the chain pass. Keep the ledger in
+`box.json`: add the recipe once the chain passes, with the `version` and `sha256` that
+`box recipe fetch` printed (`"<id>": { "powerups": [], "version": "<sha>", "sha256": "<digest>" }`),
+and append each powerup id to `recipes.<recipe>.powerups` once its `## Verify` steps and the chain
+pass. Keep the ledger in
 `box.json`, not `box.local.json`; it is a record, not an install mechanism.
 
 When working inside Builder, `box dev` is the stable supervisor that owns the current agent

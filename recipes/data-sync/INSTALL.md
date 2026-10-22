@@ -3,10 +3,8 @@
 This is the adaptation guide for the Data Sync recipe. Read [RECIPE.md](./RECIPE.md),
 [SPEC.md](./SPEC.md), the recipe [GOTCHAS.md](./GOTCHAS.md), the Box's docs/UPSTREAM.md, and its
 current _docs/INTEGRATION.md before changing files. These recipe documents ship with core, so a Box
-has them at `recipes/data-sync/`. The reference implementation does not: it lives in the Stack at
-`features/data-sync/`. In a Box, run `box stack fetch --ref <recorded Stack SHA>` and read
-`<fetched stack>/features/data-sync/`, so the documents and the code come from the same Stack
-revision.
+has them at `recipes/data-sync/`. The reference implementation does not: it is fetched from the recipe registry as `features/data-sync/`. In a Box, run `box recipe fetch data-sync` and read `<fetched recipe>/features/data-sync/` (`<fetched recipe>` is the path it prints),
+so the documents and the code come from the same version.
 
 The base recipe is npm, blog and Hacker News. Ask the owner which powerups to add now (`github`, `x`,
 `reddit`, `linkedin`, `substack`, `stripe`, see `powerups/`); each can be added later with its own
@@ -22,7 +20,7 @@ INSTALL.md.
   any necessary compatibility pin and its reason in the Box gotchas. Also declare shared
   framework/UI packages imported directly by this feature: dependencies declared only under
   apps/server or apps/web do not resolve from the shared feature tree.
-- A recorded source SHA in docs/UPSTREAM.md, and an integration entry with scope, target SHA,
+- The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes, and state in _docs/INTEGRATION.md.
 - A disposable instance for build, typecheck, tests, schema checks, and boot verification.
 
@@ -41,7 +39,7 @@ application and boot-compatibility check below. Stage only the runner, registrat
 dependencies needed to run them. On resume, compare the running record with actual files and
 ledgers before replaying an operation.
 
-1. Copy/adapt from `<fetched stack>/features/data-sync/` into the Box's `features/data-sync/`: all
+1. Copy/adapt from `<fetched recipe>/features/data-sync/` into the Box's `features/data-sync/`: all
    of `core/` except the powerup folders, and all of `server/` except
    `reddit-diagnostics.controller.ts`. Copy a powerup's folder only as part of its own INSTALL.md.
    Register the result as the `data-sync` feature in `apps/server/src/generated/features.ts`,
@@ -58,8 +56,7 @@ ledgers before replaying an operation.
    `box.local.json` under `credentials.blog.<account>` (`GOOGLE_APPLICATION_CREDENTIALS`,
    `GA4_PROPERTY_ID`), entered by the owner.
 5. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record
-   path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Advance
-   the completed upstream SHA in docs/UPSTREAM.md only after the full validation and boot pass.
+   path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Record the fetched version and sha256 in the `recipes` ledger of `box.json` only after the full validation and boot pass.
 6. No shipped migrations. If a migration is added, keep its feature id and append a new identity.
 7. For migrations, stage the runner, registration, and minimum code first. Test against a restored
    backup in isolation, confirm completion and boot compatibility, then continue with unrelated

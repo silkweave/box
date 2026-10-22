@@ -3,9 +3,8 @@
 This is the adaptation guide for the support recipe. Read [RECIPE.md](./RECIPE.md), [SPEC.md](./SPEC.md),
 the recipe [GOTCHAS.md](./GOTCHAS.md), the Box's `docs/UPSTREAM.md`, and its current
 `_docs/INTEGRATION.md` before changing files. These recipe documents ship with core, so a Box has
-them at `recipes/support/`. The reference implementation does not: it lives in the Stack at
-`features/support/`. In a Box, run `box stack fetch --ref <recorded Stack SHA>` and read
-`<fetched stack>/features/support/`, so the documents and the code come from the same Stack revision.
+them at `recipes/support/`. The reference implementation does not: it is fetched from the recipe registry as `features/support/`. In a Box, run `box recipe fetch support` and read `<fetched recipe>/features/support/` (`<fetched recipe>` is the path it prints),
+so the documents and the code come from the same version.
 
 ## Prerequisites
 
@@ -14,7 +13,7 @@ them at `recipes/support/`. The reference implementation does not: it lives in t
 - Feature-specific package imports: none beyond what core and `@silkweave/box-ui` already provide
   (the ticket summary uses the same markdown editor packages as the CRM account doc; install them
   into the root workspace package if the Box does not have them yet).
-- A recorded source SHA in `docs/UPSTREAM.md`, and an integration entry with scope, target SHA,
+- The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes and state in `_docs/INTEGRATION.md`.
 - A disposable instance for build, typecheck, tests, schema checks and boot verification.
 
@@ -38,7 +37,7 @@ The tables are created on boot. The shipped migrations (`support:001` to `016`, 
 "Migrations") drop columns and tables outside the current model; on a Box adapting the recipe
 each is a no-op, so there is no migration stage.
 
-1. Copy/adapt `<fetched stack>/features/support/` into the Box's `features/support/{core,server,web}`
+1. Copy/adapt `<fetched recipe>/features/support/` into the Box's `features/support/{core,server,web}`
    and `features/support/skills/`, without the powerup folders the owner did not choose
    (`core/crm/`, `core/help-center/` and their `server/` and `web/` counterparts,
    and the `cloudflare/` folder, which belongs to `help-center`). `core/articles/`,

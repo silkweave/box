@@ -34,7 +34,7 @@ None.
 ## Steps
 
 1. **Source.** Copy/adapt `core/crm/`, `server/crm/` and `web/crm/` from
-   `<fetched stack>/features/support/`. Register them: `export * from './crm/index.js'` in
+   `<fetched recipe>/features/support/`. Register them: `export * from './crm/index.js'` in
    `core/index.ts`, the model and `dependsOn: ['crm']` in `core/manifest.ts`, `SupportCrmModule`
    in `server/support/support.module.ts` (it sets the requester directory), and the slot contributions and column and attention
    registrations in `web/index.tsx` (the column and attention reason register in the feature's
@@ -44,7 +44,7 @@ None.
    each support requester a ticket names, matched to a contact by email, then phone, or to be
    created under the account its organization names; after the owner confirms, run it without
    `dry_run`. It moves those tickets to the contacts.
-4. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md` and the session in
+4. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json` and the session in
    `_docs/INTEGRATION.md`.
 
 ## Tools

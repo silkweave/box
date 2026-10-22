@@ -41,7 +41,7 @@ Ask for each when it is needed, then wait:
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `<fetched stack>/features/data-sync/core/linkedin/`
+1. **Source.** `box recipe fetch data-sync --version <the version in the recipes ledger of box.json>`, then copy `<fetched recipe>/features/data-sync/core/linkedin/`
    into the Box's `features/data-sync/core/linkedin/`.
 2. **Register.** In `features/data-sync/core/platforms.ts` add
    `import { linkedin } from './linkedin/index.js'` and `linkedin` to the `installedPlatforms()` list.
@@ -62,7 +62,7 @@ Ask for each when it is needed, then wait:
    (a short script that reads `box.local.json` and prints only the id) and set
    `LINKEDIN_PERSON_URN` to `urn:li:person:<id>` for the account. The URN is not a secret.
 6. Restart the server so the client registers.
-7. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+7. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`. No token goes in either.
 
 ## Verify

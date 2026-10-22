@@ -21,10 +21,14 @@ export {
   type BoxBackup,
   type BoxJson,
   type BoxServer,
+  type BoxRecipe,
+  type BoxRegistry,
   type BoxStack,
+  DEFAULT_REGISTRY_URL,
   stackSourceKind,
 } from './box-json.js'
 export * from './stack-source.js'
+export * from './recipe-registry.js'
 export * from './changes.js'
 export * from './http.js'
 export * from './accounts.js'

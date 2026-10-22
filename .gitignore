@@ -51,6 +51,9 @@ box.local.json
 # Stack source cache written by box stack fetch.
 /.stack/
 
+# Recipe registry cache written by box recipe fetch (immutable, one directory per version).
+/.recipes/
+
 # Cloudflare wrangler local state and build output (artifacts public-sharing powerup)
 .wrangler/
 

@@ -103,7 +103,24 @@ export function stackSourceKind(source: string): 'path' | 'git' | 'github' | nul
  */
 export interface BoxRecipe {
   powerups: string[]
+  /** The registry version this Box adapted (a Stack SHA), when it came from the registry. */
+  version?: string
+  /** sha256 (hex) of that version's registry archive, as verified by `box recipe fetch`. */
+  sha256?: string
 }
+
+/**
+ * The recipe registry this Box lists and fetches recipes from (`box recipe list|fetch`, the Recipe
+ * Gallery). `url` is shared in box.json; `token` is a holder's access key and belongs in the
+ * gitignored box.local.json. The token is read on the server and by the CLI only: it never reaches
+ * a browser bundle or an API response.
+ */
+export interface BoxRegistry {
+  url: string
+  token: string | null
+}
+
+export const DEFAULT_REGISTRY_URL = 'https://registry.silkweave.dev'
 
 /** Recipe and powerup ids: lowercase slugs, the same strings as their `recipes/` folders. */
 export const RECIPE_ID_PATTERN = /^[a-z][a-z0-9-]*$/
@@ -121,6 +138,7 @@ export interface BoxJson {
   mcp: BoxMcp
   http: BoxHttp
   stack: BoxStack
+  registry: BoxRegistry
   recipes: Record<string, BoxRecipe>
   features: Record<string, Record<string, unknown>>
   /** Core's signal settings: `owners` (signal ownership; signals/owners.ts). */
@@ -173,6 +191,7 @@ export function defaultBoxJson(): BoxJson {
     mcp: { url: null, token: null },
     http: { userAgent: 'Silkweave Box' },
     stack: { source: 'silkweave/stack' },
+    registry: { url: DEFAULT_REGISTRY_URL, token: null },
     recipes: {},
     features: {}, signals: {}, browsers: {}, agentMcp: {}, workerdeck: null, accounts: {}, credentials: {}, agentProfiles: {},
   }
@@ -295,7 +314,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   const defaults = defaultBoxJson()
   // Removed 2026-10-08: per-person Claude tokens are connected in Settings > Profile now.
   if (raw['workerdeckTokens'] !== undefined) refuse(where, 'workerdeckTokens was removed; connect Claude accounts in Settings > Profile and delete the key')
-  onlyKeys(raw, ['agent', 'timeZone', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'recipes', 'features', 'signals', 'browsers', 'agentMcp', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
+  onlyKeys(raw, ['agent', 'timeZone', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'registry', 'recipes', 'features', 'signals', 'browsers', 'agentMcp', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
 
   const agent = raw['agent'] === undefined ? defaults.agent : parseBoxAgent(raw['agent'], where)
   const timeZone = raw['timeZone'] === undefined ? defaults.timeZone : parseTimeZone(raw['timeZone'], where)
@@ -349,6 +368,14 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     stack.source = text(st, 'source', `${where} stack`, defaults.stack.source)
     if (!stackSourceKind(stack.source)) refuse(`${where} stack`, 'source must be GitHub owner/repo, a git URL (https://, ssh://, git@host:path, file://) or a path (/abs, ./rel, ../rel, ~/dir)')
   }
+  const registry = { ...defaults.registry }; const rg = section(raw, 'registry', where)
+  if (rg) {
+    onlyKeys(rg, ['url', 'token'], `${where} registry`)
+    registry.url = text(rg, 'url', `${where} registry`, defaults.registry.url).replace(/\/+$/, '')
+    if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(registry.url) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/[^\s]*)?$/.test(registry.url)) refuse(`${where} registry`, 'url must be an https:// URL (http:// only for localhost)')
+    registry.token = optionalText(rg, 'token', `${where} registry`)
+    if (registry.token !== null && !/^[A-Za-z0-9_-]{16,200}$/.test(registry.token)) refuse(`${where} registry`, 'token must be the access key exactly as issued (letters, digits, _ and -)')
+  }
   const map = (key: string): Record<string, unknown> => {
     const v = raw[key]; if (v === undefined) return {}
     if (!isRecord(v)) return refuse(where, `${key} must be an object`)
@@ -361,7 +388,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     if (!RECIPE_ID_PATTERN.test(name)) refuse(at, `${JSON.stringify(name)} is not a recipe id (lowercase slug)`)
     if (!isRecord(value)) refuse(at, `${name} must be an object`)
     const entry = value as Record<string, unknown>
-    onlyKeys(entry, ['powerups'], `${at} ${name}`)
+    onlyKeys(entry, ['powerups', 'version', 'sha256'], `${at} ${name}`)
     const list = entry['powerups'] ?? []
     if (!Array.isArray(list)) refuse(at, `${name}.powerups must be an array of powerup ids`)
     const powerups: string[] = []
@@ -369,7 +396,16 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
       if (typeof id !== 'string' || !RECIPE_ID_PATTERN.test(id)) refuse(at, `${name}.powerups: ${JSON.stringify(id)} is not a powerup id (lowercase slug)`)
       if (!powerups.includes(id as string)) powerups.push(id as string)
     }
-    recipes[name] = { powerups }
+    const recipe: BoxRecipe = { powerups }
+    if (entry['version'] !== undefined) {
+      if (typeof entry['version'] !== 'string' || !/^[0-9a-f]{40}$/.test(entry['version'])) refuse(at, `${name}.version must be a registry version (a 40-character Stack SHA)`)
+      recipe.version = entry['version'] as string
+    }
+    if (entry['sha256'] !== undefined) {
+      if (typeof entry['sha256'] !== 'string' || !/^[0-9a-f]{64}$/.test(entry['sha256'])) refuse(at, `${name}.sha256 must be a 64-character hex digest`)
+      recipe.sha256 = entry['sha256'] as string
+    }
+    recipes[name] = recipe
   }
   const features: Record<string, Record<string, unknown>> = {}
   for (const [name, value] of Object.entries(map('features'))) { if (!isRecord(value)) refuse(`${where} features`, `${name} must be an object`); features[name] = value as Record<string, unknown> }
@@ -403,7 +439,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     agentProfiles[user] = entry
   }
 
-  return { agent, timeZone, brand, server, backup, background, auth, mcp, http, stack, recipes, features, signals, browsers, agentMcp, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
+  return { agent, timeZone, brand, server, backup, background, auth, mcp, http, stack, registry, recipes, features, signals, browsers, agentMcp, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
 }
 
 /** Parse a file's text, naming the file in the one error JSON.parse would otherwise leave vague. */

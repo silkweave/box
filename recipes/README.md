@@ -117,18 +117,17 @@ section of `INSTALL.md` states the same in prose for the agent.
 | `## Verify` | Checks that prove it works end to end, beyond the validation chain. |
 | `## Remove` | How to take it out again, including anything held outside the Box. |
 
-Source a powerup needs lives in the Stack beside the recipe's, under `features/<id>/<part>/`, and is
-fetched with `box stack fetch` like the rest. A feature without a powerup must say so plainly where
+Source a powerup needs ships beside the recipe's, under `features/<id>/<part>/`, and is
+fetched with `box recipe fetch` like the rest. A feature without a powerup must say so plainly where
 the missing capability would appear, name the powerup, and point administrators to it.
 
 ## Adapting a recipe
 
 1. Read `recipes/<id>/` in the Box: `RECIPE.md`, `SPEC.md`, `INSTALL.md`, `AGENT.md` and `GOTCHAS.md`.
-2. Fetch the implementation with `box stack fetch --ref <sha>`, using the Stack revision recorded in
-   the Box's `docs/UPSTREAM.md` so documents and code match. The command prints the path of a
-   readable Stack; `stack.source` in `box.json` says where it comes from, and `box stack where`
-   shows the current setting.
-3. Read `<fetched stack>/features/<id>/` and adapt it into the Box's `features/<id>/`, then update
+2. Fetch the implementation with `box recipe fetch <id>` (for an update, add
+   `--version <the version recorded in the recipes ledger of box.json>`) so documents and code match.
+   The command prints the path of the verified copy.
+3. Read `<fetched recipe>/features/<id>/` and adapt it into the Box's `features/<id>/`, then update
    registration, install the packages its imports need, and run the Box validation chain.
 4. Add the powerups the owner wants by following each one's `INSTALL.md`, now or later.
 5. Once the validation chain passes, record the recipe in the `recipes` ledger of `box.json`, and each

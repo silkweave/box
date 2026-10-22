@@ -3,21 +3,20 @@
 This is the adaptation guide for the mcp recipe. Read [RECIPE.md](./RECIPE.md), [SPEC.md](./SPEC.md),
 the recipe [GOTCHAS.md](./GOTCHAS.md), the Box's `docs/UPSTREAM.md`, and its current
 `_docs/INTEGRATION.md` before changing files. These recipe documents ship with core, so a Box has
-them at `recipes/mcp/`. The reference implementation does not: it lives in the Stack at
-`features/mcp/`. In a Box, run `box stack fetch --ref <recorded Stack SHA>` and read
-`<fetched stack>/features/mcp/`, so the documents and the code come from the same Stack revision.
+them at `recipes/mcp/`. The reference implementation does not: it is fetched from the recipe registry as `features/mcp/`. In a Box, run `box recipe fetch mcp` and read `<fetched recipe>/features/mcp/` (`<fetched recipe>` is the path it prints),
+so the documents and the code come from the same version.
 
 ## Prerequisites
 
 - An existing Box backup, including `box.local.json`, and a recorded restore path for data and
   matching application source.
-- Core at a Stack revision that has the MCP connection directory port and the `/mcp` passthrough
+- Core at a revision that has the MCP connection directory port and the `/mcp` passthrough
   hook (SPEC.md, "Decision"). An older core is upgraded with `$upgrade` first.
 - `server.dashboardUrl` set to the address administrators use, over https, before any OAuth
   connection: it is the redirect URI's origin (GOTCHAS.md).
 - Packages: `@modelcontextprotocol/sdk` in the root workspace package (the MCP client and its OAuth
   helpers); `zod` is already there.
-- A recorded source SHA in `docs/UPSTREAM.md`, and an integration entry with scope, target SHA,
+- The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes and state in `_docs/INTEGRATION.md`.
 - A disposable instance for build, typecheck, tests, schema checks and boot verification, with
   background work and chat agents disabled.
@@ -54,7 +53,7 @@ refuse their sessions until the connections exist. Do this before booting the ne
 
 There are no shipped migrations: `mcp_calls` is created on boot from its ModelSpec.
 
-1. Copy/adapt `<fetched stack>/features/mcp/` into the Box's `features/mcp/{core,server,web}` and
+1. Copy/adapt `<fetched recipe>/features/mcp/` into the Box's `features/mcp/{core,server,web}` and
    `features/mcp/skills/`. Register it as the `mcp` feature in
    `apps/server/src/generated/features.ts`, `apps/web/src/generated/features.ts`,
    `packages/core/src/generated/features.ts` and `packages/core/src/generated/exports.ts`. Link the

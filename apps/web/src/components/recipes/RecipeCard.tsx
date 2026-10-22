@@ -1,6 +1,6 @@
 import { Check, Hammer, ImageIcon, Lock, Zap } from 'lucide-react'
 import { Badge, Button, DialogContent, DialogDescription, DialogTitle, ImageGallery } from '@silkweave/box-ui'
-import { RECIPES, RECOMMENDED_RECIPES, powerupBrief, recipeBrief, recipeTitles, type Powerup, type PowerupState, type Recipe, type Requirement } from '../../lib/recipes.ts'
+import { allRecipes, RECOMMENDED_RECIPES, powerupBrief, recipeBrief, recipeTitles, type Powerup, type PowerupState, type Recipe, type Requirement } from '../../lib/recipes.ts'
 import { recipeBook } from '../../lib/recipeLedger.ts'
 import { openBuilderWithBrief } from '../../lib/builderBrief.ts'
 
@@ -17,7 +17,7 @@ const addPowerup = (powerup: Powerup): void =>
   openBuilderWithBrief(powerupBrief(powerup, recipeTitles.get(powerup.recipe) ?? powerup.recipe))
 
 const powerupTitle = (recipe: string, id: string): string =>
-  RECIPES.find(entry => entry.id === recipe)?.powerups.find(entry => entry.id === id)?.title ?? id
+  allRecipes().find(entry => entry.id === recipe)?.powerups.find(entry => entry.id === id)?.title ?? id
 
 const requirementLabel = (req: Requirement): string =>
   req.powerup ? `${powerupTitle(req.recipe, req.powerup)} (${recipeTitles.get(req.recipe) ?? req.recipe})` : recipeTitles.get(req.recipe) ?? req.recipe

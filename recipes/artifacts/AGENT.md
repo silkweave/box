@@ -5,14 +5,13 @@ gets into a Box and what to change afterwards.
 
 ## 1. Integrate
 
-The recipe documents ship with core at `recipes/artifacts/`; the reference implementation lives in
-the Stack at `features/artifacts/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and
+The recipe documents ship with core at `recipes/artifacts/`; the reference implementation is fetched from the recipe registry as `features/artifacts/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and
 [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with
-`box stack fetch --ref <recorded Stack SHA>`.
+`box recipe fetch artifacts`.
 
 **Builds on:** core only, at a revision with the path-mount port. Copy or adapt
-`<fetched stack>/features/artifacts/` into the Box and register it (INSTALL.md lists the four
-registration files). Record the source SHA, path mapping, and skipped upstream changes in the Box's
+`<fetched recipe>/features/artifacts/` into the Box and register it (INSTALL.md lists the four
+registration files). Record the fetched version and sha256 in the `recipes` ledger of `box.json`, and the path mapping and skipped upstream changes in the Box's
 `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
 ### Mobile module

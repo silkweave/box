@@ -22,14 +22,18 @@ The mobile framework `packages/mobile` is core. In `apps/mobile`, core owns `lib
 native identity, signing and capabilities in `ios/` and `android/`. Merge those three-way like any
 customized file; never replace the native projects wholesale. Run `bun run test:mobile` after.
 
-`recipes/` is a managed core path: it carries the documentation and screenshots of every recipe offered to the Box and is
-refreshed with core. Replace it with the target revision's `recipes/` rather than merging it, and
-keep Box-specific findings in `docs/GOTCHAS.md`, not under `recipes/`. An upgrade does not adapt
+`recipes/` is a managed core path: it carries the documentation and screenshots of the recipes that
+ship with core and is refreshed with core. Replace it with the target revision's `recipes/` rather
+than merging it, except that a `recipes/<id>/` the target does not ship stays as it is when this Box
+has adapted `<id>` (its docs came from the recipe registry with the adaptation). Keep Box-specific
+findings in `docs/GOTCHAS.md`, not under `recipes/`. An upgrade does not adapt
 recipe changes into the Box's `features/`: when the target's `recipes/<id>/` or `features/<id>/`
 changed for a recipe this Box has adapted, record that and update it separately with `$adapt`,
 updating exactly the recipes and powerups recorded in the `recipes` ledger of `box.json`,
-reading the implementation from `box stack fetch --ref <target SHA>`. Keep `stack.source` in
-`box.json` and any `box.local.json` override as the owner configured them.
+reading the implementation from `box recipe fetch <id>` (the recorded version with
+`--version <sha>`, for the three-way comparison). Adapted recipes keep working without the
+registry or an access key; only fetching new versions needs them. Keep `stack.source` and
+`registry` in `box.json` and any `box.local.json` override as the owner configured them.
 
 Use the latest available dependencies. Record any necessary pin and its reason in
 `docs/GOTCHAS.md`. Write resume state to `docs/INTEGRATION.md` before each migration or source

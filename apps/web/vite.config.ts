@@ -75,7 +75,7 @@ export default defineConfig(({ mode }) => ({
     // instance state. Allow only browser source and the Bun dependency store (where @fontsource ships
     // its font files), never the checkout root or apps/server: box.local.json holds the session and
     // token secrets and data/ holds the databases. The nested Stack box/ checkout is outside the list
-    // too, and so is the `.stack/` source cache `box stack fetch` writes. recipes/ is docs and
+    // too, and so are the `.stack/` and `.recipes/` source caches `box stack fetch` and `box recipe fetch` write. recipes/ is docs and
     // screenshots the onboarding catalog imports; theme/ is the Box's stylesheet and any fonts or
     // images it references. The deny list restates Vite's defaults, which `deny` replaces, and adds Box
     // configuration and the Stack cache by name. Do not deny `**/data/**`: dependencies ship data/
@@ -83,7 +83,7 @@ export default defineConfig(({ mode }) => ({
     // apps/server/src/auth/dev-proxy-guard.ts.
     fs: {
       allow: [workspace('apps/web'), workspace('packages'), workspace('features'), workspace('recipes'), workspace('theme'), workspace('node_modules')],
-      deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/.stack/**', 'box.json', 'box.local.json'],
+      deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/.stack/**', '**/.recipes/**', 'box.json', 'box.local.json'],
     },
     // Reciprocal proxy so hitting the bare Vite port still reaches the backend. Normal flow is
     // Nest -> Vite. tRPC subscriptions are SSE and /mcp is Streamable HTTP - http-proxy streams

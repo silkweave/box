@@ -283,6 +283,26 @@
         }
       }
     },
+    "registry": {
+      "type": "object",
+      "description": "The recipe registry this Box lists and fetches recipes from (box recipe list, box recipe fetch, the Recipe Gallery). Keep url in box.json and the access key (token) in the gitignored box.local.json; box registry key sets it. The token is used by the server and the CLI only, never sent to a browser.",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "properties": {
+        "url": {
+          "type": "string",
+          "default": "https://registry.silkweave.dev",
+          "description": "Registry origin, https:// (http:// only for localhost)."
+        },
+        "token": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Access key for recipes beyond the open ones. Secret: box.local.json only."
+        }
+      }
+    },
     "recipes": {
       "type": "object",
       "description": "The recipe ledger: every recipe this Box has adapted and validated, keyed by recipe id, with the powerups added and verified for it. The agent that adapts a recipe or adds a powerup records it here once its validation passes, and removes the entry when it is taken out. The Recipe Gallery reads it to show adapted recipes and to unlock powerups. Keep it in box.json (tracked), not box.local.json.",
@@ -305,6 +325,16 @@
             },
             "uniqueItems": true,
             "default": []
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$",
+            "description": "The registry version adapted (a Stack SHA), recorded when the recipe came from the registry."
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "description": "sha256 of that version's registry archive, as verified by box recipe fetch."
           }
         }
       },

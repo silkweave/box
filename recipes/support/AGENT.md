@@ -5,10 +5,9 @@ gets into a Box and what to change afterwards.
 
 ## 1. Integrate
 
-The recipe documents ship with core at `recipes/support/`; the reference implementation lives in
-the Stack at `features/support/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md) and
+The recipe documents ship with core at `recipes/support/`; the reference implementation is fetched from the recipe registry as `features/support/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md) and
 [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with
-`box stack fetch --ref <recorded Stack SHA>`.
+`box recipe fetch support`.
 
 **Builds on:** core only. The powerups each name what they require: [crm](./powerups/crm/POWERUP.md)
 (the CRM recipe) and [help-center](./powerups/help-center/POWERUP.md) (the public Help Center; its contact form

@@ -66,6 +66,10 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box where                                   which Box this acts on, and why
   box stack where                             the configured Stack source and where it resolves
   box stack fetch [--ref <rev>] [--quiet]     make Stack source readable locally; print path and commit
+  box recipe list [--json]                    recipes this Box may adapt, from the recipe registry
+  box recipe fetch <id> [--version <sha>] [--quiet]  download a recipe's docs and source into .recipes/
+  box registry status                         the registry, whether an access key is set, what it unlocks
+  box registry key [--stdin|--clear]          set (hidden prompt, checked first) or remove the access key
   box <tool-name> [args]                      anything else runs as an MCP tool
 
 Tool names are kebab-case (warehouse-backup, ingest-github), and need mcp.token in box.local.json -
@@ -114,6 +118,7 @@ function main(argv: string[]): void {
   }
 
   if (verb === 'stack') runScript(root, 'packages/cli/src/stack.ts', rest)
+  if (verb === 'recipe' || verb === 'registry') runScript(root, 'packages/cli/src/recipe.ts', [verb, ...rest])
 
   if (verb === 'app') runScript(root, 'packages/cli/src/app-control.ts', rest)
   if (verb === 'maintenance') runScript(root, 'packages/cli/src/maintenance.ts', rest)

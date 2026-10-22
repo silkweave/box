@@ -5,11 +5,11 @@ Box, what to change afterwards, and how to arm it without setting a laptop firin
 
 ## 1. Integrate
 
-The recipe documents ship with core at `recipes/automation/`; the reference implementation lives in the Stack at `features/automation/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box stack fetch --ref <recorded Stack SHA>`.
+The recipe documents ship with core at `recipes/automation/`; the reference implementation is fetched from the recipe registry as `features/automation/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box recipe fetch automation`.
 
 **Builds on:** core, and the server's agent host for agent triggers (`box.json` `workerdeck`; without it, agent triggers are refused and the rest works). Resolve imports from the Box's source tree and root workspace dependencies.
 
-Copy or adapt `<fetched stack>/features/automation/` into the Box's `features/automation/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the source SHA, path mapping, and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
+Copy or adapt `<fetched recipe>/features/automation/` into the Box's `features/automation/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the fetched version and sha256 in the `recipes` ledger of `box.json`, and the path mapping and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
 The recipe has two powerups: Alerts (`recipes/automation/powerups/alerts/`, delivery for event triggers) and Webhook relay (`recipes/automation/powerups/relay/`). Ask the owner which to add now. The Stack's tree carries the Alerts source (`core/alerts/`, `server/alerts/`, `web/alerts/`) and its wiring lines; leave both out of the base adaptation unless the owner picks the powerup, then follow its INSTALL.md.
 
@@ -109,7 +109,7 @@ harmless, and a `server.port` no other Box could be holding.
 
 ## 4. Adapt or remove
 
-To update this feature, compare the target Box with the recorded upstream SHA, preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
+To update this feature, compare the target Box with the version recorded in the `recipes` ledger of `box.json` (fetch it with `box recipe fetch automation --version <that version>`), preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 
 To remove it, delete the feature's `core`, `server`, and `web` source directories only after checking runtime imports and dependent features. The `triggers` table stays in the warehouse. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
 

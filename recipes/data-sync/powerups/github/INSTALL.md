@@ -39,7 +39,7 @@ Ask these together:
 
 ## Steps
 
-1. **Source.** `box stack fetch --ref <sha>`, then copy `<fetched stack>/features/data-sync/core/github/`
+1. **Source.** `box recipe fetch data-sync --version <the version in the recipes ledger of box.json>`, then copy `<fetched recipe>/features/data-sync/core/github/`
    into the Box's `features/data-sync/core/github/`.
 2. **Register.** In `features/data-sync/core/platforms.ts` add
    `import { github } from './github/index.js'` and `github` to the `installedPlatforms()` list. Copy
@@ -57,7 +57,7 @@ Ask these together:
    { "credentials": { "github": { "alice": { "GH_TOKEN": "ghp_..." } } } }
    ```
 5. Restart the server (or `bun run typegen`) so the new tools appear.
-6. **Record** the powerup and its Stack revision in `docs/UPSTREAM.md`, the session in
+6. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`. No token goes in either.
 
 ## Verify

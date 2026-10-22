@@ -3,16 +3,15 @@
 This is the adaptation guide for the automation recipe. Read [RECIPE.md](./RECIPE.md), [SPEC.md](./SPEC.md),
 the recipe [GOTCHAS.md](./GOTCHAS.md), the Box's docs/UPSTREAM.md, and its current
 _docs/INTEGRATION.md before changing files. These recipe documents ship with core, so a Box has them
-at `recipes/automation/`. The reference implementation does not: it lives in the Stack at
-`features/automation/`. In a Box, run `box stack fetch --ref <recorded Stack SHA>` and read
-`<fetched stack>/features/automation/`, so the documents and the code come from the same Stack revision.
+at `recipes/automation/`. The reference implementation does not: it is fetched from the recipe registry as `features/automation/`. In a Box, run `box recipe fetch automation` and read `<fetched recipe>/features/automation/` (`<fetched recipe>` is the path it prints),
+so the documents and the code come from the same version.
 
 ## Prerequisites
 
 - Existing Box backup and a recorded restore path for both data and matching application source.
 - Core, plus every recipe this one builds on already adapted and registered in the target Box. Builds on: **none, core only**.
 - Feature-specific package imports include: `cron-parser`, `cronstrue` (core). Install latest into the root workspace package; record any necessary compatibility pin and its reason in the Box gotchas. Also declare shared framework/UI packages imported directly by this feature: dependencies declared only under apps/server or apps/web do not resolve from the shared feature tree.
-- A recorded source SHA in docs/UPSTREAM.md, and an integration entry with scope, target SHA,
+- The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes, and state in _docs/INTEGRATION.md.
 - A disposable instance for build, typecheck, tests, schema checks, and boot verification.
 
@@ -23,7 +22,7 @@ application and boot-compatibility check below. Stage only the runner, registrat
 dependencies needed to run them. On resume, compare the running record with actual files and
 ledgers before replaying an operation.
 
-1. Copy/adapt the reference implementation from `<fetched stack>/features/automation/` into the Box's
+1. Copy/adapt the reference implementation from `<fetched recipe>/features/automation/` into the Box's
    features/automation/{core,server,web}. Keep existing runtime
    contracts, registrations, dependency order, and package manifests. Register the result as the
    `automation` feature. Do not create a feature package, a symlink, or a release catalogue entry.
@@ -36,8 +35,7 @@ ledgers before replaying an operation.
    requires it. Resolve imports and production output from source; fix integration errors in the
    target Box as part of the adaptation.
 3. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record
-   path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Advance
-   the completed upstream SHA in docs/UPSTREAM.md only after the full validation and boot pass.
+   path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Record the fetched version and sha256 in the `recipes` ledger of `box.json` only after the full validation and boot pass.
 4. Migrations: `automation:001-import-schedules` (config schedules become time triggers),
    `automation:002-trigger-permission-mode` (adds `triggers.permission_mode`), with
    core's `004-runs-trigger-id` and `005-runs-event-id`. Remove `features.automation.schedules` from
