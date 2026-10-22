@@ -61,7 +61,7 @@ export function formatCatalog(recipes: readonly RegistryRecipe[], root: string):
   return lines
 }
 
-/** Read one line without echoing it (a TTY), or all of stdin (a pipe). */
+/** Read one line showing a dot per character instead of the text (a TTY), or all of stdin (a pipe). */
 export async function readSecret(prompt: string): Promise<string> {
   const stdin = process.stdin
   if (!stdin.isTTY) {
@@ -87,8 +87,13 @@ export async function readSecret(prompt: string): Promise<string> {
       for (const char of chunk) {
         if (char === '\r' || char === '\n') return done()
         if (char === '\u0003') return done(new Error('cancelled'))
-        if (char === '\u007f' || char === '\b') value = value.slice(0, -1)
-        else if (char >= ' ') value += char
+        if (char === '\u007f' || char === '\b') {
+          if (value) process.stderr.write('\b \b')
+          value = value.slice(0, -1)
+        } else if (char >= ' ') {
+          value += char
+          process.stderr.write('•')
+        }
       }
     }
     stdin.on('data', onData)
@@ -161,7 +166,7 @@ async function registryMain(argv: readonly string[], root: string): Promise<numb
     return 0
   }
   if (verb === 'key' && (args.length === 0 || (args.length === 1 && args[0] === '--stdin'))) {
-    const token = await readSecret('Paste your access key (it stays hidden), then press Enter: ')
+    const token = await readSecret('Paste your access key (shown as dots), then press Enter: ')
     if (!token) { commandWarning('No key entered. Nothing was saved.'); return 1 }
     const { withKey, open } = await setRegistryKey(root, token)
     commandSuccess(`Key saved. This Box can now adapt ${withKey} recipes (${withKey - open} beyond the open ones).`)

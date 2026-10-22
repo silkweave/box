@@ -14,4 +14,4 @@ Goals that put a target and a window on a signal, initiatives that say how the t
 
 ## Builds on
 
-Core only: goals measure core's signals, and circuit boards and saved views are core.
+Core only: goals measure core's signals, and saved views are core. Placing goals and initiatives on boards, and laying a cycle out as one, is the `cycle-board` powerup.

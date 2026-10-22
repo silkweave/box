@@ -362,7 +362,7 @@ export function SignalDialog({
               that" - never a calculation: the parent's value always comes from its own data. The
               server refuses unknown ids and cycles with a reason, which lands in `error` below. */}
           <fieldset className='rounded-md border border-border p-3'>
-            <legend className='px-1 text-label text-muted-foreground'>Driven by (the circuit board&rsquo;s edges)</legend>
+            <legend className='px-1 text-label text-muted-foreground'>Driven by</legend>
             {f.formula.trim() && (
               <p className='mb-2 text-label text-muted-foreground'>Set from the formula&rsquo;s signal ids on save.</p>
             )}

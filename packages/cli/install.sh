@@ -23,6 +23,7 @@ set -euo pipefail
 BOX_REPO=${BOX_REPO:-https://github.com/silkweave/box.git}
 BOX_REF=${BOX_REF:-}
 BOX_YES=${BOX_YES:-}
+EXPLAIN=0
 MIN_BUN=1.4.2
 LOG=
 TICK=0
@@ -62,9 +63,17 @@ have()    { command -v "$1" >/dev/null 2>&1; }
 
 STEP=0
 STEPS=5
-step() {
+step() {  # $1 = title, $2 = what it does (shown when explaining)
   STEP=$((STEP + 1))
-  printf '\n  %s %s\n\n' "$(tone accent "$STEP/$STEPS")" "$(tone bold "$1")"
+  printf '\n  %s %s\n' "$(tone accent "$STEP/$STEPS")" "$(tone bold "$1")"
+  [ "$EXPLAIN" = 1 ] && [ -n "${2:-}" ] && explain "$2"
+  printf '\n'
+}
+
+# A question's explanation: shown before it in guided mode, or when the answer is ?.
+explain() {  # $1 = text, lines separated by \n
+  local text
+  while IFS= read -r text; do printf '  %s\n' "$(tone muted "│ $text")" >&2; done <<<"$(printf '%b' "$1")"
 }
 
 banner() {
@@ -100,25 +109,53 @@ attach_terminal() {
   if [ "$(uname -s)" != Darwin ] && { exec 3</dev/tty; } 2>/dev/null; then TTY=1; fi
 }
 
-confirm() {  # $1 = question, $2 = default (y|n). Returns 0 for yes.
-  local default=${2:-y} hint answer
-  if [ -n "$BOX_YES" ] || [ "$TTY" = 0 ]; then [ "$default" = y ]; return; fi
-  if [ "$default" = y ]; then hint='[Y/n]'; else hint='[y/N]'; fi
-  printf '  %s %s ' "$(tone text "$1")" "$(tone muted "$hint")"
-  read -r answer <&3 || answer=
-  case $(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]') in
-    y|yes) return 0 ;;
-    n|no) return 1 ;;
-    *) [ "$default" = y ] ;;
-  esac
+# Typing ? at a question shows its explanation and asks again.
+hint_for() {  # $1 = explanation
+  if [ -n "$1" ] && [ "$EXPLAIN" = 0 ]; then printf ' %s' "$(tone muted '(? explains)')"; fi
 }
 
-ask() {  # $1 = question, $2 = default; prints the answer
-  local answer
+confirm() {  # $1 = question, $2 = default (y|n), $3 = explanation. Returns 0 for yes.
+  local default=${2:-y} help=${3:-} hint answer
+  if [ -n "$BOX_YES" ] || [ "$TTY" = 0 ]; then [ "$default" = y ]; return; fi
+  if [ "$default" = y ]; then hint='[Y/n]'; else hint='[y/N]'; fi
+  [ "$EXPLAIN" = 1 ] && [ -n "$help" ] && explain "$help"
+  while :; do
+    printf '  %s%s %s ' "$(tone text "$1")" "$(hint_for "$help")" "$(tone muted "$hint")"
+    read -r answer <&3 || answer=
+    case $(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]') in
+      y|yes) return 0 ;;
+      n|no) return 1 ;;
+      '?') explain "${help:-Press Enter to keep the suggestion.}" ;;
+      *) [ "$default" = y ]; return ;;
+    esac
+  done
+}
+
+ask() {  # $1 = question, $2 = default, $3 = explanation; prints the answer
+  local help=${3:-} answer
   if [ -n "$BOX_YES" ] || [ "$TTY" = 0 ]; then printf '%s' "$2"; return; fi
-  printf '  %s %s ' "$(tone text "$1")" "$(tone muted "[$2]")" >&2
-  read -r answer <&3 || answer=
-  printf '%s' "${answer:-$2}"
+  [ "$EXPLAIN" = 1 ] && [ -n "$help" ] && explain "$help"
+  while :; do
+    printf '  %s%s %s ' "$(tone text "$1")" "$(hint_for "$help")" "$(tone muted "[$2]")" >&2
+    read -r answer <&3 || answer=
+    if [ "$answer" = '?' ]; then explain "${help:-Press Enter to keep the suggestion.}"; continue; fi
+    printf '%s' "${answer:-$2}"
+    return
+  done
+}
+
+# What happens, before anything does. Guided mode explains every step and question as it comes.
+plan() {
+  printf '\n'
+  line 'This takes about 5 minutes, in 5 steps:'
+  printf '    %s %s\n' "$(tone accent 1)" "$(tone text 'Check this computer')"
+  printf '    %s %s\n' "$(tone accent 2)" "$(tone text 'Prepare the tools the Box runs on')"
+  printf '    %s %s\n' "$(tone accent 3)" "$(tone text 'Choose a folder for your Box')"
+  printf '    %s %s\n' "$(tone accent 4)" "$(tone text 'Download the Box and add the box command')"
+  printf '    %s %s\n' "$(tone accent 5)" "$(tone text 'Set up your account; the Box then opens in your browser')"
+  line 'Nothing changes without asking first. Press Enter to take a suggested answer.' muted
+  printf '\n'
+  if [ -z "$BOX_YES" ] && [ "$TTY" = 1 ] && confirm 'Explain each step and question as we go?' y; then EXPLAIN=1; fi
 }
 
 # ---------- long-running work ----------
@@ -216,7 +253,7 @@ linux_install() {  # $1 = reason, rest = packages
   fi
   if [ "$(id -u)" = 0 ]; then command=${command//sudo /}; fi
   line "$reason needs: $* (installed with $manager)." muted
-  confirm 'Install them now?' y || die "$* required." "Install with: $command"
+  confirm 'Install them now?' y "Git downloads the Box and keeps it up to date; unzip unpacks Bun.\nInstalling system packages asks for your computer password once." || die "$* required." "Install with: $command"
   if [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null; then
     line 'Your computer password is needed to install them.' muted
     sudo -v <&3 || die 'Could not get administrator rights.' "Install them yourself: $command"
@@ -225,7 +262,7 @@ linux_install() {  # $1 = reason, rest = packages
 }
 
 check_system() {
-  step 'Checking this computer'
+  step 'Checking this computer' 'Makes sure this system can run a Box and has Git, which downloads it.'
   ok "$(platform_label)"
   have curl || die 'curl is missing.' 'Install curl with your package manager, then run the installer again.'
 
@@ -244,7 +281,7 @@ check_system() {
   fi
   line "Your Mac needs Apple's Command Line Tools (they include Git)." muted
   line 'A system window opens: click Install and wait for it to finish.' muted
-  confirm 'Open the installer now?' y || die 'The Command Line Tools are required.' 'Install them with: xcode-select --install'
+  confirm 'Open the installer now?' y "Git downloads the Box and keeps it up to date. Apple ships it in its free Command Line\nTools. The download takes a few minutes, sometimes up to 15." || die 'The Command Line Tools are required.' 'Install them with: xcode-select --install'
   xcode-select --install >/dev/null 2>&1 || true
   local waited=0 frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
   until git_ready; do
@@ -275,11 +312,10 @@ ensure_bun() {  # $1 = minimum version
   fi
   if [ -n "$current" ]; then
     line "Bun $current is older than the $need this Box needs." muted
-    confirm "Upgrade Bun?" y || die "Bun $need or newer is required." 'Upgrade with: bun upgrade'
+    confirm "Upgrade Bun?" y 'Bun is the engine the Box runs on. Upgrading keeps your other Bun projects working.' || die "Bun $need or newer is required." 'Upgrade with: bun upgrade'
     run "Upgrading Bun" bun upgrade
   else
-    line 'Bun runs the Box. It installs into ~/.bun and needs no administrator password.' muted
-    confirm 'Install Bun?' y || die 'Bun is required.' 'Install it from https://bun.sh, then run the installer again.'
+    confirm 'Install Bun, the engine the Box runs on?' y 'Bun runs the Box. It installs into ~/.bun, a folder in your home, and needs no\nadministrator password.' || die 'Bun is required.' 'Install it from https://bun.sh, then run the installer again.'
     run 'Installing Bun' bash -c 'curl -fsSL https://bun.sh/install | bash'
   fi
   current=$(bun_version)
@@ -288,7 +324,7 @@ ensure_bun() {  # $1 = minimum version
 }
 
 check_tools() {
-  step 'Preparing the tools'
+  step 'Preparing the tools' 'Installs Bun, the engine the Box runs on, and an AI agent if none is on this computer.'
   ensure_bun "$MIN_BUN"
   if have node; then note "Node.js $(node --version) found; the Box does not need it."; else note 'Node.js is not needed; the Box runs on Bun.'; fi
 
@@ -300,7 +336,7 @@ check_tools() {
     return
   fi
   line 'The Box builds with an AI agent. No Claude or Codex was found on this computer.' muted
-  if confirm 'Install Claude Code? (you can sign in later from the Box)' y; then
+  if confirm 'Install Claude Code?' y "Claude Code is Anthropic's AI agent. The Box uses it to build features for you.\nYou connect your Claude account later, inside the Box."; then
     run 'Installing Claude Code' bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
     case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
   else
@@ -311,29 +347,28 @@ check_tools() {
 is_box() { [ -f "$1/package.json" ] && grep -q '"name": *"silkweave-box"' "$1/package.json"; }
 
 choose_directory() {
-  step 'Choosing a place for your Box'
+  step 'Choosing a place for your Box' 'The Box is one folder with its code and its data. It stays on this computer.'
   local dir=${BOX_DIR:-$PWD/box}
   while :; do
     case $dir in /*) ;; "~"*) dir="$HOME${dir#\~}" ;; *) dir="$PWD/$dir" ;; esac
     if is_box "$dir"; then
       line "There is already a Box at $dir." muted
-      if confirm 'Continue setting up that Box?' y; then RESUME=1; break; fi
+      if confirm 'Continue setting up that Box?' y 'Finished steps are skipped; nothing in that Box is replaced.'; then RESUME=1; break; fi
     elif [ -e "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
       warn "$dir already exists and is not empty."
       [ -z "$BOX_YES" ] && [ "$TTY" = 1 ] || die "Choose another place with BOX_DIR=<path>."
     else
-      line 'The Box is a folder with its code and its data. It stays on this computer.' muted
-      if confirm "Create your Box in $(tone accent "$dir")?" y; then RESUME=0; break; fi
+      if confirm "Create your Box in $(tone accent "$dir")?" y 'To remove the Box later, delete the folder. Answer n to choose another place.'; then RESUME=0; break; fi
     fi
     [ "$TTY" = 1 ] && [ -z "$BOX_YES" ] || die 'No place chosen for the Box.'
-    dir=$(ask 'Where should the Box go?' "$HOME/box")
+    dir=$(ask 'Where should the Box go?' "$HOME/box" 'A folder path. ~ means your home folder. The folder is created if it does not exist.')
   done
   BOX_DIR=$dir
   ok "Box folder: $BOX_DIR"
 }
 
 install_box() {
-  step 'Installing the Box'
+  step 'Installing the Box' 'Downloads the Box, installs its parts and adds the box command to Terminal.'
   if [ "$RESUME" = 1 ]; then
     ok "Using the Box at $BOX_DIR"
   else
@@ -359,7 +394,7 @@ install_box() {
   case $shim in
     *'pointing at another Box'*)
       line 'The box command currently belongs to another Box on this computer.' muted
-      if confirm 'Point the box command at this new Box?' n; then
+      if confirm 'Point the box command at this new Box?' n 'Outside a Box folder, the box command acts on one Box. Answer y to make that this one.\nInside a Box folder, box always acts on that Box.'; then
         run 'Adding the box command' bun run --silent box:install
       else
         note 'Kept the box command as it is. Inside this Box, box still acts on this Box.'
@@ -381,7 +416,7 @@ install_box() {
       esac
       if grep -qs '.local/bin' "$profile"; then
         :
-      elif confirm "Make the box command available in new terminals (adds one line to $(basename "$profile"))?" y; then
+      elif confirm 'Make the box command work in new Terminal windows?' y "Adds one line to $(basename "$profile") so Terminal finds the box command.\nWithout it, run it as $BOX_DIR/packages/cli/bin/box."; then
         # shellcheck disable=SC2016 # written literally so the profile expands it
         printf '\n# Silkweave Box: the box command\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$profile"
         ok "Added ~/.local/bin to $(basename "$profile")"
@@ -393,18 +428,18 @@ install_box() {
 }
 
 start_setup() {
-  step 'Setting up your Box'
+  step 'Setting up your Box' 'Creates your account and connects the AI agent. The Box then starts and opens in your browser.'
   if [ "$RESUME" = 1 ] && grep -qs '"token"' box.local.json; then
     ok 'This Box is already set up.'
     line 'Start it with:' muted
     printf '    %s\n' "$(tone accent "cd $BOX_DIR && bun dev")"
-    line 'Need a new sign-in link? Run: box auth login <your owner id>' muted
+    line 'Need a new sign-in link? Run: box auth login' muted
     exit 0
   fi
-  line 'A few questions create your owner account. The Box then starts and opens in your browser.' muted
   if [ -n "$BOX_YES" ] || [ "$TTY" = 0 ]; then
     exec bun run --silent setup --yes </dev/null 3<&-
   fi
+  if [ "$EXPLAIN" = 1 ]; then exec bun run --silent setup --explain <&3 3<&-; fi
   exec bun run --silent setup <&3 3<&-
 }
 
@@ -413,6 +448,7 @@ main() {
   [ "$TTY" = 1 ] || [ -n "$BOX_YES" ] || die 'The installer asks a few questions and needs a terminal.' 'Run it in Terminal, or set BOX_YES=1 to accept every default.'
   detect_platform
   banner
+  plan
   RESUME=0
   check_system
   check_tools

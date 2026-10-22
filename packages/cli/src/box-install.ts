@@ -55,9 +55,13 @@ type Existing =
   | { kind: 'absent' }
   | { kind: 'ours'; to: string }
   | { kind: 'otherBox'; to: string; detail?: undefined }
+  | { kind: 'stale'; to: string; detail?: undefined }
   | { kind: 'foreign'; detail: string; to?: string }
 
-/** What is at `link` today: nothing, our link, another Box's link, or something we must not touch. */
+/**
+ * What is at `link` today: nothing, our link, another Box's link, a link left by a Box that has
+ * since been deleted, or something we must not touch.
+ */
 function current(): Existing {
   let st: Stats
   try {
@@ -73,6 +77,9 @@ function current(): Existing {
   // packages/cli/bin/box on 2026-09-18 and a link registered before that must still be recognised
   // as ours - otherwise the person whose shim now dangles is told it is somebody else's program.
   if (to.endsWith(join('bin', 'box')) && checkoutAbove(to)) return { kind: 'otherBox', to }
+  // A deleted Box leaves a dangling link in today's shim shape. Nothing can run through it, so it
+  // is replaced; a dangling link of any other shape could be another program's and stays.
+  if (!existsSync(to) && to.endsWith(join('packages', 'cli', 'bin', 'box'))) return { kind: 'stale', to }
   return { kind: 'foreign', detail: `a symlink to ${to}`, to }
 }
 
@@ -83,13 +90,14 @@ const now = current()
 if (check) {
   if (now.kind === 'ours') console.log(`box: installed at ${link} -> ${source}`)
   else if (now.kind === 'otherBox') console.log(`box: installed at ${link}, but pointing at another Box (${now.to})`)
+  else if (now.kind === 'stale') console.log(`box: ${link} points at a Box that no longer exists (${now.to}) - replaced on install`)
   else if (now.kind === 'absent') console.log(`box: NOT installed (no ${link})`)
   else console.log(`box: ${link} is ${now.detail} - left alone`)
   process.exit(0)
 }
 
 if (remove) {
-  if (now.kind === 'ours') {
+  if (now.kind === 'ours' || now.kind === 'stale') {
     rmSync(link)
     console.log(`box: removed ${link}`)
   } else if (now.kind === 'absent') console.log(`box: nothing to remove (no ${link})`)
@@ -101,9 +109,9 @@ if (now.kind === 'foreign') die(`${link} is ${now.detail} - refusing to replace 
 if (now.kind === 'ours') console.log(`box: already installed at ${link}`)
 else {
   mkdirSync(binDir, { recursive: true })
-  if (now.kind === 'otherBox') rmSync(link)
+  if (now.kind === 'otherBox' || now.kind === 'stale') rmSync(link)
   symlinkSync(source, link)
-  console.log(`box: ${link} -> ${source}${now.kind === 'otherBox' ? ` (was ${now.to})` : ''}`)
+  console.log(`box: ${link} -> ${source}${now.kind === 'absent' ? '' : ` (was ${now.to})`}`)
 }
 
 // The one thing that makes this fail silently: a link nobody's shell will ever look at.

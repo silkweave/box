@@ -167,7 +167,6 @@ The recipes in this Stack declare these sections:
 | Section | Order | Destinations |
 | --- | --- | --- |
 | Workspace | 100 | Dashboard, Chat, Artifacts, Sink |
-| Reporting | 200 | Signals, Circuit Boards |
 | Operations | 300 | Goals, Initiatives, Sprints, Reminders |
 | Sales | 400 | Accounts, Deals, Contacts |
 | Support | 600 | Support Tickets, Help Articles |

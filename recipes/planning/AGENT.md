@@ -7,7 +7,7 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/planning/`; the reference implementation is fetched from the recipe registry as `features/planning/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box recipe fetch planning`.
 
-**Builds on:** core only (its signals, boards and saved views). Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** core only (its signals and saved views). Goals and initiatives on boards, and the cycle board, are the optional `cycle-board` powerup (`powerups/cycle-board/`); without it the cycle page says so and offers administrators a Builder brief. Resolve imports from the Box's source tree and root workspace dependencies.
 
 Copy or adapt `<fetched recipe>/features/planning/` into the Box's `features/planning/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the fetched version and sha256 in the `recipes` ledger of `box.json`, and the path mapping and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 

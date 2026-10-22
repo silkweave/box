@@ -1,8 +1,10 @@
-// The circuit board node-kind port. A board places NODES of any registered kind (core's `signal`;
-// planning's `goal` and `initiative`) and draws the edges between them. Core owns the canvas and
-// this registry; a dependent registers its kinds from its server module's onModuleInit ("the
-// dependent registers into the dependency", like `registerSignalHooks`). A Box without planning
-// simply has signal-only boards.
+// The board ports. Boards themselves come from a recipe; core owns only these ports, so any feature
+// can take part in boards without importing that recipe, and whether or not the Box has adapted it.
+// A board places NODES of any registered kind (a signal kind from the board recipe; planning's
+// `goal` and `initiative`) and draws the edges between them. A feature registers its
+// kinds from its server module's onModuleInit ("the dependent registers into the dependency", like
+// `registerSignalHooks`). A Box without planning simply has signal-only boards; a Box without boards
+// holds registered kinds that nothing reads.
 //
 // The web stays kind-agnostic: every node is resolved here into a generic CARD (title, value,
 // badge, progress, sparkline, link, details), so the canvas never learns what a goal is.
@@ -138,4 +140,77 @@ export function formatBoardNumber(n: number | null | undefined): string | null {
   if (abs >= 1e4) return `${trim((n / 1e3).toFixed(1))}K`
   if (abs >= 100) return String(Math.round(n))
   return trim(n.toFixed(abs >= 1 ? 1 : 3))
+}
+
+// --- the board store port --------------------------------------------------------------------------
+// Boards themselves come from a recipe. Core and other features never import it: an
+// object's owner reports renames and deletes here (signals from signals/definitions.ts, planning
+// from its goal and initiative writes), and a feature that wants a board made (planning's cycle
+// board) asks for one here. The board recipe registers the store from its server module's
+// onModuleInit. Without it there are no boards to re-key, so the cascades report nothing and
+// `seedBoard` refuses with what to adapt.
+
+/** A board to create (or re-seed) with these nodes, laid out by the store. */
+export interface BoardSeedInput {
+  id: string
+  label: string
+  description: string
+  nodes: BoardNodeRef[]
+  /** Replace the node list of an existing board (its name and description are kept). */
+  replace?: boolean
+  actor?: string
+}
+
+export interface BoardSeedResult {
+  id: string
+  label: string
+  /** How many nodes were placed. */
+  nodes: number
+}
+
+export interface BoardStore {
+  /** The registering feature, for error messages. */
+  id: string
+  /** Re-key `kind:oldRef` to `kind:newRef` on every board. Returns the boards touched. */
+  renameRef: (kind: string, oldRef: string, newRef: string, actor?: string) => Promise<string[]>
+  /** Remove the object's placement from every board. Returns the boards touched. */
+  pruneRef: (kind: string, ref: string, actor?: string) => Promise<string[]>
+  /** Create a board holding `nodes`, arranged. Refuses an existing board unless `replace`. */
+  seed: (input: BoardSeedInput) => Promise<BoardSeedResult>
+}
+
+let store: BoardStore | null = null
+
+/** Register the board store. One per Box. Returns the unregister. */
+export function registerBoardStore(s: BoardStore): () => void {
+  if (store) throw new Error(`board store registered twice ("${store.id}", then "${s.id}")`)
+  store = s
+  return () => {
+    if (store === s) store = null
+  }
+}
+
+/** True when this Box has boards (a board recipe is adapted and booted). */
+export function boardsAvailable(): boolean {
+  return store !== null
+}
+
+/** Rename cascade for an object a board may hold. Returns the boards touched; none without boards. */
+export async function renameBoardRef(kind: string, oldRef: string, newRef: string, actor?: string): Promise<string[]> {
+  return store ? store.renameRef(kind, oldRef, newRef, actor) : []
+}
+
+/** Delete cascade for an object a board may hold. Returns the boards touched; none without boards. */
+export async function pruneBoardRef(kind: string, ref: string, actor?: string): Promise<string[]> {
+  return store ? store.pruneRef(kind, ref, actor) : []
+}
+
+/** The message a caller shows when it needs boards and the Box has none. */
+export const BOARDS_NOT_SET_UP =
+  'Boards are not set up on this Box; an administrator can add them from the Recipe Gallery.'
+
+/** Create a board through the store. Throws BOARDS_NOT_SET_UP when the Box has no boards. */
+export async function seedBoard(input: BoardSeedInput): Promise<BoardSeedResult> {
+  if (!store) throw new Error(BOARDS_NOT_SET_UP)
+  return store.seed(input)
 }

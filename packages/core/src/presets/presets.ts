@@ -141,7 +141,7 @@ export function readPresetsFile(): PresetsFile {
   const legacy = legacyPath()
   const path = existsSync(file) ? file : existsSync(legacy) ? legacy : null
   const raw: unknown = path ? JSON.parse(readFileSync(path, 'utf8')) : {}
-  // `modules` is the current key; `boards` is what the pre-rename file called the same thing.
+  // `modules` is the current key; the pre-rename file called the same thing raw.boards.
   const source = isRecord(raw) ? (isRecord(raw.modules) ? raw.modules : isRecord(raw.boards) ? raw.boards : {}) : {}
   const seeded =
     isRecord(raw) && Array.isArray(raw.seeded)

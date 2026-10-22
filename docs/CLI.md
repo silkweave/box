@@ -9,18 +9,21 @@ the selected checkout's CLI; no `bun run` or package-script prefix is needed for
 ## First-run setup
 
 `bun setup` is the guided host-only path immediately after `bun install`; `box setup` is the same
-command once the shim is registered. It confirms the machine principal, asks for the first owner,
-detects `CODEX_HOME`/`~/.codex` and `CLAUDE_CONFIG_DIR`/`~/.claude`, and offers each detected profile
-for configuration. It never reads or prints provider credentials. Marker files are used only to
-warn when provider sign-in may still be required.
+command once the shim is registered. It names the machine principal, suggests the owner from this
+computer's account (user name and full name, `admin` when the name cannot be an owner id) and
+offers the agents as one menu (Claude, Codex, both, or not now), each with a Box-only config dir.
+Every question explains itself on `?`; `--explain` shows the explanations up front, as the
+installer's guided mode does. The recipe access key shows as dots while it is pasted. It never
+reads or prints provider credentials.
 
 Setup creates the first administrator only when no human exists, stores the new access token in
 mode-0600 `box.local.json` for the local MCP proxy, and issues a single-use sign-in link. In an
 interactive terminal it then runs `box dev` and opens that link in the browser as soon as the
 application and frontend are running; quitting the dev view ends setup. Re-running against a
 populated Box refuses without rotating anything. For automation and tests, use `--owner`,
-`--name`, `--profiles codex,claude`, `--no-profiles`, `--no-start` and `--yes` (which never starts
-the Box).
+`--name`, `--profiles codex,claude` (Box-only profiles; default Claude), `--existing-profiles
+codex,claude` (reuse this computer's login), `--no-profiles`, `--no-start` and `--yes` (which never
+starts the Box). `--review` asks to confirm the machine principal before it is bound.
 
 `box verify` runs the checkout's complete validation chain with a four-phase progress view:
 
@@ -141,7 +144,8 @@ the host operator to restore it. A supervisor started from older source than the
 newer control operations until the host operator restarts it once (status then says the frontend
 state is unknown).
 
-`box auth login <id>` creates a compact, single-use sign-in URL and offers five seconds to press
+`box auth login [<id>]` creates a compact, single-use sign-in URL (without an id, for the Box's only
+person; with several it lists their ids) and offers five seconds to press
 Enter and open it in the default browser. It exits without opening when the countdown reaches zero;
 redirected and non-interactive output never waits. Sign-in URLs use `/login/<grant>`. The current
 `bl2` grant is typically about 50 characters, while unexpired `bl1` grants remain compatible.
@@ -267,7 +271,7 @@ box builder browser --session <session-id> type '{"ref":"dom-preview-1","text":"
 box builder browser --session <session-id> select '{"ref":"dom-preview-2","value":"active"}'
 box builder browser --session <session-id> scroll '{"x":0,"y":600}'
 box builder browser --session <session-id> style '{"ref":"dom-preview-1","styles":{"backgroundColor":"#eef"}}'
-box builder browser --session <session-id> navigate '{"path":"/signals"}'
+box builder browser --session <session-id> navigate '{"path":"/recipes"}'
 box builder browser --session <session-id> screenshot
 ```
 

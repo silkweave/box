@@ -1,16 +1,16 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from '@tanstack/react-router'
 import { BarChart3, Plus } from 'lucide-react'
-import type { Channel, Signal } from '../../types.ts'
+import type { Signal } from '../../types.ts'
 import { baseChannel, channelLabel, inChannel } from '../../types.ts'
 import { SignalCard } from '../components/SignalCard.tsx'
 import { SignalDialog } from '../components/SignalDialog.tsx'
-import { PageContainer, SegmentedControl, Button, UserChip, EmptyState } from '@silkweave/box-ui'
+import { SETTINGS_GUTTER, SegmentedControl, SelectField, Button, UserChip, EmptyState } from '@silkweave/box-ui'
 import { useSignalsData } from '../lib/useSignalsData.ts'
 import { useActiveUser } from '../../lib/useActiveUser.ts'
 import { useUsersData } from '../../lib/useUsersData.ts'
 import { usePersistedState } from '../../lib/usePersistedState.ts'
-import { signalSlug } from '../lib/signalSlug.ts'
+import { useSettingsDialog } from '../../lib/settingsDialog.ts'
+import { SignalsLink, signalHash, signalsPath } from '../lib/signalLink.tsx'
 import { appKey } from '@/lib/storage.ts'
 
 type GroupBy = 'group' | 'user'
@@ -19,12 +19,12 @@ const GROUP_BYS: { value: GroupBy; label: string }[] = [
   { value: 'user', label: 'User' },
 ]
 
-/** The Signals canvas: the overview (all channels) at /signals, or a single
- *  channel's cards at /signals/$channel. Cards group into container cards per the "Group by"
- *  choice - signal group under its channel (default), or owner. Each card links to its detail. */
-export function SignalsGrid() {
-  const { channel } = useParams({ strict: false }) as { channel?: Channel }
+/** The Signals grid in Settings: every channel at `#settings/signals`, or one channel's cards at
+ *  `#settings/signals/<channel>`. Cards group into container cards per the "Group by" choice -
+ *  signal group under its channel (default), or owner. Each card links to its detail. */
+export function SignalsGrid({ channel }: { channel?: string }) {
   const { data } = useSignalsData()
+  const { open } = useSettingsDialog()
   const { userId: activeUserId, user: activeUser, filterMine } = useActiveUser()
   const { data: users } = useUsersData()
   const [newOpen, setNewOpen] = useState(false)
@@ -47,12 +47,11 @@ export function SignalsGrid() {
   )
   if (!data) return null
 
-  // A Box with no signals AT ALL - the first screen a new user lands on, since `/` redirects to the
-  // first nav entry. Distinct from a filter that happens to match nothing, which the count line
-  // above already explains.
+  // A Box with no signals AT ALL. Distinct from a filter that happens to match nothing, which the
+  // count line below already explains.
   if (data.signals.length === 0)
     return (
-      <PageContainer width='wide'>
+      <div className={`${SETTINGS_GUTTER} pb-6`}>
         <EmptyState
           icon={<BarChart3 className='size-6' />}
           title='No signals yet'
@@ -60,11 +59,9 @@ export function SignalsGrid() {
             <>
               A signal is one number you watch over time - downloads a week, stars, signups, revenue
               booked. Define one by hand, or{' '}
-              <Link
-                to='.' search={true} hash='settings/signal-owners' resetScroll={false} hashScrollIntoView={false}
-                className='font-medium text-accent transition-colors hover:underline'>
+              <SignalsLink hash='settings/data-sources' className='font-medium text-accent transition-colors hover:underline'>
                 connect a data source
-              </Link>{' '}
+              </SignalsLink>{' '}
               and let a sync fill one in.
             </>
           }
@@ -75,7 +72,7 @@ export function SignalsGrid() {
           }
         />
         <SignalDialog open={newOpen} onOpenChange={setNewOpen} />
-      </PageContainer>
+      </div>
     )
 
   // Sections merge by BASE channel - account variants ('github@dan') fold into one "GitHub"
@@ -85,22 +82,36 @@ export function SignalsGrid() {
   )
 
   const grid = (list: Signal[]) => (
-    <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'>
+    <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'>
       {list.map((s) => (
-        <Link
+        <SignalsLink
           key={s.id}
-          to='/signals/$channel/$signal'
-          params={{ channel: s.channel, signal: signalSlug(s) }}
+          hash={signalHash(s)}
           className='rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent/50'>
           <SignalCard signal={s} />
-        </Link>
+        </SignalsLink>
       ))}
     </div>
   )
 
+  // One choice per BASE channel - account variants ('github@dan') fold into it.
+  const channelOptions = [
+    { value: '', label: 'All channels' },
+    ...[...new Set(data.channels.map(baseChannel))].map((c) => ({
+      value: c,
+      label: `${channelLabel(c)} (${data.signals.filter((s) => inChannel(s.channel, c)).length})`,
+    })),
+  ]
+
   return (
-    <PageContainer width='wide'>
+    <div className={`${SETTINGS_GUTTER} pb-6`}>
       <div className='mb-6 flex flex-wrap items-center justify-between gap-3'>
+        <SelectField
+          aria-label='Channel'
+          value={channel ? baseChannel(channel) : ''}
+          options={channelOptions}
+          onValueChange={(c) => open(signalsPath(c || undefined))}
+        />
         <p className='text-body-sm text-muted-foreground'>
           {mineOnly && activeUser ? (
             <>
@@ -189,7 +200,7 @@ export function SignalsGrid() {
       <footer className='border-t border-border pt-5 text-label text-muted-foreground'>
         Live from the DuckDB warehouse · trends fill in as daily snapshots accrue.
       </footer>
-    </PageContainer>
+    </div>
   )
 }
 

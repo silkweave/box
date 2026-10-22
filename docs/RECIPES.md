@@ -90,8 +90,8 @@ is descriptive prose, not a manifest. There is no `box adopt`, one-click install
 workflow. The root workspace package owns packages imported by the shared feature tree.
 
 The recipes a Box can see are the ones in its `recipes/` directory, such as reminders, sink, Data
-Sync, planning, CRM, chat, automation, support, mcp (MCP connections), notifications, artifacts and
-mobile. The Mobile app recipe is the
+Sync, planning, CRM, chat, automation, support, mcp (MCP connections), notifications, artifacts
+and mobile. The Mobile app recipe is the
 one whose code ships with core ([MOBILE.md](MOBILE.md)): adapting it makes the shipped app the Box's
 own and records it in the ledger, and each recipe's `mobile` powerup requires it. A consumer Box starts with core and
 adapts only the recipes its team chooses.

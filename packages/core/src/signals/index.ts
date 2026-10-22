@@ -1,15 +1,13 @@
 // Core's signal machinery: the signal store (definitions, points, series, formulas, owners,
-// hooks), boards and their node-kind port, and data sources with the provider port.
+// hooks), the board ports (node kinds and the board store; boards themselves come from a recipe),
+// and data sources with the provider port.
 export * from './models.js'
 export * from './types.js'
 export * from './write.js'
 export * from './hooks.js'
 export * from './owners.js'
 export * from './definitions.js'
-export * from './boards.js'
 export * from './board-kinds.js'
-export * from './board-layout.js'
-export * from './board-signal-kind.js'
 export * from './points.js'
 export * from './aggregate.js'
 export * from './series.js'

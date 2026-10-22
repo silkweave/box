@@ -374,7 +374,10 @@ Core-owned, filled at runtime from a server module's `onModuleInit`, unregistere
 | `registerPathMount({ id, prefix, handle })` (`path-mounts.ts`) | a top-level URL prefix such as `/artifacts/` that the feature serves itself, ahead of the SPA in dev and production; core authenticates every request first and the bare prefix stays the SPA's (§ 5.1) |
 
 Core's signals add ports of the same shape ([SIGNALS.md](../SIGNALS.md)): `registerSignalHooks`
-(planning and automation register into it), `registerBoardNodeKind` (planning),
+(planning and automation register into it), `registerBoardNodeKind` (planning's
+cycle-board powerup, and a recipe that draws boards), `registerBoardStore` (the recipe that draws
+boards; core's signal rename and delete and planning's cycle-board powerup report through it, and
+that powerup seeds through it),
 `registerProvider` and `registerPlatformClient` (the Data Sync recipe's powerups) and
 `registerPublishedPostSource` (a feature that publishes posts). Core's event ports (`event-ports.ts`) are the same:
 `registerEventInterest` (automation answers whether a trigger listens for a kind),
@@ -480,7 +483,7 @@ domain vocabulary. Dashboard at `/` is the default landing page, including a fea
 A nav entry may set `expandable: false` for a destination without sub-navigation.
 
 Bands are fixed by convention so that integrating or removing a feature never reorders the others. The
-Stack's features use core's signals 100-199, `planning` 200-299, `chat` 500, `artifacts` 510,
+Stack's features use 100-199 for reporting, `planning` 200-299, `chat` 500, `artifacts` 510,
 `crm` 600, `support` 650, `sink` 700, `reminders` 750, `automation` Settings 800. A new feature picks a
 free band; a collision is a tie broken by id, not an error. Entry order also places an entry inside
 its section.
@@ -488,7 +491,8 @@ its section.
 ### 5.3 Settings sections
 
 `views/SettingsView.tsx` hosts a dialog addressed by `#settings/<section>/<subpath>` over the
-current application page. Core owns Profile (0, the default) and Users (100). Feature sections
+current application page. Core owns Profile (0, the default) and Users (100), and core's signals
+own Signals (108), Signal owners (110) and Data sources (120). Feature sections
 use the same order bands as § 5.2 and receive their subpath through `render(params: string[])`.
 Unknown or unavailable sections fall back to Profile. `useSettingsDialog().open(path)` preserves
 the current page and its query state. See [WEB.md](../WEB.md) for links, legacy redirects, and

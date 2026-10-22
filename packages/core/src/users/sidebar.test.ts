@@ -26,7 +26,7 @@ afterAll(() => {
 })
 
 describe('sidebar layout', () => {
-  const layout = { sections: ['Sales', 'Workspace'], groups: ['crm', 'home'], hidden: ['boards'] }
+  const layout = { sections: ['Sales', 'Workspace'], groups: ['crm', 'home'], hidden: ['reports'] }
 
   it('is null (the default) until the person arranges it', async () => {
     expect(await readSidebarLayout('alice')).toBeNull()

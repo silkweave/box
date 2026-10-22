@@ -335,6 +335,9 @@ would override it for whichever engine the session lands on.
 memory profile store rebuilt on every boot, not as declared profiles, because WorkerDeck refuses
 account connect for declared ones. `allowedConfigDirRoots` is the set of each config dir's parent.
 No principal may manage profiles over the API, so `box.json` stays the only place they are defined.
+`box setup` declares the owner's profiles on config dirs inside the Box,
+`data/agent/accounts/<owner>/{claude,codex}` (0700), so connecting never touches the person's own
+`~/.claude` or `~/.codex` login; reusing those is an explicit setup choice (docs/SETUP.md).
 Every profile carries `connectors: false` (claude.ai connectors never run in Box sessions).
 A profile's `defaults` (`model`, `permissionMode`, and `efforts`, the reasoning effort per model)
 reach WorkerDeck for both engines and apply when a session names no value of its own; an unknown
@@ -357,8 +360,10 @@ WorkerDeck's own PTY loader picks Bun's PTY (`@lydell/node-pty` loads under Bun 
 the child); without a PTY the routes answer 501.
 
 **Default profile.** Each user's `users.agent_profile` (migration `core:006-users-agent-profile`)
-names one of their `agentProfiles`, chosen with "Use as default" on the same panel; null keeps the
-deployment rule (Claude first). `preferredAgentEngine` returns its engine, so it is the default for
+names one of their `agentProfiles`. The first account connected on the panel becomes the default
+when no connected default exists; "Use as default" and "Clear" appear only once a second account is
+connected (or the chosen default is no longer connected). Null keeps the deployment rule (Claude
+first). `preferredAgentEngine` returns its engine, so it is the default for
 a new sidebar session (the browser's last pick still wins there; choosing your own default sets it),
 the engine a trigger runs on when it names none, and the Work panel's default. For the agent
 principal it is the only profile: chat replies and every trigger that runs as the agent use it

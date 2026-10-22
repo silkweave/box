@@ -1,40 +1,41 @@
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowDownRight, ArrowLeft, ArrowUpRight, Minus, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Channel, Signal, SignalDataSource } from '../../types.ts'
 import { channelLabel } from '../../types.ts'
 import { setSignalOwner, useSignalsData } from '../lib/useSignalsData.ts'
 import { findSignal, signalSlug } from '../lib/signalSlug.ts'
+import { SignalsLink, signalHash, signalsHash, signalsPath } from '../lib/signalLink.tsx'
+import { useSettingsDialog } from '../../lib/settingsDialog.ts'
 import { signalLabel, signalMap } from '../lib/signalLabel.ts'
 import { SignalChart } from '../components/SignalChart.tsx'
 import { SignalDialog } from '../components/SignalDialog.tsx'
 import { SignalPointsEditor } from '../components/SignalPointsEditor.tsx'
-import { PageContainer, Button, UserPicker } from '@silkweave/box-ui'
+import { SETTINGS_GUTTER, Button, UserPicker } from '@silkweave/box-ui'
 import { computeDelta, formatBucket, formatDelta, formatNumber, relativeTime } from '../../lib/format.ts'
 
-/** A single signal's deep-dive at /signals/$channel/$signal: the definition (description,
- *  semantics), headline stats, the interactive range chart, and a recent-snapshots table. A
- *  data-less signal (registered, no points yet) renders its definition with an honest empty state. */
-export function SignalDetailView() {
-  const { channel, signal: slug } = useParams({ strict: false }) as { channel?: Channel; signal?: string }
+/** A single signal's deep-dive at `#settings/signals/<channel>/<slug>`: the definition
+ *  (description, semantics), headline stats, the interactive range chart, and a recent-snapshots
+ *  table. A data-less signal (registered, no points yet) renders its definition with an honest
+ *  empty state. */
+export function SignalDetailView({ channel, slug }: { channel: string; slug: string }) {
   const { data } = useSignalsData()
-  const navigate = useNavigate()
+  const { open } = useSettingsDialog()
   const [editOpen, setEditOpen] = useState(false)
 
   if (!data) return null
-  const signal = channel && slug ? findSignal(data.signals, channel, slug) : undefined
+  const signal = findSignal(data.signals, channel, slug)
 
   if (!signal)
     return (
-      <PageContainer width='reading'>
+      <div className={`${SETTINGS_GUTTER} pb-6`}>
         <p className='text-body-sm text-muted-foreground'>
           No signal matches <code>{channel}/{slug}</code>.{' '}
-          <Link to='/signals' className='text-accent hover:underline'>
-            Back to overview
-          </Link>
+          <SignalsLink hash={signalsHash()} className='text-accent hover:underline'>
+            Back to all signals
+          </SignalsLink>
         </p>
-      </PageContainer>
+      </div>
     )
 
   const points = signal.points
@@ -101,13 +102,12 @@ export function SignalDetailView() {
   const byId = signalMap(data)
 
   return (
-    <PageContainer width='reading'>
-      <Link
-        to='/signals/$channel'
-        params={{ channel: signal.channel }}
+    <div className={`${SETTINGS_GUTTER} pb-6`}>
+      <SignalsLink
+        hash={signalsHash(signal.channel)}
         className='mb-4 inline-flex items-center gap-1.5 text-label text-muted-foreground transition-colors hover:text-text'>
         <ArrowLeft className='size-3.5' /> {channelLabel(signal.channel)}
-      </Link>
+      </SignalsLink>
 
       <header className='mb-6'>
         <div className='flex items-start justify-between gap-3'>
@@ -253,17 +253,12 @@ export function SignalDetailView() {
         onOpenChange={setEditOpen}
         signal={signal}
         onSaved={(id, ch) => {
-          // The channel is part of the route; follow the signal if curation moved it.
-          if (ch !== signal.channel) {
-            void navigate({
-              to: '/signals/$channel/$signal',
-              params: { channel: ch as Channel, signal: signalSlug({ id, channel: ch as Channel }) },
-            })
-          }
+          // The channel and id are part of the link; follow the signal if curation moved it.
+          if (ch !== signal.channel || id !== signal.id) open(signalsPath(ch, signalSlug({ id, channel: ch as Channel })))
         }}
-        onDeleted={() => void navigate({ to: '/signals' })}
+        onDeleted={() => open(signalsPath(signal.channel))}
       />
-    </PageContainer>
+    </div>
   )
 }
 
@@ -396,12 +391,8 @@ function DependencyLink({ byId, id }: { byId: ReturnType<typeof signalMap>; id: 
   const dep = byId.get(id)
   if (!dep) return <code title='no live signal with this id'>{id}</code>
   return (
-    <Link
-      to='/signals/$channel/$signal'
-      params={{ channel: dep.channel, signal: signalSlug(dep) }}
-      title={id}
-      className='text-accent hover:underline'>
-      {signalLabel(byId, id)}
-    </Link>
+    <SignalsLink hash={signalHash(dep)} className='text-accent hover:underline'>
+      <span title={id}>{signalLabel(byId, id)}</span>
+    </SignalsLink>
   )
 }

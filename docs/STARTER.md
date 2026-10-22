@@ -53,7 +53,7 @@ Recipe adaptation is agent-driven; record the actual source revision used.
     freshness unless the update date and command are recorded.
 12. Configure identity and brand in `box.json` and machine ports in `box.local.json`, then run
     `bun setup`. Confirm the system
-    principal, create the first owner, and select any detected Codex or Claude profiles. Setup keeps
+    principal, create the first owner, and choose its Box-only Codex or Claude profiles. Setup keeps
     the owner token and generated secrets in gitignored mode-0600 `box.local.json`. Never commit
     credentials. Keep background automation, chat agents and relay off for the first boot. Keep
     `stack.source` in `box.json` pointing at the shared Stack; put a local checkout path in

@@ -55,7 +55,7 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box start --prod                           start the production build
   box verify [--plain|--verbose]              run the complete visual validation chain
   box auth token <id> [--name "Full Name"] [--create] [--rotate] [--admin] [--quiet]
-  box auth login <id>                         short-lived, single-use browser sign-in
+  box auth login [<id>]                       short-lived, single-use browser sign-in
   box auth reveal <id>                        re-print an access token, breaking nothing
   box auth replace <old> <new> [--name "Name"] a new agent takes over an agent's config; the old one retires
   box db backup                               a safety copy of the warehouse, kept generationally

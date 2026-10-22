@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { copyFileSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -63,5 +63,14 @@ test('shim installer recognizes a Bun-only checkout and preserves foreign progra
     const refused = invoke()
     assert.equal(refused.status, 1)
     assert.match(refused.stderr, /refusing to replace/)
+    // A deleted Box's shim dangles and is replaced; a dangling link of another shape is left alone.
+    rmSync(join(bin, 'box'))
+    symlinkSync(join(root, 'deleted-box/packages/cli/bin/box'), join(bin, 'box'))
+    assert.equal(invoke().status, 0)
+    assert.equal(readlinkSync(join(bin, 'box')), realpathSync(join(checkout, 'packages/cli/bin/box')))
+    rmSync(join(bin, 'box'))
+    symlinkSync(join(root, 'gone/bin/box'), join(bin, 'box'))
+    assert.equal(invoke().status, 1)
+    assert.equal(readlinkSync(join(bin, 'box')), join(root, 'gone/bin/box'))
   } finally { rmSync(root, { recursive: true, force: true }) }
 })

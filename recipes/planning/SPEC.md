@@ -10,7 +10,7 @@ with a daily stand-up check-in recorded against it. Structured state lives in se
 the long-form rationale lives in markdown on disk, and the row's one-line `summary` is derived from
 that doc rather than typed.
 
-- **dependsOn**: nothing. Signals, boards and saved views are core (`docs/SIGNALS.md`). Core-side,
+- **dependsOn**: nothing. Signals and saved views are core (`docs/SIGNALS.md`). Core-side,
   `state.ts` imports `autoRegisterDefinitions` (`@silkweave/box-core/signals/definitions`),
   `replaceSignalRows` (`@silkweave/box-core/signals/write`) and the `SignalHooks` type
   (`@silkweave/box-core/signals/hooks`); the server module registers `PLANNING_SIGNAL_HOOKS` into
@@ -20,14 +20,10 @@ that doc rather than typed.
   (`apps/web/src/presets/`), and the goal views use `useSignalsData` and `SignalPicker` from
   `apps/web/src/signals/`. Goals *reference* a `signals.id` in `goals.signal_id`, but as a string -
   there is no FK. Core-side, goals read `@silkweave/box-core/signals/series` (day-grain reads over
-  a merged history), `readSignalDefinition(s)` and `readSignalPoints`. Circuit boards: `core/board-kinds.ts` defines
-  `GOAL_BOARD_KIND` (layer 3, `lead`: always the top row when arranged; edge its signal -> goal; a
-  `lead` card with the signal's value, target, progress against pace, health, the signal's sparkline
-  and the goal's initiatives as `attachments`) and `INITIATIVE_BOARD_KIND` (layer 0, edge
-  initiative -> each goal; a `work` card with status, open tasks and open estimated hours; an
-  initiative placed as a node is left off its goal's attachments), registered into
-  core's `registerBoardNodeKind` port from `onModuleInit`; goal and initiative rename/delete call
-  core's `renameBoardRef` / `pruneBoardRef` so placements follow.
+  a merged history), `readSignalDefinition(s)` and `readSignalPoints`.
+  Goal and initiative renames and deletes call the hooks in `core/identity-hooks.ts`
+  (`registerPlanningIdentityHooks`), so a powerup can follow them; the `cycle-board` powerup
+  (below) is the one that uses them.
 - **Depended on by**: any feature that declares `dependsOn: ['planning']`, for example to reuse
   `PLANNING_STATUSES` and `PlanningStatus` in its own models and types and planning's
   `StatusSelect` / `StatusLabel` in its web views.
@@ -156,7 +152,6 @@ behind `AuthGuard`:
 | `goalsCarryForward` (mutation) | `goal-carry-forward` | continue an open goal in another cycle (see Goals) |
 | `cyclesList` (query) | `cycles-get` | every cycle, newest window first |
 | `cyclesUpsert` (mutation) | `cycle-upsert` | create or partially update; `start_date` / `end_date` are required on create |
-| `cyclesBoard` (mutation) | `cycle-board` | seed a circuit board (`cycle-<id>` unless `id` is given) with the cycle's goals, their signals and those signals' direct drivers, arranged with core's `layoutLayers`; refuses an existing board unless `replace` (core `cycle-board.ts`; the cycle page's *Circuit board* button) |
 | `cyclesDelete` (mutation) | `cycle-delete` | remove a cycle; its goals stay, outside any cycle, dates intact |
 
 The two `doc-*` tools and `initiatives-get` / `sprint-get` are mutations because they carry an input
@@ -170,6 +165,11 @@ cycle or an unknown `blocked_by` id; an out-of-enum value; a title over the max 
 `pending` without both dates; `planned` while any day is provably over capacity (the message names
 the worst three person-days); a `slot_date` outside the sprint window; an `availability` key that is
 not a known user (`assertKnownUser`).
+
+The `cycle-board` powerup ([powerups/cycle-board/](powerups/cycle-board/POWERUP.md)) adds goals and
+initiatives as board nodes, `cycleBoardSeed` / `cycle-board` and the cycle page's *Circuit board*
+action. Without it the action is a note that says the cycle board is not set up and, for
+administrators, drafts a Builder brief to add it.
 
 ## Actions
 

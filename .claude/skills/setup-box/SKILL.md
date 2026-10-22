@@ -91,23 +91,27 @@ server stays visible and stoppable in the owner's shell tools.
 
 Setup is a host-only operation. It:
 
-1. confirms the machine principal before binding its identity;
-2. asks for the first owner ID (default `admin`) and display name;
-3. detects `CODEX_HOME`/`~/.codex` and `CLAUDE_CONFIG_DIR`/`~/.claude`;
-4. asks which detected profiles belong to the owner;
+1. names the machine principal (pass `--review` to confirm it before binding its identity);
+2. asks for the first owner's user name and display name, suggested from the computer account;
+3. offers the agents (Claude, Codex, both, or not now) as one menu;
+4. creates a config dir of their own inside the Box, `data/agent/accounts/<owner>/<engine>`
+   (0700), unless the owner explicitly reuses an existing `~/.claude` or `~/.codex` login;
 5. writes `workerdeck` and `agentProfiles` to mode-0600 `box.local.json`;
 6. creates the first human as an administrator;
 7. stores the permanent owner token for the local Box CLI without printing it; and
 8. prints a short-lived, single-use sign-in link (with `--no-start`; otherwise it starts the Box
    and opens the link).
 
-Detection reads directory and normal login-marker existence only, never credential contents. A
-profile directory without its marker may still be selected, but setup says that provider sign-in
-may be required. No detected profile is also a supported result; the provider quest remains open.
+A Box-only profile starts without a sign-in: the owner connects it in Settings > Profile (Claude
+runs `claude setup-token`, Codex a device sign-in), and the dashboard's provider quest points
+there. Setup never changes `~/.claude` or `~/.codex`. Detection of existing dirs reads directory
+and login-marker existence only, never credential contents. No profile is also a supported result;
+the provider quest remains open.
 
 Setup refuses a populated Box and never rotates an existing credential or silently replaces a
 custom owner mapping. A run interrupted before human creation can be resumed. For non-interactive
-rehearsals use explicit `--owner`, `--name`, `--profiles codex,claude` or `--no-profiles`,
+rehearsals use explicit `--owner`, `--name`, `--profiles codex,claude` (Box-only; the default
+is Claude), `--existing-profiles codex,claude` (reuse this computer's login) or `--no-profiles`,
 plus `--yes`.
 
 ## 4. Boot it
@@ -145,7 +149,7 @@ Box host.
 ## 6. Sign in, then choose the first recipe
 
 Open the sign-in link printed by setup. It works once and normally lasts 15 minutes; if it expires,
-run `box auth login <id>`. Confirm the onboarding dashboard renders and check the browser console.
+run `box auth login` (add the id when the Box has several people). Confirm the onboarding dashboard renders and check the browser console.
 A blank page is a runtime failure that `box verify` cannot detect.
 
 The owner quest is now complete. If setup configured a working Codex or Claude profile, the provider
@@ -218,9 +222,9 @@ The headline items:
 - **Credentials.** Anything that reaches an external service needs
   the `credentials` section of `box.local.json`. Follow the shape in `docs/SETUP.md` and fill in only
   the channels they use. Every channel is optional.
-- **Builder providers.** Guided setup can configure detected Codex and Claude profiles, but each
-  still needs its own valid subscription and host sign-in. A missing login marker is a warning,
-  not a readiness claim. The in-chat assistant remains a separate feature decision.
+- **Builder providers.** Guided setup declares Box-only Codex and Claude profiles; each still needs
+  a valid subscription, connected in Settings > Profile. A declared profile is not a readiness
+  claim. The in-chat assistant remains a separate feature decision.
 - **Some pulls cannot be configured at all yet** - the reddit and browser-driven LinkedIn paths need
   an external gateway this repo does not ship, and there is no way to mint a LinkedIn member token
   from a fresh Box.

@@ -11,8 +11,8 @@ const shape = (groups: NavGroup[]) => groups.map((g) => `${g.section}:${g.id}`)
 
 describe('sidebar sections', () => {
   it('groups entries by declared section, sections by order, entries by nav order', () => {
-    const entries = [e('crm', 600, SALES), e('chat', 500, WORKSPACE_SECTION), e('boards', 110, REPORTING), e('home', 0, WORKSPACE_SECTION), e('signals', 100, REPORTING)]
-    expect(shape(sidebarGroups(entries))).toEqual(['Workspace:home', 'Workspace:chat', 'Reporting:signals', 'Reporting:boards', 'Sales:crm'])
+    const entries = [e('crm', 600, SALES), e('chat', 500, WORKSPACE_SECTION), e('reports', 110, REPORTING), e('home', 0, WORKSPACE_SECTION), e('signals', 100, REPORTING)]
+    expect(shape(sidebarGroups(entries))).toEqual(['Workspace:home', 'Workspace:chat', 'Reporting:signals', 'Reporting:reports', 'Sales:crm'])
   })
 
   it('puts entries without a section last, under Other', () => {

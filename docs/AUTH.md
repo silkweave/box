@@ -288,7 +288,7 @@ host-only guided setup:
 bun setup
 ```
 
-It confirms the configured machine principal, creates the first human as an administrator, stores
+It names the configured machine principal (`--review` asks to confirm it), creates the first human as an administrator, stores
 their permanent token in mode-0600 `box.local.json` for the local CLI without printing it, and
 issues a short-lived single-use sign-in link. It refuses a populated Box rather than changing an
 existing profile or rotating a credential. The lower-level host commands remain available:
@@ -339,7 +339,7 @@ UTF-8 user ID into a binary payload and authenticates it with a 160-bit truncate
 typically about 50 characters, lasts 15 minutes by default and 24 hours at most. It carries no
 secret of the user's and cannot be exchanged for an access token,
 which is what makes it safe to send in a message or mint on someone's behalf inside an agent
-transcript. Mint with `box auth login <id>`, Settings -> Users -> Send sign-in link, or the
+transcript. Mint with `box auth login <id>` (the id may be left out on a Box with one person), Settings -> Users -> Send sign-in link, or the
 admin-only `user-link` tool.
 
 The verifier continues to accept the earlier `bl1.<JSON>.<HMAC-SHA256>` format so an already-issued

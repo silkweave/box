@@ -15,6 +15,7 @@ import { Badge, Button, PageContainer, PageHeader } from '@silkweave/box-ui'
 import { RouteChrome } from '../lib/routeShell.tsx'
 import { builderReadiness, loadBuilderControlState, type BuilderControlState } from '../lib/builderStore.ts'
 import { openBuilderWithBrief } from '../lib/builderBrief.ts'
+import { useSettingsDialog } from '../lib/settingsDialog.ts'
 import { RECIPES } from '../lib/recipes.ts'
 import { recipeBook } from '../lib/recipeLedger.ts'
 import { useAuth } from '../lib/useAuth.tsx'
@@ -122,7 +123,7 @@ function OnboardingView() {
             <div className='space-y-3'>
               <Quest complete icon={<UserRoundCheck />} title='Meet your Box' description='You are signed in and this Box is ready for its human owner.' />
               <Quest complete={providerReady} active={isAdmin && !providerReady} icon={<Bot />} title='Connect a Builder provider' description={isAdmin ? providerDescription(readiness, builderError) : 'An administrator connects Builder to a Codex or Claude profile on the Box host.'}>
-                {isAdmin && !providerReady && <ProviderSetup />}
+                {isAdmin && !providerReady && (readiness?.provider === 'sign-in-required' ? <ProviderConnect /> : <ProviderSetup />)}
               </Quest>
               <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Adapt and use a recipe' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'recipe is' : 'recipes are'} adapted: ${installed.map(recipe => recipe.title).join(', ')}.` : 'Choose a recipe, then let Builder adapt and verify its source.'}>
                 {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => document.getElementById('recipes')?.scrollIntoView({ behavior: 'smooth' })}><Layers3 />Choose a recipe</Button>}
@@ -161,8 +162,14 @@ function providerDescription(readiness: ReturnType<typeof builderReadiness> | nu
   if (error) return error
   if (!readiness) return 'Checking the Box host for Codex or Claude profiles.'
   if (readiness.provider === 'ready') return readiness.message
-  if (readiness.provider === 'sign-in-required') return `A profile exists, but its provider still needs sign-in. ${readiness.message}`
+  if (readiness.provider === 'sign-in-required') return 'Your Claude or Codex profile is set up. Connect your account in Settings > Profile.'
   return 'Builder needs a Codex or Claude profile mapped to your account on this host.'
+}
+
+/** A declared profile without a sign-in: the person connects it from their own Settings > Profile. */
+function ProviderConnect() {
+  const { open } = useSettingsDialog()
+  return <Button className='mt-4' size='sm' onClick={() => open('profile')}><UserRoundCheck />Connect in Settings</Button>
 }
 
 function ProviderSetup() {

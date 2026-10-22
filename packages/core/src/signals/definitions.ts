@@ -21,7 +21,7 @@ import { findProvider, findMeasure } from './sources/registry.js'
 import { readDataSource } from './sources/state.js'
 import { assertKnownActor, assertKnownUser } from '../users/state.js'
 import { readSignalOwnersFile, resolveSignalOwner, writeSignalOwnersFile } from './owners.js'
-import { pruneBoardRef, renameBoardRef } from './boards.js'
+import { pruneBoardRef, renameBoardRef } from './board-kinds.js'
 import { signalHooks } from './hooks.js'
 import { FormulaError, formulaRefs, formulaRefsOf, parseFormula, renameFormulaRef } from './formula.js'
 import {
@@ -323,6 +323,7 @@ export async function renameSignalDefinition(oldId: string, newId: string, actor
   }
   // Circuit-board placements are keyed by signal id too - a board left holding the old id would
   // silently drop the node at render (the same class of bug `signal_points` hit on 2026-08-10).
+  // The board store port reaches a board recipe when the Box has one, and does nothing otherwise.
   await renameBoardRef('signal', oldId, newId, actor)
   // Everything OUTSIDE data that holds a signal id (initiative bindings, alert rules) re-points
   // itself through the hooks port; data does not know what those things are.
@@ -344,8 +345,9 @@ export interface SignalDeleteReport {
   id: string
   /** Definitions whose `depends_on` referenced the deleted signal - the edge was pruned. */
   pruned_from: string[]
-  /** Circuit boards the signal was PLACED on - the placement was pruned. Unlike points, a
-   *  placement carries no history worth resurrecting, so it goes with the definition. */
+  /** Boards the signal was PLACED on - the placement was pruned. Unlike points, a
+   *  placement carries no history worth resurrecting, so it goes with the definition. Empty in a
+   *  Box without boards. */
   pruned_from_boards: string[]
   /** Objects outside data (goals, alert rules) still referencing the id, as `<feature>:<id>`.
    *  Left in place on purpose: a visible dead reference beats a silently narrowed object. */

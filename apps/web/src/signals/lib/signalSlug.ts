@@ -1,6 +1,6 @@
 import type { Signal } from '../../types.ts'
 
-// A signal detail route is `/signals/<channel>/<slug>`. The slug is the signal id with its
+// A signal detail opens at `#settings/signals/<channel>/<slug>` (signalLink.tsx). The slug is the signal id with its
 // `<channel>.` prefix stripped and every non-alphanumeric run collapsed to a single dash:
 //   github.stars.acme        -> stars-acme
 //   npm.pkg.@acme/core       -> pkg-acme-core

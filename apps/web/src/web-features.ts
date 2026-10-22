@@ -7,4 +7,5 @@ import signals from './signals/index.tsx'
 
 export const CORE_WEB_FEATURES = [signals] as const satisfies readonly WebFeature[]
 export const ALL_WEB_FEATURES: readonly WebFeature[] = [...CORE_WEB_FEATURES, ...WEB_FEATURE_LIST]
-export const ALL_WEB_ROUTES = [...signals.routes, ...WEB_ROUTES] as const
+// Core's signals live in Settings and bring no routes of their own.
+export const ALL_WEB_ROUTES = WEB_ROUTES

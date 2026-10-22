@@ -105,7 +105,7 @@ class SignalDefinitionsDto {
 class SignalDeleteReportDto {
   @ApiProperty() id!: string
   @ApiProperty({ type: [String], description: 'Signal ids whose depends_on lists were pruned' }) pruned_from!: string[]
-  @ApiProperty({ type: [String], description: 'Circuit boards the signal was placed on (the placement was pruned)' })
+  @ApiProperty({ type: [String], description: 'Boards the signal was placed on (the placement was pruned)' })
   pruned_from_boards!: string[]
   @ApiProperty({ type: [String], description: 'Initiatives still binding the id (left in place)' }) bound_initiatives!: string[]
   @ApiProperty({ type: [String] }) warnings!: string[]

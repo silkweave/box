@@ -19,7 +19,7 @@ the fields for the selected operation. Quote it for your shell, for example:
   box builder browser --session abc123 snapshot
   box builder browser --session abc123 inspect '{"ref":"e12"}'
   box builder browser --session abc123 type '{"ref":"e12","text":"hello","append":true}'
-  box builder browser --session abc123 navigate '{"path":"/signals"}'
+  box builder browser --session abc123 navigate '{"path":"/recipes"}'
   box builder browser --session abc123 screenshot
 
 Operations and fields:

@@ -12,14 +12,14 @@ rebuild step - writes UPSERT straight into it.
   `<checkout>/data`; no environment variable moves it, so a second
   tenant or a scratch Box is a second checkout. **Gitignored** - the durable copy is the GCS backup
   below, never git.
-- **Ownership:** core owns the engine, the record layer, the schema lifecycle and ten tables,
+- **Ownership:** core owns the engine, the record layer, the schema lifecycle and nine tables,
   declared in [`warehouse/core-models.ts`](../packages/core/src/warehouse/core-models.ts)
   (`CORE_MODELS`): `users`, `kv_state`, `events` and `automation_runs`, the signal tables
-  `signals`, `signal_points`, `snapshots`, `data_sources` and `signal_boards`
+  `signals`, `signal_points`, `snapshots` and `data_sources`
   ([`signals/models.ts`](../packages/core/src/signals/models.ts)), and the currency rates table
   `fx_rates` ([`fx/rates.ts`](../packages/core/src/fx/rates.ts)), all described in
   [SIGNALS.md](SIGNALS.md). Every other table belongs to a feature and is documented in the recipe
-  it came from, `recipes/<id>/SPEC.md`. A Box with no features installed has exactly those ten.
+  it came from, `recipes/<id>/SPEC.md`. A Box with no features installed has exactly those nine.
 
 This document is core's half. For what a feature's table means, read its feature's SPEC.
 

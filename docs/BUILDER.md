@@ -103,7 +103,7 @@ box builder browser --session <session-id> type '{"ref":"dom-preview-1","text":"
 box builder browser --session <session-id> select '{"ref":"dom-preview-2","value":"active"}'
 box builder browser --session <session-id> scroll '{"x":0,"y":600}'
 box builder browser --session <session-id> style '{"ref":"dom-preview-1","styles":{"backgroundColor":"#eef"}}'
-box builder browser --session <session-id> navigate '{"path":"/signals"}'
+box builder browser --session <session-id> navigate '{"path":"/recipes"}'
 box builder browser --session <session-id> screenshot
 ```
 

@@ -36,6 +36,11 @@ reading the implementation from `box recipe fetch <id>` (the recorded version wi
 registry or an access key; only fetching new versions needs them. Keep `stack.source` and
 `registry` in `box.json` and any `box.local.json` override as the owner configured them.
 
+When the target removes something from core that this Box uses (a page, a tool, a table's owner)
+because a recipe or powerup now carries it, adapt that recipe or powerup in the same upgrade, before
+the Box boots on the target core, so nothing the team relies on disappears. Its tables keep their
+rows when the recipe declares the same table; confirm that against a restored backup.
+
 Use the latest available dependencies. Record any necessary pin and its reason in
 `docs/GOTCHAS.md`. Write resume state to `_docs/INTEGRATION.md` before each migration or source
 mutation and reconcile actual files and ledgers after an interruption.

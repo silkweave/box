@@ -9,7 +9,7 @@ The recipe documents ship with core at `recipes/data-sync/`; the reference imple
 [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with
 `box recipe fetch data-sync`.
 
-**Builds on:** core only. Signals, data sources, boards, presets and the browser lease are core
+**Builds on:** core only. Signals, data sources, presets and the browser lease are core
 ([docs/SIGNALS.md](../../docs/SIGNALS.md), [docs/BROWSERS.md](../../docs/BROWSERS.md)), so Data Sync
 only adds pulls.
 
@@ -44,7 +44,7 @@ instance before continuing.
    the account for keys every account shares (the LinkedIn OAuth app). The owner enters them; never
    print or log one. A pull with a missing key fails with the key names, on purpose.
 7. **Channel labels.** `apps/web/src/types.ts` (`Channel`, `CHANNEL_LABEL`) is app-level and kept
-   by hand. A channel missing there shows its raw id in the Signals sidebar.
+   by hand. A channel missing there shows its raw id in the Signals settings.
 8. **Schedules.** Nothing pulls on a timer until the team adds Automation triggers over the action
    ids (`npm-pull`, `blog-pull`, `github`, ...). A daily trigger per pull is typical; backfills are
    one-off.
@@ -68,7 +68,7 @@ box signal-series              # one of them, with its points
 
 An unconfigured npm or blog platform finishes with a `skipped - ...` summary naming the missing
 setting and records a successful run, which is the correct state. Hacker News with no account fails
-with a pointed message. Then open `http://localhost:8190/signals`: the npm, blog
+with a pointed message. Then open `http://localhost:8190/#settings/signals`: the npm, blog
 and Hacker News channels appear with their signals, and Settings > Automation > Runs shows each run.
 
 Each powerup's INSTALL.md has its own Verify section with real credentials.

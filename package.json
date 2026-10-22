@@ -79,7 +79,6 @@
     "@workerdeck/protocol": "^3.12.1",
     "@workerdeck/server": "^3.12.1",
     "@workerdeck/ui": "^3.12.1",
-    "@xyflow/react": "^12.11.6",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "http-proxy-middleware": "^4.2.0",

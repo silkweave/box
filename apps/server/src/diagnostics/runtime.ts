@@ -25,7 +25,7 @@ export function errorKind(error: unknown): string {
 
 /** Top-level path segments core serves itself, or that its tooling serves in development. */
 const CORE_ROUTE_ROOTS = ['api', 'trpc', 'mcp', 'agent', 'builder', 'builder-agent', 'builder-browser', 'builder-assets',
-  'signals', 'boards', 'settings', 'recipes', 'login', 'assets', 'src', 'node_modules', '@vite', '@fs', '@id']
+  'settings', 'recipes', 'login', 'assets', 'src', 'node_modules', '@vite', '@fs', '@id']
 /** Route roots the registered features bring (main.ts: each feature's id and `routeRoots`). */
 const featureRouteRoots = new Set<string>()
 

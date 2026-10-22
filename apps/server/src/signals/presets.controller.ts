@@ -17,8 +17,8 @@ import type { PrincipalRequest } from '../auth/auth.decorators.js'
 // their own pipeline lens - which is the friction this whole surface exists to remove. Collaborators
 // see none of it: a bare controller is internal-only.
 //
-// Concurrency is last-write-wins per preset name, attributed by `updated_by`, matching DocSave and the
-// circuit boards. There is no version precondition and no 409: the loss window is two people naming
+// Concurrency is last-write-wins per preset name, attributed by `updated_by`, matching DocSave and
+// board layouts. There is no version precondition and no 409: the loss window is two people naming
 // a preset the same thing in the same minute, and the Box instance's git history is the recovery.
 
 class PresetsDto {

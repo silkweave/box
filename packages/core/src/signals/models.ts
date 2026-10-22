@@ -1,4 +1,4 @@
-// Core's signal tables: raw snapshots, the signal set (definitions, points, boards) and the
+// Core's signal tables: raw snapshots, the signal set (definitions, points) and the
 // data-source registry. Declared with CORE_MODELS (warehouse/core-models.ts).
 
 import type { ModelSpec } from '../warehouse/model.js'
@@ -120,32 +120,9 @@ export const SIGNAL_POINTS: ModelSpec = {
   audit: true,
 }
 
-/**
- * A user-created circuit board: WHICH signals are on it and WHERE each sits. Edges are NOT here -
- * they stay on signals.depends_on (one causal claim, curated once, cycle-checked once); a board is
- * a VIEW onto that graph, and an edge renders when both endpoints are members. `nodes` is a JSON
- * column rather than a join table: it is written whole on every autosave, never queried across
- * boards, and a node carries no attributes worth querying (the depends_on / blocked_by
- * precedent). Positions are TEAM state - never localStorage.
- */
-export const SIGNAL_BOARDS: ModelSpec = {
-  table: 'signal_boards',
-  pk: ['id'],
-  columns: {
-    id: { kind: 'text' }, // slug, ^[a-z0-9][a-z0-9-]*$ (the data-source id charset)
-    label: { kind: 'text' },
-    description: { kind: 'text', default: "''" },
-    nodes: { kind: 'json', default: "'[]'" }, // [{kind, ref, x, y}] - x/y in flow units, snapped client-side
-    sort: { kind: 'int', default: '0' },
-  },
-  timestamps: true,
-  audit: true,
-}
-
 export const SIGNAL_MODELS: readonly ModelSpec[] = [
   SNAPSHOTS,
   SIGNAL_DEFINITIONS,
   SIGNAL_POINTS,
-  SIGNAL_BOARDS,
   DATA_SOURCES,
 ]

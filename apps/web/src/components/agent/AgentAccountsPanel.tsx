@@ -92,6 +92,9 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
 
   const name = user.nickname || user.id
   const chosen = data?.profiles.find((p) => p.name === user.agent_profile) ?? null
+  // Choosing between accounts only means something once two are connected; with one, it is the
+  // default. A chosen default that is no longer connected still shows, so its failing runs are fixable.
+  const choosable = (data?.profiles.filter(connected).length ?? 0) > 1 || (chosen !== null && !connected(chosen))
   return (
     <section className='flex flex-col gap-3' aria-label='Agent accounts'>
       <div>
@@ -146,7 +149,7 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
                   </p>
                 </div>
                 <div className='flex items-center gap-2'>
-                  {connected(p) && !isDefault && (
+                  {choosable && connected(p) && !isDefault && (
                     <Button size='sm' variant='ghost' disabled={saving} onClick={() => void chooseDefault(p)}>
                       Use as default
                     </Button>
@@ -167,7 +170,7 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
           })}
         </ul>
       )}
-      {data?.enabled && data.profiles.length > 0 && (
+      {data?.enabled && choosable && (
         <p className='text-label text-muted-foreground'>
           {chosen ? (
             <>
@@ -188,6 +191,8 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
         engine={connecting?.engine}
         onClose={() => setConnecting(undefined)}
         onConnected={() => {
+          // The first connected account becomes the default, so a person with one account never has to choose.
+          if (connecting && (!chosen || !connected(chosen))) void chooseDefault(connecting)
           setConnecting(undefined)
           load()
         }}
