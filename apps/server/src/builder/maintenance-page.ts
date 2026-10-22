@@ -6,11 +6,12 @@ export type MaintenanceNotice = NonNullable<ReturnType<typeof publicNotice>>
 /**
  * The page the supervisor serves while the Box is in maintenance (`notice` set) or while the app is
  * restarting (`notice` null). Self-contained: inline CSS and script, the logo from the supervisor's
- * own Builder assets, so it renders with the app down. Live: it follows /api/box-status/events,
+ * own Builder assets (the current snapshot's versioned path, which every instance has), so it renders
+ * with the app down. Live: it follows /api/box-status/events,
  * redraws the checklist and countdown, and reloads once the Box is back.
  */
-export function maintenancePage(brand: Pick<BoxBrand, 'name' | 'logoUrl' | 'themeColor'>, notice: MaintenanceNotice | null): string {
-  const logo = brand.logoUrl.startsWith('/builder-assets/') ? brand.logoUrl : `/builder-assets${brand.logoUrl}`
+export function maintenancePage(brand: Pick<BoxBrand, 'name' | 'logoUrl' | 'themeColor'>, notice: MaintenanceNotice | null, uiVersion: string | null = null): string {
+  const logo = brand.logoUrl.startsWith('/builder-assets/') ? brand.logoUrl : `/builder-assets${uiVersion ? `/${uiVersion}` : ''}${brand.logoUrl}`
   const data = JSON.stringify({ name: brand.name, notice }).replace(/</g, '\\u003c')
   const accent = /^#[0-9a-f]{3,8}$/i.test(brand.themeColor) ? brand.themeColor : '#7b7ef5'
   const title = notice ? `${brand.name}: maintenance` : `${brand.name}: restarting`

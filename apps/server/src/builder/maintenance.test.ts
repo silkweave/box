@@ -90,6 +90,11 @@ describe('maintenance page', () => {
     expect(html).toContain('<title>Team Box: maintenance</title>')
   })
 
+  it('takes the logo from the current Builder snapshot when its version is known', () => {
+    const version = '07955069-14b1-48fa-bd55-f6617df53947'
+    expect(maintenancePage(brand, null, version)).toContain(`src="/builder-assets/${version}/brand-logo.svg"`)
+  })
+
   it('has a restarting variant and refuses a non-colour accent', () => {
     const html = maintenancePage({ ...brand, themeColor: 'red;}body{display:none' }, null)
     expect(html).toContain('<title>Team Box: restarting</title>')

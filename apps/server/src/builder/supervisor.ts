@@ -376,7 +376,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const isDocument = (req: IncomingMessage): boolean => (req.method === 'GET' || req.method === 'HEAD') && !!req.headers.accept?.includes('text/html')
   function servePage(res: ServerResponse, notice: ReturnType<typeof publicNotice>): void {
     res.writeHead(503, { 'content-type': 'text/html; charset=utf-8', 'retry-after': notice ? '60' : '5', 'cache-control': 'no-store' })
-    res.end(maintenancePage(boxJson().brand, notice))
+    res.end(maintenancePage(boxJson().brand, notice, builderUiVersion(ui)))
   }
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://local')
