@@ -80,9 +80,9 @@ To update this feature, compare the target Box with the recorded upstream SHA, p
 customizations, and apply the relevant source changes manually. Record the result in
 `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 
-To remove it, delete `features/data-sync/` and its registration entries. Nothing imports it. Content
-publishing to LinkedIn and Substack and the Alerts LinkedIn and Reddit polls then refuse with "add the
-Data Sync <id> powerup". Signals and snapshots stay in the warehouse unless the team chooses to delete
+To remove it, delete `features/data-sync/` and its registration entries. Nothing imports it. Publishing to
+LinkedIn and Substack and the Alerts LinkedIn and Reddit polls then refuse with "add the Data Sync
+<id> powerup". Signals and snapshots stay in the warehouse unless the team chooses to delete
 them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot
 afterward.
 

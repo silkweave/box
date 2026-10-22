@@ -1,17 +1,8 @@
-// Must stay a superset of core's DERIVED_CHANNELS (signals/derive.ts) plus the channels only the
-// app writes by hand. `linkedin` and `substack` are derived channels and were missing here until
-// 2026-09-14, which rendered their ids raw wherever CHANNEL_LABEL was consulted.
-export type Channel =
-  | 'github'
-  | 'hackernews'
-  | 'npm'
-  | 'reddit'
-  | 'blog'
-  | 'x'
-  | 'linkedin'
-  | 'substack'
-  | 'content'
-  | 'business'
+/**
+ * A signal channel id. Open: any feature may write signals on a channel of its own, so the app
+ * knows labels for the common ones (CHANNEL_LABEL) and title-cases the rest.
+ */
+export type Channel = string
 
 export interface Point {
   date: string
@@ -117,6 +108,7 @@ export interface SignalPointsPayload {
   points: SignalPointRow[]
 }
 
+/** Labels for the channels whose display name is not their title-cased id. */
 export const CHANNEL_LABEL: Record<Channel, string> = {
   github: 'GitHub',
   hackernews: 'Hacker News',
@@ -126,7 +118,6 @@ export const CHANNEL_LABEL: Record<Channel, string> = {
   x: 'X',
   linkedin: 'LinkedIn',
   substack: 'Substack',
-  content: 'Content',
   business: 'Business',
 }
 
@@ -135,14 +126,15 @@ export const CHANNEL_LABEL: Record<Channel, string> = {
 // knows the '@' convention on the client.
 
 /** 'github@dan' → 'github'; plain channels pass through. */
-export const baseChannel = (c: string): Channel => (c.split('@')[0] ?? c) as Channel
+export const baseChannel = (c: string): Channel => c.split('@')[0] ?? c
 
 /** 'github@dan' → 'dan'; null for plain channels. */
 export const channelAccount = (c: string): string | null => c.split('@')[1] ?? null
 
 /** Display label, account-aware: 'github' → 'GitHub', 'github@dan' → 'GitHub · dan'. */
 export function channelLabel(c: string): string {
-  const base = CHANNEL_LABEL[baseChannel(c)] ?? baseChannel(c)
+  const id = baseChannel(c)
+  const base = CHANNEL_LABEL[id] ?? id.charAt(0).toUpperCase() + id.slice(1)
   const account = channelAccount(c)
   return account ? `${base} · ${account}` : base
 }

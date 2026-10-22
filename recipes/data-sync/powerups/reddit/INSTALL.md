@@ -74,12 +74,10 @@ Ask for each when it is needed, then wait:
 2. `box ingest-reddit` finishes with karma; `reddit.total_karma` and the other `reddit.*` signals
    appear in `box signals-list` and the Signals view.
 3. `box ingest-reddit-engagement` reports actionable and total inbox items; `reddit.engagement_open`
-   has today's point and, with the Engagement recipe, open replies show in the inbox.
+   has today's point and the `reddit-engagement` snapshot holds the open replies.
 4. `box ingest-reddit-radar` with both lists set reports the candidates found (zero is a valid
    result); with either list empty it reports it skipped.
-5. With the feed token and the Engagement recipe: `box run-now --action_id engagement-reddit-inbox` reads the unread
-   feed instead of refusing with "add the Data Sync reddit powerup".
-6. After these checks and the validation chain pass, add `reddit` to `recipes.data-sync.powerups` in
+5. After these checks and the validation chain pass, add `reddit` to `recipes.data-sync.powerups` in
    `box.json`.
 
 ## Remove

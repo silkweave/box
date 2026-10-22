@@ -1,6 +1,6 @@
 # Substack
 
-The team's Substack publication as signals: posts, drafts, views, subscribers and open rate, plus the Substack client Content publishes through.
+The team's Substack publication as signals: posts, drafts, views, subscribers and open rate, plus the Substack client a publishing recipe uses.
 
 ## Highlights
 
@@ -8,7 +8,7 @@ The team's Substack publication as signals: posts, drafts, views, subscribers an
 - The session comes from the owner's own signed-in browser, so no password handling in the usual case
 - The session cookie is cached and checked before use; a rejected cookie is re-minted once mid-run
 - Statistics Substack has not opened for a young publication are named in the run summary and appear once Substack opens them
-- Registers the `substack` client that Content's Substack publishing uses
+- Registers the `substack` client that Substack publishing uses
 
 ## Needs
 
@@ -32,5 +32,5 @@ is checked against `/user/profile/self` before it is accepted, because Substack 
 anonymous visitors too, and each success is cached back. A captcha leaves the tab open for a person.
 
 The platform's `register` adds the `substack` client (`selfProfile`, `createDraft`, `updateDraft`,
-`publishDraft`, `uploadImage`) to core's platform port; without this powerup Content's Substack
+`publishDraft`, `uploadImage`) to core's platform port; without this powerup Substack
 publishing refuses with "add the Data Sync substack powerup".

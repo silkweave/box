@@ -67,8 +67,8 @@ Ask for the one that applies, then wait:
    `box.local.json` (check presence only, never print it), so later runs use the cached cookie.
 2. `substack.posts` and the other `substack.*` signals Substack answered for appear in
    `box signals-list` and the Signals view. Compare the post count with the publication's archive.
-3. With the Content recipe: saving a Substack piece as a draft no longer refuses with "add the Data
-   Sync substack powerup".
+3. A recipe that publishes to Substack no longer refuses to save a draft with "add the Data Sync
+   substack powerup".
 4. After these checks and the validation chain pass, add `substack` to `recipes.data-sync.powerups`
    in `box.json`.
 
@@ -77,5 +77,5 @@ Ask for the one that applies, then wait:
 Delete `features/data-sync/core/substack/` and its import and entry in `platforms.ts`; remove
 `accounts.substack` if nothing else uses it, the `credentials.substack` entries from `box.local.json`,
 and `substack` from `recipes.data-sync.powerups`. The derived signals keep their points and stop
-refreshing; Content's Substack publishing then refuses with the powerup name. The browser stays
+refreshing; Substack publishing then refuses with the powerup name. The browser stays
 signed in to Substack until the owner signs out.

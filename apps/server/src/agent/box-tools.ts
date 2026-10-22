@@ -1,4 +1,4 @@
-// The Box's own MCP tools, by the name an engine sees (`CommsSend`), found once at boot from every
+// The Box's own MCP tools, by the name an engine sees (`NotesSend`), found once at boot from every
 // controller's and provider's `@Mcp` metadata. A session whose toolset keeps only some Box tools
 // (core agent-tools.ts `boxTools`) is denied the rest by name from this list, so the list must be
 // complete: an empty one refuses such a session (box-mcp.ts) rather than granting everything.

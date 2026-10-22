@@ -75,7 +75,7 @@ export const GroupHeadings: Story = {
     ...Default.args,
     groups: SAMPLE_GROUP_NAV.groups.map((group, index) => ({
       ...group,
-      section: index < 2 ? 'Marketing' : 'Workspace',
+      section: index < 2 ? 'Reporting' : 'Workspace',
     })),
   },
 }

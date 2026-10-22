@@ -1,11 +1,11 @@
-import { Activity, Bot, FileText, Inbox, ListTodo } from 'lucide-react'
+import { Activity, Bot, FileText, ListTodo, MessagesSquare } from 'lucide-react'
 import type { GroupNav, NavItem } from '../shell/Sidebar.tsx'
 
 /** A plausible Box's nav, for the shell stories. Four groups, one of them active. */
 export const SAMPLE_GROUP_NAV: Omit<GroupNav, 'onSelectGroup'> = {
   groups: [
     { id: 'signals', label: 'Signals', icon: Activity },
-    { id: 'inbox', label: 'Inbox', icon: Inbox },
+    { id: 'chat', label: 'Chat', icon: MessagesSquare },
     { id: 'planning', label: 'Planning', icon: ListTodo },
     { id: 'automation', label: 'Automation', icon: Bot },
   ],
@@ -18,5 +18,5 @@ export const SAMPLE_NAV_ITEMS: NavItem[] = [
   { id: 'github', label: 'GitHub', icon: FileText, section: 'Channels', count: 23 },
   { id: 'npm', label: 'npm', icon: FileText, section: 'Channels', count: 15 },
   { id: 'reddit', label: 'Reddit', icon: FileText, section: 'Channels', count: 7 },
-  { id: 'content', label: 'Content', icon: FileText, section: 'Channels', badge: '1/3' },
+  { id: 'blog', label: 'Blog', icon: FileText, section: 'Channels', badge: '1/3' },
 ]

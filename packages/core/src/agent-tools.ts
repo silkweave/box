@@ -20,8 +20,8 @@
 // Features may register built-in toolsets (`registerBuiltinToolset`): code-owned, listed beside the
 // configured ones but not editable, and the only ones that can carry `boxTools`, an allowlist of the
 // Box's own tools. A session with such a toolset gets every other Box tool denied by name (from the
-// server's live tool list), so a tool added later is denied until a feature allows it. Comms
-// registers `comms-draft` this way for jobs that answer people outside the team.
+// server's live tool list), so a tool added later is denied until a feature allows it. A feature
+// whose jobs answer people outside the team registers its drafting tool this way.
 
 import { boxJson } from './box-config.js'
 import { configRoot } from './io.js'
@@ -35,7 +35,7 @@ export interface AgentToolset {
   servers: string[]
   allow: string[]
   deny: string[]
-  /** Built in: the only Box tools (kebab-case MCP names, `comms-draft`) the session keeps; null keeps them all. */
+  /** Built in: the only Box tools (kebab-case MCP names, `notes-draft`) the session keeps; null keeps them all. */
   boxTools: string[] | null
   /** Registered by a feature in code (registerBuiltinToolset), not configured; Settings cannot edit it. */
   builtIn: boolean
@@ -60,7 +60,7 @@ export function registerBuiltinToolset(toolset: BuiltinToolset): void {
   builtins.set(toolset.id, toolset)
 }
 
-/** The engine's name for a Box MCP tool (`comms-send` -> `CommsSend`), as the MCP adapter registers it. */
+/** The engine's name for a Box MCP tool (`notes-send` -> `NotesSend`), as the MCP adapter registers it. */
 export const mcpToolName = (name: string): string =>
   name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')
 
@@ -80,7 +80,7 @@ export interface ToolsetSessionOptions {
   servers: string[]
   allowedTools: string[]
   disallowedTools: string[]
-  /** The only Box tools the session keeps (engine names, `CommsDraft`), or null for all of them. */
+  /** The only Box tools the session keeps (engine names, `NotesDraft`), or null for all of them. */
   boxTools: string[] | null
 }
 

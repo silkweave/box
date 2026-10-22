@@ -5,7 +5,7 @@
 // planning/state.ts normalizeBlockedBy), the rename/delete cascades, and auto-registration.
 //
 // Auto-registration is the reconciliation strategy for the derived world: the derived signal set
-// is dynamic (account-scoped github@<id> channels, npm top-N rotation, content.published.<channel>),
+// is dynamic (account-scoped github@<id> channels, npm top-N rotation, a feature's per-channel signals),
 // so a one-shot seed would rot. Instead every signal-row writer calls autoRegisterDefinitions()
 // after persisting - it inserts a definition for any signal id that lacks one and NEVER overwrites
 // an existing row (human curation always wins over the deriver's denormalized strings), and it

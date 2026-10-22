@@ -67,8 +67,7 @@ Ask these together:
    accounts) appear in `box signals-list` and the Signals view. A repo without push access shows
    traffic unavailable, not a failure.
 2. `box ingest-github-engagement` finishes with the engagements found by kind and the
-   candidates checked; with the Engagement recipe its
-   threads show in the inbox.
+   candidates checked, and the `github-engagement` snapshot holds them.
 3. Optional: `box ingest-backfill-stars` and, with an `ossPrQuery`, `box ingest-backfill-prs`;
    `box signal-series` shows history before the first pull.
 4. After these checks and the validation chain pass, add `github` to `recipes.data-sync.powerups` in

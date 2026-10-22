@@ -151,7 +151,7 @@ class RunNowDto {
   @IsOptional() @IsString() triggered_by?: string
   @ApiProperty({ required: false, description: 'Snapshot date YYYY-MM-DD (plugin actions only)' })
   @IsOptional() @IsString() date?: string
-  @ApiProperty({ required: false, description: 'JSON object string of per-run params for parameterized actions, e.g. {"content_id":"…","user_id":"…"} for verify-engagement' })
+  @ApiProperty({ required: false, description: 'JSON object string of per-run params for parameterized actions, e.g. {"source_id":"…"} for source-sync' })
   @IsOptional() @IsString() params?: string
 }
 

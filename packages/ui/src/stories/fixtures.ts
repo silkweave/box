@@ -32,7 +32,7 @@ export const SAMPLE_LOG: LogLine[] = [
   { text: '7 points across 2 channels', tone: 'accent' },
 ]
 
-/** The tags a content piece picks from - enough of them that the filter is worth using. */
+/** The tags an item picks from - enough of them that the filter is worth using. */
 export const SAMPLE_TAGS = [
   'agents',
   'announcement',

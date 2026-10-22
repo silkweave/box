@@ -1,15 +1,15 @@
 # LinkedIn
 
-LinkedIn numbers as signals from the official API: the member's followers, connections and post analytics, the company page's followers and impressions, with history, plus the LinkedIn client Content publishes through.
+LinkedIn numbers as signals from the official API: the member's followers, connections and post analytics, the company page's followers and impressions, with history, plus the LinkedIn client a publishing recipe uses.
 
 ## Highlights
 
 - Member followers, first-degree connections, impressions, members reached, reactions, comments and reshares
 - Company page followers and impressions when the account names an organization
-- Per-post analytics for every post Content published with a stamped post URN
+- Per-post analytics for every published post with a stamped post URN
 - A backfill that reconstructs history from LinkedIn's daily analytics
 - Runs unattended: with a refresh token the client renews the access token before it expires and once on a 401
-- Registers the `linkedin` client that Content's LinkedIn publishing and the Alerts comment poll use
+- Registers the `linkedin` client that LinkedIn publishing and the Alerts comment poll use
 
 ## Needs
 
@@ -32,5 +32,5 @@ The pull reads the default `linkedin` account in `box.json accounts`; its `org` 
 organization id) adds the company page, best effort. Per-post analytics cover the posts that features
 register through core's `registerPublishedPostSource('linkedin', ...)`. The platform's `register` adds
 the `linkedin` client (`authReady`, `personUrn`, `get`, `post`, `uploadImage`) to core's platform
-port; without this powerup Content's LinkedIn publishing and the Alerts LinkedIn poll refuse with
+port; without this powerup LinkedIn publishing and the Alerts LinkedIn poll refuse with
 "add the Data Sync linkedin powerup".

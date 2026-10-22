@@ -12,14 +12,14 @@ optional GA4 leg) and Hacker News. Every further platform is a powerup: `github`
 `linkedin`, `substack` and `stripe` (`powerups/<id>/`).
 
 - **Builds on**: core only.
-- **Depended on by**: nothing. No recipe imports Data Sync code. Content's LinkedIn and Substack
-  publishing and the Alerts LinkedIn and Reddit polls reach a platform client only through core's
+- **Depended on by**: nothing. No recipe imports Data Sync code. A recipe that publishes to LinkedIn or
+  Substack, and the Alerts LinkedIn and Reddit polls, reach a platform client only through core's
   platform port (`packages/core/src/platforms.ts`); without the powerup that registers it,
-  `requirePlatformClient` refuses with `add the Data Sync "<id>" powerup`. The Engagement inbox reads
+  `requirePlatformClient` refuses with `add the Data Sync "<id>" powerup`. Other recipes may read
   the `github-engagement` and `reddit-engagement` snapshots when they exist.
 - **Removal**: removing Data Sync stops the pulls. The signals it derived keep their points and stop
-  refreshing; Content and Alerts refuse their LinkedIn, Substack and Reddit calls with the powerup
-  name and keep working otherwise.
+  refreshing; the recipes that use a platform client refuse their LinkedIn, Substack and Reddit
+  calls with the powerup name and keep working otherwise.
 - **Tables and migrations**: none. Pulls write core's `snapshots` and `signal_points` tables.
 
 ## Layout
@@ -143,7 +143,7 @@ cannot ride whoever is logged in. `repos` names the repos to track; `org` adds t
 
 `github-engagement` (default account only) collects issue and PR threads involving or authored by the
 account in the last 14 days (up to 80) plus participating notifications, and stores them as the
-`github-engagement` snapshot for the Engagement inbox. `backfill-prs` builds a cumulative monthly
+`github-engagement` snapshot, which other recipes may read. `backfill-prs` builds a cumulative monthly
 `<channel>.oss_prs` curve for accounts with an `ossPrQuery`; `backfill-stars` rebuilds
 `<channel>.stars.<repo>` from stargazer timestamps.
 
@@ -164,8 +164,8 @@ such event, so it stays current between pulls.
 Reddit's OAuth path is not available, so `reddit`, `reddit-engagement` and `reddit-radar` read
 Reddit's JSON endpoints from a leased tab in the Box's default browser identity (`browsers.identity`),
 signed in to the account named by the default `reddit` account's `login`. `reddit-engagement` reads
-the inbox and stores `reddit-engagement`, which derives `reddit.engagement_open` and feeds the
-Engagement inbox. `reddit-radar` scans `/r/<sub>/new` (75 posts per sub, last 14 days) for posts
+the inbox and stores `reddit-engagement`, which derives `reddit.engagement_open` and which
+other recipes may read. `reddit-radar` scans `/r/<sub>/new` (75 posts per sub, last 14 days) for posts
 matching `features.data-sync.redditRadar.topics` whole-word and stores candidates as the
 `reddit-radar` snapshot; each scan stamps the `subs` and `topics` that produced it. Either list empty
 means one log line and no scan.
@@ -187,13 +187,13 @@ back to `box.local.json`, so the daily pull runs unattended.
 `linkedin` reads the default account's followers, first-degree connections and lifetime post
 analytics, and with `org` on the account the company page's followers and share statistics
 (best effort). It fetches per-post analytics for every post a feature registers through core's
-`registerPublishedPostSource('linkedin', ...)` (Content's published pieces with a post URN).
+`registerPublishedPostSource('linkedin', ...)` (published posts with a post URN).
 `backfill-linkedin` reconstructs history from daily analytics deltas anchored at current totals.
 `LINKEDIN_VERSION` in `linkedin/client.ts` pins the `Linkedin-Version` header (`202606`); LinkedIn
 sunsets versions monthly, so bump it deliberately.
 
 The platform registers the `linkedin` client (`authReady`, `personUrn`, `get`, `post`,
-`uploadImage`) for Content's publishing and the Alerts comment poll.
+`uploadImage`) for a recipe that publishes to LinkedIn and for the Alerts comment poll.
 
 ### Substack (`substack` powerup)
 
@@ -213,7 +213,7 @@ through the API is captcha-gated, which is why the browser is the path.
 `substack-pull` reads the publication, its archive and the headline stats. Two of the stats endpoints
 answer 403 on a young publication; those signals appear without a code change once Substack opens
 them. The platform registers the `substack` client (`selfProfile`, `createDraft`, `updateDraft`,
-`publishDraft`, `uploadImage`) for Content's publishing.
+`publishDraft`, `uploadImage`) for a recipe that publishes to Substack.
 
 ### Stripe (`stripe` powerup)
 

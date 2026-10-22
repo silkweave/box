@@ -12,7 +12,7 @@ export function useInlineDialogTarget() { return useContext(InlineTarget) }
 export interface InlineCrumb {
   title: ReactNode
   onBack: () => void
-  /** Pages between the section and this editor (a pod, above its member editor), outermost first. */
+  /** Pages between the section and this editor (a group, above its member editor), outermost first. */
   trail?: { title: ReactNode; onSelect: () => void }[]
   /** Where the section title leads; defaults to `onBack`. A nested editor sets it to the list. */
   onRoot?: () => void

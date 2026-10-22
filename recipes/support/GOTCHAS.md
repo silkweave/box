@@ -9,7 +9,7 @@ and leave current operation state in `_docs/INTEGRATION.md`.
   idempotent. A script that inserts rows directly creates duplicates the unique indexes then refuse
   at the worst moment.
 - **Phone normalization needs `defaultCountryCode`.** Without it a national number (`0151...`) is
-  stored as typed and will not match the same person's `+49 151...` from WhatsApp. Set it before the
+  stored as typed and will not match the same person's `+49 151...` from a messaging channel. Set it before the
   first ticket.
 - **Working days follow the team time zone.** A Box whose team time zone is unset counts days in
   UTC, and tickets logged in the evening age a day early. Set it in core before adapting.
@@ -28,10 +28,11 @@ and leave current operation state in `_docs/INTEGRATION.md`.
 - **A bug is a ticket of type `bug`.** There is no separate bug record or tracker link. When a bug
   is copied into an engineering tracker, copy the problem, never the requester; link back by the
   ticket number.
-- **Form and Comms text is untrusted.** A ticket from the Help Center or a conversation holds an
-  outsider's words. The tools wrap it in untrusted markers for agents; keep that when customising,
-  and do not wake an agent on `support.ticket.opened` for `source: form` without a person in the
-  loop.
+- **Outsiders' text is untrusted.** A ticket from the Help Center form, or from any source not
+  registered as trusted, holds an outsider's words. The tools wrap it in untrusted markers for
+  agents; keep that when customising, never register a source as trusted unless its summaries are
+  the team's own words, and do not wake an agent on `support.ticket.opened` for an untrusted
+  source without a person in the loop.
 - **The Help Center form puts a relay hook URL on Cloudflare Pages.** The relay hook key is one per
   Worker, so anyone who obtains the Pages Function's secrets can post to every source on that
   Worker. Every relay source must check a signature once the form is live (help-center INSTALL.md).

@@ -3,8 +3,8 @@ name: consult
 description: >
   The Box concierge - consult on any Box-related intent or flow. Use when someone asks "how do I…",
   "where do I put…", "what's the status of…", "what should I do next", "which skill do I use", "who
-  do I ask about…", or states an intent without knowing the flow ("I want to post about X", "someone
-  replied to my post", "I have an idea"). Also "/consult" followed by a question. Answers with where things live,
+  do I ask about…", or states an intent without knowing the flow ("I want to track this", "a customer
+  reported a bug", "I have an idea"). Also "/consult" followed by a question. Answers with where things live,
   where their work is in the pipeline, and the ONE next action - it explains and routes; it NEVER
   mutates state itself.
 ---
@@ -27,9 +27,9 @@ Decide where you are running before anything else. **Local** = the CWD is the Bo
 (`data/docs/` exists on disk): follow the steps as written. **Remote** = this skill was installed on
 a machine with no checkout: the repo, `bun run cli`, and the read-only `warehouse` MCP do not exist
 here. Work over the `mcp__box__*` tools (`https://box.example.ts.net` over the tailnet, authed by
-your `mcp.token` from `box.local.json`): ground state via `content-list` / `content-get` / `initiatives-get` instead of
-SQL, docs via `doc-read`, voice styles via `voice-read`. Dashboard links are ALWAYS
-`https://box.example.ts.net/<path>` - plain paths (e.g. `/content/<slug>`); the SPA moved off
+your `mcp.token` from `box.local.json`): ground state via each installed feature's list and get tools (`initiatives-get`,
+`support-tickets`, ...) instead of SQL, docs via `doc-read`. Dashboard links are ALWAYS
+`https://box.example.ts.net/<path>` - plain paths (e.g. `/sink/<file>`); the SPA moved off
 hash routes on 2026-09-14, and an old `/#/<path>` link still lands right but do not write new
 ones. Works from anywhere on the tailnet - Tailscale must be connected;
 never hand out a `127.0.0.1` URL, that address is the Box host's own loopback and resolves nowhere
@@ -60,7 +60,7 @@ The answer's shape depends on the operator:
 **Read the installed feature set before you route anything.** A Box starts with core and gains
 features by adapting recipes from the Stack. A feature is present when its registered source is in
 the Box; do not assume every recipe is adapted. The recipe documents in `recipes/<id>/` ship with
-core and exist for every recipe, so their presence says nothing about what is installed. The `recipes` ledger in `box.json` records
+core and exist for every offered recipe, so their presence says nothing about what is installed. The `recipes` ledger in `box.json` records
 what the Box adapted and which powerups it added; confirm against registered features and a
 powerup's `## Detect`.
 Routing someone to a flow their Box does not have is worse than saying "not installed", because
@@ -69,8 +69,8 @@ they will go looking for it.
 - **Local:** the directory names under `features/` ARE the installed set.
   A feature is installed when its directory carries `manifest.ts`. The entire parent directory
   can be absent on a fresh core-only clone; that means no features are installed.
-- **Remote:** infer it from the tools you actually have. No `content-*` tools means no content; no
-  `initiative-*` means no planning; and so on. Do not assume the full set.
+- **Remote:** infer it from the tools you actually have. No `initiative-*` tools means no planning;
+  no `crm-*` means no CRM; and so on. Do not assume the full set.
 
 Then route against this table. **The `Needs` column is a gate, not a note**: skip any row whose
 feature this Box does not have, and if the person asked for exactly that, say it is not installed
@@ -85,20 +85,19 @@ non-trivial.
 | Intent sounds like | Needs | Flow | Where it happens | Deep-dive doc |
 |---|---|---|---|---|
 | "I have an idea / a doc / an article worth something" | `sink` | Sink → ingest | drop in `data/docs/sink/` (or paste it), then `/ingest-sink <file>` | `recipes/sink/SPEC.md` |
-| "I want to post about X / turn this into content" | `content` | Content pipeline | `/ingest-sink` → `/draft-content <slug>` | `recipes/content/OPERATOR.md` (operator map) |
-| "improve / change / fix my draft" | `content` | Refine | `/refine-content <id> <direction>` | `recipes/content/SPEC.md` |
-| "is it ready? check it" | `content` | The gate | `/verify-content <id>` | `recipes/content/SPEC.md` |
-| "publish / ship it" | `content` | Human-gated publish | approve in dashboard → publish path per channel | `recipes/content/SPEC.md` § Actions |
-| "someone replied / commented on my post" | `engagement` | Inbox | dashboard Inbox → `/draft-reply <item-id>` | `recipes/engagement/SPEC.md` |
-| "support a teammate's post" | `engagement` | Pods / engagement | engage queue → `/engage <pod-content-id>` | `recipes/engagement/SPEC.md` |
-| "how are my posts / numbers doing" | `data` | Signals | dashboard Signals; "update signals" = fresh snapshot | `docs/WAREHOUSE.md` |
+| "a customer asked / reported something" | `support` | Support tickets | `/support` logs or finds the ticket | `recipes/support/SPEC.md` |
+| "how are our numbers doing" | `data` | Signals | dashboard Signals; "update signals" = fresh snapshot | `docs/WAREHOUSE.md` |
 | "track this work / what are we working on" | `planning` | Planning | dashboard Initiatives; `/ingest-sink` (work route) | `recipes/planning/SPEC.md` |
 | "I can't log in / need access / a link" | - | Users/auth | Send a sign-in link: Settings → Users → **Send sign-in link**, `bun run cli user-link`, or `box auth login <id>`. Short-lived, single-use, safe to send | `docs/AUTH.md` § 1.7 |
 | "lost my token / my MCP config needs it" | - | Users/auth | an admin reveals it (Settings → Users → **View access token**, or `box auth reveal <id>` on the host). NEVER `user-invite` - that rotates. Read Step 2a first | `docs/AUTH.md` § First run |
 | "my MCP won't connect / no `box` tools / everything 401s" | - | Access | diagnose with Step 2b before anything else | `docs/SERVER.md` § 7 (running and serving) |
-| "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `recipes/automation/SPEC.md` + `recipes/alerts/SPEC.md` |
+| "run this automatically / on a schedule" | `automation` | Automation | schedules + alert rules (an admin arms them) | `recipes/automation/SPEC.md` + `recipes/automation/powerups/alerts/POWERUP.md` |
 | "add / install something this Box lacks" | - | Adapt a recipe | pick it in the Recipe Gallery (Work menu, `/recipes`; **Adapt recipe** drafts a Builder brief the owner sends), or run `$adapt`: read `recipes/<id>/`, `box stack fetch` the implementation, integrate it, update registration, run the validation chain, then record it in the `recipes` ledger of `box.json` | `../../../docs/RECIPES.md`, `recipes/README.md` |
 | "how does the whole thing work" | - | Orientation | this skill's Step 4 output, plus the SPEC of each INSTALLED feature | `../../../docs/RECIPES.md`, then `recipes/<id>/SPEC.md` |
+
+An installed recipe can add rows of its own: for each installed feature, read the `## Consult
+routing` section of its `recipes/<id>/AGENT.md` when it has one, and route against those rows with
+the same gate.
 
 Multiple intents in one question is normal - answer each, but keep ONE primary next action.
 
@@ -182,14 +181,13 @@ every write attribute to them), and changing the env var needs a **session resta
 Never answer "where are you" from memory. For anything about the asker's work in flight:
 
 ```sql
-SELECT id, status, title FROM content WHERE json_extract_string(metadata,'$.author') = '<user>'
-  OR initiative_id IN (SELECT id FROM initiatives WHERE owner = '<user>');
 SELECT id, status, kind FROM initiatives WHERE owner = '<user>' AND status IN ('planned','active');
 SELECT id, status, title FROM tasks WHERE assignee = '<user>' AND status NOT IN ('done','dropped');
 ```
 
-Adapt as needed. For setup questions, run the read-only parts of the ingest-sink preflight (user row
-status, voice overlay existence, credentials.json **key shape only** - never print values) so the
+Adapt as needed, and add the tables of other installed features the question touches. For setup
+questions, run the read-only parts of the relevant flow's preflight (user row status, credentials.json
+**key shape only** - never print values) so the
 answer includes real blockers, not guesses.
 
 ## Step 4 - Answer
@@ -199,11 +197,11 @@ Structure every answer as:
 1. **The direct answer** in the operator's register - what this is, where it lives, how the flow
    works, in a few sentences. Name which of their three verbs (pick/answer/approve) it involves, if
    any.
-2. **Where they are** - for anything in flight, the stage map with a you-are-here marker per piece
-   (`recipes/content/OPERATOR.md` operator rule 1):
+2. **Where they are** - for anything in flight, the stage map of its flow with a you-are-here
+   marker per piece (each recipe's SPEC.md names its stages):
    ```
-   IDEA ──▶ DRAFT ──▶ APPROVED ──▶ SCHEDULED ──▶ PUBLISHED
-              ▲ ai-checked-the-founder/linkedin (2 findings still to accept)
+   PLANNED ──▶ ACTIVE ──▶ DONE
+                 ▲ onboarding-revamp (2 tasks still blocked)
    ```
 3. **ONE next action** - dashboard link first, slash command second. If several things are in
    flight, one action per item, most urgent first.
@@ -211,8 +209,8 @@ Structure every answer as:
    mislaid access token - tokens never expire, see Step 2a), each with who fixes it. A blocker only
    an admin can clear gets routed, not assigned to the asker.
 5. **The offer** - "want me to start <flow>?" Only on an explicit yes, invoke the skill. If the yes
-   would trigger work owned by a different author (their pick, their approval), apply operator rule
-   2: route the decision to that author instead.
+   would trigger work owned by a different author (their pick, their approval), route the decision
+   to that author instead.
 
 ## Step 5 - Capture the gap
 

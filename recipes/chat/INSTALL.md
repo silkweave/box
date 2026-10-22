@@ -44,7 +44,7 @@ The chat agent reaches the Box through its own MCP surface, as the agent princip
 
 - **Claude profile:** nothing to configure. The session carries the `box` server, its auto-approval
   and the floor (SPEC.md "The agent's Box MCP server"). Leave any other MCP servers the agent should
-  have (a wiki, WhatsApp reads) in the profile's own `.claude.json`, and their allow rules in its
+  have (a knowledge base, a messaging service) in the profile's own `.claude.json`, and their allow rules in its
   `settings.json`. A `box` entry there is replaced for chat sessions; drop it rather than keep a
   second copy of the agent's token.
 - **Codex profile:** Codex takes per-session MCP servers too, so the session brings `box` and the

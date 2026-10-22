@@ -200,7 +200,7 @@ export async function issuePrincipalToken(id: string, actor?: string): Promise<s
 }
 
 /**
- * The access token a server-owned session (chat agent, trigger job, wiki job) carries for `id`:
+ * The access token a server-owned session (chat agent, trigger job, a feature's agent job) carries for `id`:
  * the principal's existing token, or a first one when none exists. One read-check-write under the
  * warehouse write lock, so two sessions starting at once share one token instead of rotating each
  * other's. Refuses a missing or revoked principal: unlike `issuePrincipalToken`, which is the

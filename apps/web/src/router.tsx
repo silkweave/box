@@ -108,9 +108,7 @@ captureReturnPath()
 //   - what Vite owns in dev: /src, /node_modules, /@vite, /@fs, /@id.
 //   - a server path mount's subtree (core path-mounts.ts): `/artifacts/<slug>/` is served by the
 //     server, so only the bare `/artifacts` may be a client route.
-// Checked by hand on 2026-09-14 against every feature's routes.tsx (alerts, automation, chat,
-// content, crm, signals, boards, engagement, initiatives, sprints, sink) plus core's /settings:
-// no collision. Core's /recipes (2026-10-02) is not a served path either: recipes/ reaches the SPA
+// Checked by hand against every feature's routes.tsx plus core's /settings: no collision. Core's /recipes (2026-10-02) is not a served path either: recipes/ reaches the SPA
 // only through import.meta.glob. A feature that adds a top-level route must re-check; nothing in `box verify` does.
 export const router = createRouter({ routeTree, history: createBrowserHistory() })
 

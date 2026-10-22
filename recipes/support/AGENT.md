@@ -11,8 +11,7 @@ the Stack at `features/support/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INST
 `box stack fetch --ref <recorded Stack SHA>`.
 
 **Builds on:** core only. The powerups each name what they require: [crm](./powerups/crm/POWERUP.md)
-(the CRM recipe), [comms](./powerups/comms/POWERUP.md) (the Communications recipe)
-and [help-center](./powerups/help-center/POWERUP.md) (the public Help Center; its contact form
+(the CRM recipe) and [help-center](./powerups/help-center/POWERUP.md) (the public Help Center; its contact form
 needs the automation recipe's relay powerup). Ask the owner which to add now; each can be added later.
 
 ## 2. Customise for the team

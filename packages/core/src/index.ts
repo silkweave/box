@@ -6,6 +6,7 @@
 // `@silkweave/box-core/testing` (src/testing.ts says why they stay off this surface).
 export { configRoot, configPath, dataPath, docsDir, instanceDir, instanceRelative, repoRoot, warehousePath } from './io.js'
 export * from './box-config.js'
+export * from './background.js'
 export * from './team-day.js'
 export {
   BOX_BRAND_KEYS,

@@ -59,7 +59,15 @@ None.
 
 Very little, which is the point. The realistic edits are the nav `label` and `order`, and what the
 detail view's "Copy" button puts on the clipboard: today `/ingest-sink <name>`, the skill that
-routes a note into tracked state. That skill ships with **`content`**
-(`features/content/skills/ingest-sink/`), not here - it writes initiatives and pieces, which are
-planning's and content's tables. A Box with `sink` but not `content` gets the queue and the editor,
-and the copy button points at a command nobody installed: change the string.
+routes a note into tracked state. That skill ships here (`features/sink/skills/ingest-sink/`,
+`requires: [planning, sink]`): it writes initiatives, tasks and their docs, which are planning's
+tables. A Box with `sink` but not `planning` gets the queue and the editor, and the copy button
+points at a command the skill linker did not link: change the string.
+
+## Ingestion routes
+
+`ingest-sink` owns generic ingestion: triage, the work route (initiative + tasks + doc), the owner
+check and the report. Another recipe adds a route for a kind of note it owns by shipping a skill
+named `ingest-sink-<route>` with its own `requires:`; before triage, `ingest-sink` reads the
+descriptions of the linked `ingest-sink-*` skills and follows the one that matches the note. Sink
+names no route, and a Box without any gets the work route alone.

@@ -100,7 +100,8 @@ Tailwind scans this app's sources.
 | `src/router.tsx` | injects `AppLayout`, then composes core's two routes + `WEB_ROUTES`, browser history, the legacy `#/` rewrite (see Routing below) |
 | `src/components/AppLayout.tsx` | the one persistent `AppShell`, route outlet, active group navigation, and safe fallback chrome |
 | `src/lib/routeShell.tsx` | `shellGroup` route metadata and the `RouteChrome` writer used by section layouts |
-| `src/lib/nav.ts` | the sidebar groups, `navEntries()`, `useGroupNav()` |
+| `src/lib/nav.ts` | `navEntries()`, `useGroupNav()` |
+| `src/lib/navSections.ts` | `sidebarGroups()`: the sidebar sections the nav entries declare |
 | `src/lib/sidebarLayout.ts` | the signed-in person's own sidebar arrangement (Customize mode) |
 | `src/lib/shell.tsx` | this app's `ShellExtensions` value: top-bar slots, user menu, agent panel |
 | `src/views/HomeView.tsx` | the Dashboard placeholder at `/`, with onboarding's recommended recipes and a link to the Recipe Gallery |
@@ -146,18 +147,32 @@ contribute `WEB_ROUTES`. Application pages use browser history and survive refre
 server's `index.html` fallback. Settings uses the hash so the application page stays mounted.
 
 `navEntries()` reads feature navigation lazily and includes core's Dashboard entry.
-`useGroupNav()` organizes them using this Box's `SIDEBAR_SECTIONS` in `src/lib/nav.ts`:
+`useGroupNav()` groups them into sidebar sections with `sidebarGroups()` in `src/lib/navSections.ts`. Core
+names no feature there: each nav entry declares its own `section` (`NavSection`: `id`, `label`,
+`order`, in `src/feature.ts`). Core declares one, `WORKSPACE_SECTION` (`workspace`, order 100), for
+Dashboard; features join it by naming it, and bring any other section themselves. The rules:
 
-| Section | Destinations |
-| --- | --- |
-| Workspace | Dashboard, Comms, Chat, Artifacts, Sink, Wiki |
-| Reporting | Signals, Circuit Boards |
-| Operations | Goals, Initiatives, Sprints, Reminders |
-| Sales | Accounts, Deals, Contacts |
-| Marketing | Content, Engagement |
-| Support | Support Tickets, Help Articles |
+- Entries with the same section `id` form one section. Its label and order come from its first
+  entry in nav order (entry `order`, then entry `id`); a later entry that declares the same id
+  differently joins the section and its declaration is ignored. The result never depends on
+  registration order.
+- Sections sort by `order`, ties broken by `id`.
+- Entries inside a section sort by entry `order`, then `id`.
+- Entries without a section appear last, under Other. Absent features create no empty headings.
+- The section label is the heading a person's stored arrangement (below) keys on, so keep labels
+  stable and unique.
 
-Absent features create no empty headings; entries no section names appear under Other.
+The recipes in this Stack declare these sections:
+
+| Section | Order | Destinations |
+| --- | --- | --- |
+| Workspace | 100 | Dashboard, Chat, Artifacts, Sink |
+| Reporting | 200 | Signals, Circuit Boards |
+| Operations | 300 | Goals, Initiatives, Sprints, Reminders |
+| Sales | 400 | Accounts, Deals, Contacts |
+| Support | 600 | Support Tickets, Help Articles |
+
+Other recipes may add entries to these sections or declare their own.
 
 Each person can rearrange this for themselves. The gear button at the top right of the expanded
 sidebar opens Customize mode: the same sidebar with every entry in place, where sections can be
@@ -357,11 +372,11 @@ tuples infers `unknown[]` and every typed `<Link to=...>` in the app goes dark.
 | `settings` | `views/SettingsView.tsx` | `automation`: `{ id: 'automation', label: 'Automation', order: 800, render: (params) => <AutomationSettings params={params} /> }` |
 | `shell.topbar` | `lib/shell.tsx` | `notifications`' `NotificationBell` at order 200 |
 | `onSession` | `App.tsx`'s auth gate | `notifications` starts its poller and returns `listenPushNavigate(...)` as the teardown |
-| `slots` | `lib/slots.ts` | `engagement` contributes `PodEngagementPanel` to content's `content.piece.panel` slot |
+| `slots` | `lib/slots.ts` | `support` contributes `TicketArticlePanel` to its own `support.ticket.panel` slot, which other features fill too |
 | `docs` | `lib/useDoc.ts` | `sink` provides kind `sink`; `planning` provides `initiative` and `task` |
 
 **`slots` and `docs` are the web form of "the dependent registers into the dependency."** The owner
-of a slot names it and types the props it renders with (`content.piece.panel` renders `{ piece }`);
+of a slot names it and types the props it renders with (`support.ticket.panel` renders `{ ticket, onChanged }`);
 contributors match that shape and never edit the owner. `slotComponents<P>(name)` returns every
 contribution in feature order.
 

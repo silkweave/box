@@ -23,6 +23,17 @@ export function errorKind(error: unknown): string {
   return typeof code === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(code) ? code : 'Error'
 }
 
+/** Top-level path segments core serves itself, or that its tooling serves in development. */
+const CORE_ROUTE_ROOTS = ['api', 'trpc', 'mcp', 'agent', 'builder', 'builder-agent', 'builder-browser', 'builder-assets',
+  'signals', 'boards', 'settings', 'recipes', 'login', 'assets', 'src', 'node_modules', '@vite', '@fs', '@id']
+/** Route roots the registered features bring (main.ts: each feature's id and `routeRoots`). */
+const featureRouteRoots = new Set<string>()
+
+/** Add route roots a diagnostic may name; a root nobody added is reported as `/:path`. */
+export function addRouteRoots(roots: Iterable<string>): void {
+  for (const root of roots) featureRouteRoots.add(root)
+}
+
 /** Route categories deliberately omit query strings, document IDs and filesystem paths. */
 export function requestRoute(url: string | undefined): string {
   const path = (url ?? '/').split(/[?#]/, 1)[0]
@@ -31,10 +42,8 @@ export function requestRoute(url: string | undefined): string {
   if (/^\/api\/(box-status|auth\/(me|instance|login|link|logout))$/.test(path)) return path
   if (/^\/trpc\/[a-zA-Z0-9_.,]+$/.test(path)) return path
   const root = path.split('/')[1]
-  const known = ['api', 'trpc', 'mcp', 'agent', 'builder', 'builder-agent', 'builder-browser', 'builder-assets',
-    'chat', 'initiatives', 'sprints', 'crm', 'signals', 'boards', 'content', 'engagement', 'settings',
-    'artifacts', 'sink', 'reminders', 'automation', 'alerts', 'login', 'assets', 'src', 'node_modules', '@vite', '@fs', '@id']
-  return known.includes(root) ? `/${root}${path === `/${root}` ? '' : '/:path'}` : '/:path'
+  const known = CORE_ROUTE_ROOTS.includes(root) || featureRouteRoots.has(root)
+  return known ? `/${root}${path === `/${root}` ? '' : '/:path'}` : '/:path'
 }
 
 const requestIds = new WeakMap<IncomingMessage, string>()

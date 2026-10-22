@@ -1,6 +1,6 @@
 // Platform clients: a core port. A platform's API client (its auth, token rotation, sessions) is
 // code in exactly one place, the Data Sync powerup for that platform, which registers it here at
-// boot. Other recipes (Content publishing, the engagement polls) reach it only through this port,
+// boot. Other recipes (a publisher, a poll) reach it only through this port,
 // never through Data Sync's source, so each side stays removable: without the powerup the port
 // answers "not installed" and the dependent feature says which powerup it needs.
 //
@@ -111,9 +111,9 @@ export function requirePlatformClient<K extends PlatformId>(id: K): PlatformClie
 
 // --- published posts ------------------------------------------------------------------------------
 
-/** A post published on a platform that some feature knows about (Content's pieces). */
+/** A post published on a platform that some feature knows about (a publishing feature's records). */
 export interface PublishedPost {
-  /** The publishing feature's id for it (a content piece id). */
+  /** The publishing feature's id for it (its own record id). */
   id: string
   /** The platform's id for the post (a LinkedIn URN). */
   urn: string

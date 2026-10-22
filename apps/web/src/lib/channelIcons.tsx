@@ -1,4 +1,4 @@
-import { Briefcase, FileText, Rss } from 'lucide-react'
+import { Briefcase, Rss } from 'lucide-react'
 import { IconNews } from '@tabler/icons-react'
 import { BRAND_ICONS, createIconTable, type IconComponent } from '@silkweave/box-ui'
 
@@ -14,7 +14,6 @@ import { BRAND_ICONS, createIconTable, type IconComponent } from '@silkweave/box
  */
 const CHANNEL_EXTRAS: Record<string, IconComponent> = {
   blog: Rss,
-  content: FileText,
   business: Briefcase,
   'linkedin-article': IconNews,
 }

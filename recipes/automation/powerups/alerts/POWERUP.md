@@ -89,8 +89,8 @@ An event source that just recorded a batch calls `flushDeliveries()` so the batc
 instead of after the debounce; without the powerup the call does nothing.
 
 The chat body (`message.ts`) is the message for one alert and one line per alert for several. When
-a feature links the event kind to a page of its own (core's `eventLink`; Engagement maps its
-response-needed kinds to the tactical Inbox when `server.dashboardUrl` is set), the body carries an
+a feature links the event kind to a page of its own (core's `eventLink`, used when
+`server.dashboardUrl` is set), the body carries an
 "Open in dashboard" link.
 
 ### The transport port

@@ -24,7 +24,7 @@ export interface User extends AvatarUser {
   nickname: string
   /** Reference-only contact - no mail is ever sent. */
   email: string | null
-  /** Phone in E.164; WhatsApp recognises this person as a team member by it. */
+  /** Phone in E.164; a messaging channel recognises this person as a team member by it. */
   phone: string | null
   image: string | null
   /** Swatch name from @silkweave/box-ui/lib ('indigo', 'cyan', …); null = deterministic fallback. */

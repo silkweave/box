@@ -13,7 +13,7 @@ keys fail with an error. The schema is `packages/core/box.schema.json`.
   "$schema": "./packages/core/box.schema.json",
   "agent": { "id": "nova", "name": "Nova", "role": "admin" },
   "server": { "host": "127.0.0.1", "port": 8190, "vitePort": 5190 },
-  "background": { "automation": false, "chatAgent": false, "relay": false, "whatsapp": false }
+  "background": { "automation": false, "chatAgent": false, "relay": false, "features": {} }
 }
 ```
 
@@ -37,13 +37,24 @@ backup is also uploaded to with the host's ambient gcloud credentials; null keep
 (see [WAREHOUSE.md](WAREHOUSE.md)).
 
 `background` arms work that runs without a request: `automation` (time and event triggers),
-`chatAgent` (agent replies in chat), `relay` (the automation recipe's webhook relay connection,
-see `recipes/automation/powerups/relay/`) and `whatsapp` (the comms recipe's WhatsApp connection,
-see `recipes/comms/powerups/whatsapp/`). All default to false and are forced off in maintenance.
-Arm `relay` on exactly one Box per relay Worker: a second connection takes the Worker over. Arm
-`whatsapp` only on the Box that holds the linked devices: two Boxes must never share one session.
-WhatsApp accounts are not configured in `accounts`: each agent's number is paired in Settings >
-Communications > WhatsApp, and its session lives in `data/comms/whatsapp/<agent>/`.
+`chatAgent` (agent replies in chat) and `relay` (the automation recipe's webhook relay connection,
+see `recipes/automation/powerups/relay/`). Arm `relay` on exactly one Box per relay Worker: a
+second connection takes the Worker over.
+
+`background.features.<feature-id>.<capability>` arms a feature's own background work, such as a
+connection a powerup holds open. A feature declares its capabilities in its core manifest
+(`background`, capability key to what it arms) and reads them through `isBackgroundEnabled(featureId,
+capability)`; the recipe's docs name its keys and where to arm them. Each capability is a boolean
+and is off unless set to `true`. Ids of features this Box has not adapted are accepted, so a shared
+`box.json` may carry them. A capability that a registered feature does not declare fails the boot
+with the key named, because it is almost always a typo that would otherwise read as off. The keys
+merge like every other setting, so `box.local.json` decides for the one checkout that arms them:
+
+```json
+{ "background": { "features": { "<feature-id>": { "<capability>": true } } } }
+```
+
+Every switch, feature capabilities included, defaults to false and is forced off in maintenance.
 
 `timeZone` is the team's clock, an IANA zone name such as `Europe/Vienna` (default `UTC`). The
 server and every browser read "today", "this week" and day-based ages on it, so the whole team
@@ -93,7 +104,7 @@ default Shuttle agent, default `default`), `token` (bearer token for Shuttle net
 `agentMcp.toolsets` holds the toolsets that chat rooms and agent triggers grant to their agent
 sessions ([AGENT-TOOLS.md](AGENT-TOOLS.md)): id -> `label`, `description`, `servers` (connection
 ids), `allow`, `deny`. Settings > Agent tools writes it to `box.local.json`. Built-in toolsets (such
-as `comms-draft`) come from features and are not configured here. The servers a toolset attaches are
+as a feature's drafting toolset) come from features and are not configured here. The servers a toolset attaches are
 connections of the MCP connections recipe, configured under `features.mcp` with their secrets in
 `credentials.mcp.<connection>` ([recipes/mcp/SPEC.md](../recipes/mcp/SPEC.md)).
 
@@ -160,8 +171,8 @@ generated there at first use. Changing them invalidates sessions or encrypted ac
 `mcp.url` defaults to the local server; set `mcp.token` locally to the intended principal's token.
 Never print permanent tokens into logs. `credentials` is keyed by channel, account, then key;
 the account `*` supplies channel-wide defaults. `accounts` declares channel accounts by channel,
-one per owning agent (for example `accounts.email`: `{ id, user, login }`); WhatsApp accounts come
-from pairing instead (above). Agent engine configuration belongs in `workerdeck` and user-to-profile mappings in
+one per owning agent (for example `accounts.email`: `{ id, user, login }`); a channel that pairs a device
+keeps its accounts in its own store instead. Agent engine configuration belongs in `workerdeck` and user-to-profile mappings in
 `agentProfiles`. Claude logins for agent profiles are connected in Settings > Profile and
 kept by WorkerDeck beside each profile's config dir; configuration that sets `workerdeckTokens`
 or `workerdeck.claudeTokens` is refused.

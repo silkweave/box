@@ -1,5 +1,5 @@
 // Data sources + providers, mirroring @silkweave/box-provider-kit's contract and core's `data_sources` row
-// (the payloads are cast, not shared - same convention as content-types / planning-types).
+// (the payloads are cast, not shared - same convention as planning-types).
 //
 // The vocabulary, because the three nouns are easy to blur: a PROVIDER is code shipped in this
 // repo; a DATA SOURCE is a row someone created and named (two platform spaces = two sources of

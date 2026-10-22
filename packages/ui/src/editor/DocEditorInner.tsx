@@ -28,9 +28,9 @@ const altFor = (file: File): string => file.name.replace(/\.[^.]+$/, '').replace
  * `variant='card'` is the standalone rounded panel; `variant='panel'` fills its container's height
  * with no outer border (the SplitPane handle is the left separator) and scrolls its content body.
  *
- * `placeholder` is drawn in an empty document. It earns its keep on the topic brief, which is the one
- * doc kind that routinely starts from nothing (an initiative's rationale doc arrives written by
- * /ingest-sink; a topic's brief is often a blank pane a human is meant to fill in).
+ * `placeholder` is drawn in an empty document. It earns its keep on doc kinds that routinely start
+ * from nothing (an initiative's rationale doc arrives written by /ingest-sink; a brief is often a
+ * blank pane a human is meant to fill in).
  *
  * Images and videos are markdown images (`![alt](src)`, see ./MediaNode.ts). Typing that syntax
  * inserts one by URL. With `upload`, pasting or dropping image/video files, or the header's media

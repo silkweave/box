@@ -23,9 +23,8 @@ applying, stage the minimum runner and registration, apply migrations before unr
 confirm boot. New behaviour requires a new migration. The warehouse ledger checks its digest;
 chat's current ledger does not.
 
-The maintained source includes planning, CRM, chat, sink, content, data, automation, alerts,
-notifications, engagement, reminders, and the web-only Artifacts placeholder. A consumer may have
-only a subset.
+The recipes this Box can adapt are described in `recipes/`. A Box adapts only the ones its team
+chooses.
 
 [Builder](BUILDER.md) is a core administrator workspace, not an optional reference feature.
 

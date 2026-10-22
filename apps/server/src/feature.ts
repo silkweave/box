@@ -8,6 +8,11 @@ export interface ServerFeature {
   id: string
   /** The Nest module. Imported into AppModule verbatim - controllers, providers, lifecycle. */
   module: Type<unknown>
+  /**
+   * Top-level page paths this feature serves besides its id (`/goals` for planning), so request
+   * diagnostics may name them. The id itself always counts.
+   */
+  routeRoots?: readonly string[]
 }
 
 export function defineServerFeature<const T extends ServerFeature>(feature: T): T {

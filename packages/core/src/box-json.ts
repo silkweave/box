@@ -56,7 +56,7 @@ export interface BoxBackup {
   gcsBucket: string | null
 }
 
-/** Background work is OFF unless an adopted app is armed here (or by its env var). */
+/** Background work is OFF unless it is armed here. */
 export interface BoxBackground {
   /** Arms the cron scheduler. */
   automation: boolean
@@ -64,9 +64,14 @@ export interface BoxBackground {
   chatAgent: boolean
   /** Arms the webhook relay. */
   relay: boolean
-  /** Arms the WhatsApp connection (comms `whatsapp` powerup). One instance per linked device. */
-  whatsapp: boolean
+  /** A feature's own background capabilities, `features.<feature-id>.<capability>`, each false
+   *  unless set. A feature declares its capabilities in its core manifest (`background`) and reads
+   *  them through `isBackgroundEnabled` (background.ts), which also checks the declaration. */
+  features: Record<string, Record<string, boolean>>
 }
+
+/** A background capability key inside a feature's namespace: a slug, camelCase allowed. */
+export const BACKGROUND_CAPABILITY_PATTERN = /^[a-z][a-zA-Z0-9-]*$/
 
 /**
  * Where this Box's Stack lives: the source an agent reads `features/<id>` implementation from when
@@ -163,7 +168,7 @@ export function defaultBoxJson(): BoxJson {
     // one machine must never be one default away from the first - give it its own numbers here.
     server: { host: '127.0.0.1', port: 8190, vitePort: 5190, viteDevUrl: null, dashboardUrl: null, vscodeRemoteHost: null },
     backup: { gcsBucket: null },
-    background: { automation: false, chatAgent: false, relay: false, whatsapp: false },
+    background: { automation: false, chatAgent: false, relay: false, features: {} },
     auth: { sessionSecret: null, tokenSecret: null },
     mcp: { url: null, token: null },
     http: { userAgent: 'Silkweave Box' },
@@ -230,6 +235,30 @@ function section(raw: Record<string, unknown>, key: string, where: string): Reco
   if (v === undefined) return undefined
   if (!isRecord(v)) return refuse(where, `${key} must be an object`)
   return v
+}
+
+/**
+ * `background.features`: feature id -> capability -> boolean. Any feature id is accepted, adapted
+ * or not, so the shape never names a feature; whether a registered feature declares a capability is
+ * checked against its manifest at boot (background.ts), which this file cannot import.
+ */
+function parseBackgroundFeatures(raw: Record<string, unknown>, at: string): Record<string, Record<string, boolean>> {
+  const value = section(raw, 'features', at)
+  const out: Record<string, Record<string, boolean>> = {}
+  if (!value) return out
+  for (const [feature, capabilities] of Object.entries(value)) {
+    if (isNote(feature)) continue
+    if (!RECIPE_ID_PATTERN.test(feature)) refuse(`${at} features`, `${JSON.stringify(feature)} is not a feature id (lowercase slug)`)
+    if (!isRecord(capabilities)) refuse(`${at} features`, `${feature} must be an object of capability flags`)
+    const flags: Record<string, boolean> = {}
+    for (const key of Object.keys(capabilities as Record<string, unknown>)) {
+      if (isNote(key)) continue
+      if (!BACKGROUND_CAPABILITY_PATTERN.test(key)) refuse(`${at} features ${feature}`, `${JSON.stringify(key)} is not a capability key`)
+      flags[key] = flag(capabilities as Record<string, unknown>, key, `${at} features ${feature}`, false)
+    }
+    out[feature] = flags
+  }
+  return out
 }
 
 /**
@@ -301,11 +330,11 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   const background = { ...defaults.background }
   const g = section(raw, 'background', where)
   if (g) {
-    onlyKeys(g, ['automation', 'chatAgent', 'relay', 'whatsapp'], `${where} background`)
+    onlyKeys(g, ['automation', 'chatAgent', 'relay', 'features'], `${where} background`)
     background.automation = flag(g, 'automation', `${where} background`, defaults.background.automation)
     background.chatAgent = flag(g, 'chatAgent', `${where} background`, defaults.background.chatAgent)
     background.relay = flag(g, 'relay', `${where} background`, defaults.background.relay)
-    background.whatsapp = flag(g, 'whatsapp', `${where} background`, defaults.background.whatsapp)
+    background.features = parseBackgroundFeatures(g, `${where} background`)
   }
 
   const auth = { ...defaults.auth }; const a = section(raw, 'auth', where)

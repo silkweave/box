@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { errorKind, requestId, requestRoute, traceHttp } from './runtime.js'
+import { addRouteRoots, errorKind, requestId, requestRoute, traceHttp } from './runtime.js'
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -10,6 +10,8 @@ describe('runtime diagnostics', () => {
     expect(requestRoute('/login?link=secret')).toBe('/login')
     expect(requestRoute('/login/bl2.secret')).toBe('/login/:path')
     expect(requestRoute('/?token=secret')).toBe('/')
+    expect(requestRoute('/chat/private-room')).toBe('/:path')
+    addRouteRoots(['chat'])
     expect(requestRoute('/chat/private-room')).toBe('/chat/:path')
     expect(requestRoute('/@fs/Users/private/secret')).toBe('/@fs/:path')
     expect(requestRoute('/trpc/chatMessages?input=secret')).toBe('/trpc/chatMessages')

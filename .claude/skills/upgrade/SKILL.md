@@ -22,7 +22,7 @@ The mobile framework `packages/mobile` is core. In `apps/mobile`, core owns `lib
 native identity, signing and capabilities in `ios/` and `android/`. Merge those three-way like any
 customized file; never replace the native projects wholesale. Run `bun run test:mobile` after.
 
-`recipes/` is a managed core path: it carries every recipe's documentation and screenshots and is
+`recipes/` is a managed core path: it carries the documentation and screenshots of every recipe offered to the Box and is
 refreshed with core. Replace it with the target revision's `recipes/` rather than merging it, and
 keep Box-specific findings in `docs/GOTCHAS.md`, not under `recipes/`. An upgrade does not adapt
 recipe changes into the Box's `features/`: when the target's `recipes/<id>/` or `features/<id>/`

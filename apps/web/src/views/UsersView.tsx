@@ -495,7 +495,7 @@ function UserDialog({ state, existingIds, onClose }: { state: NonNullable<Dialog
           autoFocusNickname={!editing}
           emailReadOnly={!!editing && principal?.role !== 'admin'}
           emailHint={principal?.role === 'admin' ? 'Identity for sign-in elsewhere; no mail is sent.' : 'Ask an administrator to change it.'}
-          phoneHint={principal?.role === 'admin' ? 'International form. WhatsApp treats this number as a team member.' : 'Ask an administrator to change it.'}
+          phoneHint={principal?.role === 'admin' ? 'International form. Messaging channels treat this number as a team member.' : 'Ask an administrator to change it.'}
           meta={
             <>
               {id ? <code>id: {id}</code> : <span>The nickname seeds the id.</span>}

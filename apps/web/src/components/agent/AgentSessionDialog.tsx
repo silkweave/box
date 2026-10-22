@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { agentClient } from '../../lib/agentStore.ts'
 
 /**
- * A read-only window onto one agent worker session: chat's room turns and comms' delegate jobs.
+ * A read-only window onto one agent worker session: chat's room turns and other features' agent jobs.
  * Each surface passes its own words for an ended or forgotten session. Who may read a session is
  * the server's call (core agent-session.ts and the rules features register), never this dialog's.
  */

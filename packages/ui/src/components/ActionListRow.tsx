@@ -1,6 +1,6 @@
 // A row in a list of things that want doing: a leading glyph, a meta line, a headline, a body, and a
-// row of actions along the bottom. The tactical inbox was the first list built this way and not the
-// last - a review queue, a run list and a notification feed are the same object - so the FRAME came
+// row of actions along the bottom. An inbox, a review queue, a run list and a notification feed are
+// the same object - so the FRAME came
 // into the library on 2026-09-14 and the vocabulary stayed behind.
 //
 // Everything is a slot. It does not know what kind the item is, what the meta line says, whether the

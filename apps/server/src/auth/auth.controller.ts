@@ -82,8 +82,8 @@ export class AuthController {
     if (!rateLimit(`login:${clientIp(req)}`, 10, 60_000)) throw new UnauthorizedException('too many attempts')
     const principal = await authenticatePrincipal((body.token ?? '').trim())
     if (!principal) throw new UnauthorizedException('invalid access token')
-    // An agent has no browser: a session cookie would let it pass as a person at one (approvals,
-    // comms decisions key on the session credential). Its token is for bearer calls only.
+    // An agent has no browser: a session cookie would let it pass as a person at one (approvals
+    // and other human decisions key on the session credential). Its token is for bearer calls only.
     if (principal.kind === 'agent') throw new UnauthorizedException('an agent token is a bearer credential; it does not sign in')
     res.setHeader('Set-Cookie', sessionCookie(mintSession(principal.id), undefined, requestIsSecure(req)))
     return principal

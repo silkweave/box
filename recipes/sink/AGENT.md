@@ -15,13 +15,18 @@ No shipped migrations currently. Back up data before applying any migration, sta
 
 ## 2. Customise for the team
 
-1. **Nav label and order** - `features/sink/web/index.tsx`. Band 700 puts it near the
-   bottom of the sidebar; move it if the sink is how this team actually works.
+1. **Nav label, order and section** - `features/sink/web/index.tsx`. Band 700 in the Workspace
+   section puts it after Chat and Artifacts; move it if the sink is how this team actually works.
 2. **The copy button's command** - `features/sink/web/views/SinkView.tsx` offers
-   `/ingest-sink <name>`. That skill lives with `content`
-   (`features/content/skills/ingest-sink/`) and writes initiatives and pieces. Without `content`
-   installed, point the button at whatever this team does with a note instead, or drop it.
-3. **Where the notes live** - `data/docs/sink/`, from core's `docsDir()`. Create the
+   `/ingest-sink <name>`, the skill this recipe ships (`features/sink/skills/ingest-sink/`). It
+   needs `planning` (`requires: [planning, sink]`) and turns a note into an initiative, tasks and a
+   rationale doc. Without `planning` the skill is not linked: point the button at whatever this team
+   does with a note instead, or drop it.
+3. **Ingestion routes** - `ingest-sink` hands a note to any linked skill named
+   `ingest-sink-<route>` whose description matches it, so another recipe can add a route for its own
+   kind of note without editing this skill. Edit the work route's kinds and task funnels in the
+   skill to fit the team.
+4. **Where the notes live** - `data/docs/sink/`, from core's `docsDir()`. Create the
    folder or let the first save create it. `README.md` and any `_`-prefixed name are skipped, so
    `_done/` is the conventional archive.
 

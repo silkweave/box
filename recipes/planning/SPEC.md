@@ -28,10 +28,10 @@ that doc rather than typed.
   initiative placed as a node is left off its goal's attachments), registered into
   core's `registerBoardNodeKind` port from `onModuleInit`; goal and initiative rename/delete call
   core's `renameBoardRef` / `pruneBoardRef` so placements follow.
-- **Depended on by**: `content` (`dependsOn: ['planning']` - it reuses `PLANNING_STATUSES`
-  and `PlanningStatus` in its own models and types, and its web views reuse planning's
-  `StatusSelect` / `StatusLabel`). `engagement` depends on `content`, so it sits downstream.
-- **Removal**: remove planning only after adapting or removing `content` and `engagement`. Without planning, core's signals keep
+- **Depended on by**: any feature that declares `dependsOn: ['planning']`, for example to reuse
+  `PLANNING_STATUSES` and `PlanningStatus` in its own models and types and planning's
+  `StatusSelect` / `StatusLabel` in its web views.
+- **Removal**: remove planning only after adapting or removing every feature that depends on it. Without planning, core's signals keep
   working but lose the `github.silkweave_prs_merged` outcome signal, the re-pointing of goals on a
   signal rename, and the "what references this signal" answer (`goal:<id>`) that guards a rename and
   a delete.
@@ -306,16 +306,16 @@ deleting a user clears the owner on their goals.
     `design|planning|board`; when the URL names none, the tab that opens is chosen from the
     sprint's status.
 - **Nav**: three entries in band **200-299** - `Goals` (icon `Goal`, order 200), `Initiatives`
-  (icon `Target`, order 205) and `Sprints` (icon `CalendarRange`, order 210). Goals sits in the
-  sidebar's Operations group. The initiatives grid has a `goals` column (the legacy `signal` key is
+  (icon `Target`, order 205) and `Sprints` (icon `CalendarRange`, order 210). All three declare
+  the sidebar's Operations section (`{ id: 'operations', label: 'Operations', order: 300 }`). The initiatives grid has a `goals` column (the legacy `signal` key is
   mapped to it), and the initiative detail shows "Contributes to" goal cards with a picker and
   "New goal". Sprints is its own group rather than a tab inside Initiatives
   because a sprint has its own lifecycle and the board is a daily-driver surface.
 - **Settings**: one section, `initiative-kinds` - "Initiative kinds", icon `Tags`, order 200,
   rendering `InitiativeKindsSection`.
 - **Shell / onSession / slots**: none. Planning contributes no topbar cluster, no session hook and
-  no slot, and it defines no slot of its own - `content` reuses planning's status components by
-  direct import (declared via `dependsOn`), not through a slot.
+  no slot, and it defines no slot of its own - a dependent feature reuses planning's status
+  components by direct import (declared via `dependsOn`), not through a slot.
 - **The sprint surfaces** (2026-09-14): the Planning backlog filters by owner, by **tag** and by
   "due in this window" - the tag filter matches the TASK's own tags, never its initiative's, since a
   per-task pick like `sprint` would otherwise pull in every open task under a tagged initiative.
@@ -358,8 +358,8 @@ tasks, sprints and docs are a member's.
   `planned · active · blocked · done · dropped`, ONE vocabulary for initiatives and tasks, with
   `TERMINAL_PLANNING_STATUSES = ['done', 'dropped']`. Its labels and tones live in
   `features/planning/web/planning-types.ts` (`PLANNING_STATUS_META`) and its icons and
-  colors in `components/status.tsx` (`PLANNING_STATUS_UI`). `content` reuses this list, so an edit
-  here reaches content's pieces too.
+  colors in `components/status.tsx` (`PLANNING_STATUS_UI`). A dependent feature may reuse this list, so
+  an edit here reaches its records too.
 - **`SprintStatus`** - `pending · scheduled · planned · active · done`. Deliberately not
   `PlanningStatus`: a sprint is a window with capacity, and `blocked` / `dropped` mean nothing for
   one. Nothing enforces "at most one active sprint".

@@ -122,7 +122,7 @@ export interface FilterSection {
 
 /** Everything the bar needs to know about a board, and nothing about what any of it MEANS. */
 export interface BoardBarSpec {
-  /** What this board calls its rows: "accounts", "initiatives", "pieces". Used for the search
+  /** What this board calls its rows: "accounts", "initiatives", "tickets". Used for the search
    *  field's accessible name, and nothing else. */
   noun: string
   searchPlaceholder: string

@@ -290,8 +290,8 @@ that keep a change recoverable rather than the rules that keep it approved.
    pre-migration snapshot covers the moment the migration runs; it does not cover the half hour of
    experimenting before it.
 2. `box db list` to see that the backup is actually there, with a plausible size.
-3. Know whether the warehouse holds real data. On a Box with `crm` or `content` installed and in
-   use, assume it does.
+3. Know whether the warehouse holds real data. On a Box with `crm` or another data feature installed
+   and in use, assume it does.
 
 **Rehearsing a data migration.** The only rehearsal worth the name uses real rows:
 
@@ -338,7 +338,7 @@ Every normalized domain event is recorded durably in `events` (PK `(kind, dedup_
 any policy looks at it.
 
 ```ts
-const fresh = await recordEvent({ kind: 'content.published', dedup_key: pieceId, fields: { ... } })
+const fresh = await recordEvent({ kind: 'support.ticket.closed', dedup_key: ticketId, fields: { ... } })
 ```
 
 `recordEvent` is the **freshness gate**. The insert is
@@ -556,7 +556,8 @@ tree) in the bucket, overwritten each run; the history comes from the bucket's o
 | `chat/uploads/` | `chat-backup` | copy of `chat-uploads/` |
 | `artifacts/artifacts-latest.sqlite` | `artifacts-backup` | `artifacts.db` (page kv, view counts), latest copy |
 | `artifacts/files/` | `artifacts-backup` | copy of `data/artifacts/` (published pages) |
-| `wiki/wiki-latest.tar.gz` | `wiki-backup` | archive of the vault `data/wiki/` and `data/config/wiki.json`, the same file as the local one in `backups/wiki/` (see `recipes/wiki/INSTALL.md`) |
+
+A recipe that adds another store lists its object in its own INSTALL.md.
 
 The SQLite copies go through `VACUUM INTO`, never `cp`. The file trees go up with `gsutil rsync -r`
 (`uploadDirToGcs`): new and changed files are copied and **nothing is deleted remotely**, so a host

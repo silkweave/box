@@ -2,7 +2,7 @@ import { cn } from '../lib/utils.ts'
 
 /**
  * The one page heading: serif display title, optional description line, optional right-aligned
- * actions. Every section canvas opens with this - item-detail views (a task, a content piece)
+ * actions. Every section canvas opens with this - item-detail views (a task, a ticket)
  * keep their own richer title blocks, but anything that is "an h1 + a blurb (+ buttons)" uses
  * this instead of hand-rolled markup.
  */

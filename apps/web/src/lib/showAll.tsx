@@ -11,7 +11,7 @@ import { appKey } from './storage.ts'
  * application state in three separate ways: it PERSISTS a preference (under a key the library
  * invented), it names an application concept ("show all"), and what counts as non-current is a
  * decision each feature makes for itself - Initiatives hides everything but planned/active,
- * Content hides completed pieces, Engagement hides handled replies. A component library cannot hold
+ * another list hides what is done or handled. A component library cannot hold
  * any of that. What came back the other way is nothing: the eye is `<Button variant='ghost'
  * size='icon-xs' aria-pressed={...}>`, which the library already had.
  */

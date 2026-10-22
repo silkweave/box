@@ -21,11 +21,10 @@
 // a clone before anything has been installed or generated - which is exactly when someone needs it.
 //
 // A SKILL DECLARES EVERY FEATURE IT DRIVES, not just the one that ships it (2026-09-15). Until then
-// this script asked one question - is the OWNING feature's code installed - and two of the nine
-// skills reach past their owner: `consult` routes into engagement's `/engage`, and `ingest-sink`
-// reads `data/docs/sink/` and writes planning initiatives and tasks, while content declares
-// `dependsOn: ['data', 'planning']` and NOT sink. So a Box with content and no sink installed a
-// skill whose entire input source did not exist. That is the same failure the comment above
+// this script asked one question - is the OWNING feature's code installed - and some skills reach
+// past their owner: a skill that reads one feature's queue and writes another feature's records
+// was linked whenever its owner was present, even in a Box without the feature it reads from. So
+// a Box installed a skill whose entire input source did not exist. That is the same failure the comment above
 // describes - a skill that still resolves, that an agent still invokes, and that then calls tools
 // the Box does not serve - one level out, and it survived the 2026-09-14 fix because that fix only
 // closed the owner case.
@@ -54,10 +53,10 @@ const codexDir = join(root, '.agents', 'skills')
  * Skills this repo owns directly rather than generating - committed, and never touched here.
  *
  * `setup-box` has to work on a clone before anything is installed. `consult` joined it on
- * 2026-09-15: 130 of its 252 lines are access tokens and MCP connectivity, it routes across seven
- * features, and it shipped with `content` purely by accident of history - so a Box that dropped
- * content also dropped its own answer to "I can't log in" and "my MCP won't connect", which the
- * skill itself calls the most common self-inflicted outage. A concierge that only exists when one
+ * 2026-09-15: most of it is access tokens and MCP connectivity and it routes across many
+ * features, so shipping it with one feature meant a Box without that feature also lost its own
+ * answer to "I can't log in" and "my MCP won't connect", which the skill itself calls the most
+ * common self-inflicted outage. A concierge that only exists when one
  * particular feature does is not a concierge. It degrades instead: it reads the installed set and
  * routes only to flows this Box actually has.
  */
@@ -124,8 +123,8 @@ function discover(): FeatureSkill[] {
       const requires = readRequires(skillMd) ?? [id]
       // An id nobody here has heard of is NOT fatal, and used to be. That check assumed a checkout
       // holding the whole catalogue, where an unrecognised id could only be a typo. A Box adopts
-      // apps one at a time, so `content/ingest-sink` legitimately requires `sink` on a Box that
-      // has never installed it; failing there broke `bun install` immediately after a feature
+      // apps one at a time, so a skill legitimately requires a feature on a Box that has never
+      // installed it; failing there broke `bun install` immediately after a feature
       // integration, because prepare runs this script. Found by the first integration against the
       // public source tree
       // on 2026-09-17. An unsatisfiable requirement is now just unsatisfied, and the skip is

@@ -20,7 +20,8 @@ new token from the owner. Both are repair, not a new install.
 Ask these together:
 
 1. **Accounts**: the LinkedIn member(s) to track, which is the default, and the Box user who owns
-   each. With the Content recipe, every member who publishes needs an account entry and a token.
+   each. When the Box publishes to LinkedIn, every member who publishes needs an account entry and
+   a token.
 2. **Company page**: the numeric organization id, if the page's numbers and page posting are wanted.
 3. Whether to run `backfill-linkedin` once after the first pull.
 
@@ -72,8 +73,8 @@ Ask for each when it is needed, then wait:
    with the profile on linkedin.com.
 2. Optional: `box run-now --action_id backfill-linkedin`; `box signal-series` on
    `linkedin.followers` shows history before the first pull.
-3. With the Content recipe: publishing a LinkedIn piece no longer refuses with "add the Data Sync
-   linkedin powerup". With Engagement: `box run-now --action_id engagement-linkedin-comments` runs.
+3. A recipe that publishes to LinkedIn no longer refuses with "add the Data Sync linkedin
+   powerup".
 4. After these checks and the validation chain pass, add `linkedin` to `recipes.data-sync.powerups`
    in `box.json`.
 
@@ -82,5 +83,5 @@ Ask for each when it is needed, then wait:
 Delete `features/data-sync/core/linkedin/` and its import and entry in `platforms.ts`; remove
 `accounts.linkedin` if nothing else uses it, the `credentials.linkedin` entries from `box.local.json`,
 and `linkedin` from `recipes.data-sync.powerups`. The derived signals keep their points and stop
-refreshing; Content's LinkedIn publishing and the Alerts LinkedIn poll then refuse with the powerup
+refreshing; LinkedIn publishing and the Alerts LinkedIn poll then refuse with the powerup
 name. The owner can remove the app's access in LinkedIn.

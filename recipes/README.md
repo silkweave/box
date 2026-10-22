@@ -12,7 +12,7 @@ is a folder under `recipes/<id>/powerups/` that a Box can add when the recipe is
 later.
 
 `recipes/` is a managed core path. `bun run box:build` and `$upgrade` refresh it with core, so every
-Box carries the documents for every recipe, whether or not it has adapted them. Do not keep local
+Box carries the documents for every recipe offered to it, whether or not it has adapted them. Do not keep local
 notes here; Box-specific findings belong in the Box's `docs/GOTCHAS.md`.
 
 ## Layout

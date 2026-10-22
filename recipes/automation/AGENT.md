@@ -48,7 +48,7 @@ read, and the boot log warns while it is present.
    `trigger-upsert`), for a trusted prompt the classifier keeps blocking; put deny rules for what it
    must never do in the job folder's settings. Tune the
    queue in `box.json` `workerdeck.queue` (SPEC.md, "Settings").
-5. **Event triggers** - When = a Box event: an exact kind (`content.published`) or a family
+5. **Event triggers** - When = a Box event: an exact kind (`support.ticket.closed`) or a family
    (`signal.*`); `triggers-list` returns `eventKinds`, the kinds recorded in the last 30 days.
    Narrow with filters (`fields.<name>` or `actor`, `subject`, ...; one of equals, regex, in; all
    must match). Action params and agent prompts take `{{fields.name}}` placeholders; an agent

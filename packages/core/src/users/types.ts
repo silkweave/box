@@ -4,8 +4,7 @@ import type { WorkAccess } from '../work-access.js'
 // referenced by initiatives.owner and tasks.assignee (both store a user `id`). The structured state
 // lives in the warehouse `users` table. See docs/AUTH.md.
 
-/** Access lifecycle. `invited` = a token was minted and never used; first use flips it to `active`.
- *  Lived in pods/types.ts as CollaboratorStatus until 2026-09-10 - it was always a users column. */
+/** Access lifecycle. `invited` = a token was minted and never used; first use flips it to `active`. */
 export type UserStatus = 'invited' | 'active' | 'revoked'
 export const USER_STATUSES: UserStatus[] = ['invited', 'active', 'revoked']
 
@@ -33,11 +32,11 @@ export interface User {
   first_name: string
   last_name: string
   nickname: string
-  /** The person's identity email: unique (case-insensitive) and admin-only to change, because SSO
-   *  signs people in by it. No mail is ever sent to it by core. */
+  /** The person's identity email: unique (case-insensitive) and admin-only to change, because an
+   *  identity provider may sign people in by it. No mail is ever sent to it by core. */
   email: string | null
   /** The person's phone number in E.164 (`+4366012345678`): unique and admin-only to change,
-   *  because channels that see numbers (WhatsApp) recognise team members by it. */
+   *  because channels that see numbers (a messaging app) recognise team members by it. */
   phone: string | null
   /** Avatar image URL; null falls back to a nickname-initials chip in the UI. */
   image: string | null
@@ -52,8 +51,8 @@ export interface User {
    *  when the Box runs behind `tailscale serve` with AUTH_TAILSCALE_SERVE=1. null = token only.
    *  Unique across users; `upsertUser` enforces it (DuckDB cannot ALTER in a UNIQUE constraint). */
   tailscale_login: string | null
-  /** channel → handle map, the source of truth for per-person presence (engagement verify,
-   *  self-content links, the engagement matrix). */
+  /** channel → handle map, the source of truth for per-person presence (whatever a feature checks
+   *  or links per person on a channel). */
   channels: Record<string, string>
   /** Default agent profile (`<person>:<engine>`, one of this user's agentProfiles), or null for the
    *  deployment rule (Claude first). For the agent principal it is the only profile it runs on. */
@@ -84,7 +83,7 @@ export interface UserInput {
   image?: string | null
   color?: string | null
   /** channel → handle map. The users table is the SOURCE OF TRUTH for a person's per-channel
-   *  presence (the engagement matrix keys off it); empty-string handles are dropped. */
+   *  presence (features key per-person views off it); empty-string handles are dropped. */
   channels?: Record<string, string>
   sort?: number
   /** Admin-only; the system principal must match host config. Set it through `setPrincipalRole`

@@ -100,9 +100,7 @@ export function userSlug(nickname: string): string {
 
 // --- reads ---------------------------------------------------------------------------------------
 
-/** Every user, ordered for display. Took a role filter until 2026-09-10, whose only real job was to
- *  keep external collaborators out of the internal lists (signal owners, the engagement matrix,
- *  karma labels); with collaborators gone every row IS internal and there is nothing to filter. */
+/** Every user, ordered for display. Every row is internal, so there is nothing to filter. */
 export async function readUsers(): Promise<User[]> {
   const rows = await readRecords<UserRecord>(USERS, { orderBy: 'sort, created_at' })
   const users = rows.map(toUser)
@@ -230,7 +228,7 @@ export async function upsertUser(input: UserInput, opts: { kind?: UserKind } = {
     if (clash[0]) throw new Error(`tailscale login "${tailscaleLogin}" already belongs to user "${clash[0].id}"`)
   }
   const email = input.email !== undefined ? input.email?.trim() || null : (prevUser?.email ?? null)
-  // The email is an identity (SSO signs people in by it), so two users may not share one, compared
+  // The email is an identity (an identity provider may sign people in by it), so two users may not share one, compared
   // case-insensitively. Checked on change only, so a Box that already holds a duplicate still saves
   // unrelated profile edits.
   if (email && !sameEmail(email, prevUser?.email)) {

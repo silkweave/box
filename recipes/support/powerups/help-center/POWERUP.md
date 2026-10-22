@@ -102,7 +102,7 @@ or video is public: copy only files meant for visitors.
 - **The visitor gets no data back.** Once the relay has stored the submission, the Function answers
   "Thanks, we will get back to you", whatever the Box later decides; when the relay cannot be
   reached it asks the visitor to try again or write to `contactEmail`. The reply to the visitor is
-  a person's (or, with the Comms email channel, an approved send).
+  a person's.
 
 Without the relay powerup the site has no form; its contact section shows `contactEmail`, and
 Settings > Support names the missing relay powerup.

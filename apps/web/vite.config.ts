@@ -97,7 +97,7 @@ export default defineConfig(({ mode }) => ({
       '/mcp': { target: serverUrl, changeOrigin: true },
       // The supervisor's own assets (the maintenance page's logo, the Builder shell).
       '/builder-assets': { target: serverUrl, changeOrigin: true },
-      // Incidental REST routes the SPA calls directly (e.g. /api/content/asset images).
+      // Incidental REST routes the SPA calls directly (e.g. a feature's /api/<feature>/asset images).
       '/api': { target: serverUrl, changeOrigin: true },
     },
   },

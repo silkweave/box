@@ -8,26 +8,26 @@ describe('route shell store', () => {
     const incoming = Symbol('incoming')
 
     store.publish(outgoing, '/chat', 'first:/chat', 'old chrome')
-    store.publish(incoming, '/content', 'second:/content', 'new chrome')
+    store.publish(incoming, '/notes', 'second:/notes', 'new chrome')
     store.remove(outgoing)
 
     expect(store.getSnapshot()).toEqual({
       owner: incoming,
-      section: '/content',
-      location: 'second:/content',
+      section: '/notes',
+      location: 'second:/notes',
       value: 'new chrome',
     })
   })
 
   test('selection requires both the owning section and committed location', () => {
     const store = createRouteShellStore<string>()
-    store.publish(Symbol('content'), '/content', 'visit-1:/content/launch', 'launch chrome')
+    store.publish(Symbol('notes'), '/notes', 'visit-1:/notes/launch', 'launch chrome')
     const snapshot = store.getSnapshot()
 
-    expect(selectRouteChrome(snapshot, '/content', 'visit-1:/content/launch')).toBe('launch chrome')
-    expect(selectRouteChrome(snapshot, '/chat', 'visit-1:/content/launch')).toBeUndefined()
-    expect(selectRouteChrome(snapshot, '/content', 'visit-2:/content/launch')).toBeUndefined()
-    expect(selectRouteChrome(snapshot, '/content', 'visit-1:/content/other')).toBeUndefined()
+    expect(selectRouteChrome(snapshot, '/notes', 'visit-1:/notes/launch')).toBe('launch chrome')
+    expect(selectRouteChrome(snapshot, '/chat', 'visit-1:/notes/launch')).toBeUndefined()
+    expect(selectRouteChrome(snapshot, '/notes', 'visit-2:/notes/launch')).toBeUndefined()
+    expect(selectRouteChrome(snapshot, '/notes', 'visit-1:/notes/other')).toBeUndefined()
   })
 
   test('same-section publication replaces callbacks and releases the previous descriptor', () => {

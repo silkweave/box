@@ -95,7 +95,7 @@ export interface RunMeta {
   triggeredBy?: string | null
   /** Snapshot date override, plugin actions only. */
   date?: string
-  /** Per-run args for parameterized actions (verify-engagement: content_id, user_id, actor). */
+  /** Per-run args for parameterized actions (`source-sync`: the source to sync). */
   params?: Record<string, string>
 }
 

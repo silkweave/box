@@ -177,7 +177,7 @@ did, unattended, on 2026-09-10.
 ## Actions
 
 None. `notifications` contributes nothing to core's run funnel: there is nothing to schedule.
-Event sources are their owners' actions (Engagement's polls, core's signal and run events) and
+Event sources are their owners' actions (a feature's polls, core's signal and run events) and
 delivery is Automation's Alerts powerup (`alerts-digest` included); this feature only supplies the
 transports a delivery routes through.
 

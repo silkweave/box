@@ -6,8 +6,7 @@ import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@
 
 /**
  * The periwinkle "AI" button + explainer modal for the Claude Code skill commands the dashboard
- * hands off to (/illustration, /refine-content, /verify-content, /engage, /draft-reply,
- * /draft-content). Opening the modal copies the snippet to the clipboard immediately, so the
+ * hands off to (a feature's skill, such as `/<skill> <id>`). Opening the modal copies the snippet to the clipboard immediately, so the
  * fallback flow is: click, read what it does, paste into a session.
  * When the agent sidebar is available (config/workerdeck.json declares a profile), the modal
  * also offers "Run now": start the command as a live session in the sidebar instead of pasting.
@@ -31,7 +30,7 @@ export function GenerateButton({
   title: string
   /** What exactly the command does, in a sentence or two. */
   description: React.ReactNode
-  /** The command needs a free-form direction appended (e.g. /refine-content): Run now gains an
+  /** The command needs a free-form direction appended (e.g. a refine skill): Run now gains an
    *  inline input whose value is appended to the command. Copy behavior is unchanged. */
   withDirection?: boolean
   className?: string

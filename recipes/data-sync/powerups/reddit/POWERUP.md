@@ -5,7 +5,7 @@ The team's Reddit account as signals and leads: karma and activity, the inbox re
 ## Highlights
 
 - Total, link and comment karma, post and comment counts and the top post score
-- `reddit.engagement_open`: inbox replies awaiting the team, also fed to the Engagement inbox
+- `reddit.engagement_open`: inbox replies awaiting the team, also stored as a snapshot other recipes may read
 - A topic radar over `/new` of the named subreddits, matching the team's keywords whole-word, stored for drafting replies
 - A browser-free unread inbox read for the Alerts Reddit poll, authenticated by Reddit's private feed token
 - Diagnostics as tools: probe the session, open the login page for a person, fetch a full thread, explore endpoints

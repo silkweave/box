@@ -22,7 +22,7 @@ A request is resolved to a principal by the first of these that yields one
 | 2 | the `box_session` cookie | `session` | the SPA |
 | 3 | *(none)* | - | the five `@Public()` routes on `AuthController` only |
 
-Path mounts (`/artifacts/<slug>/`, the sso recipe's `/auth/`, see SERVER.md) resolve the same two credentials in `main.ts`
+Path mounts (`/artifacts/<slug>/`, a feature's sign-in mount, see SERVER.md) resolve the same two credentials in `main.ts`
 before their handler runs; they are never public.
 
 `Principal` is `{ id, display, role }` (`packages/core/src/auth/principal.ts`). The credential kind
@@ -93,9 +93,9 @@ unusable, so when in doubt the answer is member.
 self-or-admin, checked in the method rather than with the decorator because the answer depends on
 the body: a member may edit their own profile fields, may not create a user (that would be minting
 a second identity), and may not set `tailscale_login` on any row or change any `email` or `phone`.
-Each decides who a person is somewhere else: a tailscale login, an SSO sign-in (the `sso` recipe
-signs people in by their email), or a phone number (WhatsApp treats a sender whose number is a
-user's phone as a team member). Emails are unique across users, case-insensitively, and phones are
+Each decides who a person is somewhere else: a tailscale login, a single sign-on feature that
+signs people in by their email, or a phone number (a messaging channel treats a sender whose number
+is a user's phone as a team member). Emails are unique across users, case-insensitively, and phones are
 unique in E.164 (`upsertUser`, which normalizes a typed number such as `0043 660 ...`).
 
 **In core's signals** (`apps/server/src/signals/`): `signal-upsert`, `signal-rename`,
@@ -103,8 +103,8 @@ unique in E.164 (`upsertUser`, which normalizes a typed number such as `0043 660
 definitions and owners are configuration, and a data source is configuration wired to credentials;
 manual point entry is a member's ([SIGNALS.md](SIGNALS.md#procedures-and-tools)).
 
-**In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: automation's triggers and restart, content's channel profiles, planning's initiative
-kinds, engagement's pod membership, and chat's `moderate` flag on `chat-message-delete` - the last
+**In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: automation's triggers and restart, planning's initiative
+kinds and chat's `moderate` flag on `chat-message-delete` - the last
 through `assertAdmin(req, ...)`, for a branch a decorator cannot express.
 
 ### Work sessions

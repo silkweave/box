@@ -263,7 +263,7 @@ event-driven.
 
 ## Extension points
 
-How another feature (a `support` recipe, comms, a team's own) adds to the CRM. The dependent
+How another feature (the `support` recipe, a team's own) adds to the CRM. The dependent
 registers into the dependency (`docs/core/SEAM.md` § 4.2, § 5.6): the CRM never imports a
 contributor, reads contributions lazily at render, and shows nothing extra when none is present.
 The contract lives in `features/crm/web/lib/crmExtensions.ts` (names, prop types, `CRM_SLOTS`);

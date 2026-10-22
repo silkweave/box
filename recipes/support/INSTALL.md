@@ -22,7 +22,7 @@ them at `recipes/support/`. The reference implementation does not: it lives in t
 
 Ask these together before copying code:
 
-1. **Powerups.** Which to add now: `crm` (needs CRM), `comms` (needs Comms) and `help-center`
+1. **Powerups.** Which to add now: `crm` (needs CRM) and `help-center`
    (the public Help Center on Cloudflare Pages; its contact form needs Automation). Each can be
    added later. Adapt and validate the base first.
 2. **Working week.** Working days, public holidays for the coming year, and when a ticket counts as
@@ -40,7 +40,7 @@ each is a no-op, so there is no migration stage.
 
 1. Copy/adapt `<fetched stack>/features/support/` into the Box's `features/support/{core,server,web}`
    and `features/support/skills/`, without the powerup folders the owner did not choose
-   (`core/crm/`, `core/comms/`, `core/help-center/` and their `server/` and `web/` counterparts,
+   (`core/crm/`, `core/help-center/` and their `server/` and `web/` counterparts,
    and the `cloudflare/` folder, which belongs to `help-center`). `core/articles/`,
    `server/articles/`, `web/articles/` and `web/lib/media.ts` are the base's Help Articles: keep them. Remove their registration lines from
    `core/index.ts`, `core/manifest.ts` (models and `dependsOn`), `server/support/support.module.ts`
@@ -49,9 +49,9 @@ each is a no-op, so there is no migration stage.
    `apps/server/src/generated/features.ts`, `apps/web/src/generated/features.ts`,
    `packages/core/src/generated/features.ts` and `packages/core/src/generated/exports.ts`. Link the
    skill with the skill linker.
-2. Add a "Support" section to the Box's sidebar sections in `apps/web/src/lib/nav.ts`:
-   `{ label: 'Support', ids: ['support', 'support-help'] }` (Support Tickets and Help Articles).
-   Without it the items fall under "Other".
+2. Keep the sidebar section the two nav entries declare (`SUPPORT_SECTION` in
+   `web/articles/index.ts`, `{ id: 'support', label: 'Support', order: 600 }`), or point both
+   entries at another section of the Box. An entry without a section falls under "Other".
 3. Configure `features.support` in `box.json` with the owner's answers (SPEC.md, "Settings").
 4. **Import**, if the owner chose it: a script in `_docs/scripts/` that calls
    `support-article-upsert` (with `type` `article`, `faq` or `getting_started`) with `import_key`

@@ -113,7 +113,7 @@ export function PresetManagerDialog<S extends BaseViewState>({
   view: ViewStore<S>
   /** What "save" captures here, e.g. "the current layout, filters, grouping and columns". */
   savesHint: string
-  /** What this module calls its rows, for the empty state ("accounts", "pieces"). */
+  /** What this module calls its rows, for the empty state ("accounts", "tickets"). */
   noun: string
   /** Opened by "Save New" rather than the gear: show the name-and-icon row, and title it as a save. */
   showCreate: boolean

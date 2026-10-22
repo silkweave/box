@@ -83,7 +83,7 @@ export const CORE_MIGRATIONS: readonly Migration[] = [
   },
   {
     // Phone identity (2026-10-13): a person's number in E.164, so a channel that sees numbers
-    // (WhatsApp) can tell a team member from a client. Nullable, no backfill.
+    // (a messaging channel) can tell a team member from a client. Nullable, no backfill.
     name: '008-users-phone',
     statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR`],
   },

@@ -117,8 +117,8 @@ bun dev
 
 The supervisor comes up on **:8190** and reverse-proxies Vite, so the browser uses one public port.
 Both ports come from `box.json`; machine-specific overrides belong in `box.local.json`. Missing
-signing keys are generated in that ignored local file. Background automation, chat and relay remain
-off by default.
+signing keys are generated in that ignored local file. Background automation, chat, relay and every
+feature capability under `background.features` remain off by default.
 
 If setup configured a provider, the agent surface boots it. A configured directory without working
 provider authentication remains a visible readiness failure instead of being reported as ready.
@@ -201,7 +201,6 @@ Ask what they are actually working on, then create it:
 - **`crm`** - a handful of real accounts if they sell to anyone.
 - **`chat`** - a room or two that match how the team already talks.
 - **`sink`** - drop in a note they already have lying around.
-- **`content`** - a topic and a draft if content is part of their work.
 
 Then **walk them through the UI once**, opening what you just created. A person who has seen their
 own initiative on the board understands this product; a person looking at an empty grid does not.

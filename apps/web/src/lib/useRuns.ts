@@ -14,7 +14,7 @@ export interface Action {
   description: string
   plugin?: boolean
   entryPath?: string
-  /** Needs per-run params (verify-engagement) - not schedulable, hidden from the Run console. */
+  /** Needs per-run params (source-sync) - not schedulable, hidden from the Run console. */
   parameterized?: boolean
 }
 
@@ -145,7 +145,7 @@ export function runNow(
       trigger_id: opts.triggerId,
       triggered_by: getActiveUserId() ?? undefined,
       date: opts.date,
-      // Parameterized actions (source-sync, pod-engagement-verify) carry their args as a JSON
+      // Parameterized actions (source-sync) carry their args as a JSON
       // object string - the server's scalar-input convention.
       ...(opts.params ? { params: JSON.stringify(opts.params) } : {}),
     },

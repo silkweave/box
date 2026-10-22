@@ -13,8 +13,8 @@
 // kept up for a human) are recorded and swept on the next connect.
 //
 // Any service can use this: connect for an agent, open a page, drive it, detach. Reddit is the
-// first consumer (its OAuth API path is blocked); LinkedIn article drafting, engagement verify and
-// the LinkedIn comment poll use the same path.
+// first consumer (its OAuth API path is blocked); other browser-driven reads, such as the LinkedIn
+// comment poll, use the same path.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'

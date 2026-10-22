@@ -243,7 +243,7 @@ const toDbValue = (c: ColumnSpec, v: unknown): DuckDBValue => {
  * Partial UPSERT: reads the previous row, merges (input keys - including explicit nulls - override;
  * absent keys keep previous values or fall to defaults), validates enums, stamps timestamps + audit,
  * writes INSERT … ON CONFLICT DO UPDATE, and returns the mapped row. Domain modules that need a
- * non-shallow merge (e.g. content's metadata deep-merge) resolve it BEFORE calling this.
+ * non-shallow merge (e.g. a feature's metadata deep-merge) resolve it BEFORE calling this.
  */
 export async function upsertRecord<T>(m: ModelSpec, input: UpsertInput, opts: UpsertOptions = {}): Promise<T> {
   await ensureSchema()

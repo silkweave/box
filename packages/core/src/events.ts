@@ -1,5 +1,5 @@
 // The events spine - EVERY normalized domain event is recorded here durably, idempotently, before
-// any policy (alert rules, notifications, engagement automation) looks at it. `recordEvent()` is the
+// any policy (alert rules, notifications, feature automation) looks at it. `recordEvent()` is the
 // freshness gate: a duplicate insert means "already processed, never react twice". Everything
 // downstream is either a read-only query over this table (digests, traction, the Inbox) or an
 // in-process `onEvent` subscriber that only ever sees FRESH events.
@@ -19,9 +19,9 @@ import { EVENTS } from './warehouse/core-models.js'
 
 /** One event as producers hand it in. */
 export interface EventInput {
-  /** Namespaced kind, e.g. 'reddit.inbox', 'run.error', 'signal.increase', 'content.published'. */
+  /** Namespaced kind, e.g. 'reddit.inbox', 'run.error', 'signal.increase', 'goal.met'. */
   kind: string
-  /** Stable per-event key for dedup (Reddit fullname, `${action_id}:${date}`, a piece id, …). */
+  /** Stable per-event key for dedup (Reddit fullname, `${action_id}:${date}`, a record id, …). */
   dedup_key: string
   /** ISO timestamp of when the event actually happened. */
   event_at?: string
@@ -31,7 +31,7 @@ export interface EventInput {
   source?: string
   /** Who acted: @handle, u/name, GitHub login. '' for actor-less kinds (run.error, signal.*). */
   actor?: string
-  /** What was acted ON (post id, repo, thread, piece) - the traction grouping key. '' when none. */
+  /** What was acted ON (post id, repo, thread, record) - the traction grouping key. '' when none. */
   subject?: string
   /** Permalink for the event, when one exists (also mirrored in fields for templates). */
   url?: string

@@ -72,8 +72,7 @@ None. Creating the room and the triggers is done by the agent with the owner's c
    to ... failed: no alert transport handles route` means the path works and the Notifications
    transports are missing.
 3. The live path, with `background.automation` true: run an action that fails (`box run-now
-   --action_id engagement-github-notifications` without a GitHub credential, or any action that
-   errors). The funnel records `run.error`, the trigger records a `pending` row (`box alerts-list`),
+   --action_id <id>` for an action whose credential is missing, or any action that errors). The funnel records `run.error`, the trigger records a `pending` row (`box alerts-list`),
    and it turns `delivered` when the debounce (default 300s) lands.
 4. Open Settings > Automation > Alerts in a browser: the history lists the alerts with a status
    badge per row.

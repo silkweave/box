@@ -58,9 +58,10 @@ export function boxJson(): BoxJson {
   const file = boxJsonPath()
   const parsed = existsSync(file) || existsSync(localBoxJsonPath()) ? readBoxConfig(configRoot()) : defaultBoxJson()
   if (!maintenanceOverride) return parsed
+  // Every switch off, feature capabilities too: an empty `features` reads false for each of them.
   return {
     ...parsed,
-    background: { automation: false, chatAgent: false, relay: false, whatsapp: false },
+    background: { automation: false, chatAgent: false, relay: false, features: {} },
   }
 }
 

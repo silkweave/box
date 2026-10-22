@@ -258,7 +258,7 @@ Activity. Members see their connections and tools, read only. Settings > Agent t
 - **Prompt injection**: upstream results are outside data (a Stripe customer can name themselves
   anything) and descriptions come from the upstream too. Hold new tools, flag changed descriptions,
   keep write tools off where read is enough, and never grant a connection with write tools to a
-  toolset whose runs read outside content (Comms auto-drafts, for one).
+  toolset whose runs read outside content (an agent that drafts replies to inbound messages, for one).
 - **SSRF**: only admins set URLs; OAuth endpoints must be https; redirects are not followed across
   hosts during discovery.
 

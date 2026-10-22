@@ -56,7 +56,7 @@ class UserDto {
   @ApiProperty() last_name!: string
   @ApiProperty() nickname!: string
   @ApiProperty({ required: false, nullable: true }) email!: string | null
-  @ApiProperty({ required: false, nullable: true, description: 'Phone in E.164; how WhatsApp recognises this person as a team member' })
+  @ApiProperty({ required: false, nullable: true, description: 'Phone in E.164; how a messaging channel recognises this person as a team member' })
   phone!: string | null
   @ApiProperty({ required: false, nullable: true }) image!: string | null
   @ApiProperty({ required: false, nullable: true }) color!: string | null
@@ -230,7 +230,7 @@ export class UsersController {
    * a member may edit their own profile fields and nothing else. Creating a user is an admin's, so
    * a member cannot mint themselves a second identity, and `tailscale_login`, `email` and `phone` are
    * an admin's on every row, because each decides who a person is somewhere else (a tailscale login,
-   * an SSO sign-in, a WhatsApp number).
+   * an identity provider's sign-in, a messaging number).
    */
   @Post('upsert')
   @ApiOkResponse({ type: UserDto })
@@ -242,12 +242,12 @@ export class UsersController {
       if (req.principal?.id !== body.id) throw new ForbiddenException('editing another user is admin-only')
       if (!(await readUser(body.id))) throw new ForbiddenException('creating a user is admin-only')
       if (body.tailscale_login !== undefined) throw new ForbiddenException('tailscale_login is admin-only')
-      // The email is an identity (SSO's NameID), so changing it is an admin's. The profile form
+      // The email is an identity (an identity provider's NameID), so changing it is an admin's. The profile form
       // always sends it, so an unchanged value passes.
       if (body.email !== undefined && !sameEmail(body.email, (await readUser(body.id))?.email)) {
         throw new ForbiddenException('changing email is admin-only')
       }
-      // The phone is an identity too: WhatsApp treats its number as a team member.
+      // The phone is an identity too: a messaging channel treats its number as a team member.
       if (body.phone !== undefined && !samePhone(body.phone, (await readUser(body.id))?.phone ?? null)) {
         throw new ForbiddenException('changing phone is admin-only')
       }

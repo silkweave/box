@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { fileToAvatarDataUri } from '../lib/image.ts'
 import type { User } from '../user-types.ts'
 
-/** Channels offered as handle inputs (matches the engagement/ingest channels). */
+/** Channels offered as handle inputs (the channels the data-sync pulls read per person). */
 export const HANDLE_CHANNELS = ['github', 'x', 'linkedin', 'reddit'] as const
 const HANDLE_LABEL: Record<(typeof HANDLE_CHANNELS)[number], string> = { github: 'GitHub', x: 'X', linkedin: 'LinkedIn', reddit: 'Reddit' }
 

@@ -9,7 +9,7 @@ vi.mock('@silkweave/box-core', async (importOriginal) => ({
 const { filterMcpActions, passthroughOff, registerMcpActionSource } = await import('./mcp-passthrough.js')
 
 const action = (name: string): Action => ({ name, description: name, input: {} as Action['input'], run: async () => ({}) })
-const BOX = [action('comms-send'), action('crm-deals')]
+const BOX = [action('notes-send'), action('crm-deals')]
 const request = (over: Partial<{ url: string; method: string; toolName: string; headers: Record<string, string> }> = {}) => ({
   url: over.url ?? '/mcp',
   method: over.method ?? 'tools/list',
@@ -32,10 +32,10 @@ describe('the /mcp passthrough hook', () => {
     const seen: string[] = []
     off = registerMcpActionSource('test', async ({ principal, surface }) => {
       seen.push(`${principal.id}:${surface}`)
-      return [action('stripe-stripe-api-read'), action('comms-send')]
+      return [action('stripe-stripe-api-read'), action('notes-send')]
     })
     const out = await filterMcpActions(BOX, request({ headers: { authorization: 'Bearer ana-token', 'x-box-surface': 'cli' } }))
-    expect(out.map((a) => a.name)).toEqual(['comms-send', 'crm-deals', 'stripe-stripe-api-read'])
+    expect(out.map((a) => a.name)).toEqual(['notes-send', 'crm-deals', 'stripe-stripe-api-read'])
     expect(seen).toEqual(['ana:cli'])
   })
 
@@ -47,7 +47,7 @@ describe('the /mcp passthrough hook', () => {
     })
     expect(await filterMcpActions(BOX, request({ method: 'initialize' }))).toBe(BOX)
     expect(await filterMcpActions(BOX, request({ url: '/mcp?passthrough=0' }))).toBe(BOX)
-    expect(await filterMcpActions(BOX, request({ method: 'tools/call', toolName: 'CommsSend' }))).toBe(BOX)
+    expect(await filterMcpActions(BOX, request({ method: 'tools/call', toolName: 'NotesSend' }))).toBe(BOX)
     expect(await filterMcpActions(BOX, request({ headers: { authorization: 'Bearer nope' } }))).toBe(BOX)
     expect(asked).toBe(0)
     expect(passthroughOff('/mcp?passthrough=0')).toBe(true)

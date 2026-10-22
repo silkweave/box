@@ -19,7 +19,7 @@ Box"), never stored half-working.
   `server/alerts/`, `web/alerts/`: the deliver runner, the `alerts` ledger, transports, the daily
   digest and the Alerts tab) and Webhook relay (`recipes/automation/powerups/relay/`).
 - **Depended on by**: `notifications` (registers the `chat` and `dm` transports into the Alerts
-  powerup; needs it). Event sources in other features (engagement's polls, planning's goal events)
+  powerup; needs it). Event sources in other features (a data feature's polls, planning's goal events)
   ask core's `eventWanted` before a costly poll, which automation answers; they never import it.
 - **Registers**: core's event interest (`registerEventInterest`: an enabled, valid event trigger
   listens for the kind) and a signal hook that re-points trigger filters on `fields.signal_id` when
@@ -39,7 +39,7 @@ Box"), never stored half-working.
 | `enabled` | 0/1 |
 | `when_kind` | `time` or `event` (run here); `webhook` reserved |
 | `cron`, `timezone` | time: 5-field cron; IANA zone, null = the server's zone |
-| `event_kind` | event: an exact kind (`content.published`) or a family (`signal.*`) |
+| `event_kind` | event: an exact kind (`support.ticket.closed`) or a family (`signal.*`) |
 | `filters` | event: JSON list of `{path, equals \| regex \| in}`, all must match; refused on a time trigger |
 | `do_kind` | `action` or `agent` (run here); `deliver` while a deliver runner is registered (event triggers only) |
 | `action_id`, `params` | action: registry id; JSON object of string params handed to the action |
@@ -423,7 +423,7 @@ cannot enforce or a failed loopback check refuses the run.
 `allow` and `deny` are added beside `box` for the gate and the main job. Saving refuses an id that is
 not configured and a toolset on a trigger that does not run an agent; starting refuses a toolset on
 a profile without session servers. Null gives the job the Box's tools only. A built-in toolset (one
-a feature registers, such as comms' `comms-draft`) can keep only some Box tools: the job is denied
+a feature registers, such as a drafting toolset) can keep only some Box tools: the job is denied
 every other Box tool by name, from the server's live tool list.
 
 ## What a team customises

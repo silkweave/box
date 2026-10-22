@@ -1,12 +1,13 @@
 import 'reflect-metadata'
-import { diagnostic, errorKind, runtimeHeartbeat, traceHttp, traceSocket } from './diagnostics/runtime.js'
+import { addRouteRoots, diagnostic, errorKind, runtimeHeartbeat, traceHttp, traceSocket } from './diagnostics/runtime.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { SESSION_COOKIE, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, pathMountSigninUrl, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
+import { SESSION_COOKIE, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
 import { AppModule } from './app.module.js'
+import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
 import { servicePort, verifyLoopback } from './agent/loopback-guard.js'
@@ -46,6 +47,9 @@ async function bootstrap(): Promise<void> {
   setMaintenanceOverride(MAINTENANCE)
   // Validate merged configuration and lock the system identity before opening the warehouse.
   ensureBoxConfig()
+  // A feature capability under `background.features` must be one its manifest declares. A
+  // maintenance boot reads every capability off, so it skips this and stays able to repair.
+  assertBackgroundDeclared()
 
   // Seed the agent principals before anything can reference them (the scheduler's attribution, the
   // agent's seat in chat, alert delivery into rooms all assume the row): upsert each configured
@@ -62,6 +66,8 @@ async function bootstrap(): Promise<void> {
   // into tRPC/MCP). Behind `/api` so they don't shadow the SPA's client routes (/signals, /inbox, …).
   // The dashboard only ever calls /trpc + /mcp (registered by the adapters, NOT prefixed).
   diagnostic('app', 'boot.nest.ready', { durationMs: Math.round(performance.now() - started) })
+  // Request diagnostics name a route root only when core or a registered feature serves it.
+  addRouteRoots(SERVER_FEATURE_LIST.flatMap((f) => [f.id, ...(f.routeRoots ?? [])]))
   app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => { traceHttp('app', req, res, true); next() })
   app.setGlobalPrefix('api')
 

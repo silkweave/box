@@ -1,4 +1,4 @@
-// The account directory port: how a channel links a chat (a WhatsApp group) to an organization's
+// The account directory port: how a channel links a chat (a group conversation) to an organization's
 // account without importing the feature that keeps accounts ("the dependent registers into the
 // dependency"; docs/core/SEAM.md). CRM registers it from its server module's onModuleInit; a Box
 // without CRM, or a CLI or test that never boots that module, sees no directory (null), and the

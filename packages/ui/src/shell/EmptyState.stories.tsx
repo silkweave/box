@@ -20,7 +20,7 @@ export const Default: Story = {
   args: {
     icon: <CheckCheck className='size-7' />,
     title: 'Inbox Zero',
-    description: "You've handled 12 engagements. Nothing left to follow up on - nicely done.",
+    description: "You've handled 12 replies. Nothing left to follow up on - nicely done.",
   },
 }
 

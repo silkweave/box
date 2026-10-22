@@ -1,9 +1,11 @@
 # The composition seam (Silkweave Stack)
 
-How a Silkweave Box is composed from core and reference features: what a feature is allowed to do,
-how it is registered, and why the seam is shaped this way. The current source layout is
-features/<id>/{core,server,web}; a feature is integrated by an agent that reads its source and
-documentation and adapts it to the receiving Box. Related details live in WAREHOUSE, SERVER, WEB,
+How a Silkweave Box is composed from core and features: what a feature is allowed to do, how it
+is registered, and why the seam is shaped this way. The source layout is
+features/<id>/{core,server,web}. The Stack offers each feature as a recipe: documentation in
+recipes/<id>/ plus a reference implementation in features/<id>/. An agent adapts a recipe by reading
+those documents and that implementation and integrating the code into the receiving Box's own
+features/<id>/, where it is registered as a feature. See docs/RECIPES.md. Related details live in WAREHOUSE, SERVER, WEB,
 and AUTH.
 
 Core owns typed extension points (ports): the warehouse schema, ops registry, persisted events spine,
@@ -71,6 +73,8 @@ export interface CoreFeature {
   baseline?: readonly string[]        // idempotent DDL re-run on every boot after every CREATE TABLE (views, indexes)
   migrations: readonly Migration[]    // append-only, one ledger row each, keyed `${id}:${name}`
   actions?: readonly ActionSpec[]     // runnable ops contributed to core's run funnel
+  presetModules?: readonly string[]   // preset module ids of the boards this feature draws with a view bar
+  background?: Readonly<Record<string, string>> // capability key -> what it arms: box.json `background.features.<id>.<key>`
 }
 
 // apps/server/src/feature.ts
@@ -111,7 +115,6 @@ import { CRM_MODELS } from './models.js'
 
 export default defineCoreFeature({
   id: 'crm',
-  dependsOn: ['data'],
   models: CRM_MODELS,
   migrations: [],   // append-only; grows once a Box has shipped with the old shape
 })
@@ -243,9 +246,9 @@ says so to the database
 
 ### 3.3 Enabling feature B six months after feature A
 
-A Box has run `data` and `planning` since January; in July the team integrates `crm`. Boot:
+A Box has run `planning` and `sink` since January; in July the team integrates `crm`. Boot:
 
-1. `orderFeatures` places crm after data. `assertOwnership` passes.
+1. `orderFeatures` places core first and crm by its dependencies, ties broken by id. `assertOwnership` passes.
 2. Baseline creates `crm_accounts` and the rest at the CURRENT ModelSpec shape, empty.
 3. crm's migrations have never been applied here, so every one of them runs, in order, against
    tables that are already at the shape the last one produces.
@@ -312,7 +315,7 @@ changing a model, a baseline or a migration; the full verification chain also ru
 single-writer warehouse is wrong for (many tiny interactive writes plus point reads) may own a file
 of its own, entirely inside its directories: its own path under the instance dir through core's
 `dataPath()`, its own ledger, its own migration chain, and `manifest.models` lists only what it
-puts in the warehouse. The `chat` reference app is the one that does this, with `chat.db` on
+puts in the warehouse. The `chat` feature is the one that does this, with `chat.db` on
 SQLite and `models: []`. The consequence to know: core's backups and pre-migration snapshots cover
 the warehouse, not a feature's private file; the feature owns that too.
 
@@ -335,14 +338,15 @@ where many contributors register into one owner's surface.
 
 Where A and B are each useful alone and also useful together, the together-part is a third feature
 that depends on both, so both stay deletable and every dependency stays a compile-time fact.
-`notifications` in the reference apps is the shape: `dependsOn: ['chat', 'alerts']`, no tables,
-and it carries the bell that merges chat mentions with alerts, web and FCM push, and alert delivery
-into chat rooms. Without it, chat has no bell and alerts deliver nowhere but their own feed; both
+`notifications` in the Stack's recipes is the shape: `dependsOn: ['chat', 'automation']` (with
+Automation's `alerts` powerup), no tables, and it carries the bell that merges chat mentions with
+alerts, web and FCM push, and alert delivery into chat rooms. Without it, chat has no bell and
+alerts deliver nowhere but their own feed; both
 true and both fine.
 
 The direction of every registration follows from this: **the dependent registers into the
 dependency, never the reverse.** `notifications`' server module registers a chat transport into
-alerts' `registerAlertTransport` from `onModuleInit`; alerts never imports the feature that
+the alerts powerup's `registerAlertTransport` from `onModuleInit`; automation never imports the feature that
 provides it. A dependency that needs to know about its dependents has a port (§ 4.3), not an
 import.
 
@@ -353,6 +357,8 @@ Core-owned, filled from the manifest:
 | Port | Filled by | Consumer |
 |---|---|---|
 | `CoreFeature.models` / `baseline` / `migrations` | every feature with tables | `warehouse/schema.ts` |
+| `CoreFeature.background` | features with their own background work | `background.ts` (`isBackgroundEnabled`, the boot check; [CONFIGURATION.md](../CONFIGURATION.md)) |
+| `CoreFeature.presetModules` | features whose boards have a view bar | `presets/presets.ts` (saved views, [SIGNALS.md](../SIGNALS.md#saved-views-presets)) |
 | `CoreFeature.actions` | any feature with runnable ops | `ops/registry.ts`; from there the `OpsController`, the `run-now` MCP tool, `bun run cli`, and automation's scheduler |
 | `ServerFeature.module` | every feature | `app.module.ts` |
 | `WebFeature.routes` / `nav` / `settings` / `shell.topbar` / `onSession` / `slots` / `docs` | every feature with UI | `router.tsx`, `lib/nav.ts`, `SettingsView.tsx`, `lib/shell.tsx`, `App.tsx`, `lib/slots.ts`, `lib/useDoc.ts` (§ 5) |
@@ -365,10 +371,18 @@ Core-owned, filled at runtime from a server module's `onModuleInit`, unregistere
 | `onRunOutcome(listener)` (`ops/run.ts`) | what happens after a run finalizes; best-effort, never affects the run |
 | `registerAgentSessionRule(id, rule)` (`agent-session.ts`) | a rule that WIDENS who may read an agent session; core knows ownership and nothing else |
 | `registerUserCleanup(id, cleanup)` (`users/cleanup.ts`) | what to do with the feature's own rows when a user is deleted; a throw aborts the delete |
+| `registerPathMount({ id, prefix, handle })` (`path-mounts.ts`) | a top-level URL prefix such as `/artifacts/` that the feature serves itself, ahead of the SPA in dev and production; core authenticates every request first and the bare prefix stays the SPA's (§ 5.1) |
 
-A feature may own a port of the same shape for its own dependents, and the reference apps do:
-`data` exposes `registerSignalHooks` (planning, content and alerts register into it) and
-`registerLinkedinPostSource` (content); `alerts` exposes `registerAlertTransport` (notifications).
+Core's signals add ports of the same shape ([SIGNALS.md](../SIGNALS.md)): `registerSignalHooks`
+(planning and automation register into it), `registerBoardNodeKind` (planning),
+`registerProvider` and `registerPlatformClient` (the Data Sync recipe's powerups) and
+`registerPublishedPostSource` (a feature that publishes posts). Core's event ports (`event-ports.ts`) are the same:
+`registerEventInterest` (automation answers whether a trigger listens for a kind),
+`registerDeliveryFlusher` (the alerts powerup) and `registerEventLinker` (a feature linking an event kind to its own page).
+
+A feature may own a port of the same shape for its own dependents, and the Stack's features do:
+`automation` exposes `registerDeliverRunner` (its alerts powerup) and, with that powerup,
+`registerAlertTransport` (notifications).
 Each is a small module in the owner's core directory: a typed record, a list keyed by the
 registering feature's id, a `register*` that throws on a duplicate id and returns the unregister.
 A CLI or test that never boots those modules simply sees the owner alone, which is the point.
@@ -386,8 +400,8 @@ free through `upsertRecord` / `deleteRecord`, and a web store consumes it throug
 `registerStoreReloads`. **For UI live refresh it is exactly right and needs no change**: a new
 feature's stores register the scopes they read and are live on day one.
 
-**For domain integration it is the wrong seam.** "Content was published, push it to the pods" needs
-the piece id, needs to happen once, and needs to survive being observed by a process that was not
+**For domain integration it is the wrong seam.** "A ticket was closed, tell the requester" needs
+the ticket id, needs to happen once, and needs to survive being observed by a process that was not
 listening. That is the events spine, `packages/core/src/events.ts`: `recordEvent` persists,
 dedupes on `(kind, dedup_key)` and returns whether the event was fresh; `onEvent(listener)` is
 invoked only on the fresh path, after the row is committed, and awaited. Listeners are best-effort
@@ -446,10 +460,10 @@ receive required state explicitly. Writers share a stable controller but do not 
 snapshot, avoiding publication loops. Only the shell persists; inactive routed bodies still unmount.
 
 Typed links across features fall out of § 2.1: `typeof router` contains planning's paths iff
-planning's directory is present, so `navigate({ to: '/initiatives/$id' })` inside content is a type
+planning's directory is present, so `navigate({ to: '/initiatives/$id' })` inside another feature is a type
 error on a Box without planning. That is the compile-time dependency check on the web side, and it
-needs no declaration to work; `content`'s `dependsOn: ['planning']` is still required by
-`typecheck` because content also imports planning's components.
+needs no declaration to work; that feature's `dependsOn: ['planning']` is still required by
+`typecheck` when it also imports planning's components.
 
 One thing the seam cannot check: the SPA shares one URL namespace with the server, so a feature's
 top-level route may not collide with `/api`, `/trpc`, `/mcp`, `/agent` (`RESERVED` in
@@ -458,15 +472,18 @@ the validation chain looks; a feature that adds a top-level route re-checks by h
 
 ### 5.2 Nav: contributed entries, numeric order bands
 
-`lib/nav.ts` reads feature navigation lazily, alongside core's Dashboard (order 0). The receiving Box organizes entries into sidebar sections; the UI library renders
-supplied section labels without owning their domain vocabulary. Dashboard at `/` is the default
-landing page, including a featureless Box. See [WEB.md](../WEB.md) for this Box's section membership.
+`lib/nav.ts` reads feature navigation lazily, alongside core's Dashboard (order 0). Each entry
+declares its sidebar section (`NavSection`: id, label, order); core declares only Workspace, for
+Dashboard, and names no feature. The UI library renders supplied section labels without owning their
+domain vocabulary. Dashboard at `/` is the default landing page, including a featureless Box. See
+[WEB.md](../WEB.md) for the section rules and the sections this Stack's recipes declare.
 A nav entry may set `expandable: false` for a destination without sub-navigation.
 
 Bands are fixed by convention so that integrating or removing a feature never reorders the others. The
-reference apps use `data` 100-199, `planning` 200-299, `content` 300, `engagement` 400, `chat` 500,
-`artifacts` 510, `crm` 600, `sink` 700, `automation` Settings 800, `alerts` Settings 810. A new feature picks a
-free band; a collision is a tie broken by id, not an error.
+Stack's features use core's signals 100-199, `planning` 200-299, `chat` 500, `artifacts` 510,
+`crm` 600, `support` 650, `sink` 700, `reminders` 750, `automation` Settings 800. A new feature picks a
+free band; a collision is a tie broken by id, not an error. Entry order also places an entry inside
+its section.
 
 ### 5.3 Settings sections
 
@@ -485,8 +502,7 @@ tRPC, auth, the registry or the agent stack, and takes what it needs from the ap
 `ShellExtensions`. `apps/web/src/lib/shell.tsx` fills that value once, app-wide: the top-bar
 cluster (every feature's `shell.topbar` contributions by ascending `order`, then the user menu,
 then the agent toggle), the agent panel as the `aside`, the home link, the Settings footer control, and the storage prefix. In
-the reference apps, `automation` contributes `RestartRequiredButton` at 100 and `notifications`
-the `NotificationBell` at 200.
+the Stack's features, `notifications` contributes the `NotificationBell` at 200.
 
 `ShellExtensions` supplies persistent app-wide additions; `RouteChrome` supplies the active
 section's replaceable navigation and actions. Keeping these seams separate is what lets Assistant
@@ -506,7 +522,7 @@ account is [WEB's TDZ rule](../WEB.md#the-tdz-rule-never-read-the-registry-at-mo
 
 `App.tsx`'s auth gate starts core's change feed once a session exists, then calls every present
 feature's `onSession` and keeps the returned teardowns for when the session goes away. In the
-reference apps `chat` starts its feed there, and `notifications` its poller and push-click
+Stack's features `chat` starts its feed there, and `notifications` its poller and push-click
 listener. The hook exists so that a feature's per-session process starts on the same gate as
 core's, and never before a session, when its subscription would only 401.
 
@@ -514,14 +530,16 @@ core's, and never before a session, when its subscription would only 401.
 
 `slots` is the web form of § 4.2's rule. The owner of a surface names a slot and types the props it
 renders with, and reads contributions through `slotComponents<P>(name)` (`lib/slots.ts`, feature
-order); a contributor lists components under that name and never edits the owner. In the reference
-apps `engagement` contributes `PodEngagementPanel` to content's `content.piece.panel`, and content
-renders it with `{ piece }`.
+order); a contributor lists components under that name and never edits the owner. `crm` owns four slots (`crm.account.card`, `crm.account.actions`,
+`crm.touch.actions`, `crm.overview.alerts`) and, for contributions that are not components, two
+registries of the § 4.3 shape on its web side (`registerCrmColumn`, `registerCrmAttention`); its
+SPEC.md, "Extension points", is that contract. `support` owns `support.ticket.panel`, `support.tickets.banner` and
+`support.settings.section`; their SPECs, "Extension points", are those contracts.
 
 `docs` exists because of a concrete break: core's `useDoc` once named three features' tRPC
 procedures, which made a core web module depend on three features and broke the web typecheck on a
 Box with none of them. A markdown doc `kind` is now a feature's: `planning` provides `initiative`
-and `task`, `sink` provides `sink`, `content` provides `topic`, and `useDoc` resolves a kind through
+and `task`, `sink` provides `sink`, and `useDoc` resolves a kind through
 the registry and names no procedure itself. A kind no present feature provides resolves to `error`,
 the same verdict a failed read gets, because to a reader it is the same thing.
 
@@ -539,11 +557,17 @@ features/<id>/server/index.ts                  required ServerFeature and Nest m
 features/<id>/server/<id>/                     controllers and runtime registrations
 features/<id>/web/index.tsx                    required WebFeature
 features/<id>/web/{routes,views,components,lib}/ web code and stores
-features/<id>/SPEC.md                          runtime contract and behavior
-features/<id>/INSTALL.md                       agent integration instructions
-features/<id>/GOTCHAS.md                       feature-specific operational findings
-features/<id>/AGENT.md                         feature guide
 features/<id>/skills/<name>/SKILL.md           optional feature skills
+```
+
+The feature's documentation lives with its recipe, not in the feature tree, and ships to every Box:
+
+```text
+recipes/<id>/RECIPE.md                         catalog entry
+recipes/<id>/SPEC.md                           runtime contract and behavior
+recipes/<id>/INSTALL.md                        agent adaptation instructions
+recipes/<id>/AGENT.md                          adaptation and customisation guide
+recipes/<id>/GOTCHAS.md                        recipe-specific operational findings
 ```
 
 An agent adapts the source and updates maintained registration, root workspace package imports, and
@@ -569,6 +593,6 @@ integration log; a passing lockfile build is not evidence of latest dependency t
   throwaway Box.
 - **A top-level route colliding with a server prefix or a shipped file** (§ 5.1).
 - **A core web module naming a feature's tRPC procedure** (§ 1): only a featureless consumer's
-  typecheck sees it. Stack includes all reference features, so its ordinary typecheck cannot prove
+  typecheck sees it. Stack registers every recipe's feature, so its ordinary typecheck cannot prove
   that core works without them.
 - **A migration against real rows** (§ 3.5): `box db backup`, a throwaway Box, a restored copy.

@@ -7,7 +7,7 @@ GitHub numbers as signals: followers, repo stars and traffic and external PRs fo
 - One channel per account: the default account is `github`, every other one `github@<id>` with its own signals
 - Followers, public repos, org followers, and per repo stars, views and unique visitors
 - External OSS PRs counted from a search query the team writes
-- An engagement pull that collects the last 14 days of threads involving the account and its participating notifications, for the Engagement inbox
+- An engagement pull that collects the last 14 days of threads involving the account and its participating notifications, stored as a snapshot other recipes may read
 - Backfills for star history and a monthly OSS PR curve
 - Each account uses its own token; a run never borrows whoever is logged in to `gh`
 
@@ -29,5 +29,5 @@ It stores one snapshot per account channel and re-derives its signals. GitHub ke
 traffic, so traffic history exists only from regular pulls.
 
 `github-engagement` uses the default account only and stores the `github-engagement` snapshot, with
-no signals; the Engagement recipe's inbox reads it when installed. Planning's PR rows ride the
+no signals; other recipes may read it. Planning's PR rows ride the
 `github` channel through core's signal hooks and are kept on every re-derive.

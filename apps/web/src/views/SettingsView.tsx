@@ -155,7 +155,7 @@ function ProfileForm({ me, admin, onSignOut }: { me: User; admin: boolean; onSig
       meta={<span className='truncate'>@{values.nickname.trim() || me.id}</span>}
       emailReadOnly={!admin}
       emailHint={admin ? undefined : 'Ask an administrator to change it.'}
-      phoneHint={admin ? 'International form. WhatsApp treats this number as a team member.' : 'Ask an administrator to change it.'}
+      phoneHint={admin ? 'International form. Messaging channels treat this number as a team member.' : 'Ask an administrator to change it.'}
       error={error}
       onError={setError}
     />

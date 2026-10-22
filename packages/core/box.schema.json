@@ -178,7 +178,7 @@
     },
     "background": {
       "type": "object",
-      "description": "Background work is OFF unless armed here. A dev checkout holding production credentials would otherwise run real schedules and real agent turns off test data. Core never reads these; the automation, chat, relay and WhatsApp apps do, and typegen forces them all off.",
+      "description": "Background work is OFF unless armed here. A dev checkout holding production credentials would otherwise run real schedules and real agent turns off test data. Core never reads these; the features that run the work do, and maintenance boots and typegen force them all off.",
       "additionalProperties": false,
       "patternProperties": {
         "^_": {}
@@ -196,9 +196,29 @@
           "type": "boolean",
           "description": "Arms the webhook relay."
         },
-        "whatsapp": {
-          "type": "boolean",
-          "description": "Arms the WhatsApp connection (comms whatsapp powerup), only on the Box that holds the linked devices: two Boxes must never share one session."
+        "features": {
+          "type": "object",
+          "description": "A feature's own background capabilities, by feature id, then capability key: each false unless set to true. A feature declares its capabilities in its core manifest; a registered feature refuses a capability it does not declare at boot. Ids of features this Box has not adapted are accepted.",
+          "propertyNames": {
+            "anyOf": [
+              { "pattern": "^[a-z][a-z0-9-]*$" },
+              { "pattern": "^_" }
+            ]
+          },
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "type": "object",
+              "propertyNames": {
+                "anyOf": [
+                  { "pattern": "^[a-z][a-zA-Z0-9-]*$" },
+                  { "pattern": "^_" }
+                ]
+              },
+              "patternProperties": {
+                "^[a-z][a-zA-Z0-9-]*$": { "type": "boolean" }
+              }
+            }
+          }
         }
       }
     },

@@ -88,7 +88,7 @@ export async function replaceChannelSignals(channel: string, rows: SignalRow[]):
 
 /**
  * Replace one signal's machine rows (`live` and `backfill`). For a derived signal re-derived on its
- * own (the task-ledger and engagement signals), outside its channel's deriver.
+ * own (the task-ledger signals, for example), outside its channel's deriver.
  */
 export async function replaceSignalRows(signalId: string, rows: SignalRow[]): Promise<void> {
   await autoRegisterDefinitions(rows)

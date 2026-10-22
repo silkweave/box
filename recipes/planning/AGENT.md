@@ -35,8 +35,8 @@ the manifest's `migrations` at it.
    initiatives AND tasks) and `TERMINAL_PLANNING_STATUSES`. Mirror the change in
    `features/planning/web/planning-types.ts` (`PLANNING_STATUSES`, `PLANNING_STATUS_META`
    labels and tones) and `features/planning/web/components/status.tsx`
-   (`PLANNING_STATUS_UI` icons and colors). If `content` is installed, it imports this list - the
-   edit reaches content's pieces too.
+   (`PLANNING_STATUS_UI` icons and colors). A feature that depends on planning may import this
+   list, so the edit reaches its records too.
 2. **Sprint statuses** - `SPRINT_STATUSES` in the same `types.ts`, mirrored in
    `features/planning/web/sprint-types.ts`. Changing the order changes which tab opens for
    a sprint (`SprintDetailView` picks from the status).

@@ -9,7 +9,7 @@
 //   one message per target now instead of after the debounce. Automation's `alerts` powerup
 //   registers the flusher; without it the call is a no-op that returns null.
 // - Links. `eventLink(kind, dedupKey, fields)` is the dashboard link for an event, when a feature
-//   maps that kind to a page of its own (engagement: the tactical Inbox). Null when none does.
+//   maps that kind to a page of its own (an inbox that lists those events). Null when none does.
 
 /** What one delivery pass did. */
 export interface DeliveryResult {

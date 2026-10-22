@@ -87,7 +87,7 @@ export const DATA_SOURCES: ModelSpec = {
     config: { kind: 'json', default: "'{}'" }, // the provider-declared non-secret settings
     // Born `disabled`: a new source is armed only after a supervised first run (the schedules-file
     // posture - everything armed deliberately). The record layer has no bool kind; text enum
-    // follows pods.status / users.status.
+    // follows users.status.
     status: { kind: 'text', default: "'disabled'", enum: DATA_SOURCE_STATUSES },
     notes: { kind: 'text', default: "''" },
     last_sync_at: { kind: 'timestamp', nullable: true },

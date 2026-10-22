@@ -46,7 +46,7 @@ export function formatBucket(bucket: string): string {
 
 /**
  * A timestamp in the READER's timezone: "2026-06-22 14:00". For the handful of fields that are wall
- * clock to a person (when a piece was published, when it is scheduled to go out) rather than a
+ * clock to a person (when a post was published, when it is scheduled to go out) rather than a
  * warehouse bucket - those keep formatBucket and stay UTC, which is what they mean.
  */
 export function formatDateTime(ts: string): string {

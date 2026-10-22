@@ -2,7 +2,7 @@ import { cn } from '../lib/utils.ts'
 
 /**
  * The app's page widths - the whole scale, and nothing outside it. `reading` is for detail/reading
- * pages (a piece, a task, settings, the replies list); `wide` is for grids/tables/boards (signals,
+ * pages (a ticket, a task, settings, a message list); `wide` is for grids/tables/boards (signals,
  * schedules, users); `full` is for boards whose column count is open-ended, where a cap would force
  * a horizontal scrollbar on a screen that had the room.
  *

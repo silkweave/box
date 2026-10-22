@@ -11,6 +11,6 @@ Built-in pulls that turn the team's public numbers into signals with history: np
 - GitHub (GitHub powerup): followers, repo stars and traffic, OSS PRs, the replies awaiting you, with star and PR history
 - X (X powerup): followers, posts, impressions and an engagement count kept current by X events
 - Reddit (Reddit powerup): karma, the inbox replies awaiting you and a topic radar over the subreddits the team names, through a signed-in browser
-- LinkedIn (LinkedIn powerup): member and company page analytics with history, and the client Content publishes through
-- Substack (Substack powerup): posts, subscribers and open rate, and the client Content publishes through
+- LinkedIn (LinkedIn powerup): member and company page analytics with history, and the client a publishing recipe uses
+- Substack (Substack powerup): posts, subscribers and open rate, and the client a publishing recipe uses
 - Stripe (Stripe powerup): gross and net volume, refunds, MRR and active subscriptions as a data source, with history

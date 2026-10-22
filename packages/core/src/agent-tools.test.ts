@@ -97,9 +97,9 @@ describe('session options', () => {
   })
 
   it('a built-in toolset keeps only its Box tools, cannot be edited or shadowed', () => {
-    registerBuiltinToolset({ id: 'drafting', label: 'Drafting', description: '', boxTools: ['comms-draft', 'comms-conversation'], deny: ['Bash'] })
-    expect(agentToolset('drafting')).toMatchObject({ builtIn: true, servers: [], deny: ['Bash'], boxTools: ['comms-draft', 'comms-conversation'] })
-    expect(toolsetSessionOptions('drafting')).toEqual({ servers: [], allowedTools: [], disallowedTools: ['Bash'], boxTools: ['CommsDraft', 'CommsConversation'] })
+    registerBuiltinToolset({ id: 'drafting', label: 'Drafting', description: '', boxTools: ['notes-draft', 'notes-thread'], deny: ['Bash'] })
+    expect(agentToolset('drafting')).toMatchObject({ builtIn: true, servers: [], deny: ['Bash'], boxTools: ['notes-draft', 'notes-thread'] })
+    expect(toolsetSessionOptions('drafting')).toEqual({ servers: [], allowedTools: [], disallowedTools: ['Bash'], boxTools: ['NotesDraft', 'NotesThread'] })
     expect(() => saveAgentToolset({ id: 'drafting', servers: [] })).toThrow(/built in/)
     expect(() => deleteAgentToolset('drafting')).toThrow(/built in/)
   })

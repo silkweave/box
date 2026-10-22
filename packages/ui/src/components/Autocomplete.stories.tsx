@@ -13,7 +13,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const KINDS = [
-  { value: 'content.published', hint: '12 in 30 days' },
+  { value: 'run.error', hint: '12 in 30 days' },
   { value: 'goal.met', hint: '3 in 30 days' },
   { value: 'signal.threshold', hint: '41 in 30 days' },
 ]
@@ -22,7 +22,7 @@ function Demo() {
   const [value, setValue] = useState('')
   return (
     <div className='max-w-sm'>
-      <Autocomplete aria-label='Event kind' mono value={value} onValueChange={setValue} suggestions={KINDS} placeholder='content.published' />
+      <Autocomplete aria-label='Event kind' mono value={value} onValueChange={setValue} suggestions={KINDS} placeholder='goal.met' />
     </div>
   )
 }

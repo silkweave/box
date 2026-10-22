@@ -15,8 +15,7 @@ open ticket in working days. Help Articles are read the same way, through their 
   `support:<name>`, settings under `features.support`.
 - **dependsOn**: nothing. Core only. The base imports no other feature.
 - **Powerups** (`recipes/support/powerups/`): `crm` (the requester is a CRM contact, tickets link to CRM touches
-  and show on the account page), `comms` (a Comms conversation becomes a ticket, linked
-  back) and `help-center` (the published Help Articles as a public **Help Center** on Cloudflare
+  and show on the account page) and `help-center` (the published Help Articles as a public **Help Center** on Cloudflare
   Pages, with a contact form that creates tickets). The base names their absence (see "Absence")
   and imports nothing from them.
 - **Agent skill**: `features/support/skills/support/SKILL.md`, how to log a ticket from a call or chat
@@ -33,7 +32,7 @@ writes the ticket.
 |---|---|---|
 | Manual | New ticket dialog, opened from the Support Tickets top bar | base |
 | Agent | `support-ticket-log` (MCP, CLI, tRPC) from a call, meeting or chat summary | base |
-| Comms conversation | "Create ticket" on a Comms conversation (a dialog prefilled with the quoted messages), or `support-ticket-from-conversation` | `comms` powerup |
+| Another feature | its own intake (a dialog or tool of its own) through `logSupportTicket`, with the ticket source it registered | that feature |
 | CRM touch | "Log support ticket" on a CRM touch or account (the New ticket dialog, prefilled) | `crm` powerup |
 | Help Center contact form | the public site's form, through the automation relay | `help-center` powerup with its form |
 
@@ -41,7 +40,14 @@ Each ticket records where it came from in `source` and `source_ref`. The pair is
 `source_ref` is set, which makes every machine path idempotent: logging the same call, message,
 touch or form submission twice returns the existing ticket instead of a second one. A ticket logged
 by a person is `manual`, by an agent `agent`, from a CRM touch `crm` (the touch, not `source_ref`,
-makes it unique).
+makes it unique), from the Help Center form `form`, from an import `import`.
+
+Another feature that logs tickets registers its own source first (`registerSupportTicketSource`,
+`core/sources.ts`): an id, the label the ticket page shows, and whether its summaries are the
+team's own words (`trusted`, default false). A new ticket must carry a registered source. A ticket
+keeps its source when the feature that registered it is gone: it still reads, edits and lists,
+shows the raw id as its label, and counts as untrusted. No source is trusted unless something says
+so: of the base's, `manual`, `agent`, `crm` and `import` are trusted and `form` is not.
 
 ## Tables
 
@@ -53,7 +59,7 @@ Created from the ModelSpecs on boot (`CREATE TABLE IF NOT EXISTS`). Every table 
 
 | table | pk | what it holds |
 |---|---|---|
-| `support_tickets` | `id` (integer, the ticket number shown as `#42`, assigned as max + 1 inside the write) | `subject` (one line), `summary` (markdown: what was asked and what was said), `requester_id` (nullable: an anonymous or unknown asker; a `support_requesters` id, or with the `crm` powerup a `crm_contacts` id), `channel` (`email`, `phone`, `whatsapp`, `chat`, `form`, `in_person`, `other`), `type` (`how_to`, `problem`, `bug`, `feedback`, `billing`, `other`), `status` (`pending`, `active`, `blocked`, `done`, `dropped`), `resolution` (nullable free text: what closed it), `owner` (nullable `users.id`: who works it), `opened_on` (date, default team today), `closed_on` (date, set when it becomes done or dropped), `source` (`manual`, `agent`, `comms`, `crm`, `form`, `import`), `source_ref` (nullable text), `logged_by` (the principal), `external` (JSON provenance bag) |
+| `support_tickets` | `id` (integer, the ticket number shown as `#42`, assigned as max + 1 inside the write) | `subject` (one line), `summary` (markdown: what was asked and what was said), `requester_id` (nullable: an anonymous or unknown asker; a `support_requesters` id, or with the `crm` powerup a `crm_contacts` id), `channel` (`email`, `phone`, `whatsapp`, `chat`, `form`, `in_person`, `other`), `type` (`how_to`, `problem`, `bug`, `feedback`, `billing`, `other`), `status` (`pending`, `active`, `blocked`, `done`, `dropped`), `resolution` (nullable free text: what closed it), `owner` (nullable `users.id`: who works it), `opened_on` (date, default team today), `closed_on` (date, set when it becomes done or dropped), `source` (a base source, `manual`, `agent`, `crm`, `form` or `import`, or one another feature registered; checked on write only), `source_ref` (nullable text), `logged_by` (the principal), `external` (JSON provenance bag) |
 | `support_requesters` | `id` (uuid) | `name` (optional), `email` (lower case, trimmed; nullable), `phone` (digits with country code, `4915112345678`; nullable), `organization` (free text: the requester's company, school or household as typed), `notes`, `merged_into` (nullable: a requester merged away points at the survivor), `external` |
 | `support_articles` | `id` (slug, made from the title, the public URL slug, never changes) | `type` (`article`, `faq`, `getting_started`; for an `faq` the title is the question and the body the answer), `title`, `one_liner`, `body` (markdown), `status` (`draft`, `published`, `retired`), `needs_update` (bool), `featured` (bool), `owner`, `team_notes` (markdown, never published), `sort`, `published_on`, `retired_on`, `content_updated_on`, `external` |
 | `support_ticket_articles` | `ticket_id` | `article_id`, `linked_by`, `linked_at`: the entry that answered the ticket |
@@ -75,7 +81,6 @@ swaps the requester directory (see "Rules").
 | table | powerup | what it holds |
 |---|---|---|
 | `support_ticket_crm` | `crm` | `ticket_id` (pk), `activity_id` (the CRM touch the ticket came from; one ticket per touch, checked in the write path) |
-| `support_ticket_conversations` | `comms` | `ticket_id` (pk), `conversation_id`, `channel`, `anchor_message_id` (the newest message when the ticket was made), `linked_at` |
 | `support_site_publishes` | `help-center` | `id`, `requested_by`, `started_at`, `finished_at`, `status` (`running`, `ok`, `failed`, `skipped` when nothing changed), `deployment_id`, `deployment_url`, `article_count`, `faq_count`, `content_hash` (the published content, the site settings and the digest of every copied image), `error` (a Box image that could not be read fails the publish and is named here) |
 | `support_form_submissions` | `help-center` | `id` (the submission id from the site, also the ticket's `source_ref`), `received_at`, `name`, `email`, `message`, `page_url`, `country`, `verdict` (`accepted`, `held`, `rejected`), `reason`, `ticket_id`, `decided_by`, `decided_at` |
 
@@ -117,7 +122,7 @@ no-op. A later change to a shipped table appends a new migration with the next f
   per email and one per phone: creating or editing a second refuses and names who has it.
   `logSupportTicket` finds or creates the requester: by email first, then by phone; when the two
   match different people it uses the email match and returns a warning naming both. A machine path
-  (agent, form, comms) never overwrites a known requester's name, phone or organization; it only
+  (an agent, a form, another feature's intake) never overwrites a known requester's name, phone or organization; it only
   fills blanks. A requester named on a ticket cannot be deleted; **merge** repoints every ticket to
   the survivor and marks the other `merged_into`.
 - **Organization.** A ticket has none of its own: it is its requester's. Ticket lists and the
@@ -188,21 +193,18 @@ content hash so the same file uploaded twice is one file, and served to signed-i
 `/api/support/media/<file>` (`server/articles/media.controller.ts`). Publishing the Help Center
 copies every Box-served image and video an entry references into the site.
 
-### Help Articles and the wiki
+### Help Articles and internal notes
 
-Deliberately separate from the [Wiki](../wiki/RECIPE.md) recipe, and linked to it only by
-reference. The wiki is the team's internal knowledge, written for and largely by agents, as files
-with free links and no publication state; help articles are written for the team's users, reviewed
-one by one and published. Keeping them apart means an internal page can never reach the public Help
-Center by being filed in the wrong folder, and Help Articles need no wiki to work. Where both
-recipes are present, an agent searches the wiki (read only) for facts when drafting an article, and
-an article's team notes may cite wiki pages as `[[slug]]`; nothing is copied or synced between them.
+Help articles are written for the team's users, reviewed one by one and published; they are not
+the team's internal knowledge base. Nothing internal reaches the public Help Center unless someone
+writes it into an entry and publishes it. An entry's `team_notes` hold internal context (sources,
+links to internal pages) and are never published.
 
 ## Views (`/support`, nav "Support Tickets", order 650)
 
 Support has two sidebar items: **Support Tickets** and **Help Articles** (`/support/help`, order
-655, id `support-help`). The Box places both under a "Support" heading in its sidebar sections
-(`apps/web/src/lib/nav.ts`). The routes under `/support/help` carry `shellGroup: 'support-help'`, so
+655, id `support-help`). Both declare the "Support" sidebar section (`SUPPORT_SECTION`, order 600,
+in `web/articles/index.ts`). The routes under `/support/help` carry `shellGroup: 'support-help'`, so
 the deepest match makes Help Articles the active item there; one layout publishes the secondary
 navigation for both.
 
@@ -288,7 +290,7 @@ feature order, and a server port:
 
 | slot | props | where it renders |
 |---|---|---|
-| `support.ticket.panel` | `{ ticket, onChanged }` | the ticket page's right column (the base's answering article, `comms` the conversation) |
+| `support.ticket.panel` | `{ ticket, onChanged }` | the ticket page's right column (the base's answering article; another feature's link, such as where the ticket came from) |
 | `support.tickets.banner` | none | above the tickets in either layout, whatever the preset (`help-center` the held submissions) |
 | `support.settings.help-center` | `{ isAdmin }` | the Help Center tab of Settings > Support (`help-center` its checks, appearance and publish history, with Preview, Save and Publish now in the footer) |
 | `support.help.actions` | none | the Help Articles list's top bar, before New article (`help-center` the Help Center button with its publish dropdown) |
@@ -298,7 +300,9 @@ On the server, `registerSupportExtension` (`core/ports.ts`) lets a powerup own i
 path idempotent on its own key, add its links to `support-ticket`, and clean up on ticket delete and
 requester merge; `setSupportRequesterDirectory` lets the `crm` powerup replace the requester
 directory; `markSupportPowerup` reports a powerup
-and its problems to `support-status`. A key no present powerup owns is refused, naming the powerup.
+and its problems to `support-status`; `registerSupportTicketSource` (`core/sources.ts`, "Intake")
+adds a ticket source with its label and trust, and `support-status` lists every source and
+extension present. A key no present powerup owns is refused, naming the powerup.
 A Box's own feature can use the same seams.
 
 ## Absence
@@ -342,8 +346,9 @@ The three requester write tools refuse with the `crm` powerup: requesters are CR
 edited with the CRM tools.
 
 Summaries are returned wrapped in the Box's untrusted-content markers, with `untrusted: true`, when
-the ticket came from outside the team (`form`, `comms`), because the text is the requester's, not
-an instruction. The web strips the markers for display.
+the ticket's source is not trusted (`form`, an untrusted registered source, or a source this Box no
+longer registers), because the text is the requester's, not an instruction. Every ticket also
+carries `source_label`. The web strips the markers for display.
 
 tRPC only, for the views: `supportRequester` (one requester with their tickets and its `directory`) and
 `supportSettingsSave` (admin; the Working week and Support Tickets tabs).
@@ -380,7 +385,6 @@ The base keeps no secret. The powerups' settings and secrets are in their INSTAL
 | `crm_contacts` (CRM, with the `crm` powerup) | the requesters themselves; the CRM recipe's SPEC.md lists them |
 | `support_tickets` | summaries of what a person asked or reported, which can name other people |
 | `support_form_submissions` | name, email and message as submitted on the public site, country from the request |
-| `support_ticket_conversations` | links only; the messages stay in Comms |
 | `events` (core) | `support-form.submitted` events carry the submission's name, email and message, because the relay provider records the delivery as an event before Support stores it. Accepted by the owner: the events table keeps them under core's event retention |
 
 Internal users only. Personal data never leaves the Box through this feature: the Help Center publishes only published entries, plus the Box-served images those reference (copied into the site, so they are public once published). Support's own

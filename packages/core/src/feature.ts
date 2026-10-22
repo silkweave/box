@@ -27,6 +27,10 @@ export interface CoreFeature {
   /** The boards this feature draws with a preset bar, by preset module id (`config/presets.json`).
    *  Only registered ids are accepted, so a typo cannot create a module nothing renders. */
   presetModules?: readonly string[]
+  /** Background capabilities this feature arms from box.json `background.features.<id>.<key>`
+   *  (each false unless set), by key, with what each arms. Read only through `isBackgroundEnabled`
+   *  (background.ts); a configured key a registered feature does not declare fails the boot. */
+  background?: Readonly<Record<string, string>>
 }
 
 /** `const` type parameter: the manifest keeps its literal types (tuple of ModelSpecs, literal id). */

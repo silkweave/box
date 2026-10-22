@@ -131,7 +131,7 @@ export async function boxMcpSessionOptions(
   // Connections: the person's own (their audience, run without asking, since they could call these
   // tools themselves) plus the toolset's (granted by the toolset, whatever the audience). An agent
   // principal has no own connections, and neither does a session under a built-in toolset that
-  // keeps only some Box tools (outside content: comms-draft). A toolset's deny list applies to both.
+  // keeps only some Box tools (a drafting job for people outside the team). A toolset's deny list applies to both.
   const directory = mcpConnections()
   const own = principalId && directory && !extra?.boxTools ? await directory.personal(principalId) : []
   const granted = extra?.servers ?? []
