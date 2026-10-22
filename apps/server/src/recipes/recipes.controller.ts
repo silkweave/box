@@ -14,8 +14,8 @@ import { AuthGuard } from '../auth/auth.guard.js'
 // Box is fetched into the verified `.recipes/<id>/<version>/` cache so its card can show its
 // RECIPE.md, powerups and screenshots. The access key is used here and never leaves the server.
 
-const SCREENSHOT = /^[\w.-]+\.(png|jpe?g|webp)$/
-const CONTENT_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
+const SCREENSHOT = /^[\w.-]+\.(png|jpe?g|webp|svg)$/
+const CONTENT_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml' }
 const TTL_MS = 10 * 60_000
 
 const registryOutput = z.object({
@@ -116,6 +116,8 @@ export class RecipesController {
   @Get('registry/:id/:version/screenshots/:file')
   @Header('Cache-Control', 'private, max-age=86400, immutable')
   @Header('X-Content-Type-Options', 'nosniff')
+  // An SVG opened directly is a document: sandboxed, no script, no requests.
+  @Header('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
   screenshot(@Param('id') id: string, @Param('version') version: string, @Param('file') file: string): StreamableFile {
     if (!/^[a-z][a-z0-9-]*$/.test(id) || !/^[0-9a-f]{40}$/.test(version) || !SCREENSHOT.test(file)) throw new NotFoundException('no such screenshot')
     const dir = cachedRecipe(configRoot(), id, version)
