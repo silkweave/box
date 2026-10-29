@@ -62,6 +62,8 @@ export function SignalCard({ signal }: { signal: Signal }) {
       className={cn(
         'flex flex-col gap-1 rounded-lg border border-border bg-surface p-4 shadow-(--shadow-sm) transition-colors hover:border-accent/40',
         swatch && cn(swatchClass(swatch), 'swatch-card'),
+        // An archived signal (shown only with "Show archived") reads as set aside, not as live.
+        signal.archived_at && 'border-dashed opacity-70',
       )}>
       <div className='flex items-start justify-between gap-2'>
         {/* Fixed two-line title box so every card is the same height: one-line titles pad down,
@@ -69,7 +71,10 @@ export function SignalCard({ signal }: { signal: Signal }) {
         <span className='line-clamp-2 min-h-[2lh] text-body-sm text-muted-foreground' title={signal.label}>
           {signal.label}
         </span>
-        <UserChip userId={signal.owner} showName />
+        <span className='flex shrink-0 items-center gap-1.5'>
+          {signal.archived_at && <ArchivedBadge />}
+          <UserChip userId={signal.owner} showName />
+        </span>
       </div>
 
       <div className='font-serif text-display-lg tabular-nums leading-none text-text'>
@@ -105,5 +110,16 @@ export function SignalCard({ signal }: { signal: Signal }) {
         )}
       </div>
     </div>
+  )
+}
+
+/** The "Archived" marker on a card and on a signal's detail page. */
+export function ArchivedBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn('rounded-sm border border-border bg-muted px-1.5 py-0.5 text-label uppercase tracking-[0.06em] text-muted-foreground', className)}
+      title='Archived: hidden from pickers and the Signals page, still readable'>
+      Archived
+    </span>
   )
 }

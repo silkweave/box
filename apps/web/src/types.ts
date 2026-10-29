@@ -46,6 +46,8 @@ export interface Signal {
   label: string
   group: string
   unit?: string
+  /** When the signal was archived (hidden from pickers and the Signals page, still readable), or null. */
+  archived_at?: string | null
   /** Owning users.id, resolved server-side (definition first, then the signal-owner settings). */
   owner: string | null
   interval: SignalInterval
@@ -58,6 +60,8 @@ export interface Signal {
    *  and `measure_key` are set together - connectedness IS `data_source_id != null`. */
   data_source_id: string | null
   measure_key: string | null
+  /** Parameters of an in-Box measure binding (`measure_key` with no `data_source_id`); `{}` otherwise. */
+  measure_params: Record<string, string>
   /** The formula this signal's points are computed from (null = an ordinary signal). A manual
    *  point on a formula signal overrides the computed value of its bucket. */
   formula: string | null

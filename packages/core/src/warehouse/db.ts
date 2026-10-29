@@ -16,6 +16,7 @@ import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from '@duckdb
 import { markWarehouseWrite } from '../changes.js'
 import { warehousePath } from '../io.js'
 import { ensureBoxConfig } from '../box-config.js'
+import { heldInstance, holdingWarehouse } from './hold.js'
 
 function dbPath(): string {
   ensureBoxConfig()
@@ -32,8 +33,20 @@ function isLockError(err: unknown): boolean {
   return m.includes('lock') || m.includes('conflicting') || m.includes('being used by another')
 }
 
+async function openHeld<T>(fn: (conn: DuckDBConnection) => Promise<T>): Promise<T> {
+  const instance = await heldInstance(dbPath(), (path) => DuckDBInstance.create(path, { access_mode: 'read_write' }))
+  const conn = await instance.connect()
+  try {
+    await conn.run(`SET TimeZone = 'UTC'`)
+    return await fn(conn)
+  } finally {
+    conn.disconnectSync()
+  }
+}
+
 /** Open an ephemeral connection in `mode`, run `fn`, always close. Retries on a lock conflict. */
 async function open<T>(mode: 'read_only' | 'read_write', fn: (conn: DuckDBConnection) => Promise<T>): Promise<T> {
+  if (holdingWarehouse()) return openHeld(fn)
   const attempts = 12
   let lastErr: unknown
   for (let i = 0; i < attempts; i++) {

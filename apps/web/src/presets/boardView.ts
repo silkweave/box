@@ -9,7 +9,7 @@
 //     wrong, and identical for every module - a second hand-rolled copy would drift.
 //   • IN EACH MODULE's own `*View.ts`: what the columns/filters/sorts/groupings mean, what the
 //     default presets are, and how rows are filtered/sorted/grouped. Forcing those into one union
-//     type is how you end up with a `Filters` carrying `value_customer` for accounts and `channel`
+//     type is how you end up with a `Filters` carrying `impact` for accounts and `channel`
 //     for content.
 //
 // A module supplies its own `normalize` (which decides how a stored view of ITS shape is repaired),
@@ -168,9 +168,21 @@ export interface ViewStoreSpec<S extends BaseViewState> {
    * typed address, a bookmark), select `preset` instead of the one this browser used last. A URL
    * naming a preset - every preset click, a reload, a shared link - is untouched, and so is any other
    * path the store is mounted on (an account's page). Skipped if the preset no longer exists. A
-   * store mounted on more than one board path gives one landing per path.
+   * store mounted on more than one board path gives one landing per path. A `path` ending in `/*`
+   * covers every path below it (a board's item addresses, `/tasks/T3`), not itself.
    */
   landing?: { path: string; preset: string } | { path: string; preset: string }[]
+}
+
+/** The landing that applies at `pathname` (trailing slash already stripped), if any: an exact `path`,
+ *  or a `<prefix>/*` path for anything strictly below `<prefix>`. */
+export function landingAt(
+  landing: ViewStoreSpec<BaseViewState>['landing'],
+  pathname: string,
+): { path: string; preset: string } | undefined {
+  return (landing ? [landing].flat() : []).find((l) =>
+    l.path.endsWith('/*') ? pathname.startsWith(l.path.slice(0, -1)) && pathname.length > l.path.length - 1 : l.path === pathname,
+  )
 }
 
 /**
@@ -314,7 +326,7 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
         }
         return
       }
-      const landingSpec = (spec.landing ? [spec.landing].flat() : []).find((l) => l.path === pathname)
+      const landingSpec = landingAt(spec.landing, pathname)
       const landing = landingSpec ? presets.find((v) => v.name === landingSpec.preset) : undefined
       if (landing) {
         if (restoringUrl === landing.name) return

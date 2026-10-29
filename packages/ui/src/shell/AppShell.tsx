@@ -89,7 +89,8 @@ export function AppShell({
     <div className='relative flex h-dvh w-full overflow-hidden bg-sidebar text-text'>
       <div className={cn('flex min-w-0 flex-1 overflow-hidden', framed && 'm-2 rounded-xl frame-shine shadow-(--frame-shadow)')}>
         {/* Desktop sidebar: full nav, or an icon-only group rail while collapsed */}
-        <aside className='hidden shrink-0 md:block'>
+        {/* The rule keeps the tinted sidebar from bleeding into the canvas (light mode most of all). */}
+        <aside className='hidden shrink-0 border-r border-border md:block'>
           {collapsed ? (
             <SidebarRail {...shellGroupNav} onHomeClick={closeDrawer} onExpand={() => setCollapsed(false)} storagePrefix={storagePrefix} framed={framed} />
           ) : (

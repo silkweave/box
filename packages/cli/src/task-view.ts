@@ -9,12 +9,19 @@ const phases = [
 const tone = (task: TaskState): Tone => task.status === 'running' ? 'active' : task.status === 'passed' ? 'good' : task.status === 'failed' ? 'bad' : task.status === 'cancelled' ? 'warn' : 'muted'
 const taskTime = (task: TaskState, now: number): number => task.status === 'running' ? now - task.started : task.elapsed
 const spinner = (now: number): string => ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'][Math.floor(now / 90) % 10]
+// Checks overlap, so a phase's time is the wall span from its first start to its last finish.
+const phaseTime = (members: TaskState[], now: number): number => {
+  const ran = members.filter(t => t.started)
+  if (!ran.length) return 0
+  return Math.max(...ran.map(t => t.started + taskTime(t, now))) - Math.min(...ran.map(t => t.started))
+}
 const icon = (task: TaskState, now: number): string => ({ running: spinner(now), passed: '✓', failed: '✕', cancelled: '!', skipped: '-', pending: '○' })[task.status]
 
 export function taskRows(state: RunState, target: string, height: number, details: boolean, interactive: boolean, now = performance.now()): Row[] {
   const completed = state.tasks.filter(t => t.status === 'passed').length
-  // The running check first: after an independent failure, later checks still run.
-  const focus = state.tasks.find(t => t.status === 'running') ?? state.tasks.find(t => t.status === 'failed' || t.status === 'cancelled')
+  // Running checks first: after an independent failure, later checks still run.
+  const active = state.tasks.filter(t => t.status === 'running')
+  const focus = active[0] ?? state.tasks.find(t => t.status === 'failed' || t.status === 'cancelled')
   const elapsed = state.finished ? state.elapsed : now - state.started
   const filled = Math.floor(completed / state.tasks.length * 24)
   const rows: Row[] = [
@@ -23,7 +30,7 @@ export function taskRows(state: RunState, target: string, height: number, detail
     [span('  '), span('━'.repeat(filled), 'accent'), span('━'.repeat(24 - filled), 'muted'), span(`  ${completed}/${state.tasks.length} checks · ${elapsedText(elapsed)}`, 'muted')], [],
   ]
   if (height < 20) {
-    rows.push([span(`  ${focus ? focus.name : 'Finishing'}`, 'active')])
+    rows.push([span(`  ${active.length > 1 ? active.map(t => t.name).join(' · ') : focus ? focus.name : 'Finishing'}`, 'active')])
     rows.push([span(`  ${focus?.tail.at(-1) ?? 'Waiting for command output'}`, 'muted')])
   } else {
     for (const [name, summary] of phases) {
@@ -35,7 +42,7 @@ export function taskRows(state: RunState, target: string, height: number, detail
       const warning = members.some(t => t.warnings.length > 0)
       const phaseTone: Tone = running ? tone(running) : warning ? 'warn' : done ? 'good' : 'muted'
       const mark = running ? icon(running, now) : warning ? '!' : done ? '✓' : skipped ? '-' : '○'
-      const label = running ? (state.cancelled ? 'stopping' : running.status) : done ? `${elapsedText(members.reduce((sum, t) => sum + t.elapsed, 0))}${warning ? ' · warning output' : ''}` : skipped ? 'not run' : 'queued'
+      const label = running ? (state.cancelled ? 'stopping' : running.status) : done ? `${elapsedText(phaseTime(members, now))}${warning ? ' · warning output' : ''}` : skipped ? 'not run' : 'queued'
       rows.push([span(`  ${mark} `, phaseTone), span(name.padEnd(11), phaseTone), span(label, 'muted')])
       if (running && height >= 24) {
         for (const task of members) rows.push([
@@ -46,7 +53,12 @@ export function taskRows(state: RunState, target: string, height: number, detail
       } else if (height >= 24) rows.push([span(`    ${summary}`, 'muted')])
     }
     rows.push([])
-    if (focus) {
+    if (active.length > 1) {
+      // One latest-output line per running check.
+      for (const task of active) rows.push([span('  └ ', 'muted'), span(`${task.name}: `, 'muted'),
+        span(now - task.lastOutput > 8000 ? `no new output for ${elapsedText(now - task.lastOutput)}, still running` : task.tail.at(-1) ?? 'starting', 'active')])
+      if (state.cancelled) rows.push([span('    Stopping commands and descendants…', 'muted')])
+    } else if (focus) {
       rows.push([span('  └ ', 'muted'), span(focus.tail.at(-1) ?? `Starting ${focus.name.toLowerCase()}`, 'active')])
       rows.push([span(`    ${focus.command}`, 'muted')])
       rows.push([span(state.cancelled ? '    Stopping command and descendants…' : now - focus.lastOutput > 8000 ? `    No new output for ${elapsedText(now - focus.lastOutput)}. Still running.` : '    Latest command output above.', 'muted')])
@@ -98,7 +110,7 @@ export function taskReceipt(state: RunState, { depth = 1, columns = 100 } = {}):
     rows.push([
       span(`  ${phaseMark} `, phaseTone), span(name.padEnd(11), phaseTone),
       span(status.padEnd(12), 'muted'),
-      span(elapsedText(members.reduce((sum, t) => sum + t.elapsed, 0)).padStart(8), 'muted'),
+      span(elapsedText(phaseTime(members, 0)).padStart(8), 'muted'),
       ...(hasWarning ? [span('  !', 'warn')] : []),
     ])
   }

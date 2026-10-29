@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Autocomplete, Dialog, DialogContent, DialogDescription, DialogTitle, Button, confirm, SelectField, UserPicker } from '@silkweave/box-ui'
-import { deleteSignal, upsertSignal, useSignalsData, type SignalUpsert } from '../lib/useSignalsData.ts'
+import { deleteSignal, upsertSignal, useSignalsData, useSignalsDataWithArchived, type SignalUpsert } from '../lib/useSignalsData.ts'
 import { useDataSources, useProviders } from '../lib/useSourcesData.ts'
 import type { ProviderMeasure } from '../source-types.ts'
 import {
@@ -50,6 +50,9 @@ export function SignalDialog({
 }) {
   const editing = !!signal
   const { data } = useSignalsData()
+  // Ids are taken by archived signals too (an upsert would silently rewrite one), and a formula may
+  // still name one: both read the list with archived signals in it. The dependency picker stays live.
+  const { data: everySignal } = useSignalsDataWithArchived()
   // The catalogue is static and the sources list is small - both are cached stores, so opening the
   // dialog costs no round-trip once either has been read anywhere in the session.
   const { data: providers } = useProviders()
@@ -68,7 +71,7 @@ export function SignalDialog({
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((p) => ({ ...p, [k]: v }))
 
   const id = editing ? signal.id : slugify(f.label)
-  const duplicate = !editing && !!id && (data?.signals ?? []).some((s) => s.id === id)
+  const duplicate = !editing && !!id && (everySignal ?? data)?.signals.some((s) => s.id === id) === true
   const derived = editing && signal.source === 'derived'
   const channels = [...new Set(['business', ...(data?.channels ?? [])])].sort()
 
@@ -375,7 +378,7 @@ export function SignalDialog({
                       title={`${dep} - click to remove`}
                       onClick={() => set('dependsOn', f.dependsOn.filter((d) => d !== dep))}
                       className='rounded-full border border-border px-2 py-0.5 text-label text-text transition-colors hover:border-danger hover:text-danger'>
-                      {data?.signals.find((s) => s.id === dep)?.label ?? dep} ×
+                      {(everySignal ?? data)?.signals.find((s) => s.id === dep)?.label ?? dep} ×
                     </button>
                   </li>
                 ))}

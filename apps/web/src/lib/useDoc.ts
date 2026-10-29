@@ -44,6 +44,12 @@ function docSurface(kind: string): DocSurface | null {
   return found
 }
 
+/** Read a doc once, outside an editor (a copy or open action). Rejects when no feature provides `kind`. */
+export function readDoc(kind: DocKind, id: string): Promise<DocPayload> {
+  const surface = docSurface(kind)
+  return surface ? surface.read(id) : Promise.reject(new Error(`No feature provides doc kind "${kind}"`))
+}
+
 const AUTOSAVE_MS = 1000
 
 /**

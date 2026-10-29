@@ -7,29 +7,45 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/planning/`; the reference implementation is fetched from the recipe registry as `features/planning/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box recipe fetch planning`.
 
-**Builds on:** core only (its signals and saved views). Goals and initiatives on boards, and the cycle board, are the optional `cycle-board` powerup (`powerups/cycle-board/`); without it the cycle page says so and offers administrators a Builder brief. Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** core only (its signals, measures and saved views). Resolve imports from the Box's source tree and root workspace dependencies.
 
-Copy or adapt `<fetched recipe>/features/planning/` into the Box's `features/planning/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the fetched version and sha256 in the `recipes` ledger of `box.json`, and the path mapping and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
+**Powerups.** The base is initiatives and their nested tasks. Ask the owner which powerups to add
+now; each can be added later from its own folder:
 
-Preserve the existing 001-sprint-tasks, 002-drop-initiative-target and 003-drop-initiative-signal-ids identities and bodies exactly. Planning builds on core's signal series reads (`@silkweave/box-core/signals/series`) and its signal hooks. New schema behavior gets a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
+- [goals](./powerups/goals/POWERUP.md): goals with an optional measured target, cycles, an
+  initiative's contributed goals.
+- [milestones](./powerups/milestones/POWERUP.md): the milestone item kind, measured by its tasks or
+  a signal, outcome cards and initiative health.
+- [sprints](./powerups/sprints/POWERUP.md): sprints with per-person capacity, the planning grid and
+  the stand-up board.
+- [timeline](./powerups/timeline/POWERUP.md): the Timeline layout of the Initiatives board.
+- [cycle-board](./powerups/cycle-board/POWERUP.md): a cycle's goals and initiatives laid out as
+  one board; requires goals (its POWERUP.md names the rest).
+- [mobile](./powerups/mobile/POWERUP.md): the Plan tab of the Box mobile app; requires the Mobile
+  app recipe.
 
-### Mobile module
+The reference code carries all of them. Copy or adapt the base from
+`<fetched recipe>/features/planning/` into the Box's `features/planning/{core,server,web}`, leaving
+out what [INSTALL.md](./INSTALL.md) ("Base and powerup files") assigns to a powerup the owner did not
+choose, then follow each chosen powerup's INSTALL.md. Preserve runtime contracts, registrations,
+dependency order, and package manifests. Adapt imports to the consolidated layout. Record the
+fetched version and sha256 in the `recipes` ledger of `box.json`, with each verified powerup in
+`recipes.planning.powerups`, the path mapping and skipped powerups in the Box's `docs/UPSTREAM.md`,
+and the active scope and state in `_docs/INTEGRATION.md`.
 
-When the owner wants planning in the mobile app, integrate `features/planning/mobile/` as described
-in the [Mobile app powerup](./powerups/mobile/INSTALL.md). It adds the Plan tab (order 20) and the
-`planning/initiative/<id>` and `planning/task/<initiative>/<task>` links. An initiative carries its
-`goalIds` (read-only here); goals themselves are web and MCP only. Its wire models mirror
-`planning.controller.ts`; a change that renames or removes a field the app reads breaks every
-installed build (docs/MOBILE.md, "Version skew"). Its tab label, icon and order live in the module
-declaration in `features/planning/mobile/lib/`.
+The reference `core/manifest.ts` declares no migrations: a fresh Box gets its tables from the
+ModelSpecs. A Box that already runs planning preserves its applied migration identities and bodies
+exactly; new schema behavior gets a new migration. Back up data before applying any migration,
+stage its runner and registration first, and verify migration completion and boot compatibility on
+a disposable restored instance before continuing.
 
 ## 2. Customise for the team
 
 Every vocabulary edit below is a plain source edit. **An enum edit needs no migration until a Box
 has shipped with the old set** - once rows exist carrying the old value, add a migration that
-rewrites those rows, or the enum check on the column will refuse them. `planning` has no
-`migrations.ts` yet: create one exporting `MIGRATIONS` (append-only, starting at `001`) and point
-the manifest's `migrations` at it.
+rewrites those rows, or the enum check on the column will refuse them. Planning's migrations are
+the `migrations` list in `features/planning/core/manifest.ts`: append-only, one table-altering
+statement each. The powerups add their own vocabulary; each POWERUP.md says where it lives.
 
 1. **Statuses** - `features/planning/core/types.ts`: `PLANNING_STATUSES` (one list for
    initiatives AND tasks) and `TERMINAL_PLANNING_STATUSES`. Mirror the change in
@@ -37,41 +53,26 @@ the manifest's `migrations` at it.
    labels and tones) and `features/planning/web/components/status.tsx`
    (`PLANNING_STATUS_UI` icons and colors). A feature that depends on planning may import this
    list, so the edit reaches its records too.
-2. **Sprint statuses** - `SPRINT_STATUSES` in the same `types.ts`, mirrored in
-   `features/planning/web/sprint-types.ts`. Changing the order changes which tab opens for
-   a sprint (`SprintDetailView` picks from the status).
-3. **Initiative kinds** - do NOT edit these in code. They are tenant config
+2. **Initiative kinds** - do NOT edit these in code. They are tenant config
    (`box.json features.planning.initiativeKinds`): open Settings -> **Initiative kinds** in the
    dashboard, or call `bun run cli initiative-kind-save`. Edit
    `features/planning/core/kinds.ts` only to change the SEED
    (`INITIATIVE_KIND_SEED`) before a Box's first write, or `DEFAULT_INITIATIVE_KIND`. An id is
-   immutable once created; `oss-pr` is read by name by the derived signal in `state.ts`.
-4. **Value levels and priority** - `VALUE_LEVELS` and `PRIORITIES` in `types.ts`. Three priority
-   steps and four value buckets are deliberate; widening either is an enum edit, see the note above.
-5. **Estimates** - `MIN_TASK_HOURS` / `MAX_TASK_HOURS` / `TASK_HOURS` in `types.ts` (a whole-hour
-   scale, clamped not rejected) and the display buckets `EFFORT_HOURS` / `EFFORT_META` /
-   `EFFORT_HINT` in `features/planning/web/planning-types.ts`. An initiative has no size
-   column - `features/planning/web/lib/effort.ts` sums its tasks.
-6. **Sprint capacity** - `DEFAULT_SPRINT_HOURS` in `types.ts` (5, not 8, and the reason is written
-   there) and `UNDER_UTILISATION_RATIO` in `features/planning/core/sprints.ts`.
-   Weekend handling lives in `capacityOn` / `isWeekend` in the same file.
-7. **Check-in buckets** - `CHECKIN_BUCKETS` is declared in TWO places,
-   `features/planning/core/state.ts` and
-   `features/planning/web/sprint-types.ts`. Change both or the server will refuse a bucket
-   the Board renders.
-8. **Nav and settings** - `features/planning/web/index.tsx`: labels, icons and order
+   immutable once created; `planning.tasks_done` signals filtered by `kind` name it.
+3. **Impact, effort and priority** - `IMPACT_LEVELS`, `EFFORT_SIZES` and `PRIORITIES` in
+   `types.ts`, and `quadrantOf` for the impact x effort quadrant. Four steps per axis and three
+   priority steps are deliberate; widening any is an enum edit, see the note above.
+4. **Estimates** - `MIN_TASK_HOURS` / `MAX_TASK_HOURS` / `TASK_HOURS` in `types.ts` (a whole-hour
+   scale, clamped not rejected). An initiative's `effort` is set by hand; the sum of its tasks'
+   hours shows beside it.
+5. **Nav and settings** - `features/planning/web/index.tsx`: labels, icons and order
    (band 200-299). Retitle "Initiatives" to whatever this team calls a body of work.
-9. **Goals** - `GOAL_KINDS`, `GOAL_COMPARATORS`, `GOAL_OUTCOMES`, `GOAL_HEALTHS` and
-   `CYCLE_STATUSES` in `features/planning/core/types.ts` are stored enums; changing one needs a
-   migration. How goals are judged lives in `features/planning/core/goals.ts` (`measureGoal`); the
-   one tunable that needs no code is `box.json features.planning.goalTolerance` (a share from 0 to
-   1, default 0.1). Goal labels and health tones are in `features/planning/web/`. Start by
-   creating a cycle and a goal on a real signal in `/goals`; a goal cannot exist without one.
-10. **The derived signal** - `SILKWEAVE_PRS_SIGNAL_ID` and `computeSilkweavePrRows` in
-   `features/planning/core/state.ts` hard-code `github.silkweave_prs_merged` over the
-   `oss-pr` kind. A team that does not do OSS PRs should either repoint this at their own
-   kind + signal or delete the hook from `PLANNING_SIGNAL_HOOKS` (and with it the
-   `deriveOssPrSignals()` calls in the task mutations).
+6. **Measures** - `planning.tasks_done { kind?, initiative?, since? }` in
+   `features/planning/core/measures.ts` is planning's in-Box measure (registered by
+   `PlanningModule`). A team counts its own kind of finished work by binding a signal to it with a
+   `kind` or `initiative` param, not by editing code. A team that wants another calculation
+   registers its own measure from its own feature (`registerMeasure`, see docs/SIGNALS.md, "In-Box
+   measures").
 
 There is no `env` to set.
 
@@ -82,44 +83,52 @@ box dev
 ```
 
 Open `http://localhost:8190/initiatives`: the grid renders (empty is fine). Create an initiative,
-give it a kind, add a task, drag it to reorder, and open the task at
-`http://localhost:8190/initiatives/<initiative>/<task>`. Type into the doc editor - it autosaves,
-and the one-line summary under the title on the board becomes the doc's first paragraph. Check
-`data/docs/initiatives/<initiative>/<task>.md` on disk: the file is really there.
+give it a kind, an impact and an effort (the quadrant shows), add a task, drag it to reorder, nest
+a second task under it, and open the task at
+`http://localhost:8190/initiatives/<initiative key>/<task key>`. Type into the doc editor - it
+autosaves, and the one-line summary under the title on the board becomes the doc's first paragraph.
+Check `data/docs/initiatives/<initiative key>/<task key>.md` on disk: the file is really there.
+Close the nested task, check the panel offers to complete its parent, finish both and check the
+initiative's progress moves.
 
-Then `http://localhost:8190/goals`: create a goal on a real signal (a target and a window), link the
-initiative to it from the initiative's page, and check the goal card shows a health reading.
-
-Then `http://localhost:8190/sprints`: create a sprint, set its dates and per-person availability
-on the **design** tab, slot tasks onto days on **planning**, and try to move it to `planned` while a
-day is over capacity - it must refuse with a message naming the worst day. On **board**, tick a
-stand-up bucket and complete the day.
+Then `http://localhost:8190/tasks`: every task is listed. Create a task with **New task** on **No
+initiative**, check the **No initiative** filter shows only it, open it (the right panel, at
+`/tasks/<key>`), move it into an initiative with `task-move` and back out (the Initiatives grid also
+drags an item between initiatives). On a narrow screen the panel is a push view. Check its doc at
+`data/docs/tasks/<key>.md`.
 
 Open Settings -> **Initiative kinds**: add a lane, then try to delete one that has initiatives in
 it - it must refuse.
+
+In a base-only Box, check that nothing names a left-out powerup: no Goals or Sprints nav entry, no
+Timeline layout, no milestone switch in the panel.
 
 Agent-side, the same operations are MCP tools:
 
 ```bash
 bun run cli initiatives-get
+bun run cli tasks-get
 bun run cli initiative-upsert
 bun run cli task-upsert
 bun run cli task-set-status
+bun run cli task-move
 bun run cli doc-read
 bun run cli doc-save
-bun run cli sprint-get
-bun run cli sprint-upsert
 bun run cli initiative-kinds
 ```
 
-Goals and cycles add `goals-get`, `goal-upsert`, `goal-initiatives-set`, `cycles-get` and
-`cycle-upsert` among others. See SPEC.md for the full list.
+Core's `measures-list` lists `planning.tasks_done`. See SPEC.md for the full list, and each
+powerup's POWERUP.md for the tools it adds.
 
 ## 4. Adapt or remove
 
-To update this feature, compare the target Box with the version recorded in the `recipes` ledger of `box.json` (fetch it with `box recipe fetch planning --version <that version>`), preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
+To update this feature, compare the target Box with the version recorded in the `recipes` ledger of `box.json` (fetch it with `box recipe fetch planning --version <that version>`), preserve local customizations, and apply the relevant source changes manually, for the base and for each powerup in `recipes.planning.powerups`. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
 
-To remove it, delete the feature's `core`, `server`, and `web` source directories (and `mobile`, with its `box_planning` entries in `apps/mobile/pubspec.yaml` and `apps/mobile/lib/generated/modules.dart`, when the Box included it) only after checking runtime imports and dependent features. Preserve team data and configuration unless the team explicitly chooses to remove them. Run the target Box's normal build, typecheck, tests, lint, schema check, and a disposable boot afterward.
+To remove one powerup, follow the Remove section of its INSTALL.md. To remove the recipe, remove
+every powerup first (each one's Remove), then delete the feature's `core`, `server`, and `web`
+source directories only after checking runtime imports and dependent features. Preserve team data
+and configuration unless the team explicitly chooses to remove them. Run the target Box's normal
+build, typecheck, tests, lint, schema check, and a disposable boot afterward.
 
 ## Gotchas
 

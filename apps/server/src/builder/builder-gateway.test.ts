@@ -239,6 +239,66 @@ describe('Builder gateway', () => {
     await new Promise<void>((resolve) => upstream.close(() => resolve()))
   })
 
+  it('acks prompts by clientId and never reruns one resent after a reconnect', async () => {
+    const test = await setup({ session: { id: 'session-1' } })
+    gateways.pop()!.close()
+    const upstream = new WebSocketServer({ port: 0 })
+    await new Promise<void>((resolve) => upstream.once('listening', resolve))
+    const address = upstream.address()
+    if (!address || typeof address === 'string') throw new Error('upstream test server did not bind')
+    const commands: unknown[] = []
+    const gateway = createBuilderGateway({
+      root: test.root,
+      host: { url: `http://127.0.0.1:${address.port}`, key: 'test-key', request: vi.fn() },
+      auth: test.auth,
+      command: async (_sessionId, frame) => {
+        commands.push(frame)
+        if ((frame as { text?: string }).text === 'refused') throw new Error('Builder session is busy')
+      },
+      current: () => test.current,
+    })
+    gateways.push(gateway)
+    const server = servers.at(-1)!
+    server.removeAllListeners('upgrade')
+    server.on('upgrade', (req, socket, head) => { void gateway.upgrade(req, socket, head) })
+    const connect = async () => {
+      const socket = new WebSocket(`${test.wsUrl}/builder-agent/v1/sessions/session-1/ws?afterSeq=0`, { headers: { cookie: 'alice-token' } })
+      const acks: Array<{ clientId?: string; notDelivered?: boolean }> = []
+      socket.on('message', data => {
+        const frame = JSON.parse(data.toString()) as { type?: string; clientId?: string; notDelivered?: boolean }
+        if (frame.type === 'ack') acks.push({ clientId: frame.clientId, ...(frame.notDelivered ? { notDelivered: true } : {}) })
+      })
+      await new Promise<void>((resolve, reject) => { socket.once('open', () => resolve()); socket.once('error', reject) })
+      return { socket, acks }
+    }
+    const prompt = (clientId: string, text: string) => JSON.stringify({ type: 'user_message', text, clientId, generation: 1 })
+
+    const first = await connect()
+    first.socket.send(prompt('page.1', 'remove the hours setting'))
+    first.socket.send(prompt('page.2', 'refused'))
+    await waitUntil(() => first.acks.length === 2)
+    expect(first.acks).toEqual([{ clientId: 'page.1' }, { clientId: 'page.2', notDelivered: true }])
+    expect(commands).toHaveLength(2)
+    first.socket.close()
+
+    // WorkerDeck's client resends every prompt it holds unacked when the socket reopens (verify
+    // drops it). The gateway answers from memory instead of running them again.
+    const second = await connect()
+    second.socket.send(prompt('page.1', 'remove the hours setting'))
+    second.socket.send(prompt('page.2', 'refused'))
+    second.socket.send(prompt('page.3', 'a new prompt'))
+    await waitUntil(() => second.acks.length === 3)
+    expect(second.acks).toEqual([{ clientId: 'page.1' }, { clientId: 'page.2', notDelivered: true }, { clientId: 'page.3' }])
+    expect(commands.map(frame => (frame as { text: string }).text)).toEqual(['remove the hours setting', 'refused', 'a new prompt'])
+
+    // Frames without a clientId keep the old behaviour: run, no ack.
+    second.socket.send(JSON.stringify({ type: 'user_message', text: 'no id' }))
+    await waitUntil(() => commands.length === 4)
+    expect(second.acks).toHaveLength(3)
+    second.socket.close()
+    await new Promise<void>((resolve) => upstream.close(() => resolve()))
+  })
+
   it('keeps one public transcript socket alive through a failed app and supervised restart', async () => {
     const test = await setup()
     const upstream = new WebSocketServer({ port: 0 })

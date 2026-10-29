@@ -104,3 +104,30 @@ it('ownership counts retired tables as the feature\'s own and reads IS DISTINCT 
   ] }] }])).toEqual([])
   expect(migrationOwnershipErrors([{ ...feature, migrations: [{ name: 'x', statements: ['DROP TABLE IF EXISTS old_demo'] }] }])).toEqual([expect.stringContaining('old_demo')])
 })
+
+it('checkpoints after each migration, so a reopen never replays an ALTER of a table with now() defaults', async () => {
+  const dir = mkdtempSync(join(repoRoot(), 'box-projection-upgrade-test-'))
+  const file = join(dir, 'data.db')
+  const stamped: CoreFeature = {
+    id: 'demo',
+    models: [{ table: 'demo', pk: ['id'], columns: { id: { kind: 'text' } }, timestamps: true }],
+    migrations: [{ name: '001-extra', statements: ['ALTER TABLE demo ADD COLUMN IF NOT EXISTS extra VARCHAR'] }],
+  }
+  try {
+    // DuckDB fails "while replaying WAL" on an ALTER of such a table; close as a crash would.
+    const instance = await DuckDBInstance.create(file)
+    const conn = await instance.connect()
+    await conn.run('PRAGMA disable_checkpoint_on_shutdown')
+    await applySchema(conn as unknown as MigrationConn, [stamped])
+    conn.disconnectSync()
+    instance.closeSync()
+    const reopened = await DuckDBInstance.create(file)
+    const again = await reopened.connect()
+    await again.run("INSERT INTO demo (id, extra) VALUES ('a', 'x')")
+    expect((await again.runAndReadAll('SELECT extra FROM demo')).getRowObjectsJson()).toEqual([{ extra: 'x' }])
+    again.disconnectSync()
+    reopened.closeSync()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

@@ -22,6 +22,7 @@
 // the theme); here the key names one of the app's boards, which is vocabulary this file has no
 // business knowing. `storageKey()` in ./lib is there for a caller that wants the house prefix.
 
+import type { ReactNode } from 'react'
 import type { CurrencyFormat } from '../components/Figures.tsx'
 import { useCallback, useRef, useState, type CSSProperties } from 'react'
 import { readStored, writeStored } from '../lib/usePersistedState.ts'
@@ -49,12 +50,24 @@ export interface GridColumn {
   flex?: boolean
   /** Extra classes for the label, so a module can line its header up with an indented cell. */
   labelClass?: string
+  /** A slot drawn before the label, e.g. a spacer lining the label up with row icons. */
+  lead?: ReactNode
+  /** A control drawn at the cell's right end, e.g. a grid's expand/collapse-all chevron. */
+  trail?: ReactNode
+  /** The header shows this icon, centred over the column, instead of the label (the label is its
+   *  tooltip and the screen reader's). */
+  icon?: ReactNode
+  /** An icon column before the identity column: the header shows no label (it is the tooltip) and
+   *  no resize handle, and the footer leaves it empty. */
+  bare?: boolean
 }
 
 /** The frame a module's optional columns sit inside. */
 export interface GridSpec {
   /** The identity column (Account / Name / Post). Flexes, so `min` is a floor. */
-  name: { key: string; label: string; min: number; labelClass?: string }
+  name: { key: string; label: string; min: number; labelClass?: string; lead?: ReactNode; trail?: ReactNode }
+  /** Bare icon columns drawn before the identity column, fixed width (no stored width). */
+  leading?: { key: string; label: string; width: number; lead?: ReactNode }[]
   /** Always-on columns between the identity column and the optional ones, in order. */
   fixed: { key: string; label: string; width: number }[]
   /** The trailing action cluster. Not a column: no label, no width setting, no place in the order. */
@@ -68,6 +81,7 @@ export interface ColumnDef {
   label: string
   width: string
   hint?: string
+  icon?: ReactNode
 }
 
 const GAP = 8 // gap-2 between cells
@@ -93,8 +107,8 @@ export interface GridLayout {
  * for cell `index` of `columns`; undefined for a cell that scrolls, so it spreads straight into a
  * `style` prop. A frozen cell is sticky at the summed widths and gaps of the frozen cells before it
  * and opaque so cells scroll under it. Each reaches over the grid's 0.5rem gap (negative margin,
- * matching padding) so nothing peeks between it and its neighbour; only the last draws the hairline
- * edge. The flexing identity column freezes at its floor width, which is its real width whenever
+ * matching padding) so nothing peeks between it and its neighbour. No edge line: the frozen cells
+ * read as the row's own start. The flexing identity column freezes at its floor width, which is its real width whenever
  * the grid is wide enough to scroll at all. `background` is the surface it sits on; a row that tints
  * on hover passes 'inherit' and gives itself a solid background, so the frozen cells tint with it.
  * Inline rather than classes so a consumer's cells and `GridHeader` / `GridFooter` always agree.
@@ -115,7 +129,6 @@ export function frozenColumnStyle(
     background,
     marginRight: '-0.5rem',
     paddingRight: '0.5rem',
-    boxShadow: index === count - 1 ? '1px 0 0 var(--border-light)' : undefined,
   }
 }
 
@@ -137,18 +150,22 @@ export function orderColumns<T extends { key: string }>(catalog: readonly T[], s
 export function buildGrid(spec: GridSpec, optional: readonly ColumnDef[], widths: ColumnWidths): GridLayout {
   const at = (key: string, fallback: number): number => clampWidth(widths[key] ?? fallback)
   const columns: GridColumn[] = [
+    ...(spec.leading ?? []).map((c) => ({ key: c.key, label: c.label, width: c.width, lead: c.lead, bare: true })),
     {
       key: spec.name.key,
       label: spec.name.label,
       width: at(spec.name.key, spec.name.min),
       flex: true,
       labelClass: spec.name.labelClass,
+      lead: spec.name.lead,
+      trail: spec.name.trail,
     },
     ...spec.fixed.map((c) => ({ key: c.key, label: c.label, width: at(c.key, c.width) })),
     ...optional.map((c) => ({
       key: c.key,
       label: c.label,
       hint: c.hint,
+      icon: c.icon,
       width: at(c.key, parseInt(c.width, 10)),
     })),
   ]

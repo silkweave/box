@@ -3,9 +3,9 @@
 //
 // THE SELECT KEEPS SHOWING THE PRESET YOU CAME FROM (2026-08-12). It used to fall back to "Custom
 // view" the moment you touched a filter, which threw away the one fact you need to choose between
-// "save this over Critical path" and "save it as something new" - and made the sidebar highlight
+// "save this over Quick wins" and "save it as something new" - and made the sidebar highlight
 // vanish for no reason a person would recognise. Now the name stays, marked `· changed`, and the
-// selection lives in the URL (`?preset=Critical%20path`), so a link carries the lens with it.
+// selection lives in the URL (`?preset=Quick%20wins`), so a link carries the lens with it.
 //
 // EVERY ACTION LIVES INSIDE THE DROPDOWN, on its header row, to the left of the gear. They rode
 // beside the trigger for about an hour and the problem was immediate: the control changed width the

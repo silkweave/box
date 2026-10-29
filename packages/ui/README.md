@@ -98,6 +98,7 @@ import { cn, usePersistedState } from '@silkweave/box-ui/lib'
 |---|---|
 | `.` | React, `@base-ui/react`, `lucide-react`, `class-variance-authority` |
 | `./board` | + `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` |
+| `./datagrid` | + `@dnd-kit/core` |
 | `./charts` | + `recharts` |
 | `./editor` | + the eight `@tiptap/*` packages |
 | `./lib` | nothing - DOM and React only |
@@ -152,6 +153,7 @@ same rule with the runtime doing the bookkeeping.
 | `src/board/` | The board: `BoardKanban`, the `DraggableCard` frame both card shapes share, and the controlled `BoardViewBar`. Its own entry point |
 | `src/charts/` | The charts: `TimeSeriesChart`, `SeriesLineChart`, `Sparkline`, the tooltip/legend frames, the window helpers and `theme.ts`'s series palette. Its own entry point |
 | `src/grid/` | The data grid: `columns.ts` (order, widths, footer aggregates) plus `GridHeader` and `GridFooter` |
+| `src/datagrid/` | `DataGrid`, the one list component (a `full` page or a `card` section) on top of `BoardViewBar` and `src/grid/`: filter, sort, group, nest, fold, drag. `tree.ts` (pure tree helpers), `moves.ts` (the optimistic move queue), `useTreeDrag`, `useGlide`, `Row`. Its own entry point |
 | `src/users/` | The directory seam, Avatar's `AvatarUser` shape, UserPicker, UserChip, AccountMenu |
 | `src/editor/` | The TipTap markdown editor behind its lazy boundary, and the `DocHandle` seam. Its own entry point |
 | `src/icons/` | `createIconTable` + `BRAND_ICONS` - the MECHANISM for a string-keyed glyph table with a fallback. The table itself is an app's vocabulary and lives in `apps/web/src/lib/channelIcons.tsx` |
@@ -191,6 +193,27 @@ than the bar's (its filter axes are enums) and carries more. Where the view live
 localStorage, the URL - is the app's, and the preset control is a `presets` SLOT rather than a
 component here, because a preset is a record on somebody's server. The data app's
 `ViewBar.tsx` (adopted, not in this repo) is one binding of the two.
+
+**`DataGrid` is controlled and knows no domain.** The host passes the view (as for
+`BoardViewBar`) and accessors: `searchText`, `filterValue`, `sortValue`, `groupOf`, `parentId`,
+`icon`, `rowLabel`, and the move rules `maxDepth`, `canNest` and `canMove`. Drag (and arrow keys on
+the row's icon, which doubles as the handle) is offered under the manual sort, ungrouped and
+unfiltered. While a row is dragged the list is drawn as it would be after the drop; releasing
+commits exactly that. `onMove` gets the row, its new parent, the sibling it follows and the whole
+depth-first `order`. A move shows at once: return a promise that settles once `rows` reflects it
+(after the refetch, not the request) and the grid keeps drawing it until then. Moves made meanwhile
+are handed over one at a time, each re-resolved and re-checked against the rows as they are by
+then, so writes never race and a move that no longer fits reaches `onMoveError` as a
+`MoveConflict` instead of being written. One instance shows one dataset: give it a React `key` per
+dataset so pending moves never carry over.
+
+A page whose top level has no order of its own (initiatives with their items) passes `arrangeTop`:
+the view's sort, grouping, search and filters then arrange only the top-level rows, each bringing
+its whole tree, and the rows below keep their plan order and stay draggable in every view, into
+another top-level row's tree and across groups. Folding can be controlled (`expanded`,
+`foldedGroups`) so a host keeps it per browser; `layouts` hands a layout the host draws itself (a
+board, a timeline) the rows the view keeps, under the same bar; `freezeName` keeps the name column
+in view while the list scrolls sideways.
 
 **A chart plots numbers; the app supplies the words.** Every label, caption, headline and tooltip
 sentence in `src/charts/` is a prop - a `ReactNode` or a formatter - because the vocabulary of a

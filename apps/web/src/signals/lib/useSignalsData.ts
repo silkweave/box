@@ -23,8 +23,25 @@ registerStoreReloads(
   store,
 )
 
+// The same payload with archived signals in it, for a reader that resolves a signal it already
+// references (a goal's or a milestone's): archiving hides a signal from pickers and the Signals page,
+// never from what points at it. Its own store, so the pickers stay on the default (live) list.
+const withArchived = createDataStore<SignalsData>(() =>
+  trpc.signalsData.query({ include_archived: true }).then((d) => d as unknown as SignalsData),
+)
+registerStoreReloads(['table:signals', 'table:signal_points', 'table:snapshots', 'docs:signals'], withArchived)
+
 /** Force a refetch (after an owner edit or a fresh ingest). */
-export const reloadSignals = (): Promise<SignalsData> => store.reload()
+export const reloadSignals = async (): Promise<SignalsData> => {
+  const [live] = await Promise.all([store.reload(), withArchived.peek() !== null ? withArchived.reload() : null])
+  return live
+}
+
+/** Every signal, archived ones included - for resolving a signal something already references, and
+ *  for the Signals page (which filters archived ones out unless "Show archived" is on). */
+export function useSignalsDataWithArchived(enabled = true): { data: SignalsData | null; error: string | null } {
+  return withArchived.useData(enabled)
+}
 
 /**
  * Set a signal' owner: a users.id, or null for explicitly unowned (brand-level). Writes
@@ -36,7 +53,7 @@ export async function setSignalOwner(signalId: string, owner: string | null): Pr
       ? { scope: 'signal', key: signalId, unowned: true, actor: actor() }
       : { scope: 'signal', key: signalId, owner, actor: actor() },
   )
-  await store.reload()
+  await reloadSignals()
 }
 
 /** Fields editable from the dashboard (subset of the server's signal-upsert input). */
@@ -73,18 +90,26 @@ export interface SignalUpsert {
 /** Create or update a signal definition (admin), then reload. */
 export async function upsertSignal(input: SignalUpsert): Promise<void> {
   await trpc.signalsUpsert.mutate({ ...input, actor: actor() })
-  await store.reload()
+  await reloadSignals()
 }
 
 /** Delete a signal definition (admin; points survive), then reload. Returns the server's report. */
 export async function deleteSignal(id: string): Promise<{ warnings: string[] }> {
   const report = (await trpc.signalsDelete.mutate({ id, actor: actor() })) as unknown as { warnings: string[] }
-  await store.reload()
+  await reloadSignals()
   return report
 }
 
 export function useSignalsData(): { data: SignalsData | null; error: string | null } {
   return store.useData()
+}
+
+/** Archive (true) or unarchive (false) a signal (admin), then reload both lists. Archiving only
+ *  hides it from pickers and the Signals page; its points and every reader stay as they were. */
+export async function setSignalArchivedState(id: string, archived: boolean): Promise<void> {
+  if (archived) await trpc.signalsArchive.mutate({ id, actor: actor() })
+  else await trpc.signalsUnarchive.mutate({ id, actor: actor() })
+  await Promise.all([store.reload(), withArchived.reload()])
 }
 
 // --- points (phase B2) ---------------------------------------------------------------------------
@@ -111,14 +136,14 @@ export async function saveSignalPoint(
     ...(note !== undefined ? { note } : {}),
     actor: actor(),
   })
-  await store.reload()
+  await reloadSignals()
   return res as unknown as SignalPointsPayload
 }
 
 /** Remove one manual point (any time inside its bucket). */
 export async function removeSignalPoint(signalId: string, at: string): Promise<SignalPointsPayload> {
   const res = await trpc.signalsPointDelete.mutate({ signal_id: signalId, at, actor: actor() })
-  await store.reload()
+  await reloadSignals()
   return res as unknown as SignalPointsPayload
 }
 
@@ -132,6 +157,6 @@ export async function saveSignalPoints(
     points: JSON.stringify(points),
     actor: actor(),
   })
-  await store.reload()
+  await reloadSignals()
   return res as unknown as SignalPointsPayload
 }

@@ -255,9 +255,10 @@ Two producers feed it:
   degrades the feed to in-process events rather than taking the server down.
 
 `ChangesController` exposes one long-lived tRPC subscription, `changesFeed`. Its first event is a
-`hello` carrying a per-process `BOOT_ID`: a client that sees a **second** hello (SSE reconnect, a
+`hello` carrying a per-process `BOOT_ID`: a client that sees a **second** hello (a reconnect, a
 server restart) knows events may have been missed and reloads its stores instead of replaying. A
-`ping` every 45s keeps idle SSE connections off the reaper. Events are invalidation hints only, so
+`ping` every 45s keeps idle connections off the reaper. The web app subscribes over the `/trpc`
+WebSocket (see [WEB.md](WEB.md), "The client"); the mobile app over SSE. Events are invalidation hints only, so
 fanning them out to any authenticated principal leaks nothing beyond "something in `<scope>`
 changed".
 
@@ -645,17 +646,19 @@ dropped. Only the host can set or clear the lock. A document request that reache
 is restarting gets the same page in a "restarting" state instead of a JSON error. The notice is
 public: write it for the team, without internal detail.
 
-Open app tabs, signed in or not, follow maintenance through `/api/box-status/events`, an SSE
-endpoint owned by the supervisor. A tab that maintenance blocks (signed out, a member, or an admin
+Open app tabs, signed in or not, follow maintenance through `/api/box-status/events`, a WebSocket
+endpoint owned by the supervisor (a WebSocket does not take one of the browser's six HTTP/1.1
+connections per host). A tab that maintenance blocks (signed out, a member, or an admin
 while admins are locked out) moves to the page's own address, `/api/box-status/page?return=<path>`,
 which serves the same page while maintenance lasts and then sends the tab back to the same-origin
 path it came from. A tab opened on `/login` keeps the sign-in form while admins are not locked out,
 so the page's Admin sign-in link works. The page and its logo sit under `/api` and `/builder-assets`,
 which the bare Vite port proxies to the supervisor, so the page looks the same on either port in
-`box dev`. The stream sends the current maintenance flag and public notice on connection and after
+`box dev`. The socket sends the current maintenance flag and public notice as a JSON frame on connection and after
 changes to the maintenance file, including atomic replacements. One shared 500ms file-stat watcher serves all connected tabs without native filesystem watchers;
-a 15-second keepalive also reconciles missed filesystem notifications. EventSource reconnects
-automatically and receives a fresh snapshot after interruption. The endpoint remains available
+a 15-second heartbeat also reconciles missed filesystem notifications and pings each socket,
+dropping one that missed the previous pong. Tabs and the page reconnect after 3 seconds and receive
+a fresh snapshot. The endpoint remains available
 during application restarts. Slow clients are disconnected instead of accumulating buffered data.
 The JSON `/api/box-status` snapshot remains available for diagnostics. Both expose only the
 maintenance flag and the public notice (never its author); application access and admin

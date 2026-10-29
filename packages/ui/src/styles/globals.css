@@ -140,6 +140,18 @@
      against a low-contrast bubble, lift alone reads as jitter. */
   --animate-agent-dot: agent-dot 1.1s var(--ease-standard) infinite;
 
+  /* A panel pushed in over its page from the right (SplitPane `narrow="push"` below md). */
+  --animate-slide-in-right: slide-in-right var(--motion-slow, 220ms) var(--ease-emphasized);
+
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
   @keyframes agent-dot {
     0%,
     70%,

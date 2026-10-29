@@ -4,7 +4,11 @@ import { Check, ChevronsUpDown } from 'lucide-react'
 import { type FunctionComponent } from 'react'
 
 export const Select = SelectPrimitive.Root
-export const SelectValue = SelectPrimitive.Value
+/** The trigger's value, centred on the trigger's line: a block wrapper would leave room below the
+ *  baseline and sit an icon-and-label value a pixel high. */
+export const SelectValue: FunctionComponent<SelectPrimitive.Value.Props> = ({ className, ...props }) => (
+  <SelectPrimitive.Value className={(state) => cn('flex min-w-0 items-center', typeof className === 'function' ? className(state) : className)} {...props} />
+)
 
 export const SelectTrigger: FunctionComponent<SelectPrimitive.Trigger.Props> = ({ className, children, ...props }) => {
   return (

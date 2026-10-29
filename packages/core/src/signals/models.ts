@@ -46,16 +46,21 @@ export const SIGNAL_DEFINITIONS: ModelSpec = {
     description: { kind: 'text', default: "''" },
     depends_on: { kind: 'json', default: "'[]'" },
     sort: { kind: 'int', default: '0' },
-    // The provider binding (Track C). Both-or-neither, enforced in upsertSignalDefinition:
-    // connectedness IS `data_source_id != null`, which is why `source` stays derived|manual and
-    // never grew a third value - one fact in two fields would only invite drift.
+    // The binding, enforced in upsertSignalDefinition. `data_source_id` + `measure_key` is a
+    // provider measure (connectedness IS `data_source_id != null`); `measure_key` alone is an
+    // in-Box measure from the measures registry (signals/measures.ts), whose parameters are
+    // `measure_params`. A data source without a measure is refused.
     data_source_id: { kind: 'text', nullable: true },
     measure_key: { kind: 'text', nullable: true },
+    measure_params: { kind: 'json', default: "'{}'" },
     // A formula signal's expression (signals/formula.ts); null for an ordinary signal.
     formula: { kind: 'text', nullable: true },
     // Levels worth an event when the signal reaches or crosses them upward (`signal.threshold`),
     // ascending numbers. Edited in the signal dialog.
     thresholds: { kind: 'json', default: "'[]'" },
+    // When a person archived it (signal-archive), or NULL. Archived signals are hidden from the
+    // signal lists and pickers unless asked for; their definition and points stay readable.
+    archived_at: { kind: 'timestamp', nullable: true },
   },
   timestamps: true,
   audit: true,

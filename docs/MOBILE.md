@@ -11,7 +11,8 @@ of `box.json`. The feature screens are each recipe's `mobile` powerup, which req
 recipe. See [RECIPES.md](RECIPES.md#powerups).
 
 The app is Flutter. The Flutter SDK is optional for a Box: without it everything else works, and
-`box verify` reports the mobile check as skipped.
+`box verify` reports the mobile check as skipped. With it, the check skips packages unchanged since
+their last passing check ([CLI.md](CLI.md)).
 
 ## Layout
 

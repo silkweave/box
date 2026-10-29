@@ -309,7 +309,7 @@ content inside the pane, which scrolls the whole pane along with it.
 ## Routing - real paths, no server work
 
 Deep links are plain paths: `http://localhost:8190/crm/acme`, `/chat/general`,
-`/initiatives/<slug>/<task>`. The SPA uses `createBrowserHistory()` and the server fallback serves
+`/initiatives/I1/T3`. The SPA uses `createBrowserHistory()` and the server fallback serves
 `index.html` for application paths.
 
 Browser history needs **no server change and no SSR**, because both topologies already serve an SPA
@@ -446,16 +446,33 @@ catches this.
 ```
 DuckDB warehouse -> a feature's controller -> tRPC -> lib/trpc.ts -> a data store -> useData() -> the view
                                               ^
-                         change bus -> changesFeed (SSE) -> lib/changeFeed.ts invalidates the store
+                         change bus -> changesFeed (WebSocket) -> lib/changeFeed.ts invalidates the store
 ```
 
 ### The client
 
-`src/lib/trpc.ts` is the one client. A `splitLink` routes subscriptions over
-`httpSubscriptionLink` (SSE) and everything else over a batched HTTP link; the same `/trpc` handler
-serves both, at a relative URL. Every call carries `x-box-csrf: 1`, because the server requires that
-header on cookie-authed mutations (`auth.guard.ts`); sending it on queries too is harmless and means
-no mutation can be missed. Bearer clients are exempt.
+`src/lib/trpc.ts` is the one client, at relative URLs under `/trpc`. Queries and mutations go over a
+batched HTTP link. Every call carries `x-box-csrf: 1`, because the server requires that header on
+cookie-authed mutations (`auth.guard.ts`); sending it on queries too is harmless and means no
+mutation can be missed. Bearer clients are exempt.
+
+Subscriptions take one of two transports:
+
+- **Live feeds** (a subscription that stays open while the page is: the change feed, the chat feed)
+  pass `context: LIVE_FEED` and share the tab's one WebSocket. Browsers allow six HTTP/1.1
+  connections per host across every tab of a profile; one SSE stream per feed per tab used them up
+  with two tabs open. WebSockets do not count against that limit. The socket opens with the first
+  feed, closes 5 seconds after the last one stops, pings every 20 seconds and reconnects with
+  backoff. After a reconnect the client re-subscribes with the **original input**, so a live feed
+  must resync itself: the change feed reloads on a second `hello`, the chat feed resubscribes with
+  its cursor.
+- **Action streams** (Run Now, engagement verify, a run's log tail) stay on SSE. Because the socket
+  re-sends open subscriptions after a reconnect, an action stream on it could start its action a
+  second time.
+
+The server serves both on `/trpc` (`apps/server/src/trpc/trpc-socket.ts`): the socket offers only
+subscriptions, runs each controller's guards against the upgrade request's cookie, and accepts the
+upgrade only from the Box's own origin, since a WebSocket upgrade carries no CSRF header.
 
 ### The generated router type
 
@@ -487,7 +504,7 @@ Core carries two: `lib/useUsersData.ts` (the directory, which also feeds `UsersP
 
 ### The change feed
 
-Every tab holds ONE `changesFeed` tRPC subscription (SSE, `src/lib/changeFeed.ts`, started by the
+Every tab holds ONE `changesFeed` tRPC subscription (a live feed, `src/lib/changeFeed.ts`, started by the
 auth gate), streaming invalidation hints from the server's change bus (`packages/core/src/changes.ts`).
 Events carry a **scope, never data**:
 
@@ -503,7 +520,7 @@ you never visited costs nothing. State that does not live in a global store opts
 `subscribeChanges(scopes, cb)`, which returns its unsubscribe; pair it with the effect teardown.
 
 The stream opens with a `hello` event carrying the server's boot id. There is no event replay, so
-**any hello after the first** (SSE reconnect, server restart) means events may have been missed and
+**any hello after the first** (socket reconnect, server restart) means events may have been missed and
 every loaded store reloads. `ping` keepalives flow when the bus is quiet. On a fatal stream error the
 feed unsubscribes and reconnects from scratch after 5s.
 
@@ -516,7 +533,7 @@ The full model is in [AUTH.md](AUTH.md). The web app is responsible for:
   reaches the client; the session cookie does not carry one either, and the server re-reads the role
   from the users row on every request.
 - `App.tsx` is the gate: while `loading`, an empty canvas; with no principal, `LoginView`; otherwise
-  the app. The change feed and every feature's `onSession` start on that same gate, because an SSE
+  the app. The change feed and every feature's `onSession` start on that same gate, because a
   subscription or a tRPC fetch before a session just 401s.
 - `src/views/LoginView.tsx` exchanges a pasted access token for a session cookie. There is no
   password. For `/login/<grant>`, the router passes the grant through transient client state.

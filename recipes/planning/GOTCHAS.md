@@ -1,6 +1,6 @@
 # planning gotchas
 
-Statuses, capacity rules, and initiative kinds are team vocabulary. Preserve local values and add a new migration before changing stored enums.
+Statuses and initiative kinds are team vocabulary. Preserve local values and add a new migration before changing stored enums.
 
 The feature id (`planning`, the same as the recipe id) is part of runtime registration and migration identity. Keep it stable. Existing
 migrations are byte-exact source: preserve names, order, evaluated SQL, and callback behavior.
@@ -8,37 +8,41 @@ The recipe's reference implementation is adapted by the receiving agent, so buil
 work. Record any local exception, package pin and its reason, or custom path in the Box's
 docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 
+Each powerup's gotchas live in its POWERUP.md (`powerups/<id>/`).
+
 ## Recipe-specific operational details
 
-- **`rekeyTask` hand-writes its column list** (`features/planning/core/state.ts`). A
-  column you add to the `TASKS` ModelSpec and forget there is silently nulled on every task MOVE and
-  every RENAME. `models.ts` says so in capitals above `sprint_id` / `slot_date`; believe it.
+- **The reference code is the full feature.** A base-only Box leaves out the files and seams that
+  INSTALL.md assigns to powerups. A left-out seam usually fails the typecheck, but a module-scope
+  import of a removed file can also surface only at runtime: load `/initiatives` and `/tasks` in a
+  browser after trimming.
+- **Keys come only from `allocateKey`** (`features/planning/core/state.ts`): `I<n>` for initiatives,
+  `T<n>` for items, from the `planning_keys` counter. A key is never reused and never changes, and
+  there is no rename. Do not build an id by hand or add a path that writes a row without it.
+- **`task-move` writes only `initiative_id`, `parent_id` and `rank`** (for the item and its subtree),
+  so a new column cannot be nulled by a move. Keep it that way.
 - **`summary` is derived, not typed.** `savePlanningDoc` is its only writer. Do not add a summary
-  input to `taskUpsert` / `initiativeUpsert` - the two-fields-for-one-prose problem is exactly what
-  the derivation replaced on 2026-08-24.
-- **Doc paths are built only from validated slugs**, then re-checked to stay inside
-  `docs/initiatives/` (`docs.ts` `absPath`). If you add an operation on a doc, route it through that
-  module rather than joining a path yourself - it is the feature's only filesystem security surface.
+  input to `taskUpsert` / `initiativeUpsert`: two fields for one prose drift apart.
+- **Doc paths are built only from validated keys**, then re-checked to stay inside `docs/`
+  (`docs.ts` `absPath`). If you add an operation on a doc, route it through that module rather than
+  joining a path yourself - it is the feature's only filesystem security surface.
 - **The MCP tool names `doc-read` and `doc-save` are generic.** They are planning's docs, not the
   Box's docs, and they share the flat MCP namespace with every other feature - `typegen` will fail
   loudly on a collision, but pick a scoped name if you add another doc tool.
-- **A sprint delete releases tasks, it does not delete them.** Anything you add that removes a
-  window over work must do the same.
-- **A reach baseline is the level entering the window, not the bucket containing the start.** For a
-  monthly signal and a window starting 2026-10-01 that is September's value; reading October's
-  bucket would hand the goal its end-of-October level as the starting point. Set `baseline` on the
-  goal only to override this deliberately.
-- **An `increment` goal compares against the pace through yesterday.** Today's bucket is still
-  filling, so counting it against a full day of pace would make every goal look behind each morning.
-  A hold goal likewise skips the bucket still filling.
-- **A window that cuts through weekly or monthly buckets counts by bucket start.** A straddling
-  bucket is counted wholly or not at all, never prorated; the reading's `alignment` says so. Align
-  the window to the signal's interval when the number matters.
-- **Deleting a signal leaves its goals in place.** They report a missing signal (no reading) rather
-  than disappearing; data's delete report names them as `goal:<id>`. Re-point with `goal-upsert
-  signal_id`, or delete the goals. A signal rename re-points them for you.
-- **Health suggests, people record.** Nothing sets `goals.outcome` automatically, and the goal events
-  `goal.ended` event only carries a `suggested_outcome`.
+- **`initiative_id IS NULL` means a standalone item.** Its doc is `docs/tasks/<key>.md`. Use
+  `isStandaloneTask`. `~` is only the All tasks "In" filter value and the `to_initiative_id` meaning
+  "no initiative", never an id.
+- **An item's doc needs the item to exist first.** `doc-save` refuses an item doc for a missing
+  item, so write the row, then the doc. A `task-move` refuses before it changes anything when a doc
+  already exists at the destination; docs move all-or-nothing, then the rows are written in one
+  transaction, and a failed transaction moves the docs back.
+- **Work items come from one helper** (`workItems` in `core/items.ts`): live `kind = task` leaves,
+  through the kind registry (`itemKindSpec(...).countsAsWork`). A parent task counts as the sum of
+  its children and its own estimate is ignored. Dropping an item drops its whole sub-tree from
+  every count, so progress, `planning.tasks_done`, done counts, the dashboards and the powerups
+  must not re-derive the rule.
+- **`tasks.kind` stays in a base-only Box.** Every row is `task`; `workItems`, `measures.ts` and the
+  cycle-board's initiative card read it. Do not drop the column to slim the base.
 - **`index.tsx` sits on the web feature-registry import cycle.** Never read a registry binding at
   module scope there, and load the app in a browser after touching it - `box verify` has no runtime
   step (`AGENTS.md`).

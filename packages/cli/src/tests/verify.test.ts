@@ -16,14 +16,14 @@ const task = (id: string, code: string, phase = 'Build'): Task => ({
 })
 function cleanup(state: RunState): void { rmSync(state.logDirectory, { recursive: true, force: true }) }
 
-test('verify keeps the eleven-command order and package-manager entry point', () => {
+test('verify keeps the ten-command order and package-manager entry point', () => {
   const tasks = verifyTasks('/example/bun')
   assert.deepEqual(tasks.map(t => t.command), [
     'bun run build', 'bun run skills', 'bun run test:cli', 'bun run test:web', 'bun run typegen --quiet', 'bun run typecheck', 'bun run lint',
-    'bun run test:core', 'bun run test:server', 'bun run schema:check', 'bun run test:mobile',
+    'bun run test:packages', 'bun run schema:check', 'bun run test:mobile',
   ])
   const forced = verifyTasks('/example/bun', { force: true })
-  assert.deepEqual(forced.filter(t => t.command.endsWith('--force')).map(t => t.id), ['build', 'typecheck', 'core-tests', 'server-tests'])
+  assert.deepEqual(forced.filter(t => t.command.endsWith('--force')).map(t => t.id), ['build', 'typecheck', 'package-tests', 'mobile'])
   assert.ok(tasks.every(t => t.executable === '/example/bun'))
   assert.deepEqual(tasks[0].args, ['--bun', '--no-env-file', 'run', 'build'])
 })
@@ -80,6 +80,27 @@ test('verify declares the build as every check\'s prerequisite and typegen befor
   assert.deepEqual(needs.mobile, [])
 })
 
+test('checks whose needs have passed run concurrently, and a skip propagates in any order', async () => {
+  // Each of a and b waits for the other's marker file, so they pass only when both run at once.
+  const wait = (mine: string, other: string) => `const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(mine)}, ""); const end = Date.now() + 5000; while (!fs.existsSync(${JSON.stringify(other)})) { if (Date.now() > end) process.exit(4) }`
+  const root = mkdtempSync(join(tmpdir(), 'verify-concurrent-'))
+  const state = await runTasks([
+    { ...task('build', ''), needs: [] },
+    { ...task('late', '', 'Check'), needs: ['fails'] },
+    { ...task('a', wait('a', 'b'), 'Check'), needs: ['build'] },
+    { ...task('b', wait('b', 'a'), 'Validate'), needs: ['build'] },
+    { ...task('fails', 'process.exit(1)', 'Validate'), needs: ['build'] },
+    { ...task('unknown', '', 'Validate'), needs: ['nothing'] },
+  ], { cwd: root })
+  try {
+    assert.deepEqual(state.tasks.map(t => t.status), ['passed', 'skipped', 'passed', 'passed', 'failed', 'skipped'])
+    const rows = taskRows({ ...state, finished: false, tasks: state.tasks.map(t => t.id === 'a' || t.id === 'b' ? { ...t, status: 'running' } : t) }, 'box', 40, false, false)
+    const text = rows.map(row => row.map(part => part.text).join('')).join('\n')
+    assert.match(text, /└ a: /)
+    assert.match(text, /└ b: /)
+  } finally { cleanup(state); rmSync(root, { recursive: true, force: true }) }
+})
+
 test('a spawn error fails the task and skips following tasks', async () => {
   const state = await runTasks([
     { ...task('missing', ''), executable: join(tmpdir(), 'silkweave-does-not-exist') }, task('never', ''),
@@ -116,7 +137,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'verify-cli-')))
   const source = join(root, 'packages/cli/src')
   mkdirSync(source, { recursive: true })
-  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'test:web', 'typegen', 'typecheck', 'lint', 'test:core', 'test:server', 'schema:check', 'test:mobile'].map(name => [name, `bun fixture.cjs ${name}`]))
+  const scripts = Object.fromEntries(['build', 'skills', 'test:cli', 'test:web', 'typegen', 'typecheck', 'lint', 'test:packages', 'schema:check', 'test:mobile'].map(name => [name, `bun fixture.cjs ${name}`]))
   writeFileSync(join(root, 'package.json'), JSON.stringify({ type: 'module', workspaces: ['packages/*'], scripts }))
   for (const file of ['verify.ts', 'repo.ts', 'tasks.ts', 'ui.ts', 'task-view.ts']) copyFileSync(new URL(`../${file}`, import.meta.url), join(source, file))
   const fixture = join(root, 'fixture.cjs')
@@ -129,7 +150,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
     const plain = exec('--plain')
     logs.push(plain.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
     assert.equal(plain.status, 0, plain.stdout + plain.stderr)
-    assert.match(plain.stdout, /11\/11 checks/)
+    assert.match(plain.stdout, /10\/10 checks/)
     assert.ok(!plain.stdout.includes('child-detail') && !plain.stdout.includes('\x1b'))
     const verbose = exec('--verbose')
     logs.push(verbose.stdout.match(/^Logs: (.+)$/m)?.[1] ?? '')
@@ -241,6 +262,14 @@ test('reads Vitest and Bun test progress through Turbo prefixes', () => {
   readProgress(bun, 'Ran 44 tests across 9 files. [3.15s]')
   assert.deepEqual(bun.progress, { done: 44, total: 44, unit: 'tests' })
   readProgress(bun, 'Cached:    2 cached, 2 total')
+  // Two packages in one Turbo run: counts add up, and one package's total is not the run's.
+  const both = { progress: undefined, cached: false, expected: { elapsed: 1000, total: 50 } } as unknown as TaskState
+  readProgress(both, '@silkweave/box-core:test: ✓ src/a.test.ts (12 tests) 34ms')
+  readProgress(both, '@silkweave/box-server:test: ✓ src/b.test.ts (8 tests) 20ms')
+  readProgress(both, '@silkweave/box-core:test: Tests  30 passed (30)')
+  assert.deepEqual(both.progress, { done: 38, total: 50, unit: 'tests' })
+  readProgress(both, '@silkweave/box-server:test: Tests  20 passed (20)')
+  assert.deepEqual(both.progress, { done: 50, total: 50, unit: 'tests' })
   assert.equal(bun.cached, true)
 })
 
@@ -260,9 +289,9 @@ test('verify --json snapshots carry progress, warnings and failure diagnostics',
 })
 
 test('verify asks Vitest for per-file results without changing the displayed command', () => {
-  const core = verifyTasks('/example/bun').find(t => t.id === 'core-tests')!
-  assert.equal(core.command, 'bun run test:core')
-  assert.deepEqual(core.args.slice(-4), ['test:core', '--', '--', '--reporter=default'])
-  const forced = verifyTasks('/example/bun', { force: true }).find(t => t.id === 'core-tests')!
-  assert.deepEqual(forced.args.slice(-5), ['test:core', '--', '--force', '--', '--reporter=default'])
+  const tests = verifyTasks('/example/bun').find(t => t.id === 'package-tests')!
+  assert.equal(tests.command, 'bun run test:packages')
+  assert.deepEqual(tests.args.slice(-4), ['test:packages', '--', '--', '--reporter=default'])
+  const forced = verifyTasks('/example/bun', { force: true }).find(t => t.id === 'package-tests')!
+  assert.deepEqual(forced.args.slice(-5), ['test:packages', '--', '--force', '--', '--reporter=default'])
 })

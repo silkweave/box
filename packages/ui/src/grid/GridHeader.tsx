@@ -36,22 +36,33 @@ export function GridHeader({
   return (
     <div
       className={cn(
-        'group/gridhead sticky top-0 z-10 grid items-center gap-2 border-b border-border bg-bg px-2 py-2 text-label font-medium text-muted-foreground',
+        'group/gridhead sticky top-0 z-10 grid items-center gap-2 border-b border-border bg-bg px-[var(--grid-pad,0.5rem)] py-2 text-label font-medium text-muted-foreground',
         className,
       )}
       style={{ gridTemplateColumns: template }}>
       {columns.map((c, i) => (
-        <div key={c.key} className='relative min-w-0' style={i < freeze ? { ...frozenColumnStyle(columns, i, freeze), zIndex: 2 } : undefined}>
-          <span
-            title={c.hint}
-            className={cn(
-              'block truncate text-left',
-              c.hint && 'cursor-help decoration-dotted underline-offset-4 hover:underline',
-              c.labelClass,
-            )}>
-            {c.label}
-          </span>
-          {onResize && <ResizeHandle column={c} onResize={onResize} />}
+        <div key={c.key} className={cn('relative min-w-0', (c.lead != null || c.trail != null) && 'flex items-center gap-1')} style={i < freeze ? { ...frozenColumnStyle(columns, i, freeze), zIndex: 2 } : undefined}>
+          {c.lead}
+          {c.bare ? (
+            <span className='sr-only'>{c.label}</span>
+          ) : c.icon != null ? (
+            <span title={c.hint ?? c.label} className='flex items-center justify-center'>
+              {c.icon}
+              <span className='sr-only'>{c.label}</span>
+            </span>
+          ) : (
+            <span
+              title={c.hint}
+              className={cn(
+                'block truncate text-left',
+                c.hint && 'cursor-help decoration-dotted underline-offset-4 hover:underline',
+                c.labelClass,
+              )}>
+              {c.label}
+            </span>
+          )}
+          {c.trail != null && <span className='ml-auto flex shrink-0 items-center'>{c.trail}</span>}
+          {onResize && !c.bare && <ResizeHandle column={c} onResize={onResize} />}
         </div>
       ))}
       {/* The action cluster's slot - it has no label and no handle. */}

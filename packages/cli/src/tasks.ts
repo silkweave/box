@@ -78,24 +78,36 @@ export function isWarning(line: string): boolean {
 
 // Turbo prefixes package output with `package:task:`; strip it before reading runner lines.
 const turboPrefix = /^@?[\w./-]+:[\w:-]+:\s+/
+// One task can run several packages' tests in one Turbo invocation; count each package apart.
+const packageProgress = new WeakMap<TaskState, Map<string, { done: number; final: boolean }>>()
 /**
  * Reads the runners' own progress lines. Vitest reports each finished file with its test count
  * and a final `Tests ... (total)` line; Bun test prints `Ran N tests across M files.`.
  */
 export function readProgress(task: TaskState, raw: string): void {
-  const line = raw.replace(turboPrefix, '')
+  const prefix = turboPrefix.exec(raw)?.[0] ?? ''
+  const line = raw.slice(prefix.length)
   const file = /^[✓❯×↓]\s+\S+\s+\((\d+) tests?\b/.exec(line)
   const total = /^Tests\s+.*\((\d+)\)$/.exec(line) ?? /^Ran (\d+) tests? across\b/.exec(line)
-  if (total) {
-    const count = Number(total[1])
-    task.progress = { done: count, total: count, unit: 'tests' }
-  } else if (file) {
-    const done = (task.progress?.done ?? 0) + Number(file[1])
+  if (total || file) {
+    let parts = packageProgress.get(task)
+    if (!parts) packageProgress.set(task, parts = new Map())
+    const part = parts.get(prefix) ?? { done: 0, final: false }
+    if (total) { part.done = Number(total[1]); part.final = true } else part.done += Number(file![1])
+    parts.set(prefix, part)
+    const done = [...parts.values()].reduce((sum, p) => sum + p.done, 0)
+    const final = [...parts.values()].every(p => p.final)
     const expected = task.expected?.total
-    task.progress = { done, total: expected && expected >= done ? expected : undefined, unit: 'tests' }
+    task.progress = { done, total: final && done >= (expected ?? 0) ? done : expected && expected >= done ? expected : undefined, unit: 'tests' }
   }
   const cache = /^Cached:\s+(\d+) cached, (\d+) total/.exec(line.trim())
   if (cache && cache[1] === cache[2]) task.cached = true
+}
+
+/** After a passing run whose packages all reported a final total, that sum is the total. */
+function settleProgress(task: TaskState): void {
+  const parts = packageProgress.get(task)
+  if (task.status === 'passed' && task.progress && parts && [...parts.values()].every(p => p.final)) task.progress.total = task.progress.done
 }
 
 function terminate(child: ChildProcess, force: boolean): void {
@@ -165,11 +177,15 @@ async function execute(task: TaskState, options: RunOptions, update: () => void)
   }
 }
 
-const blocked = (task: TaskState, tasks: TaskState[]): boolean => task.needs
-  ? task.needs.some(id => tasks.find(t => t.id === id)?.status !== 'passed')
-  : tasks.slice(0, tasks.indexOf(task)).some(t => t.status !== 'passed')
+// An unknown id can never pass, so it blocks like a skipped need.
+const needsOf = (task: TaskState, tasks: TaskState[]): Pick<TaskState, 'status'>[] => task.needs
+  ? task.needs.map(id => tasks.find(t => t.id === id) ?? { status: 'skipped' })
+  : tasks.slice(0, tasks.indexOf(task))
 
-/** Serial execution in declared order. A task runs only when everything it needs has passed. */
+/**
+ * Runs every task as soon as everything it needs has passed, so independent checks overlap. A
+ * task whose need failed, was skipped or was cancelled is skipped; declared order breaks ties.
+ */
 export async function runTasks(tasks: Task[], options: RunOptions): Promise<RunState> {
   const started = performance.now()
   const logDirectory = mkdtempSync(join(tmpdir(), 'silkweave-verify-'))
@@ -179,21 +195,39 @@ export async function runTasks(tasks: Task[], options: RunOptions): Promise<RunS
       tail: [], warnings: [], diagnostics: [], log: join(logDirectory, `${String(i + 1).padStart(2, '0')}-${task.id}.log`), exitCode: null, signal: null, cached: false })),
   }
   const update = (): void => { state.elapsed = performance.now() - started; options.onUpdate?.(state) }
-  try {
+  const running = new Map<TaskState, Promise<void>>()
+  const start = (task: TaskState): void => {
+    task.status = 'running'
+    task.started = task.lastOutput = performance.now()
     update()
-    for (const task of state.tasks) {
-      if (options.signal?.aborted || state.tasks.some(t => t.status === 'cancelled') || blocked(task, state.tasks)) {
-        task.status = 'skipped'
-        continue
-      }
-      task.status = 'running'
-      task.started = task.lastOutput = performance.now()
-      update()
+    running.set(task, (async () => {
       try { await execute(task, options, update) }
       catch (error) { task.status = 'failed'; task.diagnostics.push((error as Error).message) }
       task.elapsed = performance.now() - task.started
+      settleProgress(task)
+      running.delete(task)
       update()
+    })())
+  }
+  try {
+    update()
+    for (;;) {
+      const stopped = options.signal?.aborted || state.tasks.some(t => t.status === 'cancelled')
+      // Repeat until stable: a skip can block a task declared before the one it skipped.
+      for (let changed = true; changed;) {
+        changed = false
+        for (const task of state.tasks) {
+          if (task.status !== 'pending') continue
+          const needs = needsOf(task, state.tasks)
+          if (stopped || needs.some(t => t.status === 'failed' || t.status === 'skipped' || t.status === 'cancelled')) { task.status = 'skipped'; changed = true }
+          else if (needs.every(t => t.status === 'passed')) start(task)
+        }
+      }
+      if (running.size === 0) break
+      await Promise.race(running.values())
     }
+    // A cycle of needs never starts: report its tasks as not run.
+    for (const task of state.tasks) if (task.status === 'pending') task.status = 'skipped'
   } finally {
     state.cancelled = options.signal?.aborted ?? false
     state.finished = true

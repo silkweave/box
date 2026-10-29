@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useRef } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { PanelRightClose, PanelRightOpen } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 import { usePersistedState } from '../lib/usePersistedState.ts'
@@ -50,6 +50,15 @@ export function SplitPaneToggle({ className }: { className?: string }) {
  * state persists next to the width under `<storageKey>.collapsed`, so a reader who works
  * list-first stays list-first across navigations instead of re-closing the pane on every row.
  * Re-opening restores the dragged width, so collapse is not a destructive reset.
+ *
+ * `open={false}` takes the split out of the layout entirely - no handle, no panel, and `left`
+ * renders as if nothing wrapped it, scrolling with the page. It is for a panel that comes and goes
+ * beside an ordinary page: `left` keeps its place in the tree, so opening the panel does not remount
+ * the page under it, and the scroll position is handed across both ways.
+ *
+ * `narrow="push"` changes the layout below md: instead of stacking under `left`, the open panel
+ * slides in from the right and covers it, like a pushed view on a phone. Closing it is the caller's
+ * (`open={false}`), so the panel should carry its own close control.
  */
 export function SplitPane({
   storageKey,
@@ -59,6 +68,9 @@ export function SplitPane({
   minLeft = 360,
   minRight = 320,
   collapseLabel = 'panel',
+  open = true,
+  collapsible = true,
+  narrow = 'stack',
 }: {
   storageKey: string
   left: React.ReactNode
@@ -68,18 +80,34 @@ export function SplitPane({
   minRight?: number
   /** Named in the toggle's tooltip/aria - "Hide notes" reads better than "Hide panel". */
   collapseLabel?: string
+  /** False: no split at all, `left` lays out and scrolls as plain page content. */
+  open?: boolean
+  /**
+   * False: no collapse at all - the rail never shows and `SplitPaneToggle` renders nothing. For a
+   * panel that closes rather than hides: an editor inside it would otherwise offer to hide the whole
+   * panel from its own header.
+   */
+  collapsible?: boolean
+  /** Below md: `stack` puts the panel under `left`; `push` slides it in over `left` from the right. */
+  narrow?: 'stack' | 'push'
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const leftRef = useRef<HTMLDivElement>(null)
+  // The reader's scroll position, whichever element is scrolling: the page's scroller while closed,
+  // the left pane while open. Handed over when `open` flips.
+  const scrollTop = useRef(0)
+  const wasOpen = useRef(open)
   const [rightWidth, setRightWidth] = usePersistedState<number | null>(
     storageKey,
     null,
     (v) => v === null || typeof v === 'number',
   )
-  const [collapsed, setCollapsed] = usePersistedState<boolean>(
+  const [storedCollapsed, setCollapsed] = usePersistedState<boolean>(
     `${storageKey}.collapsed`,
     false,
     (v) => typeof v === 'boolean',
   )
+  const collapsed = collapsible && storedCollapsed
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault()
@@ -104,14 +132,53 @@ export function SplitPane({
 
   const ctx = useMemo(() => ({ collapse: () => setCollapsed(true), label: collapseLabel }), [setCollapsed, collapseLabel])
 
+  useEffect(() => {
+    if (open) return
+    const scroller = scrollParent(containerRef.current)
+    if (!scroller) return
+    const track = () => void (scrollTop.current = scroller.scrollTop)
+    track()
+    scroller.addEventListener('scroll', track, { passive: true })
+    return () => scroller.removeEventListener('scroll', track)
+  }, [open])
+
+  useLayoutEffect(() => {
+    if (wasOpen.current === open) return
+    wasOpen.current = open
+    if (open) {
+      if (leftRef.current) leftRef.current.scrollTop = scrollTop.current
+    } else {
+      const scroller = scrollParent(containerRef.current)
+      if (scroller) scroller.scrollTop = scrollTop.current
+    }
+  }, [open])
+
+  const push = narrow === 'push'
+
   return (
-    <div ref={containerRef} className='flex h-full min-h-0 flex-col md:flex-row'>
-      <div className='min-h-0 min-w-0 flex-1 overflow-y-auto'>{left}</div>
+    <div
+      ref={containerRef}
+      className={
+        open
+          ? cn(
+              'flex h-full min-h-0 flex-col md:flex-row',
+              // Stacked below md, the page and the panel scroll together as one column; pushed, the
+              // panel covers the page, which keeps its own scroll underneath.
+              push ? 'relative overflow-hidden md:overflow-visible' : 'overflow-y-auto md:overflow-visible',
+            )
+          : 'contents'
+      }>
+      <div
+        ref={leftRef}
+        onScroll={open ? (e) => void (scrollTop.current = e.currentTarget.scrollTop) : undefined}
+        className={open ? cn('min-w-0 md:min-h-0 md:flex-1 md:overflow-y-auto', push ? 'min-h-0 flex-1 overflow-y-auto' : 'shrink-0') : 'contents'}>
+        {left}
+      </div>
 
       {/* Collapsed, the panel is replaced by a slim rail holding the only way back - the same shape
           the sprint planning backlog uses. The expand button cannot live in the panel's header for
           the obvious reason: the header is what got hidden. */}
-      {collapsed && (
+      {open && collapsed && (
         <button
           type='button'
           onClick={() => setCollapsed(false)}
@@ -125,7 +192,7 @@ export function SplitPane({
 
       {/* Drag handle (desktop) - a 1px rule that IS the panel's left border, with a fat invisible hit
           area either side. Gone when collapsed: there is nothing left to resize. */}
-      {!collapsed && (
+      {open && !collapsed && (
         <div
           role='separator'
           aria-orientation='vertical'
@@ -142,14 +209,30 @@ export function SplitPane({
           only, and the stacked layout always shows it (SplitPaneToggle is likewise md-and-up).
           Hidden rather than unmounted - `right` is a doc editor whose in-flight autosave should not
           be torn down by a layout toggle, and re-mounting would re-fetch and re-seed it on every open. */}
-      <aside
-        style={rightWidth != null && !collapsed ? { width: rightWidth } : undefined}
-        className={cn(
-          'flex min-h-0 min-w-0 shrink-0 flex-col border-t border-border md:border-t-0',
-          collapsed ? 'md:hidden' : rightWidth == null && defaultRightClass,
-        )}>
-        <SplitPaneCtx.Provider value={ctx}>{right}</SplitPaneCtx.Provider>
-      </aside>
+      {open && (
+        <aside
+          // The dragged width is a desktop fact: below md the panel stacks or covers the page.
+          style={rightWidth != null && !collapsed ? ({ '--split-right-w': `${rightWidth}px` } as React.CSSProperties) : undefined}
+          className={cn(
+            'flex min-h-0 min-w-0 shrink-0 flex-col',
+            rightWidth != null && !collapsed && 'md:w-(--split-right-w)',
+            push
+              ? 'absolute inset-0 z-30 bg-bg shadow-(--shadow-md) motion-safe:animate-slide-in-right md:static md:z-auto md:shadow-none md:motion-safe:animate-none'
+              : 'border-t border-border md:border-t-0',
+            collapsed ? 'md:hidden' : rightWidth == null && defaultRightClass,
+          )}>
+          <SplitPaneCtx.Provider value={collapsible ? ctx : null}>{right}</SplitPaneCtx.Provider>
+        </aside>
+      )}
     </div>
   )
+}
+
+/** The nearest ancestor that scrolls vertically. A `display: contents` box has no layout, so start above it. */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
+    const { overflowY } = getComputedStyle(p)
+    if (overflowY === 'auto' || overflowY === 'scroll') return p
+  }
+  return null
 }

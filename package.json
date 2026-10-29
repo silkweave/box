@@ -36,8 +36,9 @@
     "box:install": "bun --no-env-file packages/cli/src/box-install.ts",
     "test:core": "turbo run test --filter=@silkweave/box-core --output-logs=new-only",
     "test:server": "turbo run test --filter=@silkweave/box-server --output-logs=new-only",
+    "test:packages": "turbo run test --filter=@silkweave/box-core --filter=@silkweave/box-server --output-logs=new-only",
     "test:cli": "bun --no-env-file test ./packages/cli/src/tests/*.test.ts",
-    "test:web": "bun --no-env-file test ./apps/web/tests ./features/*/web",
+    "test:web": "bun --no-env-file test ./apps/web/tests ./features/*/web ./packages/ui/src",
     "test:mobile": "bun --no-env-file packages/cli/src/mobile-check.ts"
   },
   "dependencies": {

@@ -77,7 +77,7 @@ export interface SignalDefinition {
    * Signal ids this one is DRIVEN BY - edges point down at the drivers
    * (`mrr.depends_on = ['churn-rate', 'new-customers']`). A curated causal claim and nothing
    * more: edges never do arithmetic; a parent's value always comes from its own data. Kept
-   * acyclic and known-ids-only on write, mirroring `initiatives.blocked_by`.
+   * acyclic and known-ids-only on write.
    */
   depends_on: string[]
   /**
@@ -89,6 +89,13 @@ export interface SignalDefinition {
    */
   data_source_id: string | null
   measure_key: string | null
+  /**
+   * An in-Box measure's parameters (`measure_key` set, `data_source_id` null), e.g.
+   * `{ "kind": "oss-pr" }` for `planning.tasks_done`. Values are strings. `{}` for every other
+   * signal. An in-Box measure signal is `source: 'derived'`: the measure computes its live points
+   * (signals/measure-derive.ts).
+   */
+  measure_params: Record<string, string>
   /**
    * The formula this signal's points are COMPUTED from (signals/formula.ts), e.g.
    * `churned-mrr / start(mrr) * 100`, or null for an ordinary signal. A formula signal IS
@@ -102,6 +109,9 @@ export interface SignalDefinition {
   thresholds: number[]
   /** Manual ordering within lists (lower first), like every other `sort` here. */
   sort: number
+  /** When it was archived (signal-archive), or null. Archived signals leave the lists and pickers
+   *  unless asked for; reads of the signal itself are unaffected. */
+  archived_at: string | null
   created_at: string
   updated_at: string
   /** users.id that created / last edited the row; null for machine writes (auto-registration). */
@@ -123,10 +133,15 @@ export interface SignalDefinitionInput {
   owner?: string | null
   description?: string
   depends_on?: string[]
-  /** Set both to bind, pass null for both to unbind (the points stay - they are real
-   *  observations; they simply stop refreshing). One without the other is refused. */
+  /** Set both to bind a provider measure; set `measure_key` alone (data_source_id null) to bind an
+   *  in-Box measure; null for both unbinds. A provider binding's points stay on unbind (real
+   *  observations); an in-Box measure's computed points go with it. A data source without a
+   *  measure is refused. */
   data_source_id?: string | null
   measure_key?: string | null
+  /** An in-Box measure's parameters, validated against the measure's declared params. Replaces
+   *  the stored object. */
+  measure_params?: Record<string, string>
   /** Set to make this a formula signal (depends_on then follows the formula's refs); null clears
    *  the formula (depends_on is kept as it is). */
   formula?: string | null

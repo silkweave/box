@@ -6,7 +6,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
 import { SESSION_COOKIE, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
-import { AppModule } from './app.module.js'
+import { AppModule, trpcTransport } from './app.module.js'
 import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
@@ -288,24 +288,28 @@ async function bootstrap(): Promise<void> {
   diagnostic('app', 'listening', { port: listenPort, durationMs: Math.round(performance.now() - started) })
 
   // WebSocket upgrades bypass the express request pipeline, so dispatch them on the raw http.Server
-  // by path: /agent sockets go to the authenticated agent mount, everything else to the Vite HMR
-  // proxy (dev only; in prod non-agent upgrades are refused). The HMR socket is not put behind the
+  // by path: /trpc is the tab's live-feed socket (trpc/trpc-socket.ts), /agent sockets go to the
+  // authenticated agent mount, everything else to the Vite HMR proxy (dev only; in prod other
+  // upgrades are refused). The HMR socket is not put behind the
   // dev proxy guard: it carries no file reads. Vite creates the browser-facing environment with
   // `disableFetchModule: true` (vite 8.3.0, `defaultCreateClientDevEnvironment`), so the one
   // `vite:invoke` handler that could return module source over the socket throws instead.
-  if (agentMount || devProxy?.upgrade) {
-    app.getHttpServer().on('upgrade', (req: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
-      traceSocket('app', req, socket, true)
-      const path = (req.url ?? '/').split('?', 1)[0]
-      if (AGENT_PATH.test(path)) {
-        if (agentMount) agentMount.upgrade(req, socket, head)
-        else socket.destroy()
-        return
-      }
-      if (devProxy?.upgrade && devRequest(req)) devProxy.upgrade(req, socket as import('node:net').Socket, head)
+  app.getHttpServer().on('upgrade', (req: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
+    traceSocket('app', req, socket, true)
+    const path = (req.url ?? '/').split('?', 1)[0]
+    if (path === '/trpc') {
+      if (rateLimit(`api:${clientIp(req)}`, 600, 60_000)) trpcTransport.upgrade(req, socket, head)
       else socket.destroy()
-    })
-  }
+      return
+    }
+    if (AGENT_PATH.test(path)) {
+      if (agentMount) agentMount.upgrade(req, socket, head)
+      else socket.destroy()
+      return
+    }
+    if (devProxy?.upgrade && devRequest(req)) devProxy.upgrade(req, socket as import('node:net').Socket, head)
+    else socket.destroy()
+  })
 
   // This server had no signal handling before the merge: a restart just exited, and the separate
   // worker kept every session alive. Now the sessions ARE in this process, so a bare exit cuts live turns
@@ -316,6 +320,7 @@ async function bootstrap(): Promise<void> {
       if (stopping) return
       stopping = true
       diagnostic('app', 'shutdown.start', { signal })
+      trpcTransport.close()
       void shutdownWorkerdeck()
         .catch((err: unknown) => console.error('  agent: drain failed -', err))
         .finally(() => { stopHeartbeat(); diagnostic('app', 'shutdown.finish'); process.exit(0) })

@@ -4,6 +4,9 @@ import { openedOnLogin } from './loginEntry.ts'
 
 /** The supervisor's maintenance page (apps/server/src/builder/maintenance.ts MAINTENANCE_PAGE_PATH). */
 const MAINTENANCE_PAGE = '/api/box-status/page'
+/** The supervisor's status socket (apps/server/src/builder/box-status-stream.ts). */
+const STATUS_SOCKET = '/api/box-status/events'
+const RECONNECT_MS = 3_000
 
 /** The web release this document was served from; absent under Vite and before the first release. */
 const loadedRelease = (): string | null =>
@@ -25,7 +28,7 @@ export function maintenanceBlocks(maintenance: boolean, lockAdmins: boolean, rol
 }
 
 /**
- * The supervisor's status stream, followed by every tab (signed in or not), so an open tab enters
+ * The supervisor's status socket, followed by every tab (signed in or not), so an open tab enters
  * maintenance without depending on the restarting app's feeds, and a tab served from a release
  * learns when a newer one is promoted. A blocked tab moves to the supervisor's maintenance page,
  * the same page a fresh visit gets, which brings it back here once maintenance ends.
@@ -40,27 +43,45 @@ export function useBoxStatus(viewer: BoxStatusViewer): { known: boolean; mainten
     if (role === undefined) return
     const loaded = loadedRelease()
     return whilePageActive(() => {
-      const events = new EventSource('/api/box-status/events')
       const fallback = setTimeout(() => setKnown(true), 1_500)
-      events.onmessage = event => {
-        clearTimeout(fallback)
-        try {
-          const status = JSON.parse(event.data) as { maintenance?: boolean; release?: string | null; notice?: { lockAdmins?: boolean } }
-          if (typeof status.maintenance !== 'boolean') return
-          if (loaded && role !== null && typeof status.release === 'string') setUpdateAvailable(status.release !== loaded)
-          const blocked = maintenanceBlocks(status.maintenance, !!status.notice?.lockAdmins, role, openedOnLogin)
-          setMaintenance(blocked)
-          setKnown(true)
-          if (blocked) {
-            events.close()
-            location.replace(`${MAINTENANCE_PAGE}?return=${encodeURIComponent(location.pathname + location.search + location.hash)}`)
+      let events: WebSocket | undefined
+      let retry: ReturnType<typeof setTimeout> | undefined
+      let stopped = false
+      const connect = () => {
+        const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${STATUS_SOCKET}`)
+        events = socket
+        socket.onmessage = event => {
+          clearTimeout(fallback)
+          try {
+            const status = JSON.parse(String(event.data)) as { maintenance?: boolean; release?: string | null; notice?: { lockAdmins?: boolean } }
+            if (typeof status.maintenance !== 'boolean') return
+            if (loaded && role !== null && typeof status.release === 'string') setUpdateAvailable(status.release !== loaded)
+            const blocked = maintenanceBlocks(status.maintenance, !!status.notice?.lockAdmins, role, openedOnLogin)
+            setMaintenance(blocked)
+            setKnown(true)
+            if (blocked) {
+              stopped = true
+              socket.close()
+              location.replace(`${MAINTENANCE_PAGE}?return=${encodeURIComponent(location.pathname + location.search + location.hash)}`)
+            }
+          } catch {
+            // A malformed frame is skipped; the next one carries the full state again.
+            setKnown(true)
           }
-        } catch {
-          // A malformed event is skipped; the next one carries the full state again.
-          setKnown(true)
+        }
+        // Each connection opens with the full state, so a reconnect needs no catch-up.
+        socket.onclose = () => {
+          if (stopped || events !== socket) return
+          retry = setTimeout(connect, RECONNECT_MS)
         }
       }
-      return () => { clearTimeout(fallback); events.close() }
+      connect()
+      return () => {
+        stopped = true
+        clearTimeout(fallback)
+        clearTimeout(retry)
+        events?.close()
+      }
     })
   }, [role])
   return { known, maintenance, updateAvailable }

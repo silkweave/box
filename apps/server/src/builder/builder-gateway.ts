@@ -4,6 +4,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { Readable } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
+import { CLIENT_ID_MAX } from '@workerdeck/protocol'
+import { sameOrigin } from '@silkweave/box-core'
 import type { BuilderSupervisorAuthResult } from './builder-auth.js'
 
 export interface BuilderGatewayHost {
@@ -48,12 +50,6 @@ export async function readRaw(req: IncomingMessage, limit: number): Promise<Buff
   }
   return Buffer.concat(chunks)
 }
-export function sameOrigin(req: IncomingMessage): boolean {
-  const origin = req.headers.origin
-  if (req.headers['sec-fetch-site'] === 'cross-site') return false
-  if (!origin) return true
-  try { return new URL(origin).host === req.headers.host } catch { return false }
-}
 
 /** The editor intentionally omits secrets and instance storage. This is not an OS sandbox. */
 export function builderFileAllowed(root: string, candidate: string): boolean {
@@ -74,6 +70,15 @@ export function builderFileAllowed(root: string, candidate: string): boolean {
   } catch { return false }
 }
 
+type PromptOutcome = 'executed' | 'notDelivered'
+/** Prompts remembered per session for resend dedupe; far more than one page ever leaves unacked. */
+const PROMPT_MEMORY = 500
+
+function ack(client: WebSocket, clientId: string, outcome: PromptOutcome): void {
+  if (client.readyState !== WebSocket.OPEN) return
+  client.send(JSON.stringify(outcome === 'executed' ? { type: 'ack', clientId } : { type: 'ack', clientId, notDelivered: true }))
+}
+
 export function createBuilderGateway(options: {
   root: string
   host: BuilderGatewayHost
@@ -89,6 +94,19 @@ export function createBuilderGateway(options: {
   const { host, auth } = options
   const mutate = options.mutate ?? (async <T>(operation: () => Promise<T> | T): Promise<T> => await operation())
   const sockets = new Set<WebSocket>()
+  // Prompt outcomes by session and clientId, for the in-process command path. WorkerDeck's client
+  // keeps every prompt until the server acks its clientId and resends the unacked ones on each
+  // reconnect (verify, checkpoint and restarts drop the socket). WorkerDeck's own server acks and
+  // dedupes; this path replaces it, so it must do both or a reconnect replays old prompts.
+  const prompts = new Map<string, Map<string, PromptOutcome>>()
+  const promptOutcome = (sessionId: string, clientId: string): PromptOutcome | undefined => prompts.get(sessionId)?.get(clientId)
+  const recordPrompt = (sessionId: string, clientId: string, outcome: PromptOutcome): void => {
+    let known = prompts.get(sessionId)
+    if (!known) prompts.set(sessionId, known = new Map())
+    known.set(clientId, outcome)
+    // Map order is insertion order: drop the oldest beyond the bound.
+    if (known.size > PROMPT_MEMORY) known.delete(known.keys().next().value!)
+  }
   const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
   const pathOf = (req: IncomingMessage): URL => new URL(req.url ?? '/', 'http://local')
   const profileMetadata = (value: unknown): Record<string, unknown> | null => {
@@ -227,7 +245,7 @@ export function createBuilderGateway(options: {
       client.on('message', (data, binary) => {
         if (++queued > 32) { client.close(1008, 'Too many pending commands'); return }
         queue = queue.then(async () => {
-          const frame = JSON.parse(data.toString()) as { type?: string }
+          const frame = JSON.parse(data.toString()) as { type?: string; clientId?: unknown }
           // Closing belongs to the lifecycle endpoint so control state never goes stale.
           await mutate(async () => {
             const checked = await auth.authenticate(req.headers.cookie)
@@ -236,7 +254,23 @@ export function createBuilderGateway(options: {
               throw new Error(`Builder command ${frame.type} is unavailable`)
             }
             if (options.command) {
-              await options.command(current.session!.id, frame)
+              const sessionId = current.session!.id
+              const clientId = frame.type === 'user_message' && typeof frame.clientId === 'string' && frame.clientId !== '' && frame.clientId.length <= CLIENT_ID_MAX
+                ? frame.clientId
+                : null
+              if (!clientId) { await options.command(sessionId, frame); return }
+              // A resend of a prompt this session already ran (or refused): answer, never rerun.
+              const known = promptOutcome(sessionId, clientId)
+              if (known) { ack(client, clientId, known); return }
+              try {
+                await options.command(sessionId, frame)
+              } catch (error) {
+                recordPrompt(sessionId, clientId, 'notDelivered')
+                ack(client, clientId, 'notDelivered')
+                throw error
+              }
+              recordPrompt(sessionId, clientId, 'executed')
+              ack(client, clientId, 'executed')
               return
             }
             if (upstream.readyState !== WebSocket.OPEN) return

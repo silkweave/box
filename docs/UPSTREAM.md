@@ -11,9 +11,9 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `5a52c0e6fc1a3b5573280be6bd74228297c3f420` (2026-10-19, per-person
-sidebar customization and migration `core:010-users-sidebar`), materialized with `box:build`;
-`box verify` passed 11/11. Core carries signals, signal events,
+Latest core refresh: Stack commit `b86a3f6d88922418c5f2502a29fb840eed8f0137` (2026-10-29: live
+feeds over one WebSocket per tab, DataGrid, signal archiving, verify speed, the Planning recipe
+split into a base and powerups), materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.
 

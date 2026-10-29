@@ -18,6 +18,10 @@
       "@silkweave/box-source": "./src/board/index.ts",
       "default": "./src/board/index.ts"
     },
+    "./datagrid": {
+      "@silkweave/box-source": "./src/datagrid/index.ts",
+      "default": "./src/datagrid/index.ts"
+    },
     "./editor": {
       "@silkweave/box-source": "./src/editor/index.ts",
       "default": "./src/editor/index.ts"

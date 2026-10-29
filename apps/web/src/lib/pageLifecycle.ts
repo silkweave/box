@@ -1,5 +1,5 @@
 /** How long a tab may stay hidden before its live connections are released. Short tab switches
- * keep their streams; a tab left in the background stops holding browser connections. */
+ * keep their streams; a tab left in the background stops holding server subscriptions. */
 export const HIDDEN_GRACE_MS = 30_000
 
 /** The page signals a live connection follows: navigation events on `page`, visibility on `view`. */
@@ -11,10 +11,9 @@ export interface PageSignals {
 
 /** Run a live connection only while the page is active.
  * Navigation (`pagehide`, including back/forward caching, where React effect cleanup does not run)
- * releases it at once. A tab hidden for `graceMs` releases it too: on HTTP/1.1 origins the browser
- * allows six connections per host, and background tabs holding long-lived streams starve the
- * visible one. Showing the page again reconnects, and each feed resyncs using its existing
- * cursor/hello logic. */
+ * releases it at once. A tab hidden for `graceMs` releases it too, so the server keeps no
+ * subscriptions for tabs nobody is looking at. Showing the page again reconnects, and each feed
+ * resyncs using its existing cursor/hello logic. */
 export function whilePageActive(
   start: () => () => void,
   signals: PageSignals = { page: window, view: document },

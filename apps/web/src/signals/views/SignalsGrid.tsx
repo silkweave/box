@@ -4,8 +4,8 @@ import type { Signal } from '../../types.ts'
 import { baseChannel, channelLabel, inChannel } from '../../types.ts'
 import { SignalCard } from '../components/SignalCard.tsx'
 import { SignalDialog } from '../components/SignalDialog.tsx'
-import { SETTINGS_GUTTER, SegmentedControl, SelectField, Button, UserChip, EmptyState } from '@silkweave/box-ui'
-import { useSignalsData } from '../lib/useSignalsData.ts'
+import { SETTINGS_GUTTER, SegmentedControl, SelectField, Button, Checkbox, UserChip, EmptyState } from '@silkweave/box-ui'
+import { useSignalsDataWithArchived } from '../lib/useSignalsData.ts'
 import { useActiveUser } from '../../lib/useActiveUser.ts'
 import { useUsersData } from '../../lib/useUsersData.ts'
 import { usePersistedState } from '../../lib/usePersistedState.ts'
@@ -23,7 +23,8 @@ const GROUP_BYS: { value: GroupBy; label: string }[] = [
  *  `#settings/signals/<channel>`. Cards group into container cards per the "Group by" choice -
  *  signal group under its channel (default), or owner. Each card links to its detail. */
 export function SignalsGrid({ channel }: { channel?: string }) {
-  const { data } = useSignalsData()
+  // Every signal, archived ones included; "Show archived" decides whether they render.
+  const { data: every } = useSignalsDataWithArchived()
   const { open } = useSettingsDialog()
   const { userId: activeUserId, user: activeUser, filterMine } = useActiveUser()
   const { data: users } = useUsersData()
@@ -33,7 +34,17 @@ export function SignalsGrid({ channel }: { channel?: string }) {
     'group',
     (v) => GROUP_BYS.some((o) => o.value === v),
   )
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    appKey('signals', 'showArchived'),
+    false,
+    (v) => typeof v === 'boolean',
+  )
   const mineOnly = filterMine && !!activeUserId
+  const archivedCount = every ? every.signals.filter((s) => s.archived_at).length : 0
+  const data = useMemo(
+    () => (every && !showArchived ? { ...every, signals: every.signals.filter((s) => !s.archived_at) } : every),
+    [every, showArchived],
+  )
 
   const visible = useMemo(
     () =>
@@ -49,7 +60,7 @@ export function SignalsGrid({ channel }: { channel?: string }) {
 
   // A Box with no signals AT ALL. Distinct from a filter that happens to match nothing, which the
   // count line below already explains.
-  if (data.signals.length === 0)
+  if (data.signals.length === 0 && archivedCount === 0)
     return (
       <div className={`${SETTINGS_GUTTER} pb-6`}>
         <EmptyState
@@ -132,6 +143,11 @@ export function SignalsGrid({ channel }: { channel?: string }) {
               <Plus /> New signal
             </Button>
           )}
+          {/* Archived signals are hidden from pickers and this page; their points and readers stay. */}
+          <label className='flex items-center gap-1.5 text-label text-muted-foreground' title='Archived signals are hidden from pickers and this page'>
+            <Checkbox checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            Show archived{archivedCount > 0 ? ` (${archivedCount})` : ''}
+          </label>
           <SegmentedControl label='Group by' value={groupBy} options={GROUP_BYS} onChange={setGroupBy} />
         </div>
       </div>

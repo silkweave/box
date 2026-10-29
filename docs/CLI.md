@@ -27,15 +27,16 @@ starts the Box). `--review` asks to confirm the machine principal before it is b
 
 `box verify` runs the checkout's complete validation chain with a four-phase progress view:
 
-| Phase | Checks, in order |
+| Phase | Checks |
 |---|---|
 | Build | Workspace build |
 | Prepare | Skill linking, CLI tests, web tests, generated types |
 | Check | Typecheck, lint |
-| Validate | Core tests, server tests, schema matrix, mobile app |
+| Validate | Core and server tests, schema matrix, mobile app |
 
 Every check except the mobile app needs the workspace build, and the typecheck also needs generated
-types. Otherwise a failure does not stop the chain: independent checks still run, the receipt lists every failed check
+types. Each check starts as soon as its prerequisites pass, so the mobile app runs alongside the
+build and the other checks run concurrently after it. A failure does not stop the chain: independent checks still run, the receipt lists every failed check
 with its diagnostics, and checks whose prerequisites failed are reported as not run. The exit status
 is the first failed check's.
 
@@ -44,20 +45,27 @@ get`, `flutter analyze` and, where a `test/` directory exists, `flutter test` fo
 (`packages/mobile`), each feature module (`features/<id>/mobile`) and the app (`apps/mobile`).
 Without `flutter` on PATH it prints a skip and passes, so a Box without the Flutter SDK still
 verifies; install Flutter to make the mobile app part of the verified chain. See [MOBILE.md](MOBILE.md).
+A package whose inputs match its last passing check is skipped: its tracked and untracked (not
+ignored) files, those of every local `path:` dependency it reaches, and the Flutter version. An edit
+to one feature module reruns that module and the app; `--force` checks every package. The last
+passing hashes live in `node_modules/.cache/silkweave-mobile.json`.
 
-The build, typecheck, core tests and server tests go through Turbo's content-hash cache. A package's
+The build, typecheck and package tests go through Turbo's content-hash cache; the mobile check keeps its own. Core and server tests
+run in one Turbo invocation (`bun run test:packages`). A package's
 tests rerun only when its sources, its test configuration, a workspace dependency's build (core for
 the server) or a global input (`features/`, `recipes/`, `box.json`, `box.local.json`) changed;
 otherwise Turbo replays the last passing output in milliseconds. `box verify --force` re-executes
-them all. Run `bun run test:core` or `bun run test:server` for the same cached package tests alone.
+them all. Run `bun run test:core` or `bun run test:server` for one package's cached tests alone. Generated
+Dart tool state, mobile build output, module lockfiles and `.dev.vars` files under `features/` are
+not cache inputs.
 
-The active phase expands into checks; completed phases collapse. The progress bar counts completed
+Active phases expand into their checks; completed phases collapse. The progress bar counts completed
 checks, not estimated elapsed time. The activity line comes from the real child process. A check
 that goes quiet keeps its spinner and elapsed time, with a notice after eight seconds without output.
 Periwinkle text animation is always enabled when supported by the terminal.
 
 Press `d` to show or hide recent command output. Detail uses the space available in the terminal;
-enlarge a short window to see more lines. Ctrl+C stops the current command and its descendants,
+enlarge a short window to see more lines. Ctrl+C stops the running commands and their descendants,
 escalating to forced termination after 1.5 seconds if needed. The remaining checks do not run.
 Success and cancellation restore the normal screen and cursor and leave a phase summary in
 scrollback, styled with the same status colors and aligned phase timings. Warning excerpts omit
@@ -99,7 +107,7 @@ the caller; startup failures return 1, cancellation returns 130, and invalid opt
 
 The renderer, task engine and verify command live in `packages/cli/src/`. `ui.ts` supplies terminal
 styling, text clipping and safe redraw; `tasks.ts` owns ordered child execution and logs;
-`task-view.ts` supplies the verify layout; `verify.ts` connects terminal controls to the eleven checks.
+`task-view.ts` supplies the verify layout; `verify.ts` connects terminal controls to the ten checks.
 They use Node-compatible built-ins under Bun, with no React, Ink or additional dependencies.
 Verification executes explicit `bun run` commands using the current Bun executable. It does not
 inherit a package-manager executable from npm or pnpm. Each check runs in the selected checkout.

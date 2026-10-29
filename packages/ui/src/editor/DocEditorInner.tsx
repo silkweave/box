@@ -105,7 +105,7 @@ export function DocEditor({
     ],
     editorProps: {
       attributes: {
-        class: `markdown-body tiptap ${compact ? 'min-h-[9rem]' : 'min-h-[24rem]'} px-4 py-3 focus:outline-none`,
+        class: `markdown-body tiptap ${compact ? 'min-h-[9rem]' : 'min-h-[24rem]'} ${variant === 'panel' ? 'px-5 py-4' : 'px-4 py-3'} focus:outline-none`,
       },
       handlePaste: (_view, event) => {
         const files = uploadRef.current ? mediaFiles(event.clipboardData?.files) : []

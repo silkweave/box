@@ -1,7 +1,7 @@
 # Cycle board powerup: install
 
 Adds boards to Planning: goals and initiatives as board node kinds, the cascades that keep their
-placements in step with renames and deletes, the `cycle-board` tool and the cycle page's *Circuit
+placements in step with goal renames and with goal and initiative deletes, the `cycle-board` tool and the cycle page's *Circuit
 board* action.
 Read [POWERUP.md](POWERUP.md) and the recipe [SPEC.md](../../SPEC.md) first. There are no owner-only
 steps.
@@ -17,10 +17,13 @@ version recorded in the `recipes` ledger instead of copying over local changes.
 
 ## Requires
 
-The Planning recipe, adapted and validated, and the board recipe its POWERUP.md links to
-(`recipes/boards/`), adapted and validated, both recorded in the `recipes` ledger of `box.json`.
-Without the board recipe the tool refuses with core's `BOARDS_NOT_SET_UP` and the action says boards
-are not set up, so adapt it first.
+- The Planning recipe with its [goals powerup](../goals/INSTALL.md), adapted and verified, with
+  `goals` in `recipes.planning.powerups`. The goal node kind reads goals, and the action fills the
+  `planning.cycle.actions` slot of the goals powerup's cycle page (`CYCLE_ACTIONS_SLOT` in
+  `web/components/CycleBoardNote.tsx`); without goals there is no cycle page to add it to.
+- The board recipe its POWERUP.md links to (`recipes/boards/`), adapted and validated, recorded in
+  the `recipes` ledger of `box.json`. Without it the tool refuses with core's `BOARDS_NOT_SET_UP`
+  and the action says boards are not set up, so adapt it first.
 
 ## Owner decisions
 
@@ -57,6 +60,6 @@ None.
 ## Remove
 
 Remove the three registration lines and the three `cycle-board/` folders, and `cycle-board` from
-`recipes.planning.powerups`. Boards made from cycles stay; goal and initiative placements on any
+`recipes.planning.powerups`. Remove it before removing the goals powerup. Boards made from cycles stay; goal and initiative placements on any
 board then show under `missing` until removed from the board. The cycle page
 then shows the note that the cycle board is not set up.

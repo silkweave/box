@@ -4,6 +4,20 @@ Adds the Planning module (Dart package `box_planning`, source `features/planning
 mobile app. Read the module's `README.md` in the fetched Stack and [docs/MOBILE.md](../../../../docs/MOBILE.md)
 ("Adding a module to the app") first.
 
+It adds the Plan tab (order 20) and the `planning/initiative/<key>` and `planning/task/<key>`
+links, and calls the REST mirror under `/api/planning`. Its wire models (`lib/src/models.dart`)
+mirror `planning.controller.ts`; a change that renames or removes a field the app reads breaks
+every installed build (docs/MOBILE.md, "Version skew"). Its tab label, icon and order live in the
+module declaration in `features/planning/mobile/lib/src/planning_module.dart`.
+
+The module carries the base and reads the powerup fields only when the server sends them: milestone
+marks, state, progress, health, the "measured by" fact and the outcome flag (milestones powerup),
+initiative health (milestones), and a task's sprint as a read-only fact (sprints powerup). The app code
+needs no change in a Box without those powerups, but `test/contract_test.dart` reads
+`ITEM_KINDS`, `MILESTONE_STATES` and `GOAL_HEALTHS` from `core/types.ts`: without milestones (and
+without goals, which also keep `GOAL_HEALTHS`) drop those checks, or they fail on the trimmed core. Goals, cycles, sprint pages, creating
+milestones and editing a milestone's measure stay on the web; `goal_ids` is parsed but not shown.
+
 ## Detect
 
 The Box has this powerup when `features/planning/mobile/` exists and `box_planning` is registered in

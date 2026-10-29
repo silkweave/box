@@ -209,13 +209,25 @@ Rules that hold the whole thing together:
   both `schema.ts` and `core-migrations.ts` state in their own comments. The failure to watch for is
   at COMMIT: `Attempting to modify table <t> but another transaction has altered this table`. Since
   a migration IS a transaction and `ensureSchema` runs at boot, that failure is a boot failure. A
-  migration that both changes a table's shape and rewrites its rows can be two migrations, and on a
-  data-touching one that is the safer shape anyway, because it can then be proved separately.
+  migration that both rewrites a table's rows and changes its shape MUST be two migrations: in one
+  transaction the COMMIT fails with exactly that error as soon as a row was actually rewritten, so
+  it passes on an empty or untouched table and breaks the first Box with matching rows. Two
+  migrations can also be proved separately.
+- **`applySchema` checkpoints after every migration.** DuckDB cannot replay an ALTER of a table
+  whose columns default to a function (`now()`, which every `timestamps: true` model has) from the
+  WAL: a reopen fails with "Failure while replaying WAL ... GetDefaultDatabase". The `CHECKPOINT`
+  after each COMMIT folds the change into the main file so no later open replays it. When a change
+  needs several ALTERs of one table, or must hold even without that checkpoint, rebuild the table
+  in one `run` migration instead (CREATE the new shape under a temporary name, `INSERT ... SELECT`
+  the old columns, DROP, `ALTER TABLE ... RENAME`), which replays cleanly. Test WAL replay by applying the migration on a connection with
+  `PRAGMA disable_checkpoint_on_shutdown`, closing, and reopening.
 - **An ALTER cannot carry a constraint.** DuckDB answers "Adding columns with constraints not yet
   supported", so a column added by migration is NULLABLE on an upgraded Box where a fresh one gets
   NOT NULL from CREATE. The two must agree in *behaviour*: `core:001-users-role` gets away with it
   because every read narrows through `roleOf()`, which maps anything that is not exactly `admin` -
-  NULL included - to `member`.
+  NULL included - to `member`. Where the shapes should be identical, follow the ADD COLUMN (with a
+  DEFAULT, which fills every existing row) with its own `ALTER TABLE ... ALTER COLUMN ... SET NOT
+  NULL` migration (the planning goals powerup's `goal_ids` install is an example).
 
 **Checksums cover the migration name, evaluated SQL and a hash of `run.toString()` when present.**
 An edited or removed applied migration refuses boot while its feature is installed. Ledger rows
@@ -392,12 +404,12 @@ Two seams, different jobs. Do not blur them.
 | Question | "reload your view" | "this happened in the domain" |
 | Payload | a scope string, never row data | a typed record with fields |
 | Durability | none, in-memory, resets on restart | a warehouse table |
-| Delivery | fire-and-forget to SSE clients | idempotent insert, then in-process fan-out |
+| Delivery | fire-and-forget to subscribed tabs | idempotent insert, then in-process fan-out |
 | Consumers | the SPA's data stores | event triggers (deliveries included), pod automation, digests, derived signals |
 
 [`changes.ts`](../packages/core/src/changes.ts) is the **UI-invalidation** bus. A write path emits a
 scope (`table:<name>`, `docs:<section>`, `config:<file>`, or the generic `warehouse`); the server's
-`changesFeed` tRPC subscription fans it out over SSE; clients map scopes onto their stores and
+`changesFeed` tRPC subscription fans it out over each tab's live-feed WebSocket; clients map scopes onto their stores and
 reload. Events carry **no payloads and no row data**, which is why fanning them out to any
 authenticated principal leaks nothing beyond "something in `<scope>` changed". `emitChange` never
 throws: a bad subscriber cannot break a write.
@@ -414,7 +426,7 @@ Two producers feed it:
   is not doubled by a generic `warehouse` one.
 
 The first event of every subscription is a `hello` carrying the process boot id. A client that sees
-a **second** hello (SSE reconnect, server restart) knows events may have been missed and reloads
+a **second** hello (reconnect, server restart) knows events may have been missed and reloads
 everything rather than replaying. A `ping` every 45s keeps idle connections from being reaped.
 
 ## Backup, restore points and dev seeds
@@ -657,3 +669,10 @@ manual, windowed-sync and increment writers in `points.ts` ([SIGNALS.md](SIGNALS
 Features write signal history through those helpers, never with their own SQL. If you find yourself
 adding a writer to `warehouse/db.ts` for a table it does not own, put it with the table's owner
 instead.
+
+An **in-Box measure** (`registerMeasure`, `signals/measures.ts`) is the way a feature turns its own
+rows into a signal without writing points itself: a signal binds it with `measure_key` and
+`measure_params` (`signals.measure_params`, core migration `011-signals-measure-params`), and
+`signals/measure-derive.ts` replaces that signal's `live` points with what the measure computes, on
+a bind, on `refreshMeasureSignals(key)` from the owning feature, and in `warehouse-derive`
+([SIGNALS.md](SIGNALS.md#in-box-measures)).

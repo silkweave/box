@@ -47,9 +47,12 @@ export function GridFooter({
   sources,
   store,
   freeze = 0,
+  surface = 'var(--surface)',
 }: {
   columns: GridColumn[]
   template: string
+  /** Its opaque background: the raised surface by default, the page's own on a grid with no frame. */
+  surface?: string
   /** How many leading columns stay in view while the grid scrolls sideways, as in `GridHeader`. */
   freeze?: number
   /**
@@ -68,13 +71,15 @@ export function GridFooter({
     <div
       // Opaque, not tinted: it sits ON TOP of rows that scroll under it, so any transparency shows
       // them through the totals.
-      className='group/gridfoot sticky bottom-0 z-10 mt-auto grid items-center gap-2 border-t border-border bg-surface px-2 py-1.5 text-body-sm'
-      style={{ gridTemplateColumns: template }}>
+      className='group/gridfoot sticky bottom-0 z-10 mt-auto grid items-center gap-2 border-t border-border px-[var(--grid-pad,0.5rem)] py-1.5 text-body-sm'
+      style={{ gridTemplateColumns: template, background: surface }}>
       {columns.map((c, i) => {
-        const source = i === 0 ? undefined : sources[c.key]
+        // The label sits in the identity column (the flexing one), after any bare icon columns.
+        const isLabel = c.flex === true
+        const source = isLabel || c.bare ? undefined : sources[c.key]
         return (
-          <div key={c.key} className='min-w-0' style={i < freeze ? { ...frozenColumnStyle(columns, i, freeze, 'var(--surface)'), zIndex: 2 } : undefined}>
-            {i === 0 ? (
+          <div key={c.key} className='min-w-0' style={i < freeze ? { ...frozenColumnStyle(columns, i, freeze, surface), zIndex: 2 } : undefined}>
+            {isLabel ? (
               <span className='truncate text-label tabular-nums text-muted-foreground'>{label}</span>
             ) : source ? (
               <AggregateCell

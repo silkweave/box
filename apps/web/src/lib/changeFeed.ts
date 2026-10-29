@@ -1,4 +1,4 @@
-// The live-refresh feed: one `changesFeed` tRPC subscription (SSE) per tab, streaming invalidation
+// The live-refresh feed: one `changesFeed` tRPC subscription per tab, over the tab's live-feed socket, streaming invalidation
 // hints from the server's change bus - `table:<name>` for warehouse writes (web UI, MCP agents,
 // REST, cron ingests), `docs:<section>` / `config:<file>` for tenant file edits (local Claude
 // sessions, editors), `warehouse` for external DuckDB writers. Store modules self-register the
@@ -7,10 +7,10 @@
 // dashboard within moments, without polling.
 //
 // Resync: the server prefixes the stream with a `hello` event carrying its boot id. There is no
-// event replay - any hello after the first (SSE reconnect, server restart) means events may have
+// event replay - any hello after the first (socket reconnect, server restart) means events may have
 // been missed, so every loaded store reloads.
 
-import { trpc } from './trpc.ts'
+import { LIVE_FEED, trpc } from './trpc.ts'
 import { whilePageActive } from './pageLifecycle.ts'
 
 interface ChangeEvent {
@@ -116,8 +116,8 @@ function connect(): void {
         }
         dispatch(ev)
       },
-      // The SSE link reconnects transient drops itself; these fire on fatal errors (auth expiry,
-      // server gone during a deploy) - back off and resubscribe from scratch.
+      // The socket link re-subscribes after a transient drop itself; these fire on fatal errors
+      // (auth expiry, a refused subscription) - back off and resubscribe from scratch.
       onError: () => {
         if (activeSub !== sub) return
         activeSub = undefined
@@ -129,6 +129,7 @@ function connect(): void {
         activeSub = undefined
         reconnect()
       },
+      context: LIVE_FEED,
     },
   )
   activeSub = sub

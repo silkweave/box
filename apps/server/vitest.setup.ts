@@ -5,11 +5,16 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll } from 'vitest'
-import { setInstanceDir } from '@silkweave/box-core/testing'
+import { holdWarehouseOpen, releaseWarehouse, setInstanceDir } from '@silkweave/box-core/testing'
 
 const dir = mkdtempSync(join(tmpdir(), 'box-test-instance-'))
 setInstanceDir(dir)
-afterAll(() => rmSync(dir, { recursive: true, force: true }))
+// One DuckDB instance per database file for the whole test file instead of one per query.
+holdWarehouseOpen(true)
+afterAll(() => {
+  releaseWarehouse()
+  rmSync(dir, { recursive: true, force: true })
+})
 
 // Test git runs against throwaway repositories and must not inherit the host's git setup: a global
 // hook, commit signing, fsmonitor or credential helper on a Box host made the Builder review tests

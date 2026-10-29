@@ -46,6 +46,19 @@ export function isLoopbackPeer(addr: string | null | undefined): boolean {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1'
 }
 
+/**
+ * Whether a browser request comes from this Box's own pages: no cross-site fetch metadata, and an
+ * `Origin` (when present) naming the host it was sent to. The guard for cookie-authenticated
+ * requests that carry no CSRF header, such as WebSocket upgrades, which browsers send cross-site
+ * with the page's cookies. A request without `Origin` is not a browser page and passes.
+ */
+export function sameOrigin(req: { headers: Record<string, string | string[] | undefined> }): boolean {
+  const origin = req.headers.origin
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false
+  if (!origin) return true
+  try { return new URL(String(origin)).host === req.headers.host } catch { return false }
+}
+
 /** The structural shape `clientIp` needs, so core takes no express/node http type dependency. */
 export interface PeerRequest {
   socket?: { remoteAddress?: string | null }

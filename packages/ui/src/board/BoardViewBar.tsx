@@ -145,6 +145,10 @@ export interface BoardBarSpec {
   emptyFilters: object
 }
 
+/** The controls the bar can draw. A host that embeds a list in a page section (a card) turns some
+ *  off - presets and grouping belong to a whole page, not a panel - and every one defaults to on. */
+export type BoardBarControl = 'layout' | 'search' | 'group' | 'sort' | 'filters' | 'columns'
+
 /** How many axes are narrowing the board, search included. Deliberately NOT exported: an app that
  *  wants the same number elsewhere computes it over its own state, which is the shape it has. */
 function activeFilterCount(filters: object, search: string): number {
@@ -159,6 +163,9 @@ export function BoardViewBar({
   onChange,
   spec,
   presets,
+  controls,
+  dense = false,
+  trailing,
 }: {
   value: BoardBarValue
   /** A PARTIAL of the axes that changed - the caller merges it into its own state. */
@@ -166,7 +173,14 @@ export function BoardViewBar({
   spec: BoardBarSpec
   /** The preset control, first in the strip. Presets are persisted by the app, so the app draws them. */
   presets?: ReactNode
+  /** Which controls to draw; a missing key reads as on. */
+  controls?: Partial<Record<BoardBarControl, boolean>>
+  /** The embedded form: no strip border or canvas background, a narrower search. */
+  dense?: boolean
+  /** Pushed to the far end of the strip, e.g. a card's own action. */
+  trailing?: ReactNode
 }) {
+  const show = (c: BoardBarControl): boolean => controls?.[c] !== false
   const filters = value.filters
   const nFilters = activeFilterCount(filters, value.search)
   const layout = spec.layouts.find((l) => l.value === value.layout)
@@ -222,13 +236,13 @@ export function BoardViewBar({
     // the argument that a filter you cannot see is a filter you forget you set. The count on the
     // funnel and the × beside it say the same thing in a fixed amount of space, and the row that
     // appeared and disappeared under the bar moved the whole grid down the moment you filtered.
-    <div className='flex flex-wrap items-center gap-1.5 border-b border-border bg-bg px-3 py-1.5'>
+    <div className={cn('flex flex-wrap items-center gap-1.5', dense ? 'px-0 py-0' : 'border-b border-border bg-bg px-3 py-1.5')}>
       {presets}
 
       {/* Two or three options, so it is a segmented control rather than a select - and it sits with
           the preset controls because the layout IS part of what a preset stores. Icon-only: a list
           and a board are shapes everybody already reads at a glance, and the title names the rest. */}
-      {spec.layouts.length > 1 && (
+      {show('layout') && spec.layouts.length > 1 && (
         <div
           role='radiogroup'
           aria-label='Layout'
@@ -255,6 +269,7 @@ export function BoardViewBar({
         </div>
       )}
 
+      {show('search') && (
       <div className='relative'>
         <Search className='pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground' />
         <input
@@ -262,13 +277,17 @@ export function BoardViewBar({
           onChange={(e) => onChange({ search: e.target.value })}
           placeholder={spec.searchPlaceholder}
           aria-label={`Search ${spec.noun}`}
-          className='h-7 w-56 rounded-md border border-border bg-bg pr-2 pl-7 text-body-sm text-text transition-colors outline-none placeholder:text-fg-4 hover:border-accent/40 focus:border-accent'
+          className={cn(
+            'h-7 rounded-md border border-border bg-bg pr-2 pl-7 text-body-sm text-text transition-colors outline-none placeholder:text-fg-4 hover:border-accent/40 focus:border-accent',
+            dense ? 'w-44' : 'w-56',
+          )}
         />
       </div>
+      )}
 
       {/* Grouping is a list concept (and any layout that declares it): the board already groups,
           in columns. */}
-      {showGroups && spec.groupBy.length > 0 && (
+      {show('group') && showGroups && spec.groupBy.length > 0 && (
         <Select
           value={value.groupBy}
           onValueChange={(next) => next != null && onChange({ groupBy: next })}
@@ -295,7 +314,7 @@ export function BoardViewBar({
       {/* Field and direction are ONE control: they answer one question ("in what order?") and
           splitting them across the bar made the arrow read as a stray toggle. A board with no sort
           axes at all draws neither half - see `BoardBarSpec.sort`. */}
-      {spec.sort.length > 0 && (
+      {show('sort') && spec.sort.length > 0 && (
         <div className='inline-flex items-center'>
           <Select value={value.sort ?? ''} onValueChange={setSort} items={spec.sort}>
             <SelectTrigger
@@ -332,6 +351,7 @@ export function BoardViewBar({
           opens the axes, the × next to it empties them. They are joined because clearing is not a
           separate concern from filtering - it is the thing you want the instant you can see the
           board is filtered, and it used to live at the end of a second row of chips. */}
+      {show('filters') && spec.sections.length > 0 && (
       <div className='inline-flex items-center'>
         <Popover>
           {/* Icon-only, but the COUNT stays: a funnel says "filters live here", and the number is
@@ -392,9 +412,10 @@ export function BoardViewBar({
           </button>
         )}
       </div>
+      )}
 
       {/* Columns shape the list (and any layout that declares them); a board card has a fixed anatomy. */}
-      {showColumns && spec.columns.length > 0 && (
+      {show('columns') && showColumns && spec.columns.length > 0 && (
         <Popover>
           <PopoverTrigger
             aria-label='Columns'
@@ -437,6 +458,7 @@ export function BoardViewBar({
           {spec.notice}
         </span>
       )}
+      {trailing && <div className='ml-auto flex items-center gap-1.5'>{trailing}</div>}
     </div>
   )
 }

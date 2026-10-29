@@ -6,12 +6,12 @@ import { onChange, type ChangeEvent } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 
 // Identifies this server process. The first event of every subscription is a `hello` carrying it;
-// a client that sees a second hello (SSE auto-reconnect, server restart) knows events may have been
+// a client that sees a second hello (a reconnect, server restart) knows events may have been
 // missed and reloads all its loaded stores instead of replaying.
 const BOOT_ID = randomUUID()
 
-/** Keepalive cadence: an event with scope `ping` when the bus is quiet, so idle SSE connections
- *  aren't reaped by intermediaries and dead ones surface to the client's EventSource. */
+/** Keepalive cadence: an event with scope `ping` when the bus is quiet, so idle connections
+ *  aren't reaped by intermediaries and dead ones surface to the client. */
 const PING_MS = 45_000
 
 class ChangeEventDto {
@@ -27,7 +27,7 @@ class ChangeEventDto {
 
 /**
  * changes controller: the dashboard's live-refresh feed. One long-lived tRPC subscription
- * (`changesFeed`, over the SSE link) streams invalidation hints from the core change bus - fed by
+ * (`changesFeed`: the web app's live-feed WebSocket, mobile's SSE) streams invalidation hints from the core change bus - fed by
  * the warehouse write layer for in-process mutations and by ChangesWatcher for out-of-process file
  * edits. Events carry NO data, only scopes; clients map scopes onto their data stores and reload.
  */

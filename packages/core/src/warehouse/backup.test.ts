@@ -8,12 +8,15 @@ import { basename, join } from 'node:path'
 import { DuckDBInstance } from '@duckdb/node-api'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { warehousePath } from '../io.js'
-import { resetInstanceDir, setInstanceDir } from '../testing.js'
+import { holdWarehouseOpen, resetInstanceDir, setInstanceDir } from '../testing.js'
 import { withRead, withWrite } from './db.js'
 import { backupWarehouse, listRestorePoints, uploadDirToGcs, parseBackupName, planRetention, pruneBackups, restoreWarehouse } from './backup.js'
 import { backupName, type BackupLabel, type RestorePoint } from './restore-points.js'
 import { snapshotBeforeMigration } from './migration-snapshot.js'
 import type { MigrationConn } from './schema.js'
+
+// Restores replace the database file under the process, so this file keeps the real per-call open.
+holdWarehouseOpen(false)
 
 const NOW = new Date('2026-09-17T12:00:00.000Z')
 const at = (iso: string): Date => new Date(iso)

@@ -18,6 +18,7 @@ import type { SignalRow } from './write.js'
 import { deleteRecord, readRecord, readRecords, upsertRecord } from '../warehouse/model.js'
 import { SIGNAL_DEFINITIONS } from './models.js'
 import { findProvider, findMeasure } from './sources/registry.js'
+import { requireMeasure, validateMeasureParams } from './measures.js'
 import { readDataSource } from './sources/state.js'
 import { assertKnownActor, assertKnownUser } from '../users/state.js'
 import { readSignalOwnersFile, resolveSignalOwner, writeSignalOwnersFile } from './owners.js'
@@ -42,7 +43,22 @@ const SIGNAL_ID = /^[a-z0-9][a-z0-9._@/-]*$/
 // JSON columns can read back null on rows written outside the record layer; hand callers an array.
 const list = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : [])
 const numbers = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number' && Number.isFinite(x)) : [])
-const norm = (d: SignalDefinition): SignalDefinition => ({ ...d, depends_on: list(d.depends_on), formula: d.formula ?? null, thresholds: numbers(d.thresholds) })
+const params = (v: unknown): Record<string, string> =>
+  v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => typeof x === 'string')) as Record<string, string>
+    : {}
+const norm = (d: SignalDefinition): SignalDefinition => ({
+  ...d,
+  depends_on: list(d.depends_on),
+  measure_params: params(d.measure_params),
+  formula: d.formula ?? null,
+  thresholds: numbers(d.thresholds),
+  archived_at: d.archived_at ?? null,
+})
+
+/** Bound to an in-Box measure: a measure key and no data source. */
+export const isInBoxMeasureSignal = (d: Pick<SignalDefinition, 'measure_key' | 'data_source_id'>): boolean =>
+  Boolean(d.measure_key) && !d.data_source_id
 
 /** Thresholds as stored: finite, ascending, unique. Anything else is refused, not dropped. */
 function normalizeThresholds(id: string, raw: unknown[]): number[] {
@@ -51,9 +67,31 @@ function normalizeThresholds(id: string, raw: unknown[]): number[] {
   return [...new Set(raw as number[])].sort((a, b) => a - b)
 }
 
-/** Every signal definition, sorted by `sort` then id. */
-export async function readSignalDefinitions(): Promise<SignalDefinition[]> {
-  return (await readRecords<SignalDefinition>(SIGNAL_DEFINITIONS, { orderBy: 'sort, id' })).map(norm)
+/**
+ * Signal definitions, sorted by `sort` then id. Archived ones are included unless
+ * `includeArchived: false`: internal reads (derives, formulas, goals, milestones) must see every
+ * signal; the list endpoints behind the pickers and the Signals page pass `false` by default.
+ */
+export async function readSignalDefinitions(opts: { includeArchived?: boolean } = {}): Promise<SignalDefinition[]> {
+  const all = (await readRecords<SignalDefinition>(SIGNAL_DEFINITIONS, { orderBy: 'sort, id' })).map(norm)
+  return opts.includeArchived === false ? all.filter((d) => !d.archived_at) : all
+}
+
+/**
+ * Archive (or with `archived: false`, unarchive) a signal. Archiving only hides it from the lists
+ * and pickers; its definition, points and every reference to it stay. Idempotent: archiving an
+ * archived signal keeps the first stamp.
+ */
+export async function setSignalArchived(id: string, archived: boolean, actor?: string): Promise<SignalDefinition> {
+  const prev = await readSignalDefinition(id)
+  if (!prev) throw new Error(`signal ${id} not found`)
+  if (Boolean(prev.archived_at) === archived) return prev
+  const saved = await upsertRecord<SignalDefinition>(
+    SIGNAL_DEFINITIONS,
+    { ...prev, archived_at: archived ? new Date().toISOString() : null, ...(actor ? { actor } : {}) },
+    { prev },
+  )
+  return norm(saved)
 }
 
 /** One definition, or null. */
@@ -95,8 +133,7 @@ async function writeDependsOn(id: string, deps: string[], actor?: string): Promi
 
 /**
  * Clean a proposed `depends_on` list: trimmed, de-duplicated, self-reference dropped, every target
- * must exist, and the graph must stay acyclic - the same discipline as `initiatives.blocked_by`
- * (planning/state.ts normalizeBlockedBy). "MRR drives churn drives MRR" is never a true causal
+ * must exist, and the graph must stay acyclic. "MRR drives churn drives MRR" is never a true causal
  * claim, it is a data-entry mistake, and the circuit-board walk (phase B3) will follow these edges.
  */
 async function normalizeDependsOn(id: string, raw: string[]): Promise<string[]> {
@@ -121,33 +158,47 @@ async function normalizeDependsOn(id: string, raw: string[]): Promise<string[]> 
 
 // --- writes --------------------------------------------------------------------------------------
 
+interface Binding {
+  data_source_id: string | null
+  measure_key: string | null
+  measure_params: Record<string, string>
+}
+
 /**
- * Validate a proposed provider binding, the `depends_on` discipline applied to Track C's two new
- * columns. The rules, and why each one exists:
+ * Validate a proposed binding. Three shapes, and why each rule exists:
  *
- *   • BOTH OR NEITHER - a `data_source_id` with no `measure_key` (or the reverse) is a half-bound
- *     signal: the sync would find a subscriber it cannot resolve to a feed.
- *   • Unknown source id, and unknown measure key, are refused with the valid list - the same
- *     fail-with-the-reason posture as an unknown `depends_on` id.
- *   • A `source: 'derived'` signal may never carry a binding: a deriver already owns its rows, and
- *     two live writers on one signal is the exact collision this track had to design around.
+ *   • `data_source_id` + `measure_key` - a PROVIDER measure. The source and the provider's measure
+ *     must exist (refused with the valid list), and a `source: 'derived'` signal may never carry
+ *     one: a deriver already owns its rows. Its `measure_params` are always `{}`.
+ *   • `measure_key` alone - an IN-BOX measure from the measures registry (signals/measures.ts).
+ *     Unknown keys are refused with the registered list, `measure_params` are validated against
+ *     the measure's declared params, and the signal becomes `source: 'derived'` (the caller sets
+ *     it): the measure computes its live points.
+ *   • neither - unbound. A `data_source_id` without a measure is refused: the sync would find a
+ *     subscriber it cannot resolve to a feed.
  *
- * Two signals binding the same (source, measure) is deliberately ALLOWED - points are keyed per
- * signal id, so there is no integrity harm, and the one legitimate use (a renamed successor
- * coexisting during a transition) should not be blocked.
+ * Two signals binding the same measure is deliberately ALLOWED - points are keyed per signal id.
  */
 async function normalizeBinding(
   id: string,
   effectiveSource: SignalSource,
-  next: { data_source_id: string | null; measure_key: string | null },
-): Promise<{ data_source_id: string | null; measure_key: string | null }> {
+  next: { data_source_id: string | null; measure_key: string | null; measure_params: Record<string, unknown> },
+): Promise<Binding> {
   const sourceId = next.data_source_id?.trim() || null
   const measureKey = next.measure_key?.trim() || null
-  if (!sourceId && !measureKey) return { data_source_id: null, measure_key: null }
-  if (!sourceId || !measureKey) {
+  if (!sourceId && !measureKey) return { data_source_id: null, measure_key: null, measure_params: {} }
+  if (!measureKey) {
     throw new Error(
-      `signal ${id}: data_source_id and measure_key are both-or-neither - a half-bound signal has a subscriber the sync cannot resolve`,
+      `signal ${id}: a data_source_id needs a measure_key - a half-bound signal has a subscriber the sync cannot resolve`,
     )
+  }
+  if (!sourceId) {
+    const measure = requireMeasure(measureKey)
+    return {
+      data_source_id: null,
+      measure_key: measureKey,
+      measure_params: await validateMeasureParams(measure, next.measure_params ?? {}, assertKnownUser),
+    }
   }
   if (effectiveSource === 'derived') {
     throw new Error(
@@ -165,7 +216,7 @@ async function normalizeBinding(
       `signal ${id}: provider ${provider.id} offers no measure "${measureKey}" - valid: ${provider.measures.map((s) => s.key).join(', ')}`,
     )
   }
-  return { data_source_id: sourceId, measure_key: measureKey }
+  return { data_source_id: sourceId, measure_key: measureKey, measure_params: {} }
 }
 
 /** Every formula signal's (id, formula), for the rename rewrite and the delete refusal. */
@@ -222,10 +273,17 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
   }
   const prev = await readSignalDefinition(input.id)
   if (input.owner != null) await assertKnownUser(input.owner)
-  const source = input.source ?? prev?.source ?? 'manual'
+  const sourceId = input.data_source_id !== undefined ? input.data_source_id : (prev?.data_source_id ?? null)
+  const measureKey = input.measure_key !== undefined ? input.measure_key : (prev?.measure_key ?? null)
+  const inBox = Boolean(measureKey?.trim()) && !sourceId?.trim()
+  const wasInBox = prev ? isInBoxMeasureSignal(prev) : false
+  // An in-Box measure signal is derived (the measure owns its live points); leaving that binding
+  // makes it an ordinary manual signal again unless the caller says otherwise.
+  const source: SignalSource = inBox ? 'derived' : (input.source ?? (wasInBox ? 'manual' : (prev?.source ?? 'manual')))
   const binding = await normalizeBinding(input.id, source, {
-    data_source_id: input.data_source_id !== undefined ? input.data_source_id : (prev?.data_source_id ?? null),
-    measure_key: input.measure_key !== undefined ? input.measure_key : (prev?.measure_key ?? null),
+    data_source_id: sourceId,
+    measure_key: measureKey,
+    measure_params: input.measure_params ?? (inBox && prev && prev.measure_key === measureKey?.trim() ? prev.measure_params : {}),
   })
   // A formula's depends_on is DERIVED from its refs (any depends_on passed alongside is replaced);
   // clearing the formula keeps the edges as they are unless depends_on is passed too.
@@ -238,7 +296,7 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
     : input.depends_on !== undefined
       ? await normalizeDependsOn(input.id, input.depends_on)
       : list(prev?.depends_on)
-  return norm(
+  const saved = norm(
     await upsertRecord<SignalDefinition>(
       SIGNAL_DEFINITIONS,
       {
@@ -263,13 +321,38 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
       { prev },
     ),
   )
+  const measureDerive = await import('./measure-derive.js')
+  if (inBox) {
+    // A bind, a re-bind or a parameter change: compute the points now rather than at the next
+    // warehouse-derive. A failing compute leaves the definition saved and says so in the log.
+    const changed =
+      !wasInBox ||
+      prev?.measure_key !== saved.measure_key ||
+      JSON.stringify(prev?.measure_params ?? {}) !== JSON.stringify(saved.measure_params) ||
+      prev?.interval !== saved.interval ||
+      prev?.accumulation !== saved.accumulation
+    if (changed) {
+      try {
+        await measureDerive.deriveMeasureSignal(saved.id)
+      } catch (err) {
+        console.warn(`[measures] ${saved.id}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+  } else if (wasInBox) {
+    // Unbinding an in-Box measure takes its computed points with it: they were never observations,
+    // and left behind they would shadow every manual point entered from here on.
+    await withWrite(async (conn) => {
+      await conn.run(`DELETE FROM signal_points WHERE signal_id = ? AND source = 'live'`, [saved.id])
+    })
+    emitChange('table:signal_points')
+  }
+  return saved
 }
 
 /**
- * Rename a signal definition's id, cascading to everything that names the id - the same discipline
- * as renameInitiative: other definitions' `depends_on` edges, formula references, board nodes, the
- * signal-owner override, whatever registered signal hooks re-point (goals, trigger filters), and
- * the signal's points.
+ * Rename a signal definition's id, cascading to everything that names the id: other definitions'
+ * `depends_on` edges, formula references, board nodes, the signal-owner override, whatever
+ * registered signal hooks re-point (goals, trigger filters), and the signal's points.
  *
  * Renaming a `source: 'derived'` signal is REFUSED: its id is generated by deriver code, so the
  * next pull would re-register the old id and strand the rename. Curate the label instead.
@@ -283,7 +366,8 @@ export async function renameSignalDefinition(oldId: string, newId: string, actor
   if (!SIGNAL_ID.test(newId)) {
     throw new Error(`invalid signal id "${newId}" (lowercase; a-z 0-9 . _ @ / - ; must start alphanumeric)`)
   }
-  if (def.source === 'derived') {
+  // An in-Box measure signal is derived, but its id was chosen by a person, not generated.
+  if (def.source === 'derived' && !isInBoxMeasureSignal(def)) {
     throw new Error(
       `cannot rename derived signal ${oldId}: its id is generated by deriver code and the next pull would re-register the old id. Edit the label instead (curation wins over the deriver's strings).`,
     )
@@ -358,11 +442,17 @@ export interface SignalDeleteReport {
 /**
  * Delete a signal definition. Prunes the id from every other definition's `depends_on`; initiative
  * bindings are reported, not touched (a visible dead binding beats a silently narrowed initiative).
- * Points are NEVER deleted here: for a derived signal the deriver owns them (and the next
+ * Points are kept by default: for a derived signal the deriver owns them (and the next
  * derive would re-register the definition while the signal lives - deletion is for retired
- * signal); for a manual one, removing curation should not destroy observations.
+ * signal); for a manual one, removing curation should not destroy observations. `withPoints` is
+ * for a signal another object owns outright (a planning goal's own signal), whose history has no
+ * meaning without its owner.
  */
-export async function deleteSignalDefinition(id: string, actor?: string): Promise<SignalDeleteReport> {
+export async function deleteSignalDefinition(
+  id: string,
+  actor?: string,
+  opts: { withPoints?: boolean } = {},
+): Promise<SignalDeleteReport> {
   await ensureSchema()
   if (actor) await assertKnownActor(actor)
   const def = await readSignalDefinition(id)
@@ -389,6 +479,13 @@ export async function deleteSignalDefinition(id: string, actor?: string): Promis
   const warnings: string[] = []
   if (bound.length > 0) {
     warnings.push(`${bound.join(', ')} still reference ${id} - re-point or clear them`)
+  }
+  // A signal another object owns outright (a goal's own signal) goes with its history.
+  if (opts.withPoints) {
+    await withWrite(async (conn) => {
+      await conn.run(`DELETE FROM signal_points WHERE signal_id = ?`, [id])
+    })
+    emitChange('table:signal_points')
   }
   const pts = await withRead<{ n: number }>(`SELECT count(*) AS n FROM signal_points WHERE signal_id = ?`, [id])
   const np = Number(pts[0]?.n ?? 0)

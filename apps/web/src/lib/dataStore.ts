@@ -42,9 +42,10 @@ export function createDataStore<T>(fetcher: () => Promise<T>): DataStore<T> {
   }
 
   // A fresh top-level reference per emit so React re-renders (arrays stay arrays - `{...}` on an
-  // array would mangle it into a plain object).
+  // array would mangle it into a plain object). Primitives pass through: spreading a string would
+  // turn it into an object of its characters.
   const clone = (v: T | null): T | null =>
-    v === null ? null : Array.isArray(v) ? ([...v] as T) : ({ ...(v as object) } as T)
+    v === null || typeof v !== 'object' ? v : Array.isArray(v) ? ([...v] as T) : ({ ...(v as object) } as T)
 
   function useData(enabled = true): { data: T | null; error: string | null } {
     const [data, setData] = useState<T | null>(cache)

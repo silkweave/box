@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { authenticatePrincipal, boxBrand, repoRoot } from '@silkweave/box-core'
 import { SilkweaveModule } from '@silkweave/nestjs'
 import { mcp } from '@silkweave/nestjs/mcp'
-import { trpc } from '@silkweave/nestjs/trpc'
 import { typegen } from '@silkweave/nestjs/typegen'
 import { OpsModule } from './ops/ops.module.js'
 import { UsersModule } from './users/users.module.js'
@@ -14,6 +13,10 @@ import { ChangesModule } from './changes/changes.module.js'
 import { SignalsModule } from './signals/signals.module.js'
 import { RecipesModule } from './recipes/recipes.module.js'
 import { filterMcpActions } from './agent/mcp-passthrough.js'
+import { trpcWithSocket } from './trpc/trpc-socket.js'
+
+/** The tRPC transports: HTTP under /trpc, plus the live-feed WebSocket that main.ts upgrades on the same path. */
+export const trpcTransport = trpcWithSocket({ basePath: '/trpc' })
 
 @Module({
   imports: [
@@ -33,8 +36,8 @@ import { filterMcpActions } from './agent/mcp-passthrough.js'
       // orders after the config is established; an absent box.json reads as the defaults.
       silkweave: { name: 'silkweave-box', description: `${boxBrand().name} backend`, version: '0.1.0' },
       adapters: [
-        // @Trpc()-decorated controller methods → tRPC procedures under /trpc …
-        trpc({ basePath: '/trpc' }),
+        // @Trpc()-decorated controller methods → tRPC procedures under /trpc (HTTP, and a WebSocket for live subscriptions) …
+        trpcTransport.adapter,
         // … @Mcp()-decorated methods → MCP tools (Streamable HTTP) under /mcp, so the same
         // action is callable by agents and the `cli` proxy (bun run cli). The TRANSPORT itself demands
         // a valid bearer, because the per-tool @UseGuards on the @Mcp methods cannot gate

@@ -13,26 +13,46 @@ import { cn } from '../lib/utils.ts'
  * a document rather than a surface keeps its padding.
  */
 const PAGE_WIDTH = {
-  reading: 'max-w-3xl px-4 py-8 md:px-8',
-  wide: 'max-w-6xl px-4 py-8 md:px-8',
-  full: 'max-w-none px-4 py-8 md:px-8',
+  reading: 'max-w-3xl',
+  wide: 'max-w-6xl',
+  full: 'max-w-none',
   flush: 'max-w-none',
 } as const
 
 export type PageWidth = keyof typeof PAGE_WIDTH
 
+/**
+ * The padding inside the width. `page` is a section canvas's. `detail` is a record's page beside its
+ * side panel (an initiative, an account, a ticket): 16px 20px, the Box's standard record padding,
+ * shared by the side panels and the doc editor that fills one, so the two panes of a split read as
+ * one surface rather than a page with a wide margin next to a panel.
+ */
+/** The `detail` padding's horizontal side in px, for a section that reaches past it to the pane's
+ *  edges (a data grid's `bleed`). */
+export const DETAIL_PAD_X = 20
+
+const PAGE_PAD = {
+  page: 'px-4 py-8 md:px-8',
+  detail: 'px-5 py-4',
+} as const
+
+export type PagePad = keyof typeof PAGE_PAD
+
 export function PageContainer({
   width = 'wide',
+  pad = 'page',
   className,
   children,
 }: {
   width?: PageWidth
+  /** Ignored on `flush`, which has none. */
+  pad?: PagePad
   /** Extra layout classes (e.g. `flex h-full flex-col` for console-style sections). */
   className?: string
   children: React.ReactNode
 }) {
   return (
-    <div className={cn('mx-auto w-full', PAGE_WIDTH[width], className)}>
+    <div className={cn('mx-auto w-full', PAGE_WIDTH[width], width !== 'flush' && PAGE_PAD[pad], className)}>
       {children}
     </div>
   )

@@ -86,19 +86,20 @@ export default defineConfig(({ mode }) => ({
       deny: ['.env', '.env.*', '*.{crt,pem,key}', '**/.git/**', '**/.stack/**', '**/.recipes/**', 'box.json', 'box.local.json'],
     },
     // Reciprocal proxy so hitting the bare Vite port still reaches the backend. Normal flow is
-    // Nest -> Vite. tRPC subscriptions are SSE and /mcp is Streamable HTTP - http-proxy streams
-    // both (no compression on these paths, so nothing buffers). Keep the keys in step with
-    // RESERVED in apps/server/src/main.ts.
+    // Nest -> Vite. Live tRPC feeds and the box-status stream are WebSockets; action subscriptions
+    // are SSE and /mcp is Streamable HTTP - http-proxy streams both (no compression on these paths,
+    // so nothing buffers). Keep the keys in step with RESERVED in apps/server/src/main.ts.
     proxy: {
       // The agent mount (REST and session sockets). A dashboardUrl on this port (Agent accounts
       // Connect, agent sessions) 404s without it.
       '/agent': { target: serverUrl, changeOrigin: true, ws: true },
-      '/trpc': { target: serverUrl, changeOrigin: true },
+      // Host is kept: the live-feed socket upgrade must name the host its Origin names.
+      '/trpc': { target: serverUrl, ws: true },
       '/mcp': { target: serverUrl, changeOrigin: true },
       // The supervisor's own assets (the maintenance page's logo, the Builder shell).
       '/builder-assets': { target: serverUrl, changeOrigin: true },
       // Incidental REST routes the SPA calls directly (e.g. a feature's /api/<feature>/asset images).
-      '/api': { target: serverUrl, changeOrigin: true },
+      '/api': { target: serverUrl, changeOrigin: true, ws: true },
     },
   },
   build: {

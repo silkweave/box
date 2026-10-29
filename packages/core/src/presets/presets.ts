@@ -1,5 +1,5 @@
 // Presets - the named lenses on the boards that have one (each feature names its own, `presetModules`). "Pipeline",
-// "Critical path", "Needs review", whatever the team invents. They live in config/presets.json:
+// "Quick wins", "Needs review", whatever the team invents. They live in config/presets.json:
 // this is Box CONFIGURATION, it wants a diff and a git history rather than audit stamps in the
 // warehouse, and it travels with the Box's config directory, which is version-controlled (data.db
 // is not).

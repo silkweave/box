@@ -1,7 +1,6 @@
 // The signal hooks port - how features take part in core's signal operations without core
-// importing them. Planning contributes task-ledger rows to the github channel and
-// re-points its initiative bindings when a signal is renamed; automation re-points trigger filters; content
-// contributes its outcome derive. Each registers once from its server module's onModuleInit
+// importing them. Planning re-points its goals when a signal is renamed; automation re-points
+// trigger filters; CRM and content contribute their derives. Each registers once from its server module's onModuleInit
 // ("the dependent registers into the dependency"; docs/core/SEAM.md § 4.2). A CLI or test that never
 // boots those modules simply sees core's signals alone, which is the point.
 

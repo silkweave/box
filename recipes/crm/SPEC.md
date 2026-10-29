@@ -74,6 +74,12 @@ rows. The table and column names are fixed, so a Box that already carries this h
 team week (Monday start, box.json `timeZone`), the `mrr_usd` of each deal in the week of its first
 entry into `confirmed`, or into `won` (dated by `closed_at`) when it never passed `confirmed`. Every
 week from the first signed one to the current one gets a point, zeros included.
+**Deals entering a stage is an in-Box measure** (`core/measures.ts`, registered with
+`registerMeasure` in `crm.module.ts`; docs/SIGNALS.md, "In-Box measures"). `crm.deals_entered
+{ stage, owner? }` counts, per team day, the stage-history rows whose `to_stage` is the stage
+(creation rows included, so a deal created in the stage counts), optionally only one owner's. A
+signal or a planning goal binds it with `measure_key` and `measure_params`; deal writes and deletes
+refresh the bound signals, and `warehouse-derive` recomputes them.
 
 A new table needs no migration: `ensureSchema()` creates it from its `ModelSpec` on the next boot.
 

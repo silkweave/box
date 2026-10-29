@@ -17,7 +17,7 @@ import type { DuckDBValue } from '@duckdb/node-api'
 import { emitChange } from '../changes.js'
 import { ensureSchema, withRead, withWrite } from './db.js'
 
-export type ColumnKind = 'text' | 'int' | 'bigint' | 'float' | 'json' | 'timestamp' | 'date'
+export type ColumnKind = 'text' | 'int' | 'bigint' | 'float' | 'bool' | 'json' | 'timestamp' | 'date'
 
 export interface ColumnSpec {
   kind: ColumnKind
@@ -71,6 +71,7 @@ const SQL_TYPE: Record<ColumnKind, string> = {
   // silently moves BACKWARDS re-arms an already-consumed credential.
   bigint: 'BIGINT',
   float: 'DOUBLE',
+  bool: 'BOOLEAN',
   json: 'JSON',
   timestamp: 'TIMESTAMP',
   date: 'DATE',
@@ -134,6 +135,7 @@ export function rowToRecord<T>(m: ModelSpec, row: Record<string, unknown>): T {
     if (c.kind === 'json') out[name] = parseJson(v as string, null)
     else if (c.kind === 'timestamp') out[name] = fromNaiveUtc(String(v))
     else if (c.kind === 'int' || c.kind === 'float') out[name] = Number(v)
+    else if (c.kind === 'bool') out[name] = v === true || v === 'true'
     else out[name] = v
   }
   return out as T
@@ -180,6 +182,8 @@ export function sameRecord(m: ModelSpec, prev: object, next: object): boolean {
       if (toNaiveUtc(String(a)) !== toNaiveUtc(String(b))) return false
     } else if (c.kind === 'int' || c.kind === 'float') {
       if (Number(a) !== Number(b)) return false
+    } else if (c.kind === 'bool') {
+      if ((a === true || a === 'true') !== (b === true || b === 'true')) return false
     } else if (String(a) !== String(b)) return false
   }
   return true
@@ -236,6 +240,7 @@ const toDbValue = (c: ColumnSpec, v: unknown): DuckDBValue => {
   if (v == null) return null
   if (c.kind === 'json') return JSON.stringify(v)
   if (c.kind === 'timestamp') return toNaiveUtc(String(v))
+  if (c.kind === 'bool') return v === true || v === 'true'
   return v as DuckDBValue
 }
 

@@ -168,6 +168,11 @@ export async function applySchema(
       await conn.run('ROLLBACK').catch(() => undefined)
       throw new Error(`migration ${key} failed: ${String((err as Error)?.message ?? err)}`, { cause: err })
     }
+    // Fold the migration into the main file at once. DuckDB cannot replay an ALTER of a table whose
+    // columns default to a function (`now()`, which every timestamped model has): reopening a file
+    // whose WAL holds one fails with "Failure while replaying WAL". Checkpointing after each
+    // migration keeps an ALTER out of the WAL a later open has to replay.
+    await conn.run('CHECKPOINT')
   }
 }
 

@@ -7,11 +7,14 @@ import { runTasks, type RunState, type Task, type TaskState } from './tasks.ts'
 import { taskReceipt, taskRows, warningExcerpt } from './task-view.ts'
 import { cleanText, elapsedText, screenFrame } from './ui.ts'
 
-// The ordered verification contract, including skill linking. Every check needs the build; the
-// typecheck also needs freshly generated types. Otherwise checks are independent, so one failure
-// (a timing-sensitive test on a loaded host, say) still lets the rest run and report.
-const TURBO_SCRIPTS = new Set(['build', 'typecheck', 'test:core', 'test:server'])
-const TEST_SCRIPTS = new Set(['test:core', 'test:server'])
+// The verification contract, including skill linking. Every check except mobile needs the build;
+// the typecheck also needs freshly generated types. Otherwise checks are independent: they run
+// concurrently, and one failure (a timing-sensitive test on a loaded host, say) still lets the
+// rest run and report. Core and server tests share one Turbo invocation, because two concurrent
+// invocations would both schedule the dependency builds under each other.
+// --force reruns these instead of replaying cached results (Turbo's cache, the mobile check's own).
+const FORCE_SCRIPTS = new Set(['build', 'typecheck', 'test:packages', 'test:mobile'])
+const TEST_SCRIPTS = new Set(['test:packages'])
 
 // Timings and test totals of the last passing run, so progress has an honest denominator.
 type History = Record<string, { elapsed: number; total?: number }>
@@ -60,16 +63,15 @@ export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun
     ['typecheck', 'Typecheck', 'Check', ['typecheck'], ['build', 'typegen']],
     ['lint', 'Lint', 'Check', ['lint'], ['build']],
     // Turbo-cached: a package's tests rerun only when its inputs or a dependency's build changed.
-    ['core-tests', 'Core tests', 'Validate', ['test:core'], ['build']],
-    ['server-tests', 'Server tests', 'Validate', ['test:server'], ['build']],
+    ['package-tests', 'Core and server tests', 'Validate', ['test:packages'], ['build']],
     ['schema', 'Schema matrix', 'Validate', ['schema:check'], ['build']],
     // Flutter analyze and test for the mobile framework, modules and app. Passes with a skip when
-    // the Flutter SDK is not installed.
+    // the Flutter SDK is not installed. It needs nothing from the build, so it starts at once, and
+    // skips a package whose inputs match its last passing check.
     ['mobile', 'Mobile app', 'Validate', ['test:mobile'], []],
   ]
   return definitions.map(([id, name, phase, script, needs]) => {
-    // --force re-executes Turbo tasks instead of replaying cached results.
-    const forced = force && TURBO_SCRIPTS.has(script[0]!) ? [...script, '--force'] : script
+    const forced = force && FORCE_SCRIPTS.has(script[0]!) ? [...script, '--force'] : script
     // Vitest hides per-file results when it detects an agent; the default reporter keeps the
     // finished-file lines that drive test progress. `bun run` drops a leading `--`, and Turbo
     // hands everything after the next `--` to the package test task.
@@ -92,7 +94,7 @@ export async function main(argv: string[]): Promise<number> {
     } }))
   } catch (error) { process.stderr.write(`${(error as Error).message}\nUse box verify --help for usage.\n`); return 2 }
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core tests, server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck and tests instead of replaying cached results\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core and server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck, tests and the mobile check instead of replaying cached results\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   if (values.list) {

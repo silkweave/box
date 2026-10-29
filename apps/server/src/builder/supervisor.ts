@@ -8,12 +8,12 @@ import { createServer as createNetServer } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
-import { agentIdentity, boxJson, clientIp, dataPath, rateLimit, repoRoot, requestIsSecure, sessionCookie, setSecurityHeaders } from '@silkweave/box-core'
+import { agentIdentity, boxJson, clientIp, dataPath, rateLimit, repoRoot, requestIsSecure, sameOrigin, sessionCookie, setSecurityHeaders } from '@silkweave/box-core'
 import { BuilderSupervisorAuth, type BuilderSupervisorPrincipal } from './builder-auth.js'
 import { createBuilderBrowser } from './builder-browser.js'
 import { startBuilderBrowserLocal } from './builder-browser-local.js'
 import { createBuilderHost } from './builder-host.js'
-import { createBuilderGateway, json, readJson, sameOrigin } from './builder-gateway.js'
+import { createBuilderGateway, json, readJson } from './builder-gateway.js'
 import { backupBuilder, BuilderLifecycleError, readBuilderControl, readBuilderPendingChanges, recordBuilderSession, restoreBuilder, startBuilder, stopBuilder } from './builder-lifecycle.js'
 import { applyMaintenancePatch, MAINTENANCE_PAGE_PATH, MaintenanceError, type MaintenanceSource, maintenancePath, maintenanceReturnPath, publicNotice, readMaintenance, writeMaintenance } from './maintenance.js'
 import { maintenancePage } from './maintenance-page.js'
@@ -389,7 +389,6 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     }
     setSecurityHeaders(res, { csp: !app.dev && !devRoute, hsts: requestIsSecure(req) })
     if (/^\/(api|builder-agent)(\/|$)/.test(url.pathname) && !rateLimit(`supervisor:${clientIp(req)}`, 1200, 60_000)) { json(res, 429, { message: 'Too many requests' }); return }
-    if (url.pathname === '/api/box-status/events' && req.method === 'GET') { statusStream.open(res); return }
     if (url.pathname === '/api/box-status' && req.method === 'GET') { const maintenance = readMaintenance(paths.instanceDir); json(res, 200, { maintenance: maintenance.enabled, notice: publicNotice(maintenance) }); return }
     const maintenance = readMaintenance(paths.instanceDir)
     // The page for app tabs that maintenance blocks (signed out, members, admins when locked out).
@@ -450,6 +449,8 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   server.on('connection', socket => { publicSockets.add(socket); socket.once('close', () => publicSockets.delete(socket)) })
   server.on('upgrade', (req, socket, head) => { traceSocket('supervisor', req, socket); void (async () => {
     const path = new URL(req.url ?? '/', 'http://local').pathname
+    // The status socket stays open to everyone, like the maintenance page it drives.
+    if (path === '/api/box-status/events') { statusStream.upgrade(req, socket, head); return }
     const maintenance = readMaintenance(paths.instanceDir)
     if (maintenance.enabled && maintenance.lockAdmins) { socket.destroy(); return }
     if (path === '/builder-browser') { await browser.upgrade(req, socket, head); return }

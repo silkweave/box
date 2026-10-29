@@ -2,7 +2,19 @@
   "$schema": "https://turborepo.com/schema.json",
   // AGENTS.md is maintained source; keep turbo from appending its agent block to it.
   "agentGuidance": false,
-  "globalDependencies": ["features/**", "recipes/**", "tsconfig.json", "box.json", "box.local.json"],
+  // Negations drop gitignored output the mobile check rewrites (Dart tool state, build output, module
+  // lockfiles) and local secrets: global globs ignore .gitignore, so these would miss every cache.
+  "globalDependencies": [
+    "features/**",
+    "!features/**/.dart_tool/**",
+    "!features/*/mobile/build/**",
+    "!features/*/mobile/pubspec.lock",
+    "!features/**/.dev.vars",
+    "recipes/**",
+    "tsconfig.json",
+    "box.json",
+    "box.local.json"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

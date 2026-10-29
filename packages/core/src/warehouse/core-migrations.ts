@@ -100,4 +100,17 @@ export const CORE_MIGRATIONS: readonly Migration[] = [
     name: '010-users-sidebar',
     statements: [`ALTER TABLE users ADD COLUMN IF NOT EXISTS sidebar JSON`],
   },
+  {
+    // In-Box measures (2026-10-23): a signal bound to a registered measure (signals/measures.ts)
+    // keeps the measure's parameters as a JSON object. Existing rows read back NULL, which every
+    // read narrows to `{}`; a fresh Box gets the NOT NULL column with its default.
+    name: '011-signals-measure-params',
+    statements: [`ALTER TABLE signals ADD COLUMN IF NOT EXISTS measure_params JSON DEFAULT '{}'`],
+  },
+  {
+    // Archived signals (2026-10-27): a signal nobody tracks any more leaves the lists and pickers
+    // but keeps its definition and points. Nullable, no backfill: NULL is not archived.
+    name: '012-signals-archived-at',
+    statements: [`ALTER TABLE signals ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP`],
+  },
 ]

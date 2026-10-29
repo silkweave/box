@@ -130,14 +130,20 @@ footer a{color:inherit}
   render()
   setInterval(() => { $('eta').textContent = eta() }, 15000)
   if (!notice) { void waitForBox(); return }
-  const events = new EventSource('/api/box-status/events')
-  events.onmessage = event => {
-    try {
-      const status = JSON.parse(event.data)
-      if (status.maintenance === false) { events.close(); void waitForBox(); return }
-      if (status.notice) { notice = status.notice; render() }
-    } catch {}
+  // The supervisor's status socket; each connection opens with the full state, so a reconnect needs no catch-up.
+  const follow = () => {
+    const events = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/box-status/events')
+    let done = false
+    events.onmessage = event => {
+      try {
+        const status = JSON.parse(event.data)
+        if (status.maintenance === false) { done = true; events.close(); void waitForBox(); return }
+        if (status.notice) { notice = status.notice; render() }
+      } catch {}
+    }
+    events.onclose = () => { if (!done) setTimeout(follow, 3000) }
   }
+  follow()
 })()
 </script>
 </body>

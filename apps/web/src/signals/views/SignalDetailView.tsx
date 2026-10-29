@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { ArrowDownRight, ArrowLeft, ArrowUpRight, Minus, Pencil } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowDownRight, ArrowLeft, ArrowUpRight, Minus, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Channel, Signal, SignalDataSource } from '../../types.ts'
 import { channelLabel } from '../../types.ts'
-import { setSignalOwner, useSignalsData } from '../lib/useSignalsData.ts'
+import { setSignalArchivedState, setSignalOwner, useSignalsDataWithArchived } from '../lib/useSignalsData.ts'
+import { useAuth } from '../../lib/useAuth.tsx'
+import { ArchivedBadge } from '../components/SignalCard.tsx'
 import { findSignal, signalSlug } from '../lib/signalSlug.ts'
 import { SignalsLink, signalHash, signalsHash, signalsPath } from '../lib/signalLink.tsx'
 import { useSettingsDialog } from '../../lib/settingsDialog.ts'
@@ -19,9 +21,14 @@ import { computeDelta, formatBucket, formatDelta, formatNumber, relativeTime } f
  *  table. A data-less signal (registered, no points yet) renders its definition with an honest
  *  empty state. */
 export function SignalDetailView({ channel, slug }: { channel: string; slug: string }) {
-  const { data } = useSignalsData()
+  // Archived signals included: a detail stays readable after archiving, and is where it comes back.
+  const { data } = useSignalsDataWithArchived()
   const { open } = useSettingsDialog()
+  const { principal } = useAuth()
+  const isAdmin = principal?.role === 'admin'
   const [editOpen, setEditOpen] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
 
   if (!data) return null
   const signal = findSignal(data.signals, channel, slug)
@@ -99,6 +106,16 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
   ]
 
   const recent = [...points].reverse().slice(0, 14)
+
+  // Archiving is configuration (admin-only server-side, like signal-upsert): it hides the signal from
+  // pickers and the Signals grid; points, goals and milestones that read it are unaffected.
+  const toggleArchived = (): void => {
+    setArchiving(true)
+    setArchiveError(null)
+    setSignalArchivedState(signal.id, !signal.archived_at)
+      .catch((err: unknown) => setArchiveError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setArchiving(false))
+  }
   const byId = signalMap(data)
 
   return (
@@ -113,15 +130,35 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
         <div className='flex items-start justify-between gap-3'>
           <div>
             <div className='text-label uppercase tracking-[0.06em] text-muted-foreground'>{signal.group}</div>
-            <h1 className='mt-1 font-serif text-display-md leading-tight text-text'>{signal.label}</h1>
+            <h1 className='mt-1 flex flex-wrap items-center gap-2 font-serif text-display-md leading-tight text-text'>
+              {signal.label}
+              {signal.archived_at && <ArchivedBadge className='font-sans' />}
+            </h1>
           </div>
           {/* Definitions are configuration - editing is admin-only, like the owner picker below. */}
-          {(
+          <div className='flex shrink-0 items-center gap-2'>
+            {isAdmin && (
+              <Button
+                size='sm'
+                variant='outline'
+                disabled={archiving}
+                onClick={toggleArchived}
+                title={signal.archived_at ? 'Show it in pickers and the Signals page again' : 'Hide it from pickers and the Signals page; its points and readers stay'}>
+                {signal.archived_at ? <ArchiveRestore /> : <Archive />} {signal.archived_at ? 'Unarchive' : 'Archive'}
+              </Button>
+            )}
             <Button size='sm' variant='outline' onClick={() => setEditOpen(true)}>
               <Pencil /> Edit
             </Button>
-          )}
+          </div>
         </div>
+        {signal.archived_at && (
+          <p className='mt-2 text-label text-muted-foreground'>
+            Archived {relativeTime(signal.archived_at)}: hidden from pickers and the Signals page, still read by
+            whatever references it.
+          </p>
+        )}
+        {archiveError && <p className='mt-2 text-label text-danger'>{archiveError}</p>}
         <div className='mt-1 flex flex-wrap items-center gap-3'>
           <code className='text-label text-muted-foreground'>{signal.id}</code>
           <span className='inline-flex items-center gap-1 text-label text-muted-foreground'>

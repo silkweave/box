@@ -68,8 +68,8 @@ function changed(): void {
 /**
  * A channel deriver's output: replace the `live` rows of the channel's derived signals, then write
  * the given rows (`backfill` rows only fill their class). Only signals the derivers own
- * (`source = 'derived'`) are cleared, so a provider sync or an increment signal in the same
- * channel keeps its rows.
+ * (`source = 'derived'` with no measure binding) are cleared, so a provider sync, an in-Box
+ * measure or an increment signal in the same channel keeps its rows.
  */
 export async function replaceChannelSignals(channel: string, rows: SignalRow[]): Promise<void> {
   await autoRegisterDefinitions(rows)
@@ -78,7 +78,7 @@ export async function replaceChannelSignals(channel: string, rows: SignalRow[]):
   await withWrite(async (conn) => {
     await conn.run(
       `DELETE FROM signal_points WHERE source = 'live'
-         AND signal_id IN (SELECT id FROM signals WHERE channel = ? AND source = 'derived')`,
+         AND signal_id IN (SELECT id FROM signals WHERE channel = ? AND source = 'derived' AND measure_key IS NULL)`,
       [channel],
     )
     await insertRows(conn, rows, now)
@@ -88,7 +88,7 @@ export async function replaceChannelSignals(channel: string, rows: SignalRow[]):
 
 /**
  * Replace one signal's machine rows (`live` and `backfill`). For a derived signal re-derived on its
- * own (the task-ledger signals, for example), outside its channel's deriver.
+ * own, outside its channel's deriver.
  */
 export async function replaceSignalRows(signalId: string, rows: SignalRow[]): Promise<void> {
   await autoRegisterDefinitions(rows)
