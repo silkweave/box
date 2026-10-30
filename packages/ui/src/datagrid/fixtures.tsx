@@ -7,6 +7,7 @@ import { Money } from '../components/Figures.tsx'
 import { UserChip } from '../users/UserChip.tsx'
 import type { BoardBarValue, LayoutOption } from '../board/BoardViewBar.tsx'
 import type { DataGridColumn, DataGridProps } from './DataGrid.tsx'
+import { FORWARD_WINDOWS, type FilterOption } from '../filters/types.ts'
 
 type Status = 'planned' | 'active' | 'blocked' | 'done'
 const STATUS_VARIANT = { planned: 'neutral', active: 'accent', blocked: 'danger', done: 'success' } as const
@@ -23,6 +24,9 @@ const Progress = ({ value }: { value: number | null }) => (
 )
 
 const Due = ({ date }: { date: string | null }) => <span className={date ? 'tabular-nums text-text' : 'text-fg-4'}>{date ?? '-'}</span>
+
+/** The fixtures' people, for the owner filters. */
+const PEOPLE: FilterOption[] = ['ada', 'grace', 'alan', 'katherine'].map((u) => ({ value: u, label: u[0].toUpperCase() + u.slice(1) }))
 
 export const LAYOUTS: LayoutOption[] = [
   { value: 'list', label: 'List', icon: Rows3 },
@@ -74,7 +78,7 @@ export const INITIATIVE_VIEW: BoardBarValue = {
   groupBy: 'none',
   sort: 'manual',
   sortDir: 'asc',
-  filters: { status: [], kind: [], owner: [] },
+  filters: {},
   columns: ['progress', 'impact', 'due', 'budget'],
 }
 
@@ -100,15 +104,16 @@ export const initiativeGrid: Omit<DataGridProps<Initiative>, 'view' | 'onViewCha
       { value: 'impact', label: 'Impact', defaultDir: 'desc' },
       { value: 'progress', label: 'Progress', defaultDir: 'desc' },
     ],
-    sections: [
-      { key: 'status', title: 'Status', options: (['planned', 'active', 'blocked', 'done'] as const).map((s) => ({ value: s, label: STATUS_LABEL[s] })) },
-      { key: 'kind', title: 'Kind', options: (['program', 'sales', 'product'] as const).map((k) => ({ value: k, label: KIND_LABEL[k] })) },
-      { key: 'owner', title: 'Owner', options: ['ada', 'grace', 'alan', 'katherine'].map((u) => ({ value: u, label: u[0].toUpperCase() + u.slice(1) })), note: 'Unowned rows are never hidden by this axis.' },
+    fields: [
+      { key: 'status', title: 'Status', type: 'options', options: (['planned', 'active', 'blocked', 'done'] as const).map((s) => ({ value: s, label: STATUS_LABEL[s] })) },
+      { key: 'kind', title: 'Kind', type: 'options', options: (['program', 'sales', 'product'] as const).map((k) => ({ value: k, label: KIND_LABEL[k] })) },
+      { key: 'owner', title: 'Owner', type: 'person', noneLabel: 'No owner', options: PEOPLE },
+      { key: 'due', title: 'Due', type: 'date', windows: FORWARD_WINDOWS, noneLabel: 'No due date' },
     ],
-    emptyFilters: { status: [], kind: [], owner: [] },
   },
   searchText: (r) => r.title,
-  filterValue: (r, axis) => (axis === 'status' ? r.status : axis === 'kind' ? r.kind : axis === 'owner' ? r.owner : null),
+  filterValue: (r, axis) =>
+    axis === 'status' ? r.status : axis === 'kind' ? r.kind : axis === 'owner' ? r.owner : axis === 'due' ? { day: r.due, open: r.status !== 'done' } : null,
   sortValue: (r, key) => (key === 'title' ? r.title : key === 'due' ? r.due : key === 'impact' ? r.impact : key === 'progress' ? r.progress : null),
   groupOf: (r, key) =>
     key === 'status'
@@ -153,7 +158,7 @@ export const ITEM_VIEW: BoardBarValue = {
   groupBy: 'none',
   sort: 'manual',
   sortDir: 'asc',
-  filters: { status: [], assignee: [] },
+  filters: {},
   columns: ['assignee', 'hours', 'due'],
 }
 
@@ -189,14 +194,16 @@ export const itemGrid: Omit<DataGridProps<Item>, 'view' | 'onViewChange' | 'rows
       { value: 'due', label: 'Due' },
       { value: 'title', label: 'Name' },
     ],
-    sections: [
-      { key: 'status', title: 'Status', options: (['planned', 'active', 'blocked', 'done'] as const).map((s) => ({ value: s, label: STATUS_LABEL[s] })) },
-      { key: 'assignee', title: 'Owner', options: ['ada', 'grace', 'alan', 'katherine'].map((u) => ({ value: u, label: u[0].toUpperCase() + u.slice(1) })) },
+    fields: [
+      { key: 'status', title: 'Status', type: 'options', options: (['planned', 'active', 'blocked', 'done'] as const).map((s) => ({ value: s, label: STATUS_LABEL[s] })) },
+      { key: 'assignee', title: 'Owner', type: 'person', noneLabel: 'No owner', options: PEOPLE },
+      { key: 'due', title: 'Due', type: 'date', windows: FORWARD_WINDOWS, noneLabel: 'No due date' },
+      { key: 'hours', title: 'Estimate', type: 'number', unit: 'h' },
     ],
-    emptyFilters: { status: [], assignee: [] },
   },
   searchText: (r) => r.title,
-  filterValue: (r, axis) => (axis === 'status' ? r.status : axis === 'assignee' ? r.assignee : null),
+  filterValue: (r, axis) =>
+    axis === 'status' ? r.status : axis === 'assignee' ? r.assignee : axis === 'due' ? { day: r.due, open: r.status !== 'done' } : axis === 'hours' ? r.hours : null,
   sortValue: (r, key) => (key === 'title' ? r.title : key === 'due' ? r.due : null),
   groupOf: (r) => ({ key: r.status, label: <StatusBadge s={r.status} /> }),
 }

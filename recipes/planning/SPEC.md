@@ -236,7 +236,10 @@ hours progress only; initiative `health` is the milestones powerup.
   leading column: on by default and first, it draws the kind's icon (the kind name as tooltip,
   click to change it) in a 48px square at the row's left edge; moved later in the column order it
   sits after the name. Rows are 48px; an initiative shows its summary as a second line, a task does
-  not. Filters and group-by cover impact, effort and quadrant. The board's cards carry impact,
+  not; its count badge counts the items directly under it (dropped ones left out). Filters are
+  typed (kind, status, impact, effort, quadrant and tags any of; owner a person; due and start
+  dates) and group-by covers impact, effort and quadrant; presets pin filters to the bar (the seeds
+  pin Owner with Status, Kind or Quadrant). The board's cards carry impact,
   effort, quadrant and progress. The seeded presets include "Quick wins" (the quick-win quadrant).
 - **The right panel** replaces any task dialog everywhere, dashboards included. On wide screens it
   is a split pane beside the list (`SplitPane`, Esc closes, the list stays clickable); on narrow
@@ -256,7 +259,8 @@ hours progress only; initiative `health` is the milestones powerup.
   a preview under the title. Then the foldable **Tasks** section (the fold sticks per browser). The
   tree (`ItemTree`) is a `section` DataGrid (`@silkweave/box-ui/datagrid`, its rules running to the
   pane's edges) with the heading left and its bar right (search, sort by plan order, due, priority
-  or name, columns, filters by progress (open or finished), status and owner; columns and sort are
+  or name, columns, typed filters by progress (open or finished), status, owner, due date, priority
+  and estimate, no pins; columns and sort are
   kept per browser), no height cap, and a footer with the counts and column totals. Rows indent by
   depth, the fold chevron at the name's right end; a task shows a muted dot (`TaskMark`), a parent
   task the sum of its children's hours, and a task whose children are all done a check button. In
@@ -275,8 +279,10 @@ hours progress only; initiative `health` is the milestones powerup.
   over it (`lib/taskView.ts`, preset module `tasks`) has a list and a status board, search,
   group-by (status, owner, initiative), sort (due, priority, estimate, title), columns (In, due,
   status, owner, priority, estimate) and filters: **Initiative**, which always offers **No
-  initiative** (`~`, only standalone items) first beside the initiatives in use, Status, Owner (with
-  **Me**), Due and Priority. The seeded presets are Open tasks (the landing view), Mine, No
+  initiative** (`~`, only standalone items) first beside the initiatives in use, Status, Owner (a
+  person field with **Me** and **Nobody**), Due (a date field: relative windows or a range),
+  Priority and Estimate (a number field, hours). Presets pin filters to the bar (the seeds pin Owner
+  and Due). The seeded presets are Open tasks (the landing view), Mine, No
   initiative, Overdue, This week, By initiative and Board. Rows edit in place with the initiative
   page's cells; there is no drag to reorder, since rank is an order within one initiative. **New
   task** asks for the initiative, starting on **No initiative**, with title, status, owner (you),

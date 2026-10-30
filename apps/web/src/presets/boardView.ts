@@ -1,14 +1,18 @@
 // The vocabulary-FREE half of a module's board machinery: persistence, the repair-not-reset read,
 // preset resolution, and the structural equality that tells "you are on a preset" from "you edited
 // it". Three modules use it (Content, the CRM, Initiatives) and they share none of their axes - so
-// what is lifted here is deliberately only the part that has no opinion about what a filter IS.
+// what is lifted here is deliberately only the part that has no opinion about what a filter MEANS.
+// What a filter IS (options, a person, a date, a number, text, a flag) is the filter kit's
+// (`@silkweave/box-ui/filters`); each module declares a static `FILTER_SCHEMA` (field key -> type)
+// and these helpers repair, compare and count its filters by that schema.
 //
 // The split, stated once so the next module does not have to rediscover it:
 //
 //   • HERE: how a view is stored, repaired, named, saved, selected and compared. Subtle, easy to get
 //     wrong, and identical for every module - a second hand-rolled copy would drift.
 //   • IN EACH MODULE's own `*View.ts`: what the columns/filters/sorts/groupings mean, what the
-//     default presets are, and how rows are filtered/sorted/grouped. Forcing those into one union
+//     default presets are (and which filters they pin), and how rows are filtered (`matchAll` over
+//     the module's schema), sorted and grouped. Forcing those into one union
 //     type is how you end up with a `Filters` carrying `impact` for accounts and `channel`
 //     for content.
 //
@@ -37,6 +41,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import type { BoardLayout, SortDir } from '@silkweave/box-ui/board'
+import { countActive, normalizeAll, sameAll, type FilterSchema, type Filters } from '@silkweave/box-ui/filters'
 import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { readStored, writeStored } from '../lib/usePersistedState.ts'
 import { isStringArray } from '../lib/guards.ts'
@@ -74,8 +79,12 @@ export interface BaseViewState {
    *  without one hands the bar an empty `sort` list and the control never renders. */
   sort?: string
   sortDir?: SortDir
-  /** Axis key → selected values. Narrowed per module (`CrmFilters`), read loosely here. */
-  filters: object
+  /** Field key → typed filter value (`@silkweave/box-ui/filters`); absent or null is no filter.
+   *  Narrowed per module by a type alias, checked against the module's `FilterSchema`. */
+  filters: Filters
+  /** The filter fields pinned to the bar as chips, in bar order (known keys only, no repeats). A
+   *  preset stores them; `pinnedOf` reads them and `sameOrder` compares them. */
+  pinned: string[]
   /** Optional column keys, IN RENDER ORDER, in the module's own vocabulary. */
   columns: readonly string[]
 }
@@ -458,16 +467,19 @@ export function pickEnum<T extends string>(raw: unknown, allowed: readonly T[], 
 }
 
 /**
- * Rebuild a filters record from a stored one: every key of `empty` is present, and a key whose
- * stored value is not a string array degrades to empty rather than poisoning the whole board.
- * Values are NOT checked against their vocabulary here - a retired enum value simply matches
- * nothing, which is self-healing, whereas dropping it would silently widen the user's filter.
+ * Rebuild a filters record from a stored one against the module's `FilterSchema`: only known keys,
+ * each repaired by its type (`normalizeFilter`), and a value that no longer parses for its type (an
+ * old bucket list on what is now a date) reads as no filter rather than poisoning the board. Option
+ * values are NOT checked against their vocabulary - a retired value simply matches nothing, which
+ * is self-healing, whereas dropping it would silently widen the user's filter.
  */
-export function normalizeFilters<F extends object>(raw: unknown, empty: F): F {
-  const stored = (raw ?? {}) as Record<string, unknown>
-  return Object.fromEntries(
-    Object.keys(empty).map((k) => [k, isStringArray(stored[k]) ? stored[k] : []]),
-  ) as F
+export function normalizeFilters<F extends Filters>(raw: unknown, schema: FilterSchema): F {
+  return normalizeAll(schema, raw) as F
+}
+
+/** The pinned field keys of a stored view: known keys of `schema` only, de-duplicated, in order. */
+export function pinnedOf(raw: unknown, schema: FilterSchema): string[] {
+  return isStringArray(raw) ? [...new Set(raw.filter((k) => k in schema))] : []
 }
 
 /** Order-insensitive list equality - the right comparison for a filter axis, where the order you
@@ -499,21 +511,13 @@ export function compareKeys(a: SortKey, b: SortKey, dir: SortDir): number {
 export const pickSortDir = (raw: unknown, fallback: SortDir): SortDir =>
   raw === 'asc' || raw === 'desc' ? raw : fallback
 
-/**
- * Every filter axis equal, key by key. Typed over `object` rather than `Record<string, string[]>`
- * because a module's own Filters narrows each axis to its enum (`CrmAccountStatus[]`), and a narrowed
- * array is not assignable to `string[]` through an index signature. The caller guarantees the shape;
- * this layer only ever reads string arrays out of it.
- */
-export function sameFilters<F extends object>(a: F, b: F, empty: F): boolean {
-  const [x, y] = [a as Record<string, string[]>, b as Record<string, string[]>]
-  return Object.keys(empty).every((k) => sameList(x[k], y[k]))
+/** Every field of `schema` the same filter in `a` and `b`, each compared by its type (lists ignore
+ *  order; an absent, null or empty value are all "no filter"). */
+export function sameFilters(a: Filters, b: Filters, schema: FilterSchema): boolean {
+  return sameAll(schema, a, b)
 }
 
-/** How many dimensions are narrowing the board right now (drives the "Filter · n" badge). */
-export function activeFilterCountOf(filters: object, search: string): number {
-  return (
-    Object.values(filters as Record<string, string[]>).reduce((n, list) => n + (list.length > 0 ? 1 : 0), 0) +
-    (search.trim() ? 1 : 0)
-  )
+/** How many fields are narrowing the board right now, search included (drives the funnel's count). */
+export function activeFilterCountOf(filters: Filters, search: string, schema: FilterSchema): number {
+  return countActive(schema, filters) + (search.trim() ? 1 : 0)
 }

@@ -8,12 +8,19 @@
 // vocabularies, kept apart on the argument that a shared version would cost more in type gymnastics
 // than the duplication cost in lines. The third module is where that stopped being true. What made
 // the merge cheap is that the VOCABULARY never has to reach this file: the caller hands it a
-// `BoardBarSpec` of options and sections, all of them plain `{value, label}`, and keeps every
-// meaning to itself.
+// `BoardBarSpec` of plain `{value, label}` options and typed filter fields, and keeps every meaning
+// to itself.
 //
 // The rule it exists to enforce, inherited from both originals: nothing is on screen unless it is
-// doing work. Filters hide in a popover and surface only as a count on the funnel; optional columns
-// are opt-in; the Clear button exists only while there is something to clear.
+// doing work. Filters hide in a popover and surface as a count on the funnel; optional columns are
+// opt-in; the Clear button exists only while there is something to clear.
+//
+// FILTERS ARE TYPED (2026-10-30). Each field says what it is - a list of options, a person, a date,
+// a number, text, an on/off flag - and the funnel opens the filter kit's panel (`../filters`), which
+// draws the editor that type calls for: a date gets relative windows and a range rather than four
+// bucket chips. A field may also be PINNED: a preset names the fields that matter to it, and each
+// sits in the row as a chip with its value, one click from its editor. Pinning is offered (a star in
+// the panel) only where the host passes `pins`, because only a preset board has somewhere to keep it.
 //
 // Two of its controls carry more than they look like. SORT is one control with two values - the
 // field, and the direction beside it - because "in what order?" is one question, and baking the
@@ -24,7 +31,7 @@
 //
 // IT IS CONTROLLED, and it owns no storage. `value` in, a PATCH out - never a whole state object,
 // because switching sort field writes two fields at once and the caller's own state is narrower
-// than this one (its filter axes are enums). Where that state lives - a store, the URL, a server
+// than this one (its option fields are enums). Where that state lives - a store, the URL, a server
 // preset - is the app's business. The preset control itself is the `presets` slot for the same
 // reason: presets are persisted somewhere only the app knows about.
 
@@ -51,6 +58,10 @@ import {
 } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.tsx'
+import { FilterPanel, offered } from '../filters/FilterPanel.tsx'
+import { PinnedFilterChip } from '../filters/PinnedFilterChip.tsx'
+import { isActive } from '../filters/match.ts'
+import type { FilterField, FilterOption, FilterValue, Filters } from '../filters/types.ts'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/Select.tsx'
 import type { NavIcon } from '../shell/Sidebar.tsx'
 
@@ -76,7 +87,7 @@ export interface LayoutOption {
  *  what produces a sort called "Least recently contacted" with no way to ask it the other way. */
 export type SortDir = 'asc' | 'desc'
 
-/** The axes the bar reads and writes. An app's own view state is narrower (its filter axes are
+/** The axes the bar reads and writes. An app's own view state is narrower (its option fields are
  *  enums) and usually carries more; it passes the overlap in and merges the patch back. */
 export interface BoardBarValue {
   search: string
@@ -87,17 +98,15 @@ export interface BoardBarValue {
    *  were created hands the bar an empty `sort` list and the control never renders. */
   sort?: string
   sortDir?: SortDir
-  /** Axis key -> selected values. Narrowed by the app, read loosely here. */
-  filters: object
+  /** Field key -> typed filter value (absent or null: no filter). Narrowed by the app. */
+  filters: Filters
+  /** The fields pinned to the bar as chips, IN BAR ORDER. Only read where the host passes `pins`. */
+  pinned?: readonly string[]
   /** Optional column keys, IN RENDER ORDER, in the app's own vocabulary. */
   columns: readonly string[]
 }
 
-/** One toggleable value inside a filter section. */
-export interface FilterOption {
-  value: string
-  label: string
-}
+export type { FilterOption }
 
 /** One sort axis. The DIRECTION is a separate control, so an option names a field and nothing else -
  *  "Last contact", not "Least recently contacted". */
@@ -107,17 +116,6 @@ export interface SortOption extends FilterOption {
   defaultDir?: SortDir
   /** This axis has no direction to speak of (manual order is whatever the drags left behind). */
   undirected?: boolean
-}
-
-/** One axis of the filter popover. Callers build these per render from what is actually on the
- *  board, so a filter for a value nobody uses never appears. */
-export interface FilterSection {
-  /** Key into the app's `filters` record. */
-  key: string
-  title: string
-  options: FilterOption[]
-  /** Rendered under the chips - the one place a section gets to explain itself. */
-  note?: ReactNode
 }
 
 /** Everything the bar needs to know about a board, and nothing about what any of it MEANS. */
@@ -136,26 +134,23 @@ export interface BoardBarSpec {
   columns: { key: string; label: string }[]
   /** The line above the column list, naming the ones that are always shown. */
   columnsNote: string
-  /** The filter axes, in the order they should appear. */
-  sections: FilterSection[]
+  /** The filter fields, in the order the panel lists them. Callers build these per render from what
+   *  is actually on the board, so an option nobody uses never appears. */
+  fields: FilterField[]
   /** A scope imposed from OUTSIDE the bar that is narrowing the board anyway. Shown as a chip;
    *  omitted when nothing applies. */
   notice?: ReactNode
-  /** All axes empty - what the Clear button writes. */
-  emptyFilters: object
 }
 
 /** The controls the bar can draw. A host that embeds a list in a page section (a card) turns some
  *  off - presets and grouping belong to a whole page, not a panel - and every one defaults to on. */
 export type BoardBarControl = 'layout' | 'search' | 'group' | 'sort' | 'filters' | 'columns'
 
-/** How many axes are narrowing the board, search included. Deliberately NOT exported: an app that
- *  wants the same number elsewhere computes it over its own state, which is the shape it has. */
-function activeFilterCount(filters: object, search: string): number {
-  return (
-    Object.values(filters as Record<string, string[]>).reduce((n, list) => n + (list.length > 0 ? 1 : 0), 0) +
-    (search.trim() ? 1 : 0)
-  )
+/** How many fields are narrowing the board, search included, each judged by its own type (an empty
+ *  list, a blank text or a half-set range narrows nothing). Deliberately NOT exported: an app that
+ *  wants the same number elsewhere computes it over its own schema. */
+function activeFilterCount(fields: readonly FilterField[], filters: Filters, search: string): number {
+  return fields.reduce((n, f) => n + (isActive(f.type, filters[f.key]) ? 1 : 0), 0) + (search.trim() ? 1 : 0)
 }
 
 export function BoardViewBar({
@@ -164,6 +159,8 @@ export function BoardViewBar({
   spec,
   presets,
   controls,
+  pins = false,
+  today,
   dense = false,
   trailing,
 }: {
@@ -175,6 +172,11 @@ export function BoardViewBar({
   presets?: ReactNode
   /** Which controls to draw; a missing key reads as on. */
   controls?: Partial<Record<BoardBarControl, boolean>>
+  /** Offer pinning (the star in the filter panel) and draw `value.pinned` as chips. For a board whose
+   *  view has somewhere to keep it, i.e. one with presets. */
+  pins?: boolean
+  /** "Today" for the date filters, `YYYY-MM-DD` (the default clock when absent). */
+  today?: string
   /** The embedded form: no strip border or canvas background, a narrower search. */
   dense?: boolean
   /** Pushed to the far end of the strip, e.g. a card's own action. */
@@ -182,7 +184,11 @@ export function BoardViewBar({
 }) {
   const show = (c: BoardBarControl): boolean => controls?.[c] !== false
   const filters = value.filters
-  const nFilters = activeFilterCount(filters, value.search)
+  const fields = spec.fields.filter(offered)
+  const nFilters = activeFilterCount(spec.fields, filters, value.search)
+  // A pinned key whose field is not on offer today (an empty option list) draws no chip; it stays
+  // pinned, and comes back with the field.
+  const pinnedFields = pins ? (value.pinned ?? []).flatMap((k) => fields.find((f) => f.key === k) ?? []) : []
   const layout = spec.layouts.find((l) => l.value === value.layout)
   const isList = value.layout === 'list'
   const showGroups = layout?.groups ?? isList
@@ -216,15 +222,14 @@ export function BoardViewBar({
     onChange({ sort: next, sortDir: spec.sort.find((o) => o.value === next)?.defaultDir ?? 'asc' })
   }
 
-  // One cast at the boundary: an app narrows each axis to its own enum, and a narrowed array is not
-  // assignable through an index signature. The bar only ever reads and writes string arrays.
-  const selected = (key: string): string[] => (filters as Record<string, string[]>)[key] ?? []
-  const setAxis = (key: string, values: string[]): void => onChange({ filters: { ...filters, [key]: values } })
-  const toggle = (key: string, value_: string): void => {
-    const on = selected(key)
-    setAxis(key, on.includes(value_) ? on.filter((x) => x !== value_) : [...on, value_])
+  // A field with no filter is absent from the record rather than present as null, so a cleared view
+  // and a fresh one are the same object.
+  const setField = (key: string, next: FilterValue | null): void => {
+    const rest = Object.fromEntries(Object.entries(filters).filter(([k]) => k !== key))
+    onChange({ filters: next === null ? rest : { ...rest, [key]: next } })
   }
-  const clearAll = (): void => onChange({ filters: spec.emptyFilters, search: '' })
+  // Pins are not filters: clearing empties the fields and leaves the chips where the preset put them.
+  const clearAll = (): void => onChange({ filters: {}, search: '' })
 
   return (
     // The bar is a STRIP, not a block floating above a card: it spans the full width of the canvas
@@ -284,6 +289,13 @@ export function BoardViewBar({
         />
       </div>
       )}
+
+      {/* The pinned fields, right after search: the questions this preset is about, each answered
+          in place. They are part of the one row and wrap with it like every other control. */}
+      {show('filters') &&
+        pinnedFields.map((f) => (
+          <PinnedFilterChip key={f.key} field={f} value={filters[f.key]} onChange={(next) => setField(f.key, next)} today={today} />
+        ))}
 
       {/* Grouping is a list concept (and any layout that declares it): the board already groups,
           in columns. */}
@@ -351,7 +363,7 @@ export function BoardViewBar({
           opens the axes, the × next to it empties them. They are joined because clearing is not a
           separate concern from filtering - it is the thing you want the instant you can see the
           board is filtered, and it used to live at the end of a second row of chips. */}
-      {show('filters') && spec.sections.length > 0 && (
+      {show('filters') && fields.length > 0 && (
       <div className='inline-flex items-center'>
         <Popover>
           {/* Icon-only, but the COUNT stays: a funnel says "filters live here", and the number is
@@ -368,35 +380,19 @@ export function BoardViewBar({
             <ListFilter className='size-3.5' />
             {nFilters > 0 && <span className='tabular-nums'>{nFilters}</span>}
           </PopoverTrigger>
-          <PopoverContent align='start' side='bottom' className='flex max-h-[70vh] w-80 flex-col gap-3 overflow-y-auto'>
-            {spec.sections
-              .filter((s) => s.options.length > 0)
-              .map((s) => (
-                <div key={s.key} className='flex flex-col gap-1.5'>
-                  <span className='text-label font-medium text-muted-foreground'>{s.title}</span>
-                  <div className='flex flex-wrap gap-1'>
-                    {s.options.map((o) => {
-                      const on = selected(s.key).includes(o.value)
-                      return (
-                        <button
-                          key={o.value}
-                          type='button'
-                          onClick={() => toggle(s.key, o.value)}
-                          aria-pressed={on}
-                          className={cn(
-                            'rounded-full border px-2 py-0.5 text-label transition-colors',
-                            on
-                              ? 'border-accent/40 bg-accent-tint text-accent'
-                              : 'border-border text-muted-foreground hover:border-accent/30 hover:text-text',
-                          )}>
-                          {o.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {s.note && <span className='text-label text-muted-foreground'>{s.note}</span>}
-                </div>
-              ))}
+          {/* The kit's panel: fields on the left, the selected one's typed editor on the right. */}
+          <PopoverContent
+            align='start'
+            side='bottom'
+            className='max-h-[75vh] w-[min(30rem,calc(100vw-1rem))] gap-0 overflow-y-auto p-0'>
+            <FilterPanel
+              fields={fields}
+              value={filters}
+              onChange={(next) => onChange({ filters: next })}
+              pinned={value.pinned}
+              onPinnedChange={pins ? (next) => onChange({ pinned: next }) : undefined}
+              today={today}
+            />
           </PopoverContent>
         </Popover>
         {/* Only on screen when it would do something - an always-present × on an unfiltered board is

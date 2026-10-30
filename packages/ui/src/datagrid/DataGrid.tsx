@@ -15,7 +15,7 @@
 //
 // IT IS CONTROLLED and owns no storage beyond widths and totals: `view` in, a patch out, like the
 // bar. What the rows MEAN stays with the host, which passes accessors - how to search a row, which
-// value it has on a filter axis, what to sort and group it by, who its parent is, where it may go.
+// value it has on a filter field, what to sort and group it by, who its parent is, where it may go.
 // The component does the mechanics (filter, sort, group, nest, fold, move) so every host does them
 // the same way. Drag lives in `useTreeDrag`, pending moves in `moves.ts`, the row in `Row`, the
 // pure tree in `tree.ts`.
@@ -28,6 +28,9 @@ import { DndContext } from '@dnd-kit/core'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 import { BoardViewBar, type BoardBarControl, type BoardBarSpec, type BoardBarValue } from '../board/BoardViewBar.tsx'
+import { currentToday } from '../components/DateInput.tsx'
+import { isActive, matchFilter } from '../filters/match.ts'
+import type { FilterContext, FilterRowValue } from '../filters/types.ts'
 import { GridHeader } from '../grid/GridHeader.tsx'
 import { GridFooter } from '../grid/GridFooter.tsx'
 import { aggregateSources, buildGrid, frozenColumnStyle, orderColumns, useColumnAggregates, useColumnWidths, type Aggregatable, type ColumnDef } from '../grid/columns.ts'
@@ -99,17 +102,25 @@ export interface DataGridProps<T> {
   controls?: Partial<Record<BoardBarControl, boolean>>
   /** The preset control, drawn first in the bar (`full` only unless the host passes it to a card). */
   presets?: ReactNode
+  /** Offer pinning filter fields to the bar (`view.pinned`); for a view kept in presets. */
+  pins?: boolean
 
   /** The text a search matches against. Omit and search is not offered. */
   searchText?: (row: T) => string
-  /** A row's value(s) on a filter axis (`bar.sections[].key`). */
-  filterValue?: (row: T, axis: string) => string | readonly string[] | null
   /**
-   * Whether a row with no value on a filtered axis still shows (an axis that does not apply to it).
-   * Defaults to true. Pass false, or decide per axis, where a blank is a value of its own (e.g.
-   * "unassigned": give it an option value instead and return that from `filterValue`).
+   * A row's value on a filter field (`bar.fields[].key`), in the shape its type reads (see
+   * `FilterRowValue`: a day or `{ day, open }` for a date, a number, a user id...). Omit it when the
+   * host narrows `rows` itself: the bar still shows the filters, and the grid matches nothing.
+   */
+  filterValue?: (row: T, axis: string) => FilterRowValue
+  /**
+   * Whether a row with no value on a filtered `options` field still shows (a field that does not
+   * apply to it). Defaults to true. Pass false, or decide per field, where a blank should drop out.
+   * The other types say blanks themselves: a person's Nobody, a date's No date, a number's Empty.
    */
   filterKeepsBlank?: boolean | ((axis: string) => boolean)
+  /** What date and person filters read: today (the default clock when absent) and who "me" is. */
+  filterContext?: Partial<FilterContext>
   /** A row's value for a sort key. Blanks sink in both directions. */
   sortValue?: (row: T, key: string) => string | number | null
   /** Which group a row falls in for a group-by key, and how that group is titled. */
@@ -193,7 +204,8 @@ export interface DataGridProps<T> {
   countLabel?: (shown: number, total: number) => ReactNode
 }
 
-const asList = (v: string | readonly string[] | null): readonly string[] => (v == null ? [] : typeof v === 'string' ? [v] : v)
+/** An `options` row value with nothing in it: the case `filterKeepsBlank` decides. */
+const isBlank = (v: FilterRowValue): boolean => v == null || v === '' || (Array.isArray(v) && v.length === 0)
 
 function compare(a: string | number | null, b: string | number | null, dir: 1 | -1): number {
   if (a == null && b == null) return 0
@@ -303,15 +315,19 @@ export function DataGrid<T>(props: DataGridProps<T>) {
 
   // ---- filter, sort, group ----------------------------------------------------------------------
   const q = view.search.trim().toLowerCase()
-  const axes = Object.entries(view.filters as Record<string, string[]>).filter(([, v]) => v.length > 0)
-  const narrowed = q.length > 0 || axes.length > 0
+  const activeFields = bar.fields.filter((f) => isActive(f.type, view.filters[f.key]))
+  const narrowed = q.length > 0 || activeFields.length > 0
   const keepsBlank = (axis: string): boolean => (typeof filterKeepsBlank === 'function' ? filterKeepsBlank(axis) : filterKeepsBlank)
+  const filterCtx: FilterContext = { today: props.filterContext?.today ?? currentToday(), me: props.filterContext?.me ?? null }
   const matches = (row: T): boolean => {
     if (q && searchText && !searchText(row).toLowerCase().includes(q)) return false
-    for (const [axis, wanted] of axes) {
-      const have = asList(filterValue?.(row, axis) ?? null)
-      if (have.length === 0 ? !keepsBlank(axis) : !have.some((v) => wanted.includes(v))) return false
-    }
+    if (filterValue)
+      for (const f of activeFields) {
+        const have = filterValue(row, f.key)
+        if (f.type === 'options' && isBlank(have)) {
+          if (!keepsBlank(f.key)) return false
+        } else if (!matchFilter(f.type, view.filters[f.key], have, filterCtx)) return false
+      }
     return true
   }
   const sortKey = view.sort && view.sort !== MANUAL_SORT ? view.sort : null
@@ -684,7 +700,7 @@ export function DataGrid<T>(props: DataGridProps<T>) {
     const added = new Set(patch.columns.filter((k) => !view.columns.includes(k) && optional.some((c) => c.key === k && c.leading)))
     onViewChange(added.size === 0 ? patch : { ...patch, columns: [...patch.columns.filter((k) => added.has(k)), ...patch.columns.filter((k) => !added.has(k))] })
   }
-  const barEl = <BoardViewBar value={view} onChange={onBarChange} spec={barSpec} presets={presets} controls={controls} dense={framed} trailing={framed ? actions : undefined} />
+  const barEl = <BoardViewBar value={view} onChange={onBarChange} spec={barSpec} presets={presets} controls={controls} pins={props.pins} today={filterCtx.today} dense={framed} trailing={framed ? actions : undefined} />
   const a11y = (
     <>
       <span id={moveHelpId} hidden>

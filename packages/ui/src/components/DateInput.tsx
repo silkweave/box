@@ -44,6 +44,10 @@ export function setDefaultToday(today: () => string): void {
   defaultToday = today
 }
 
+/** Today on the default clock (setDefaultToday): what a date control means by "today" when it is
+ *  given none. */
+export const currentToday = (): string => defaultToday()
+
 /** `2026-08-11` -> {y, m, d} (m is 1-based), or null when it is not a well-formed ISO date. */
 function parseIso(v: string): { y: number; m: number; d: number } | null {
   if (!ISO.test(v)) return null

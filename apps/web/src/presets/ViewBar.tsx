@@ -7,9 +7,11 @@
 // preset you are on, and the team's shared preset list on the server. `PresetPicker` is passed in
 // rather than lifted for exactly that reason - a preset is a server record.
 //
-// The one cast lives here, for the reason `boardView` already states: a module narrows each filter
-// axis to its own enum, and a narrowed array is not assignable through an index signature. The bar
-// only ever reads and writes string arrays, so merging its patch back into `S` is safe.
+// The one cast lives here: a module narrows its filters to its own fields and enums, and the bar's
+// patch is typed by the library's wider shapes. The bar only writes values of the types the module's
+// own fields declared, so merging its patch back into `S` is safe.
+//
+// A preset board always offers pinning: the preset is where the pins are kept.
 
 import { BoardViewBar, type BoardBarSpec } from '@silkweave/box-ui/board'
 import { PresetPicker } from './PresetPicker.tsx'
@@ -28,6 +30,7 @@ export function ViewBar<S extends BaseViewState>({ view: v, spec }: { view: View
       onChange={(patch) => v.setView((prev) => ({ ...prev, ...patch }) as S)}
       spec={spec}
       presets={<PresetPicker view={v} savesHint={spec.savesHint} noun={spec.noun} />}
+      pins
     />
   )
 }

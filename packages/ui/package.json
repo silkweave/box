@@ -22,6 +22,10 @@
       "@silkweave/box-source": "./src/datagrid/index.ts",
       "default": "./src/datagrid/index.ts"
     },
+    "./filters": {
+      "@silkweave/box-source": "./src/filters/index.ts",
+      "default": "./src/filters/index.ts"
+    },
     "./editor": {
       "@silkweave/box-source": "./src/editor/index.ts",
       "default": "./src/editor/index.ts"

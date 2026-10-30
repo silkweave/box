@@ -151,6 +151,7 @@ same rule with the runtime doing the bookkeeping.
 | `src/shell/` | AppShell, Sidebar, TopBar, PageContainer, CollapsibleSection, EmptyState, ThemeToggle, and the `ShellExtensions` seam |
 | `src/settings/` | The settings detail pane (`SettingsPane`: title bar with breadcrumbs, scroll surface, footer slot) and the section vocabulary: intro, list and rows, group, field, footer bar |
 | `src/board/` | The board: `BoardKanban`, the `DraggableCard` frame both card shapes share, and the controlled `BoardViewBar`. Its own entry point |
+| `src/filters/` | The typed filter kit: field types (options, person, date, number, text, boolean), the pure rules that match, repair, compare and summarize their values (`matchAll`, `normalizeAll`, `sameAll`, `pruneInactive`, `summarize`), the `FilterPanel` the bar's funnel opens, one editor per type, and `PinnedFilterChip`. Its own entry point |
 | `src/charts/` | The charts: `TimeSeriesChart`, `SeriesLineChart`, `Sparkline`, the tooltip/legend frames, the window helpers and `theme.ts`'s series palette. Its own entry point |
 | `src/grid/` | The data grid: `columns.ts` (order, widths, footer aggregates) plus `GridHeader` and `GridFooter` |
 | `src/datagrid/` | `DataGrid`, the one list component (a `full` page or a `card` section) on top of `BoardViewBar` and `src/grid/`: filter, sort, group, nest, fold, drag. `tree.ts` (pure tree helpers), `moves.ts` (the optimistic move queue), `useTreeDrag`, `useGlide`, `Row`. Its own entry point |
@@ -193,6 +194,14 @@ than the bar's (its filter axes are enums) and carries more. Where the view live
 localStorage, the URL - is the app's, and the preset control is a `presets` SLOT rather than a
 component here, because a preset is a record on somebody's server. The data app's
 `ViewBar.tsx` (adopted, not in this repo) is one binding of the two.
+
+**Filters are typed fields.** The bar's spec lists `fields` (`@silkweave/box-ui/filters`), each with
+a type that picks its editor and its matching rule: options (any of), person (people plus Me and
+Nobody), date (relative windows such as Overdue or Next 7 days, a From/To range, or No date),
+number (comparisons, between, empty, set), text (matches anywhere) and boolean. A stored value that
+is absent or null is no filter. `value.pinned` names fields drawn as chips in the bar, each showing
+its current value and opening its own editor; with `pins` the panel's star toggles them, which is
+how a preset carries the filters its team reaches for. Clear empties the filters and keeps the pins.
 
 **`DataGrid` is controlled and knows no domain.** The host passes the view (as for
 `BoardViewBar`) and accessors: `searchText`, `filterValue`, `sortValue`, `groupOf`, `parentId`,

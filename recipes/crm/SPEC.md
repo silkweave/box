@@ -238,19 +238,27 @@ event-driven.
   'crm-contacts']`), each its own store, mounted only on its own page so none writes its preset
   into another page's URL. Deals and Contacts land on their first built-in (Pipeline, Everyone).
 - **The accounts index** (`crmView.ts`) is a full-width grid with one row per account and
-  totallable columns (the leading open deal, the weighted pipeline, MRR). Its `stage` filter reads
-  "has a deal at this stage". Saved views stored before deals existed are repaired on read
+  totallable columns (the leading open deal, the weighted pipeline, MRR). Its filters are typed
+  fields (`CRM_FILTER_SCHEMA`): deal stage, account status, source, tags and needs attention are
+  options, owner a person (Me, No owner, people), the next action a date (forward windows or a
+  range; churned, lost and archived accounts are never overdue) and MRR a number (`> 0` paying,
+  `= 0` billing nothing by decision, Empty never set). Its `stage` filter reads "has a deal at this
+  stage". Each view pins Owner and Account status to the bar by default. Saved views stored before deals existed are repaired on read
   (`normalizeCrmFilters`).
 - **Deals** (`dealsView.ts`) is every deal with its account, as a stage board (`CrmKanban` over the
   UI library's `BoardKanban`, one card per deal, dragged between stages) or a list (stage and
   owner edited in place, value, odds, weighted, expected close, the account's next action). On the
   board the `stage` filter is the column list, with none picked the working stages
   (`PIPELINE_STAGES`); on the list none picked means every deal. The owner filter reads the deal's
-  owner, falling back to its account's. **New deal** starts one at an existing account. A card or
+  owner, falling back to its account's. Beside stage and owner the deal's MRR is a number field and
+  its expected close a date field (won and lost deals are never overdue); the account's status,
+  source, next action and tags filter too. Owner and Stage are pinned by default, Owner and Expected
+  close on Closing soon. **New deal** starts one at an existing account. A card or
   row opens the account, where the deal is worked.
 - **Contacts** (`contactsView.ts`) is every person at every account as a list (role, email, phone,
-  LinkedIn, last activity, the account's status and owner), filtered by role, primary flag, how
-  they can be reached, account status and owner. A row opens the account; people are added there.
+  LinkedIn, last activity, the account's status and owner), filtered by role, primary flag (a
+  boolean: Primary or Not primary), how they can be reached (all of the picked ways), account status
+  and owner (a person field), with Owner and Role pinned by default. A row opens the account; people are added there.
 - **The detail page** is a summary strip (owner, MRR, open pipeline, last contact) above unboxed
   sections that fold shut by their heading - deals, contacts, conversation, meetings, money,
   relationship, retention and a record section folded by default - with the markdown doc beside
@@ -294,8 +302,8 @@ each returns its unregister, and registering the same key again replaces it):
   (read synchronously, null sorts last) also puts it in the sort menu. Optional like every column:
   people add it from the column picker.
 - `registerCrmAttention({ key, label, matches })` adds a reason an account needs attention, beside
-  the CRM's own (next action overdue, at risk). It becomes a chip in the view bar's **Needs
-  attention** filter, which matches an account with any picked reason. The chip **Any reason**
+  the CRM's own (next action overdue, at risk). It becomes an option in the view bar's **Needs
+  attention** filter, which matches an account with any picked reason. The option **Any reason**
   covers every reason, registered ones included; the seeded Needs attention view uses it, so a
   reason added later shows there without editing the view. `matches` reads the feature's store
   synchronously; pair it with a column's `useData` or a slot that loads the same store.
@@ -360,7 +368,7 @@ in `migrations.ts` rewrites them.
   "Interested" deliberately OUT of the CRM by simply not mapping it.
 - **Labels and order** - the nav labels and order band in `features/crm/web/index.tsx`; the
   accounts grid's offered columns, widths, hints and aggregates in `lib/crmView.ts` (`CRM_COLUMNS`,
-  the closed-status set, the MRR chip buckets); the Deals page's in `lib/dealsView.ts`
+  the closed-status set, the filter fields in `crmBarSpec`); the Deals page's in `lib/dealsView.ts`
   (`DEAL_COLUMNS`, `PIPELINE_STAGES` - the board's default columns - and its built-in presets);
   the Contacts page's in `lib/contactsView.ts`;
   the display labels in `crm-types.ts` (`CRM_DEAL_STAGE_LABEL`, `CRM_ACCOUNT_SOURCE_LABEL`, `CRM_MEETING_KIND_LABEL`,

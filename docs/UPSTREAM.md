@@ -11,9 +11,9 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `b86a3f6d88922418c5f2502a29fb840eed8f0137` (2026-10-29: live
-feeds over one WebSocket per tab, DataGrid, signal archiving, verify speed, the Planning recipe
-split into a base and powerups), materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
+Latest core refresh: Stack commit `80a86944910723f11cf98766701a6217b613977c` (2026-10-30: typed
+board filters with pinned filters on presets, `@silkweave/box-ui/filters`), materialized with
+`box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.
 

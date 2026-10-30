@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { GanttChart, Kanban, Rows3 } from 'lucide-react'
 import { Button } from '../components/Button.tsx'
 import { BoardViewBar, type BoardBarSpec, type BoardBarValue } from './BoardViewBar.tsx'
+import { DUE_FIELD, ESTIMATE_FIELD, FLAG_FIELD, OWNER_FIELD, STATUS_FIELD, STORY_TODAY } from '../filters/fixtures.ts'
 
 const meta = {
   title: 'Board/BoardViewBar',
@@ -36,27 +37,9 @@ const SPEC: BoardBarSpec = {
     { key: 'tags', label: 'Tags' },
   ],
   columnsNote: 'Name, owner and status are always shown.',
-  sections: [
-    {
-      key: 'status',
-      title: 'Status',
-      options: [
-        { value: 'new', label: 'New' },
-        { value: 'active', label: 'Active' },
-        { value: 'done', label: 'Done' },
-      ],
-    },
-    {
-      key: 'owner',
-      title: 'Owner',
-      options: [
-        { value: 'ada', label: 'Ada' },
-        { value: 'grace', label: 'Grace' },
-      ],
-      note: 'Unowned rows are never hidden by this axis.',
-    },
-  ],
-  emptyFilters: { status: [], owner: [] },
+  // One field of each common type: the funnel opens the typed panel, and `pins` lets a preset put
+  // a field in the row as a chip.
+  fields: [STATUS_FIELD, OWNER_FIELD, DUE_FIELD, ESTIMATE_FIELD, FLAG_FIELD],
 }
 
 const START: BoardBarValue = {
@@ -65,12 +48,13 @@ const START: BoardBarValue = {
   groupBy: 'none',
   sort: 'name',
   sortDir: 'asc',
-  filters: { status: [], owner: [] },
+  filters: {},
+  pinned: [],
   columns: ['value', 'probability'],
 }
 
-function Frame({ spec = SPEC, presets }: { spec?: BoardBarSpec; presets?: ReactNode }) {
-  const [value, setValue] = useState(START)
+function Frame({ spec = SPEC, presets, pins, start = START }: { spec?: BoardBarSpec; presets?: ReactNode; pins?: boolean; start?: BoardBarValue }) {
+  const [value, setValue] = useState(start)
   return (
     <>
       <BoardViewBar
@@ -78,6 +62,8 @@ function Frame({ spec = SPEC, presets }: { spec?: BoardBarSpec; presets?: ReactN
         onChange={(patch) => setValue((prev) => ({ ...prev, ...patch }))}
         spec={spec}
         presets={presets}
+        pins={pins}
+        today={STORY_TODAY}
       />
       {/* The state the bar is editing, so a story shows what each control actually writes. */}
       <pre className='overflow-x-auto p-3 font-mono text-label text-muted-foreground'>
@@ -93,8 +79,8 @@ function Frame({ spec = SPEC, presets }: { spec?: BoardBarSpec; presets?: ReactN
  * this one (its filter axes are enums) and usually carries more. Where that state lives - a store,
  * the URL, a server record - is the app's business.
  *
- * Nothing is on screen unless it is doing work: the filters hide in a popover and surface as a count
- * on the funnel, the × appears only once there is something to clear, and Group-by and Columns are
+ * Nothing is on screen unless it is doing work: the filters hide in a popover (one typed editor per
+ * field: options, a person, a date window or range, a number) and surface as a count on the funnel, the × appears only once there is something to clear, and Group-by and Columns are
  * list concepts that disappear on the board (which already groups, in columns).
  */
 export const Default: Story = {
@@ -148,5 +134,26 @@ export const ModuleLayout: Story = {
   args: { value: START, onChange: () => {}, spec: SPEC },
   render: () => (
     <Frame spec={{ ...SPEC, layouts: [...SPEC.layouts, { value: 'timeline', label: 'Timeline', icon: GanttChart, groups: true }] }} />
+  ),
+}
+
+/**
+ * With `pins` (a board with presets), the filter panel offers a star per field, and each pinned
+ * field sits in the row right after search as a chip with its value. A chip opens that one field's
+ * editor; set, it is tinted and has its own x. Pins are view state (`value.pinned`), so a preset
+ * stores them, and Clear empties the filters but leaves the chips where they are.
+ */
+export const PinnedFilters: Story = {
+  args: { value: START, onChange: () => {}, spec: SPEC },
+  render: () => (
+    <Frame
+      pins
+      start={{ ...START, pinned: ['owner', 'due'], filters: { owner: ['me'], estimate: { op: 'gt', value: 4 } } }}
+      presets={
+        <Button variant='outline' size='sm'>
+          My week
+        </Button>
+      }
+    />
   ),
 }

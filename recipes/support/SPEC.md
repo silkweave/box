@@ -210,10 +210,11 @@ navigation for both.
 
 - **Support Tickets** (`/support`): one view over every ticket, built like Planning's Initiatives.
   The bar carries the preset select, the List / Board toggle, search (subject, summary, requester,
-  organization, `#42`), filters (status, type, owner with Me and Unassigned, age, channel,
-  requester, organization), group by (status, owner, type, channel), sort (opened, updated,
-  age, either direction) and the columns. Age buckets run on working days: Late, 0 to 2, 3 to 7,
-  8 to 30 and over 30.
+  organization, `#42`), typed filters (status, type, channel, requester and organization as
+  choices; owner as a person with Me and Unassigned; age as a number of working days, compared or
+  ranged; late as an on or off flag), group by (status, owner, type, channel), sort (opened,
+  updated, age, either direction) and the columns. Owner and Status are pinned to the bar as chips
+  by default; a preset can pin any filter.
   - **List**: a grid. Ticket (number and subject, opening the ticket), Status and Owner are always
     shown; the optional columns are Requester, Organization (the requester's), Type, Channel, Age
     (red when late), Opened and Updated, in the order the view stores. Status, owner, type and
@@ -225,7 +226,7 @@ navigation for both.
   - **Presets** are the team's, shared in the `support-tickets` preset module and seeded the first
     time anybody opens the view: Open (pending, active and blocked, oldest first, the landing
     view), Mine (open, owned by whoever looks), Unassigned, Late (open past `lateAfterDays`, longest
-    waiting first), Blocked, Closed (done and dropped, most recently updated first) and Everything. Which preset is on is `?preset=<name>`; arriving
+    waiting first: the late flag on), Blocked, Closed (done and dropped, most recently updated first) and Everything. Which preset is on is `?preset=<name>`; arriving
     on `/support` without one lands on Open. The live view stays in this browser.
   - The sidebar lists the presets under **Presets**, then **Recent Tickets**: the last ten tickets
     opened in this browser. The `support.tickets.banner` slot renders above the tickets whatever
@@ -256,8 +257,9 @@ navigation for both.
   either. With `crm` the requester is a contact, edited in the CRM, and the panel links to its
   account there. **All tickets from ...** opens the tickets view filtered to them.
 - **Help Articles** (`/support/help`), built like Support Tickets: one saved-view bar with the
-  preset select, the List and Board layouts, search over title, one-liner and body, filters (type,
-  status, needs update, featured, owner), grouping (none, type, status, owner, needs update,
+  preset select, the List and Board layouts, search over title, one-liner and body, typed filters
+  (type and status as choices, needs update and featured as on or off flags, owner as a person with
+  Me and Nobody; Owner and Status pinned to the bar by default), grouping (none, type, status, owner, needs update,
   featured), sort (manual order, title, or last updated) and columns. The list is a grid edited in
   place (type, status, owner, featured, needs update); the board draws one column per value of the
   group-by (status when grouped by nothing), and dropping a card writes that field. Presets are the
