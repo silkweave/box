@@ -130,7 +130,7 @@ its user detail; unset means Claude first among its `agentProfiles`), resolved a
 `agentProfileFor(agent, preferredAgentEngine(agent))` (no profile = the turn throws). A room's live
 session is retired between turns when that default changes. Per engine
 (`CHAT_AGENT_TUNING_DEFAULTS` in `core/agent-tuning.ts`, overridable in `features.chat.agentModels`):
-Codex `gpt-5.6-luna`, Claude `sonnet`, reasoning effort `medium`, each probed against the profile's
+Codex `gpt-5.6-luna`, Claude `claude-sonnet-5-5`, reasoning effort `medium`, each probed against the profile's
 catalogue first and **omitted if the profile does not declare it** rather than failing (logged). Sessions close after
 `SESSION_IDLE_TTL_MS` (1h idle); a turn that emits nothing for `TURN_SILENCE_LIMIT_MS` (10min) is
 interrupted, with the watchdog standing down while the turn is legitimately blocked on an approval.
@@ -247,7 +247,7 @@ It is in core's action registry, so `automation` can schedule it and every invoc
 | setting | doc |
 |---|---|
 | `background.chatAgent` (core, `box.json`) | `true` arms the chat agent (nova answers in rooms); `false`, the default, leaves it off |
-| `features.chat.agentModels` (`box.json`) | Per engine `{ "model", "reasoningEffort" }` over the defaults, field by field, e.g. `{"claude": {"model": "haiku"}}`. Engines `claude`, `codex`; values are catalogue names (`sonnet`, `haiku`, `gpt-5.6-luna`). Invalid entries are logged and ignored. Takes effect for new sessions after a server restart |
+| `features.chat.agentModels` (`box.json`) | Per engine `{ "model", "reasoningEffort" }` over the defaults, field by field, e.g. `{"claude": {"model": "claude-haiku-5-5"}}`. Engines `claude`, `codex`; values are exact model ids (`claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-5.6-luna`). Invalid entries are logged and ignored. Takes effect for new sessions after a server restart |
 | `features.chat.agentTurnsPerHour` (`box.json`) | Agent turns per room per rolling hour, a whole number of at least 1; default 25 (`AGENT_TURN_BUDGET`). Read on every mention, no restart needed |
 
 The feature reads no environment variables. The agent seat additionally depends on the

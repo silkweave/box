@@ -16,7 +16,7 @@ const builderInstructions = ({ sessionId }: { sessionId: string }): string =>
  * The model a new Builder session starts on when its profile declares no `defaults.model`. The
  * status bar offers the same curated set (apps/web/src/lib/builderModels.ts) for switching.
  */
-export const BUILDER_DEFAULT_MODEL: Record<string, string> = { codex: 'gpt-5.6-luna', claude: 'opus[1m]' }
+export const BUILDER_DEFAULT_MODEL: Record<string, string> = { codex: 'gpt-5.6-luna', claude: 'claude-opus-5-5[1m]' }
 
 /** This worker belongs to the supervisor, never to the restartable Nest application. */
 export async function createBuilderHost(paths: BuilderLifecyclePaths) {
