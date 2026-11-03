@@ -241,6 +241,10 @@ It is in core's action registry, so `automation` can schedule it and every invoc
   see it live from the start. `useChatData.ts` owns the single module-scope `chatFeed` subscription
   per tab, its cursor and its reconnect loop - chat does not ride the changes bus.
 - The composer is behind a lazy chunk (`ComposerLazy.tsx`), like sink's editor.
+- Composer keys: Enter sends (inside a list or code block it makes the next line; Mod-Enter sends
+  from there), Shift+Enter makes a line break. Markdown block markers (`- `, `1. `, `> `, `# ` to
+  `### `, ```` ``` ````) format live at the start of the message and at the start of any line after a
+  line break (`lineStartShortcuts.ts`); on a touch keyboard Enter makes a new line.
 
 ## Settings
 
