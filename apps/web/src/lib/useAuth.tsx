@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { setActiveUser } from './useActiveUser.ts'
 import { setTeamTimeZone } from './teamDay.ts'
+import { grantSubject } from './signinGrant.ts'
 
 // Client auth state. Probes GET /api/auth/me on mount; no principal means the login gate. The
 // authenticated principal drives the active-user scope (its id stamps `actor` on mutations) and
@@ -19,8 +20,10 @@ interface AuthState {
   /** The public first-run signal. Creating the owner remains a host-only CLI operation. */
   needsOwner: boolean
   login: (token: string) => Promise<{ ok: boolean; error?: string }>
-  /** Spend a short-lived sign-in grant from a `?link=` URL. See LoginView. */
-  loginWithLink: (grant: string) => Promise<{ ok: boolean; error?: string }>
+  /** Spend a short-lived sign-in grant from a sign-in link (lib/signinGrant.ts). See LoginView.
+   *  `reload` starts the app afresh on success instead of refetching: switching accounts must not
+   *  carry the previous person's loaded state into the next one's session. */
+  loginWithLink: (grant: string, opts?: { reload?: boolean }) => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
   refetch: () => Promise<void>
 }
@@ -73,7 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const loginWithLink = useCallback(
-    async (grant: string): Promise<{ ok: boolean; error?: string }> => {
+    async (grant: string, opts: { reload?: boolean } = {}): Promise<{ ok: boolean; error?: string }> => {
+      const finish = async (): Promise<{ ok: true }> => {
+        if (opts.reload) window.location.replace('/')
+        else await refetch()
+        return { ok: true }
+      }
       const res = await fetch('/api/auth/link', {
         method: 'POST',
         credentials: 'same-origin',
@@ -83,18 +91,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         // Idempotency for the SAME browser. A double-click, a form resubmit or a prefetch can spend
         // the grant on the first request and fail on the second - at which point the person IS
-        // signed in and must not be shown "already used". Ask who we are before believing the error.
-        await refetch()
+        // signed in and must not be shown "already used". Ask who we are before believing the error,
+        // and only as the link's own person: a browser switching accounts already has a session.
         const probe = await fetch('/api/auth/me', { credentials: 'same-origin' })
           .then((r) => r.json() as Promise<{ principal: Principal | null }>)
           .catch(() => ({ principal: null }))
-        if (probe.principal) return { ok: true }
+        if (probe.principal && probe.principal.id === grantSubject(grant)) return finish()
 
         const body = (await res.json().catch(() => ({}))) as { message?: string }
         return { ok: false, error: body.message ?? 'invalid' }
       }
-      await refetch()
-      return { ok: true }
+      return finish()
     },
     [refetch],
   )

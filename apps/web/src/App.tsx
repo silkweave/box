@@ -1,6 +1,6 @@
 // Baked in at build time by apps/web/branding.ts from `box.json` (typed in vite-env.d.ts).
 import brand from 'virtual:box-brand'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useReducer, type ReactNode } from 'react'
 import { RouterProvider } from '@tanstack/react-router'
 import { router } from './router.tsx'
 import { startChangeFeed } from './lib/changeFeed.ts'
@@ -9,6 +9,8 @@ import { ALL_WEB_FEATURES } from './web-features.ts'
 import { BrandProvider, UsersProvider } from '@silkweave/box-ui'
 import { useUsersData } from './lib/useUsersData.ts'
 import { LoginView } from './views/LoginView.tsx'
+import { SwitchAccountView } from './views/SwitchAccountView.tsx'
+import { dropSigninGrant, pendingSigninGrant, signedInGrantAction } from './lib/signinGrant.ts'
 import { AppShellExtensions } from './lib/shell.tsx'
 import { BuilderPreviewBridge } from './lib/BuilderPreviewBridge.tsx'
 import { useBoxStatus } from './lib/useMaintenance.ts'
@@ -42,9 +44,17 @@ function AuthGate() {
     const teardowns = ALL_WEB_FEATURES.map((f) => f.onSession?.()).filter((t): t is () => void => typeof t === 'function')
     return () => teardowns.forEach((t) => t())
   }, [startFeed])
+  // A sign-in link opened while signed in (lib/signinGrant.ts): the same person's link is dropped
+  // unspent; another person's asks before switching. Signed out, LoginView takes it.
+  const [, rerender] = useReducer((n: number) => n + 1, 0)
+  const staySignedIn = (): void => { dropSigninGrant(); rerender() }
+  const grant = principal ? pendingSigninGrant() : null
+  const grantAction = grant && principal ? signedInGrantAction(grant, principal.id) : null
+  if (grantAction === 'same') dropSigninGrant()
   // Blocked by maintenance: the tab is on its way to the supervisor's maintenance page.
   if (loading || maintenance) return <div className='h-dvh w-full bg-bg' />
   if (!principal) return known ? <LoginView /> : <div className='h-dvh w-full bg-bg' />
+  if (grant && grantAction === 'switch') return <SwitchAccountView grant={grant} current={principal} onStay={staySignedIn} />
   // Back to a server-served path mount (`/artifacts/<slug>/`) that sent this browser to sign in.
   if (followReturnPath()) return <div className='h-dvh w-full bg-bg' />
   return (

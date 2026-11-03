@@ -333,10 +333,11 @@ Two consequences worth holding on to:
    A name clash is a silent break, so a feature that adds a route must check its path against these
    reserved prefixes and public files.
 2. **Legacy `/#/...` links still work.** `router.tsx` rewrites `#/<path>` to `/<path>` with
-   `replaceState` before `createBrowserHistory()` snapshots `location`. It also moves a grant from
-   `/login/<grant>` into transient query state and normalizes the path to `/`. `/login` is not a
-   client route: the auth gate renders `LoginView` on any path, and the grant is scrubbed from the
-   visible URL after the login view reads it. `box auth token` and `box auth reveal` print the root.
+   `replaceState` before `createBrowserHistory()` snapshots `location`. It also takes a grant from
+   `/login/<grant>` (and the `e=` notice from `/login?e=...`) out of the address bar into
+   `lib/signinGrant.ts`, signed in or not, and normalizes the path to `/`. `/login` is not a client
+   route: the auth gate decides what the grant means (see AUTH.md, "Sign-in links"). `box auth token`
+   and `box auth reveal` print the root.
 
 An `<a href='/'>` is a full document reload, not a route change - the sidebar wordmark links
 through the shell seam's `homeLink`, which this app fills with TanStack's `<Link to='/'>` in

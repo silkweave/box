@@ -11,8 +11,8 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `afab7d3160d2037f87f35087c170484cf3ae8149` (2026-11-02:
-WorkerDeck 4.1.0 with exact model ids), materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
+Latest core refresh: Stack commit `f6299b931438af5c7d6f90a5a5adf66d3f630051` (2026-11-03: a
+sign-in link asks before switching accounts), materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.
 

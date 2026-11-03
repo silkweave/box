@@ -46,11 +46,12 @@ client: chat's destructive operations key their approval gate on it.
   cross-origin without a preflight this Box refuses.
 
   The link itself points at the SPA (`<APP_URL>/login/<grant>`), so a bot that follows it just
-  gets `index.html`. `/login` is not a client route: the auth gate renders the login screen on any
-  path, and the SPA moves the path grant into transient query state before normalizing to `/`
-  (`apps/web/src/router.tsx`). `LoginView` immediately reads and scrubs that state, then shows
-  "Continue as &lt;user&gt;" behind a button and
-  never auto-submits: the click is what a scanner will not do.
+  gets `index.html`. `/login` is not a client route: before the router reads the URL, the SPA takes
+  the grant out of the address bar into memory and normalizes the path to `/`
+  (`apps/web/src/lib/signinGrant.ts`), signed in or not, so a grant never stays in the URL or the
+  history. Signed out, `LoginView` shows "Continue as &lt;user&gt;" behind a button and never
+  auto-submits: the click is what a scanner will not do. Signed in, see § 1.7 "Opened while signed
+  in".
 - `GET /api/auth/instance` - this process's random per-boot id, and deliberately nothing else. Its
   only consumer is the loopback guard, which asks `127.0.0.1` "are you me?" before the chat agent
   runs a turn (see `apps/server/src/agent/loopback-guard.ts`).
@@ -362,6 +363,16 @@ user bumps the watermark so a pre-revoke link cannot outlive the revocation. The
 of epoch milliseconds rather than a TIMESTAMP because the record layer truncates timestamps to whole
 seconds, which would move a watermark backwards on an ordinary profile edit and re-arm a spent
 link.
+
+**Opened while signed in.** The auth gate (`apps/web/src/App.tsx`) compares the grant's subject with
+the signed-in person. A link for the same person is dropped unspent. A link for someone else shows
+"Switch account?" with both names: **Switch** spends the grant, whose session cookie replaces the
+current one, and reloads the app so nothing loaded for the previous person stays on screen; **Stay**
+drops the grant unspent. It never switches silently, because a forwarded or planted link would
+otherwise move a person into another account without their noticing, and what they typed next would
+land there. Legitimate switches: an admin checking a member's view, a test account, a shared machine.
+The subject is read from the grant without verifying it, for display and this choice only; the
+server alone decides who the bearer becomes.
 
 ### User management, from the app or an agent
 

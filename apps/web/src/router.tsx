@@ -6,6 +6,7 @@ import { ALL_WEB_ROUTES } from './web-features.ts'
 import { HomeView } from './views/HomeView.tsx'
 import { RecipeGalleryView } from './views/RecipeGalleryView.tsx'
 import { captureReturnPath } from './lib/returnPath.ts'
+import { captureSigninGrant } from './lib/signinGrant.ts'
 // Must evaluate before the /login normalization below (imports run first).
 import './lib/loginEntry.ts'
 
@@ -73,25 +74,11 @@ if (typeof window !== 'undefined') {
   if (window.location.hash.startsWith('#/')) {
     window.history.replaceState(null, '', window.location.hash.slice(1))
   }
-  // `/login/<grant>` is where sign-in links point (see auth/app-url.ts) and `/login?e=...` is where a
-  // retired old-style link is redirected (`?e=retired`). It is NOT a client route - the auth gate in
-  // App.tsx renders LoginView ahead of the router, on any path - so under hash routing the path was
-  // ignored. Under browser history the router WOULD see it once the user signs in and the gate
-  // mounts, and 404. Normalize it away here instead of inventing a route for it.
-  //
-  // Convert the path envelope into transient query state before the router snapshots the URL.
-  // LoginView reads and immediately scrubs it. This keeps the public URL clean without making the
-  // credential a client route or letting a GET consume it.
-  if (window.location.pathname === '/login' || window.location.pathname.startsWith('/login/')) {
-    const pathGrant = window.location.pathname.slice('/login/'.length)
-    const params = new URLSearchParams(window.location.search)
-    if (pathGrant) {
-      try { params.set('link', decodeURIComponent(pathGrant)) } catch { params.set('link', pathGrant) }
-    }
-    const query = params.toString()
-    window.history.replaceState(null, '', `/${query ? `?${query}` : ''}`)
-  }
 }
+
+// A sign-in link (`/login/<grant>`, `/login?e=...`): take the grant out of the address bar before the
+// router snapshots the URL, signed in or not (lib/signinGrant.ts). /login is not a client route.
+captureSigninGrant()
 
 // A server path mount's sign-in return (lib/returnPath.ts); must run before history snapshots.
 captureReturnPath()

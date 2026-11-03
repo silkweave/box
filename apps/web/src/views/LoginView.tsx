@@ -1,12 +1,13 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Copy, LogIn, Terminal } from 'lucide-react'
 import { Wordmark, Badge, Button } from '@silkweave/box-ui'
 import { useAuth } from '../lib/useAuth.tsx'
+import { dropSigninGrant, grantSubject, pendingSigninGrant, pendingSigninNotice } from '../lib/signinGrant.ts'
 
 // The sign-in gate, shown whenever there is no session. Two ways in, and they are different
 // credentials (see apps/server/src/auth/auth.controller.ts):
 //
-//   - A SIGN-IN LINK (`/login/<grant>`, normalized to transient query state by router.tsx):
+//   - A SIGN-IN LINK (`/login/<grant>`, taken out of the address bar by lib/signinGrant.ts):
 //     path for a person who is not set up yet.
 //   - An ACCESS TOKEN, pasted: the permanent credential, the same one their MCP client uses. For
 //     someone who kept theirs.
@@ -14,7 +15,7 @@ import { useAuth } from '../lib/useAuth.tsx'
 // There is no password. See docs/AUTH.md.
 
 /** Why a link did not work. The server sends these as the 401 message; anything else is unexpected. */
-const LINK_ERRORS: Record<string, string> = {
+export const LINK_ERRORS: Record<string, string> = {
   expired: 'This sign-in link has expired - they only last a few minutes. Ask for a new one.',
   used: 'This sign-in link has already been used. Ask for a new one.',
   invalid: 'This is not a valid sign-in link for this Box.',
@@ -28,29 +29,6 @@ const NOTICES: Record<string, string> = {
   invalid: 'That sign-in link did not work. Ask for a new one, or paste your access token below.',
 }
 
-/**
- * Read the subject out of a grant WITHOUT verifying it - display only.
- *
- * Safe because nothing is decided on it: the server verifies the signature and it alone decides who
- * this is. Showing "Continue as alice" is purely so a person can tell they are about to sign in as
- * the right account (and notice when a colleague forwarded them their own link).
- */
-function grantSubject(grant: string): string | null {
-  try {
-    const payload = grant.split('.')[1]
-    if (!payload) return null
-    const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
-    if (grant.startsWith('bl2.')) {
-      if (decoded.length < 11) return null
-      return new TextDecoder().decode(Uint8Array.from(decoded.slice(10), char => char.charCodeAt(0))) || null
-    }
-    const sub = (JSON.parse(decoded) as { sub?: unknown }).sub
-    return typeof sub === 'string' && sub ? sub : null
-  } catch {
-    return null
-  }
-}
-
 export function LoginView() {
   const { login, loginWithLink, needsOwner } = useAuth()
   const [token, setToken] = useState('')
@@ -58,25 +36,15 @@ export function LoginView() {
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  // Captured once, on mount. The URL is scrubbed immediately afterwards so the grant does not sit in
-  // the address bar to be screenshotted, shoulder-read or copied out of a shared screen, and so Back
-  // cannot return to it. Keeping it in state is enough - it is spent by a POST, not by the URL.
-  const [grant, setGrant] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const link = params.get('link')
-    const e = params.get('e')
-    if (link) setGrant(link)
-    if (e && NOTICES[e]) setNotice(NOTICES[e])
-    if (link || e) {
-      params.delete('link')
-      params.delete('e')
-      const qs = params.toString()
-      window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`)
-    }
-  }, [])
+  // The grant was taken out of the address bar before the router saw it (lib/signinGrant.ts), so it is
+  // never on screen to be screenshotted or shoulder-read, and Back cannot return to it. It is spent
+  // by a POST, not by the URL.
+  const [grant, setGrant] = useState<string | null>(pendingSigninGrant)
+  const notice = NOTICES[pendingSigninNotice() ?? ''] ?? null
+  const dropGrant = (): void => {
+    dropSigninGrant()
+    setGrant(null)
+  }
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -95,6 +63,8 @@ export function LoginView() {
     if (!grant || busy) return
     setBusy(true)
     setError(null)
+    // Out of the module before the spend: once the session exists the auth gate must not see it again.
+    dropSigninGrant()
     const res = await loginWithLink(grant)
     setBusy(false)
     if (!res.ok) {
@@ -140,7 +110,7 @@ export function LoginView() {
             </Button>
             <button
               type='button'
-              onClick={() => setGrant(null)}
+              onClick={dropGrant}
               className='text-body-sm text-muted-foreground underline-offset-2 hover:underline'>
               Use an access token instead
             </button>
