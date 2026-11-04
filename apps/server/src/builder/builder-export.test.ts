@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import type { SessionEvent } from '@workerdeck/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildSessionExport, transcriptMarkdown } from './builder-export.js'
+import { buildSessionExport, engineEvents, transcriptMarkdown } from './builder-export.js'
 import { createBuilderJournal, readJournal } from './builder-journal.js'
 import { readTurns, recordedSessions, recordTurn } from './builder-turns.js'
 import { createRedactor, keysOnly, REDACTED, secretValues } from './redact.js'
@@ -158,5 +158,63 @@ describe('buildSessionExport', () => {
     ])
     expect(md).toContain('**Result (error)**')
     expect(md).toContain('errors: boom')
+  })
+
+  it('exports an ended Claude session from its own transcript, with a readable transcript.md', async () => {
+    const root = scratch()
+    const instance = join(root, 'data')
+    const home = join(root, 'claude-home')
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    writeFileSync(join(root, 'box.local.json'), JSON.stringify({ auth: { token: 'Zq8Lw3Nv5Tb7Yc2Md9Kf4Hg' } }))
+    await recordTurn(root, instance, 'sess-2', { seq: 2, subtype: 'success', durationMs: 500 }, { engine: 'claude', profile: 'toby:claude', model: 'opus', engineSessionId: 'eng-claude-1' })
+    const project = join(home, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'))
+    mkdirSync(project, { recursive: true })
+    writeFileSync(join(project, 'eng-claude-1.jsonl'), [
+      { type: 'user', timestamp: '2026-11-04T01:00:00.000Z', message: { role: 'user', content: 'Why does Zq8Lw3Nv5Tb7Yc2Md9Kf4Hg fail?' } },
+      { type: 'assistant', timestamp: '2026-11-04T01:00:05.000Z', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'box verify' } }] } },
+      { type: 'attachment', timestamp: '2026-11-04T01:00:06.000Z' },
+    ].map(line => JSON.stringify(line)).join('\n'))
+    const files = unzip(buildSessionExport({ root, instanceDir: instance, sessionId: 'sess-2', info: null, events: null, conversations: [], verification: null, application: null, profileHome: home }).zip)
+    expect(files.get('transcript.md')).toContain('### User')
+    expect(files.get('transcript.md')).toContain('**Tool: Bash**')
+    expect(files.get('engine-transcript.jsonl')!.split('\n').filter(Boolean)).toHaveLength(3)
+    expect([...files.values()].join('\n')).not.toContain('Zq8Lw3Nv5Tb7Yc2Md9Kf4Hg')
+  })
+
+  it('exports an ended Codex session from its rollout file', async () => {
+    const root = scratch()
+    const instance = join(root, 'data')
+    const home = join(root, 'codex-home')
+    const thread = '01a01885-e3e1-7760-8414-dbb2ebd494ee'
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    await recordTurn(root, instance, 'sess-3', { seq: 2, subtype: 'success', durationMs: 500 }, { engine: 'codex', profile: 'toby:codex', model: 'gpt', engineSessionId: thread })
+    mkdirSync(join(home, 'sessions/2026/11/04'), { recursive: true })
+    const item = (timestamp: string, type: string, payload: Record<string, unknown>) => JSON.stringify({ timestamp, type, payload })
+    writeFileSync(join(home, `sessions/2026/11/04/rollout-2026-11-04T01-00-00-${thread}.jsonl`), [
+      item('2026-11-04T01:00:00.000Z', 'session_meta', { id: thread }),
+      item('2026-11-04T01:00:00.000Z', 'event_msg', { type: 'task_started' }),
+      item('2026-11-04T01:00:00.000Z', 'response_item', { type: 'message', role: 'developer', content: [{ type: 'input_text', text: '<permissions instructions>' }] }),
+      item('2026-11-04T01:00:00.000Z', 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>x</environment_context>' }, { type: 'input_text', text: 'Adapt reminders' }] }),
+      item('2026-11-04T01:00:02.000Z', 'response_item', { type: 'function_call', name: 'shell', arguments: '{"command":["ls"]}', call_id: 'c1' }),
+      item('2026-11-04T01:00:03.000Z', 'response_item', { type: 'function_call_output', call_id: 'c1', output: 'features' }),
+      item('2026-11-04T01:00:04.000Z', 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] }),
+      item('2026-11-04T01:00:05.000Z', 'event_msg', { type: 'task_complete', duration_ms: 5000 }),
+    ].join('\n'))
+    const exported = buildSessionExport({ root, instanceDir: instance, sessionId: 'sess-3', info: null, events: null, conversations: [], verification: null, application: null, profileHome: home })
+    const files = unzip(exported.zip)
+    const md = files.get('transcript.md')!
+    expect(md).toContain('Adapt reminders')
+    expect(md).not.toContain('environment_context')
+    expect(md).not.toContain('permissions instructions')
+    expect(md).toContain('**Tool: shell**')
+    expect(md).toContain('features')
+    expect(md).toContain('### Assistant')
+    expect(md).toContain('*Turn ended: success, 5s, 1 steps*')
+    expect(exported.files.find(file => file.name === 'engine-transcript.jsonl')?.description).toBe('Codex transcript of the ended session')
+  })
+
+  it('reads Claude sidechains as subagent work', () => {
+    const md = transcriptMarkdown(engineEvents({ engine: 'claude', text: JSON.stringify({ type: 'assistant', isSidechain: true, timestamp: '2026-11-04T01:00:00.000Z', message: { content: [{ type: 'text', text: 'Searching.' }] } }) }))
+    expect(md).toContain('### Assistant (subagent)')
   })
 })

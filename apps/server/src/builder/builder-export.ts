@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { arch, homedir, release, type } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { SessionEvent, SessionInfo } from '@workerdeck/protocol'
 import { readJournal } from './builder-journal.js'
 import { readTurns, type TurnRecord } from './builder-turns.js'
@@ -16,8 +16,8 @@ import { createZip, type ZipEntry } from './zip.js'
  * - `manifest.json`: session, Box and tool versions, recipes ledger, application state
  * - `transcript.md` and `transcript.ndjson`: the conversation, tool calls and results (long values
  *   shortened), from WorkerDeck; `conversations/<n>.ndjson` for earlier conversations of the session
- * - `engine-transcript.jsonl`: Claude's own transcript, only when WorkerDeck no longer knows the
- *   session (it ended)
+ * - `engine-transcript.jsonl`: the engine's own transcript (Claude or Codex), only when WorkerDeck no
+ *   longer knows the session (it ended); transcript.md is then rendered from it
  * - `turns.ndjson`: HEAD, branch, `git status` and diff summary at the end of each turn
  * - `journal.ndjson`: supervisor, lifecycle, build and application events from the session's window
  * - `verification.json`: the last Wrap Up verification
@@ -66,11 +66,16 @@ function git(root: string, args: string[]): string | null {
   try { return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return null }
 }
 
+/** The package's exports hide package.json, so walk up from its resolved entry point. */
 function workerdeckVersion(root: string): string | null {
   try {
-    const require = createRequire(join(root, 'apps/server/package.json'))
-    return (JSON.parse(readFileSync(require.resolve('@workerdeck/server/package.json'), 'utf8')) as { version?: string }).version ?? null
-  } catch { return null }
+    let dir = dirname(createRequire(join(root, 'apps/server/package.json')).resolve('@workerdeck/server'))
+    for (let depth = 0; depth < 6; depth++, dir = dirname(dir)) {
+      const pkg = readJson(join(dir, 'package.json')) as { name?: string; version?: string } | null
+      if (pkg?.name === '@workerdeck/server') return pkg.version ?? null
+    }
+  } catch { /* not installed */ }
+  return null
 }
 
 /** Long strings are cut so a transcript of large tool outputs stays readable and small. */
@@ -133,12 +138,96 @@ export function transcriptMarkdown(events: SessionEvent[]): string {
   return `${out.join('\n\n')}\n`
 }
 
-/** Claude's own transcript for the session, when WorkerDeck has none left (an ended session). */
-function claudeTranscript(home: string | null | undefined, cwd: string, engineSessionId: string | null): string | null {
-  if (!engineSessionId || !/^[A-Za-z0-9-]{8,64}$/.test(engineSessionId)) return null
-  const base = home || join(homedir(), '.claude')
-  const file = join(base, 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'), `${engineSessionId}.jsonl`)
+/** The engine's own transcript of a session WorkerDeck no longer knows (it ended). */
+export interface EngineTranscript { engine: 'claude' | 'codex'; text: string }
+
+const ENGINE_SESSION_ID = /^[A-Za-z0-9-]{8,64}$/
+
+/** Claude keeps `<config>/projects/<cwd with non-alphanumerics as dashes>/<session>.jsonl`. */
+function claudeTranscript(home: string | null | undefined, cwd: string, engineSessionId: string): string | null {
+  const file = join(home || join(homedir(), '.claude'), 'projects', cwd.replace(/[^A-Za-z0-9]/g, '-'), `${engineSessionId}.jsonl`)
   return existsSync(file) ? readFileSync(file, 'utf8') : null
+}
+
+/** Codex keeps `<CODEX_HOME>/sessions/YYYY/MM/DD/rollout-<time>-<thread>.jsonl` (or archived_sessions/). */
+function codexTranscript(home: string | null | undefined, engineSessionId: string): string | null {
+  const base = home || join(homedir(), '.codex')
+  const suffix = `-${engineSessionId}.jsonl`
+  for (const dir of ['sessions', 'archived_sessions']) {
+    let names: string[]
+    try { names = readdirSync(join(base, dir), { recursive: true, encoding: 'utf8' }) } catch { continue }
+    const found = names.filter(name => basename(name).startsWith('rollout-') && name.endsWith(suffix)).sort().at(-1)
+    if (found) return readFileSync(join(base, dir, found), 'utf8')
+  }
+  return null
+}
+
+export function engineTranscript(engine: string | null, home: string | null | undefined, cwd: string, engineSessionId: string | null): EngineTranscript | null {
+  if (!engineSessionId || !ENGINE_SESSION_ID.test(engineSessionId)) return null
+  if (engine === 'codex') {
+    const text = codexTranscript(home, engineSessionId)
+    return text === null ? null : { engine: 'codex', text }
+  }
+  const text = claudeTranscript(home, cwd, engineSessionId)
+  return text === null ? null : { engine: 'claude', text }
+}
+
+const parseLines = (text: string): Array<Record<string, unknown>> => text.split('\n').filter(Boolean).flatMap(line => {
+  try { const value = JSON.parse(line) as unknown; return value && typeof value === 'object' ? [value as Record<string, unknown>] : [] } catch { return [] }
+})
+const timeOf = (value: unknown): number => { const ms = typeof value === 'string' ? Date.parse(value) : NaN; return Number.isNaN(ms) ? 0 : ms }
+const asEvent = (value: Record<string, unknown>): SessionEvent => value as unknown as SessionEvent
+
+/** Context Codex injects as user messages (AGENTS.md, environment, permissions), not typed by anyone. */
+const injected = (text: string): boolean => /^\s*(<(environment_context|permissions instructions|user_instructions|collaboration_mode|skill_instructions)\b|# AGENTS\.md instructions)/.test(text)
+
+/**
+ * The engine transcript as the session events `transcriptMarkdown` reads, so an ended session still
+ * gets a readable transcript.md. Only messages, tool calls, results and turn ends are kept.
+ */
+export function engineEvents(transcript: EngineTranscript): SessionEvent[] {
+  const events: SessionEvent[] = []
+  const lines = parseLines(transcript.text)
+  if (transcript.engine === 'claude') {
+    for (const line of lines) {
+      if ((line.type !== 'user' && line.type !== 'assistant') || !line.message) continue
+      events.push(asEvent({ type: `${line.type}_message`, ts: timeOf(line.timestamp), parentToolUseId: line.isSidechain ? 'sidechain' : null, message: line.message }))
+    }
+    return events
+  }
+  let started = 0
+  let steps = 0
+  for (const line of lines) {
+    const ts = timeOf(line.timestamp)
+    const payload = (line.payload ?? {}) as Record<string, unknown>
+    if (line.type === 'event_msg') {
+      if (payload.type === 'task_started') { started = ts; steps = 0 }
+      else if (payload.type === 'task_complete' || payload.type === 'turn_aborted') {
+        const durationMs = typeof payload.duration_ms === 'number' ? payload.duration_ms : started ? ts - started : 0
+        const subtype = payload.type === 'turn_aborted' ? `aborted (${String(payload.reason ?? 'unknown')})` : 'success'
+        events.push(asEvent({ type: 'turn_result', ts, subtype, isError: payload.type === 'turn_aborted', durationMs, numTurns: steps }))
+      } else if (payload.type === 'error' && typeof payload.message === 'string') {
+        events.push(asEvent({ type: 'session_error', ts, message: payload.message }))
+      }
+      continue
+    }
+    if (line.type !== 'response_item') continue
+    if (payload.type === 'compaction') events.push(asEvent({ type: 'context_compacted', ts }))
+    else if (payload.type === 'message' && (payload.role === 'user' || payload.role === 'assistant')) {
+      const texts = (Array.isArray(payload.content) ? payload.content as Block[] : [])
+        .filter(part => typeof part.text === 'string' && (payload.role === 'assistant' || !injected(part.text)))
+        .map(part => ({ type: 'text', text: part.text }))
+      if (texts.length) events.push(asEvent({ type: `${payload.role}_message`, ts, parentToolUseId: null, message: { role: payload.role, content: texts } }))
+    } else if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
+      steps++
+      let input: unknown = payload.type === 'function_call' ? payload.arguments : payload.input
+      if (typeof input === 'string') { try { input = JSON.parse(input) } catch { /* free-form input stays text */ } }
+      events.push(asEvent({ type: 'assistant_message', ts, parentToolUseId: null, message: { role: 'assistant', content: [{ type: 'tool_use', id: payload.call_id, name: payload.name, input }] } }))
+    } else if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
+      events.push(asEvent({ type: 'user_message', ts, parentToolUseId: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: payload.call_id, content: payload.output }] } }))
+    }
+  }
+  return events
 }
 
 function upstreamCore(text: string | null): string | null {
@@ -170,9 +259,8 @@ export function buildSessionExport(sources: ExportSources): SessionExport {
   const boxJson = readJson(join(root, 'box.json')) as Record<string, unknown> | null
   const upstream = existsSync(join(root, 'docs/UPSTREAM.md')) ? readFileSync(join(root, 'docs/UPSTREAM.md'), 'utf8') : null
   const events = sources.events?.filter(kept) ?? null
-  const engineTranscript = events === null && (info?.engine ?? lastTurnSession?.engine ?? 'claude') === 'claude'
-    ? claudeTranscript(sources.profileHome, info?.cwd ?? root, engineSessionId)
-    : null
+  const engine = info?.engine ?? lastTurnSession?.engine ?? null
+  const ended = events === null ? engineTranscript(engine, sources.profileHome, info?.cwd ?? root, engineSessionId) : null
 
   const entries: Array<ZipEntry & { description: string }> = []
   const add = (name: string, data: string, description: string): void => { entries.push({ name, data: redactor.text(data), modified: now, description }) }
@@ -220,7 +308,8 @@ export function buildSessionExport(sources: ExportSources): SessionExport {
     `Session ${sessionId}, exported ${now.toISOString()}.`,
     '',
     'Contents: manifest.json (versions, session, recipes), transcript.md (readable conversation),',
-    'transcript.ndjson (WorkerDeck events), turns.ndjson (git state after each turn), journal.ndjson',
+    'transcript.ndjson (WorkerDeck events) or, for an ended session, engine-transcript.jsonl (the',
+    'Claude or Codex transcript), turns.ndjson (git state after each turn), journal.ndjson',
     '(supervisor, build and application events from the session window), verification.json (last',
     'Wrap Up verification), config/ (box.json, and box.local.json key names without values),',
     'box/UPSTREAM.md (source ancestry).',
@@ -234,9 +323,11 @@ export function buildSessionExport(sources: ExportSources): SessionExport {
     add('transcript.ndjson', ndjson(clean(events)), 'Session events from WorkerDeck')
   }
   for (const past of sources.conversations) add(`conversations/${past.n}.ndjson`, ndjson(clean(past.events.filter(kept))), `Earlier conversation ${past.n}`)
-  if (engineTranscript) {
-    const lines = engineTranscript.split('\n').filter(Boolean).map(line => { try { return JSON.stringify(clean(JSON.parse(line))) } catch { return JSON.stringify(clean(line)) } })
-    add('engine-transcript.jsonl', `${lines.join('\n')}\n`, 'Claude transcript of the ended session')
+  if (ended) {
+    const label = ended.engine === 'codex' ? 'Codex' : 'Claude'
+    add('transcript.md', transcriptMarkdown(clean(engineEvents(ended))), `Readable conversation of the ended session, from the ${label} transcript`)
+    const lines = ended.text.split('\n').filter(Boolean).map(line => { try { return JSON.stringify(clean(JSON.parse(line))) } catch { return JSON.stringify(clean(line)) } })
+    add('engine-transcript.jsonl', `${lines.join('\n')}\n`, `${label} transcript of the ended session`)
   }
   add('turns.ndjson', ndjson(turns), 'Git state at the end of each turn')
   add('journal.ndjson', ndjson(clean(journal)), 'Supervisor, build and application events')

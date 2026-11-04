@@ -141,6 +141,10 @@ controller; put it on any new one.
   express - admin-only when a particular *field* is set.
 - **CSRF**: a cookie-authed state-changing request must carry the `x-box-csrf` header. `SameSite=Lax`
   already blocks cross-site cookie sends on those methods; the header is the second layer.
+- **Request bodies**: a body over 100 kB is refused before routing unless the request carries a
+  bearer header or the session cookie (64 MB then). A route a feature registers with
+  `registerRawUploadRoute` (`packages/core/src/raw-uploads.ts`) is exempt: its capability is in its
+  path, and it streams the body under its own cap (artifacts' one-time upload links).
 - **Path mounts** (`registerPathMount`, `packages/core/src/path-mounts.ts`) are served by plain
   middleware in `main.ts`, ahead of the agent mount, the dev proxy and the release SPA fallback, so a feature-owned prefix behaves the same in both topologies. That middleware resolves
   the principal itself (bearer token, then session cookie) before the handler runs: a mount is never

@@ -90,7 +90,8 @@ reason; a missing slug is a 404.
 | `artifact-slug-available` | `{available, reason}`. |
 | `artifact-icons` | Search lucide names: exact, then prefix, then substring. |
 | `artifact-team` | Box users an artifact can belong to, and the default owner. |
-| `artifact-publish` | Exactly one of `html`, `tarball` (base64), `dir` (admin only). `slug` required; a taken slug is an error without `replace`. A named icon must be real, a named folder must exist. A new page's owner is `owner` or the caller; a republish keeps the owner and keeps omitted filing fields. A public page's copy is re-synced. |
+| `artifact-upload-begin` | A one-time upload link for a page too large to pass inline: `slug`, optional `sizeBytes` (the link refuses more; default and ceiling `maxUploadMb`) and `sha256`. Returns `uploadId`, `uploadUrl`, `expiresAt` (10 minutes), `maxBytes` and a `howTo`. At most 10 open links per caller. |
+| `artifact-publish` | Exactly one of `html`, `tarball` (base64), `uploadId` (from `artifact-upload-begin`, same caller and slug), `dir` (admin only). `slug` required; a taken slug is an error without `replace`. A named icon must be real, a named folder must exist. A new page's owner is `owner` or the caller; a republish keeps the owner and keeps omitted filing fields. A public page's copy is re-synced. |
 | `artifact-update` | Title, description, icon, tags (replace), kind, source, folder (`''` = root), owner (`''` = system principal). The only way to change an owner. |
 | `artifact-rename` | New slug: entry document, tree, row, annotations, kv and views move; the public copy moves. No redirect. |
 | `artifact-delete` | Purges the public copy, then the tree, row, annotations, kv and views. |
@@ -104,8 +105,18 @@ reason; a missing slug is a 404.
 | `artifact-import` | Admin. Import from a standalone host's data dir (`from`), with a roster map (`users`, `luna=nova,toby=toby`), `dryRun`, `replace`. |
 
 tRPC also has `artifactsGallery` (query, everything, for the dashboard). REST only:
-`POST /api/artifacts/rt/upload` (multipart `file` plus publish fields; `tags` comma-separated) for
-trees too large for an MCP argument, capped by `features.artifacts.maxUploadMb`.
+
+- `PUT /api/artifacts/upload/<secret>`: the receiving end of an `artifact-upload-begin` link, the
+  file as the raw body (`curl -fsS -T page.html <uploadUrl>`). No auth header: the secret is the
+  credential, and the Box stores only its SHA-256. One attempt per link, whatever its outcome (a used
+  link answers 409, an unknown or expired one 404, an oversized file 413, a `sha256` mismatch 400).
+  The body is one HTML document, or a tar or tar.gz of a tree (recognised by its first bytes). The
+  file is staged under `data/artifact-uploads/` and stays inert until the caller that began the link
+  publishes it with `artifact-publish { slug, uploadId }`, which runs the normal publish path. Links
+  live in memory: a restart drops them, and the next sweep deletes their files. A received but
+  unpublished file is deleted 30 minutes after the link expires.
+- `POST /api/artifacts/rt/upload` (multipart `file` plus publish fields; `tags` comma-separated) for
+  a signed-in client, capped by `features.artifacts.maxUploadMb`.
 
 ## Events
 

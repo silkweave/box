@@ -372,6 +372,7 @@ Core-owned, filled at runtime from a server module's `onModuleInit`, unregistere
 | `registerAgentSessionRule(id, rule)` (`agent-session.ts`) | a rule that WIDENS who may read an agent session; core knows ownership and nothing else |
 | `registerUserCleanup(id, cleanup)` (`users/cleanup.ts`) | what to do with the feature's own rows when a user is deleted; a throw aborts the delete |
 | `registerPathMount({ id, prefix, handle })` (`path-mounts.ts`) | a top-level URL prefix such as `/artifacts/` that the feature serves itself, ahead of the SPA in dev and production; core authenticates every request first and the bare prefix stays the SPA's (§ 5.1) |
+| `registerRawUploadRoute({ id, method, prefix })` (`raw-uploads.ts`) | an `/api/` route authorised by a capability in its own path (a one-time upload link) that streams its body under its own cap; core skips the 100 kB anonymous body pre-check for it and nothing else |
 
 Core's signals add ports of the same shape ([SIGNALS.md](../SIGNALS.md)): `registerSignalHooks`
 (planning and automation register into it), `registerBoardNodeKind` (planning's

@@ -25,7 +25,7 @@ import { SupervisedApplication } from './supervised-application.js'
 import { builderUiVersion, currentBuilderUi, prepareBuilderUi, runBuilderCommand, serveBuilderUi, stopBuilderCommands } from './builder-ui-snapshot.js'
 import { DevView, parseDevLogLevel } from './dev-view.js'
 import { createBuilderJournal } from './builder-journal.js'
-import { recordedSessions, recordTurn } from './builder-turns.js'
+import { readTurns, recordedSessions, recordTurn } from './builder-turns.js'
 import { buildSessionExport } from './builder-export.js'
 import { readWorkerdeckConfig } from '../agent/workerdeck.config.js'
 import type { SessionEvent } from '@workerdeck/protocol'
@@ -80,17 +80,22 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     else if (level === 'warn') console.warn(message)
     else console.log(message)
   }
+  // Build output is always piped so the journal sees it, in built mode (`box start`) as in `box dev`.
   const runCommand = async (cwd: string, args: string[]): Promise<void> => {
-    if (!options.devView) return runBuilderCommand(cwd, args)
     let pending = ''
+    const line = (text: string): void => {
+      journal.output('build', 'info', text)
+      if (options.devView) options.devView.child('build', 'info', text)
+      else process.stdout.write(`${text}\n`)
+    }
     const output = (chunk: string): void => {
       pending += chunk
       const lines = pending.split(/\r?\n|\r/)
       pending = lines.pop() ?? ''
-      for (const line of lines) if (line) { journal.output('build', 'info', line); options.devView!.child('build', 'info', line) }
+      for (const text of lines) if (text) line(text)
     }
     try { await runBuilderCommand(cwd, args, { onOutput: output }) }
-    finally { if (pending) { journal.output('build', 'info', pending); options.devView.child('build', 'info', pending) } }
+    finally { if (pending) line(pending) }
   }
   const auth = new BuilderSupervisorAuth(async cookie => {
     const started = performance.now()
@@ -216,7 +221,8 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       }
     }
     journal.flush()
-    const profile = info?.profile
+    // An ended session is gone from WorkerDeck; its last turn record still names the profile.
+    const profile = info?.profile ?? readTurns(paths.instanceDir, sessionId).at(-1)?.session.profile
     const profileHome = readWorkerdeckConfig({ repoRoot: root })?.profiles.find(entry => entry.name === profile)?.home ?? null
     return buildSessionExport({
       root, instanceDir: paths.instanceDir, sessionId, info,

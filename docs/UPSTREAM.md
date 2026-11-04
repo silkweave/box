@@ -11,9 +11,9 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `677d2352b402333fe9a6869a0f25cd9f2fcccfaf` (2026-11-04:
-field-tester fixes for onboarding, Work session permission modes, app restarts that keep running
-assistant turns, and an admin maintenance notice; Builder "Export session" support zip),
+Latest core refresh: Stack commit `1f443e994f9f81006dc5e057eff229de7f2f0c0a` (2026-11-04:
+Builder "Export session" covers ended Codex sessions and renders their transcript; the core
+raw-upload port behind the artifacts recipe's one-time upload links),
 materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.

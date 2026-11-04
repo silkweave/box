@@ -5,7 +5,7 @@ import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { SESSION_COOKIE, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
+import { SESSION_COOKIE, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, isRawUploadRoute, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
 import { AppModule, trpcTransport } from './app.module.js'
 import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
@@ -75,10 +75,13 @@ async function bootstrap(): Promise<void> {
   // take: a single-file artifact page over MCP or tRPC (artifact-publish `html`, a base64 tarball)
   // is routinely larger. The parser runs before any guard, so the larger limit is only offered to
   // requests that present a credential (a bearer header or the session cookie); the guard still
-  // decides whether that credential is real. Anything else keeps the 100 kB ceiling.
+  // decides whether that credential is real. Anything else keeps the 100 kB ceiling, except a route a
+  // feature registered as a raw upload (core raw-uploads port): its capability is in its path, and it
+  // streams the body under its own cap.
   const BODY_LIMIT_BYTES = 64 * 1024 * 1024
   const ANONYMOUS_BODY_LIMIT_BYTES = 100 * 1024
   app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    if (isRawUploadRoute(req.method, (req.url ?? '/').split('?', 1)[0]!)) return next()
     const length = Number(req.headers['content-length'] ?? 0)
     const credentialed = /^Bearer\s+/i.test(String(req.headers.authorization ?? '')) || SESSION_COOKIE in parseCookies(req.headers.cookie)
     if (length > (credentialed ? BODY_LIMIT_BYTES : ANONYMOUS_BODY_LIMIT_BYTES)) {
