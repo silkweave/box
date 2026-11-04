@@ -200,7 +200,9 @@ recording the recipe in the ledger once validation passes. See [BUILDER.md](BUIL
 
 ## Updating and resuming
 
-Use `$adapt` for one recipe, `$upgrade` for core, and `$verify` for the whole Box. Compare the
+Use `$adapt` for one recipe, `$upgrade` to bring core and every adapted recipe to their latest
+versions (a Box installed from silkweave/box merges `origin/master`), and `$verify` for the whole
+Box. Compare the
 recorded previous upstream commit, local code and target upstream commit. Keep full commit SHAs and
 path mappings in `docs/UPSTREAM.md`; a date or release label alone does not identify the ancestor.
 Write the intended steps and completed results as work proceeds in `_docs/INTEGRATION.md`. On resume,

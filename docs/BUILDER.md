@@ -34,6 +34,9 @@ and GPT-6 Astra for Codex; Opus 5.5, Sonnet 5.5 and Fable 5.1 for Claude. A sess
 another model keeps that model listed. The curated set lives in `apps/web/src/lib/builderModels.ts`
 and the start defaults in `apps/server/src/builder/builder-host.ts`.
 
+The agent's thinking lines are hidden from the transcript by default. The **Thinking** toggle in the
+bottom status bar shows them; the choice is kept per browser.
+
 The Builder shell keeps the shared conversation in a persistent right-hand panel. Its workspace
 views are:
 

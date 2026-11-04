@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { AlertCircle, Check, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, Rocket, ShieldCheck, Square } from 'lucide-react'
+import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, Rocket, ShieldCheck, Square } from 'lucide-react'
 import { ContextDialog, ModelSelect, PermissionModeSelect, ProgressRing, SessionPanel, UsageDialog, formatTokens, type SessionControls, type SessionVitals } from '@workerdeck/ui'
 import type { UsageWindowRow } from '@workerdeck/protocol'
 import { BuilderFiles } from '../components/builder/BuilderFiles.tsx'
@@ -10,6 +10,8 @@ import { safePreviewPath } from '../lib/builderPreview.ts'
 import { BUILDER_BRIEF_MESSAGE, clearPendingBrief, readPendingBrief, storePendingBrief, validBrief } from '../lib/builderBrief.ts'
 import { Badge, Button, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, confirm } from '@silkweave/box-ui'
 import { configureBuilderMonacoWorker } from '../lib/monacoWorker.ts'
+import { usePersistedState } from '@silkweave/box-ui/lib'
+import { appKey } from '../lib/storage.ts'
 import {
   builderClient,
   loadBuilderControlState,
@@ -205,7 +207,13 @@ function PendingChangesMessage({ changes }: { changes: BuilderPendingChanges }) 
   </>
 }
 
+/** Whether the Builder transcript shows the agent's thinking lines. Off by default: they are verbose. */
+function useShowThinking() {
+  return usePersistedState(appKey('builder', 'showThinking'), false, (v) => typeof v === 'boolean')
+}
+
 function BuilderSessionBar({ vitals, controls }: { vitals?: SessionVitals; controls?: SessionControls }) {
+  const [showThinking, setShowThinking] = useShowThinking()
   const [contextOpen, setContextOpen] = React.useState(false)
   const [usageOpen, setUsageOpen] = React.useState(false)
   if (!vitals) return <div className='h-9 shrink-0' />
@@ -229,6 +237,9 @@ function BuilderSessionBar({ vitals, controls }: { vitals?: SessionVitals; contr
         {vitals.tasks.length > 0 && <span className='whitespace-nowrap text-fg-3'>{vitals.tasks.length} {vitals.tasks.length === 1 ? 'task' : 'tasks'}</span>}
         {controls && models.length > 0 && <ModelSelect models={models} model={vitals.model} onModelChange={controls.setModel} disabled={ended} className='h-6 max-w-40' />}
         {controls && vitals.permissionMode && <PermissionModeSelect mode={vitals.permissionMode} modes={permissionModes} onModeChange={controls.setPermissionMode} disabled={ended} className='h-6 max-w-32' />}
+        <Button variant='ghost' size='xs' aria-pressed={showThinking} title={showThinking ? 'Hide thinking' : 'Show thinking'} onClick={() => setShowThinking((v) => !v)} className='px-1.5'>
+          <Brain className='size-3.5' />Thinking
+        </Button>
       </div>
     </div>
     <ContextDialog usage={vitals.contextUsage} engine={vitals.engine} open={contextOpen} onOpenChange={setContextOpen} />
@@ -254,6 +265,7 @@ export function BuilderView() {
   const engine = pickedEngine ?? (configuredEngine('claude') || !configuredEngine('codex') ? 'claude' : 'codex')
   const [sessionVitals, setSessionVitals] = React.useState<SessionVitals>()
   const [sessionControls, setSessionControls] = React.useState<SessionControls>()
+  const [showThinking] = useShowThinking()
   const [brief, setBrief] = React.useState(readPendingBrief)
   const iframe = React.useRef<HTMLIFrameElement>(null)
   const [loadedUiVersion] = React.useState(() => document.querySelector<HTMLMetaElement>('meta[name="box-builder-ui"]')?.content ?? null)
@@ -395,7 +407,7 @@ export function BuilderView() {
         {state.web.mode === 'built' && state.web.error && <span className='text-danger' title={state.web.error}>Promote failed; everyone keeps the previous release.</span>}
       </div>
       {state.session ? <>
-        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' statusSurface='external' controlsSurface='external' onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
+        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' statusSurface='external' controlsSurface='external' hideThinking={!showThinking} onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
         <BuilderSessionBar vitals={sessionVitals} controls={sessionControls} />
       </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} brief={brief} onDiscardBrief={discardBrief} onStart={() => void start()} onStop={() => void stop()} /></div>}
     </aside>

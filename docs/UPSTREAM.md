@@ -11,9 +11,9 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `17794fd058d6e2d247a54d022e4d8484ceb55827` (2026-11-04:
-WorkerDeck 4.1.1, mention avatars centred in the chat composer, chat composer keys documented in
-the chat recipe spec), materialized with `box:build`;
+Latest core refresh: Stack commit `e06a4aaedcf2162d37a154ebc67e4e284692be14` (2026-11-04:
+the upgrade skill covers Boxes installed from silkweave/box, and the Builder status bar has a
+thinking toggle, off by default), materialized with `box:build`;
 `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.
