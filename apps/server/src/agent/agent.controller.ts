@@ -101,11 +101,10 @@ export class AgentController {
       enabled: agentWorkerUrl() !== undefined,
       work,
       cwd: repoRoot(),
-      // null for the same reason as `model` below: the worker owns the per-profile default, and
-      // naming one here would override it for whichever engine the session lands on. The codex
-      // profiles default to `acceptEdits` (Codex's "Approve for me" - workspace-write sandbox,
-      // every ask flag still on); the claude profiles take the engine default. Hard-coding
-      // 'default' here silently pinned every codex session to a READ-ONLY sandbox.
+      // null: no server-wide mode. The browser starts each session in the mode last picked on its
+      // engine, else `auto` (lib/agentStore.ts startingPermissionMode), so the mode follows the
+      // engine the session lands on. Hard-coding 'default' here once silently pinned every codex
+      // session to a READ-ONLY sandbox.
       permissionMode: null,
       // null on purpose, for BOTH engines. The worker owns the per-profile default
       // (`defaults.model` - gpt-5.6-luna on every :codex profile), and a model named here would

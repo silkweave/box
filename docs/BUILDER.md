@@ -156,6 +156,38 @@ directories the control state no longer lists. A restore never prunes, so the po
 from and its safety backup stay in place until the next start or backup. A directory that cannot be
 removed is left for the next prune and does not block the operation.
 
+## Export a session for support
+
+When a Builder session goes wrong, **More > Export session** (or `box builder export [--session
+<id>] [--out <file>]` on the host) produces one zip to send to whoever supports the Box. The dialog
+lists every file and its size before the download; both paths build the export the same way. Without
+`--session` the CLI exports the current session, else the latest one with a turn record.
+
+| File | Contents |
+|---|---|
+| `manifest.json` | Session (engine, profile, model, engine session id, turns, cost), Box HEAD and branch, Stack core SHA from `docs/UPSTREAM.md`, the `recipes` ledger, WorkerDeck, Bun and OS versions, application state |
+| `transcript.md`, `transcript.ndjson` | The conversation, tool calls and results from WorkerDeck, long values shortened; `conversations/<n>.ndjson` for earlier conversations of the session |
+| `engine-transcript.jsonl` | Claude's own transcript, only when WorkerDeck no longer knows the session (ended, then the supervisor restarted) |
+| `turns.ndjson` | HEAD, branch, `git status` and the diff summary at the end of each turn (paths and counts, no contents) |
+| `journal.ndjson` | Supervisor, lifecycle, build and application events from ten minutes before the session started |
+| `verification.json` | The last Wrap Up verification |
+| `config/box.json`, `config/box.local.keys.json` | Shared settings; local settings as key names only |
+| `box/UPSTREAM.md` | The Box's recorded source ancestry |
+
+Every file is redacted: each credential-like value from `box.local.json` and the profiles' MCP token
+files is replaced wherever it appears (Box access tokens have no recognisable prefix), then provider
+keys, bearer headers, JWTs, sign-in links, private keys, cookies, URL credentials and `token=`-style
+assignments are replaced too, and object keys that name a secret lose their value. Never included:
+`data.db`, the warehouse, chat and its uploads, other sessions, or any `box.local.json` value.
+Anything typed or printed in the session is part of the transcript, so the owner looks it over
+before sending.
+
+The export draws on two records the supervisor keeps under `data/builder/`: `journal.ndjson` (its
+diagnostics and reports plus application, Vite and build output, rotated to `journal.1.ndjson` at
+4 MiB; request-level events are kept only when they fail) and `turns/<session>.ndjson` (one line per
+finished turn, removed after 30 days). The supervisor pipes the application's output so the journal
+sees it; under `box start` it passes each line on to stdout or stderr unchanged.
+
 ## Preview and Promote under box start
 
 Under **box start** the Builder Preview loads the live source through Vite, with hot reload, while

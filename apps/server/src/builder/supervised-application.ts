@@ -58,7 +58,15 @@ export interface SupervisedApplicationOptions {
   spawn?: (command: string, args: string[], options: { cwd: string; detached: true; stdio: 'inherit' | ['ignore', 'pipe', 'pipe'] }) => SupervisedChild
   onOutput?: (source: 'app' | 'vite', level: 'info' | 'warn', line: string) => void
   killProcessGroup?: (pid: number, signal: NodeJS.Signals) => void
+  /** Signals one process, not its group: the Box server's own graceful stop (see #stopChild). */
+  killProcess?: (pid: number, signal: NodeJS.Signals) => void
   killTimeoutMs?: number
+  /**
+   * How long the Box server may take to stop after SIGTERM before its group is killed. Longer than
+   * the server's own turn drain (shutdownWorkerdeck, 15s), so a running assistant turn finishes and
+   * its session is kept for the next boot.
+   */
+  drainTimeoutMs?: number
   startVite?: () => Promise<void> | void
   closeVite?: () => Promise<void> | void
 }
@@ -71,6 +79,11 @@ const defaultKillProcessGroup = (pid: number, signal: NodeJS.Signals): void => {
   // terminates the Bun wrapper and all of its Nest/Vite descendants, but no unrelated process.
   process.kill(process.platform === 'win32' ? pid : -pid, signal)
 }
+
+const defaultKillProcess = (pid: number, signal: NodeJS.Signals): void => { process.kill(pid, signal) }
+
+/** The Box server drains running turns for up to 15s (shutdownWorkerdeck); this leaves it room to exit. */
+const DEFAULT_DRAIN_TIMEOUT_MS = 20_000
 
 const exitMessage = (code: number | null, signal: NodeJS.Signals | null): string =>
   signal ? `Box server exited with ${signal}` : `Box server exited with code ${code ?? 'unknown'}`
@@ -90,7 +103,9 @@ export class SupervisedApplication {
   readonly #readinessPollMs: number
   readonly #spawn: NonNullable<SupervisedApplicationOptions['spawn']>
   readonly #killProcessGroup: NonNullable<SupervisedApplicationOptions['killProcessGroup']>
+  readonly #killProcess: NonNullable<SupervisedApplicationOptions['killProcess']>
   readonly #killTimeoutMs: number
+  readonly #drainTimeoutMs: number
   readonly #startViteCallback?: () => Promise<void> | void
   readonly #closeViteCallback?: () => Promise<void> | void
   readonly #onOutput?: NonNullable<SupervisedApplicationOptions['onOutput']>
@@ -112,9 +127,11 @@ export class SupervisedApplication {
     if (!Number.isSafeInteger(options.internalPort) || options.internalPort < 1 || options.internalPort > 65_535) throw new Error('internalPort must be a port number')
     if (!Number.isSafeInteger(options.vitePort) || options.vitePort < 1 || options.vitePort > 65_535) throw new Error('vitePort must be a port number')
     const killTimeoutMs = options.killTimeoutMs ?? 5_000
+    const drainTimeoutMs = options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS
     const readinessTimeoutMs = options.readinessTimeoutMs ?? 20_000
     const readinessPollMs = options.readinessPollMs ?? 100
     if (!Number.isSafeInteger(killTimeoutMs) || killTimeoutMs <= 0) throw new Error('killTimeoutMs must be a positive integer')
+    if (!Number.isSafeInteger(drainTimeoutMs) || drainTimeoutMs <= 0) throw new Error('drainTimeoutMs must be a positive integer')
     if (!Number.isSafeInteger(readinessTimeoutMs) || readinessTimeoutMs <= 0) throw new Error('readinessTimeoutMs must be a positive integer')
     if (!Number.isSafeInteger(readinessPollMs) || readinessPollMs <= 0) throw new Error('readinessPollMs must be a positive integer')
     this.#repoRoot = options.repoRoot
@@ -138,7 +155,9 @@ export class SupervisedApplication {
     this.#readinessPollMs = readinessPollMs
     this.#spawn = options.spawn ?? defaultSpawn
     this.#killProcessGroup = options.killProcessGroup ?? defaultKillProcessGroup
+    this.#killProcess = options.killProcess ?? defaultKillProcess
     this.#killTimeoutMs = killTimeoutMs
+    this.#drainTimeoutMs = drainTimeoutMs
     this.#startViteCallback = options.startVite
     this.#closeViteCallback = options.closeVite
     this.#onOutput = options.onOutput
@@ -433,7 +452,26 @@ export class SupervisedApplication {
     connect(child.stderr, 'warn')
   }
 
+  /**
+   * The Box server hosts the assistant's WorkerDeck sessions and their engine CLIs, all in its
+   * process group. SIGTERM goes to the server alone so its handler can drain running turns and close
+   * WorkerDeck, which keeps each session's record for the next boot. Signalling the group first
+   * killed the engine CLIs mid-turn, and WorkerDeck then forgot the session: a restart, maintenance
+   * switch or Wrap Up made the open assistant session disappear. The group is killed only once the
+   * drain window passes, and swept after a clean exit for anything left behind.
+   */
   async #stopChild(child: SupervisedChild, exited: Promise<void>): Promise<SupervisedApplicationStatus> {
+    const pid = child.pid
+    if (pid === undefined) throw new Error('Box server child has no pid; refusing to touch an unknown process')
+    diagnostic('lifecycle', 'child.signal', { target: 'Box server', childPid: pid, signal: 'SIGTERM', scope: 'process' })
+    let signalled = true
+    try { this.#killProcess(pid, 'SIGTERM') }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; signalled = false }
+    if (signalled && await this.#waitForExit(exited, this.#drainTimeoutMs)) {
+      try { this.#killProcessGroup(pid, 'SIGKILL') }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error }
+      return this.status
+    }
     await this.#stopChildProcess(child, exited, 'Box server')
     return this.status
   }
@@ -451,9 +489,9 @@ export class SupervisedApplication {
     if (!(await this.#waitForExit(exited))) throw new Error(`${label} did not exit after SIGKILL`)
   }
 
-  async #waitForExit(exited: Promise<void>): Promise<boolean> {
+  async #waitForExit(exited: Promise<void>, timeoutMs = this.#killTimeoutMs): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined
-    const timedOut = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), this.#killTimeoutMs) })
+    const timedOut = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs) })
     const result = await Promise.race([exited.then(() => true as const), timedOut])
     if (timer) clearTimeout(timer)
     return result

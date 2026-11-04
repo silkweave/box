@@ -318,7 +318,8 @@ describe('Builder gateway', () => {
         child.spawn()
         return child
       },
-      killProcessGroup: () => children.at(-1)?.exit(0, 'SIGTERM'),
+      killProcess: () => children.at(-1)?.exit(0, 'SIGTERM'),
+      killProcessGroup: () => undefined,
     })
     await expect(app.start()).resolves.toMatchObject({ status: 'running' })
 

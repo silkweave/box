@@ -13,6 +13,8 @@ export interface BuilderLocalControls {
   promote?: () => Promise<{ version: string; createdAt: string; sourceSha: string | null; dirty: boolean }>
   /** Maintenance mode and its public notice (`box maintenance`). */
   maintenance?: { read: () => unknown; change: (patch: unknown) => Promise<unknown> }
+  /** The Builder session export (`box builder export`): the current session unless one is named. */
+  exportSession?: (sessionId: string | undefined) => Promise<{ fileName: string; files: unknown[]; zip: Buffer }>
 }
 
 const MAX_BODY = 64 * 1024
@@ -25,7 +27,7 @@ const failureStatus = (error: unknown): number => {
 /** Historical filename retained so a newly updated CLI can still refresh an older supervisor. */
 export const builderLocalControlPath = (instance: string): string => join(instance, 'builder', 'ui-refresh.sock')
 
-/** A bounded host-local capability: status, editable-app and frontend restart, web promote, maintenance and Builder UI refresh only. */
+/** A bounded host-local capability: status, editable-app and frontend restart, web promote, maintenance, session export and Builder UI refresh only. */
 export async function startBuilderLocalControl(instance: string, controls: BuilderLocalControls) {
   const path = builderLocalControlPath(instance)
   if (existsSync(path)) {
@@ -39,6 +41,15 @@ export async function startBuilderLocalControl(instance: string, controls: Build
       void controls.frontend().then(
         frontend => res.end(JSON.stringify({ ok: true, application, frontend })),
         () => res.end(JSON.stringify({ ok: true, application })),
+      )
+      return
+    }
+    const url = new URL(req.url ?? '/', 'http://local')
+    if (req.method === 'GET' && url.pathname === '/session-export') {
+      if (!controls.exportSession) { res.writeHead(404); res.end(JSON.stringify({ message: 'Unknown local supervisor control' })); return }
+      void controls.exportSession(url.searchParams.get('session') ?? undefined).then(
+        exported => res.end(JSON.stringify({ ok: true, fileName: exported.fileName, files: exported.files, zip: exported.zip.toString('base64') })),
+        error => { res.writeHead(failureStatus(error)); res.end(JSON.stringify({ message: error instanceof Error ? error.message : 'Session export failed' })) },
       )
       return
     }

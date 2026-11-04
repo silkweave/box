@@ -264,6 +264,10 @@ exercised on macOS/POSIX. Windows uses `taskkill`; Windows behavior has not been
 the current version if the build fails and does not restart the shared session. Open Builder tabs
 offer a reload after success. See [Builder](BUILDER.md#refresh-the-builder-ui).
 
+`box builder export [--session <id>] [--out <file>]` writes the Builder session export zip (the
+current session, else the latest recorded one) through the same local supervisor socket and lists
+its files. See [Builder](BUILDER.md#export-a-session-for-support).
+
 ## Builder browser control
 
 `box builder browser` controls the first available Builder Preview from the local host. Use

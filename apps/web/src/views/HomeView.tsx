@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   Bot,
@@ -19,6 +19,7 @@ import { useSettingsDialog } from '../lib/settingsDialog.ts'
 import { RECIPES } from '../lib/recipes.ts'
 import { recipeBook } from '../lib/recipeLedger.ts'
 import { useAuth } from '../lib/useAuth.tsx'
+import { AGENT_ACCOUNTS_CHANGED } from '../lib/agentStore.ts'
 import { slotComponents } from '../lib/slots.ts'
 import { RecommendedRecipes } from '../components/recipes/RecommendedRecipes.tsx'
 
@@ -50,22 +51,41 @@ function OnboardingView() {
   const [builder, setBuilder] = useState<BuilderControlState>()
   const [builderError, setBuilderError] = useState<string>()
   const [copied, setCopied] = useState<'feature' | 'dashboard'>()
+  const [recipesAttention, setRecipesAttention] = useState(0)
+  const { isOpen: settingsOpen } = useSettingsDialog()
 
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  const load = useCallback(async (): Promise<void> => {
+    try {
+      const state = await loadBuilderControlState()
+      if (alive.current) { setBuilder(state); setBuilderError(undefined) }
+    } catch (cause) {
+      if (alive.current) setBuilderError(cause instanceof Error ? cause.message : 'Builder state is unavailable.')
+    }
+  }, [])
+
+  // Provider readiness is read from Builder, so re-read it whenever it may have changed: an account
+  // connected in Settings (a dialog on this page, so the window never loses focus), the dialog
+  // closing, or the tab coming back after a sign-in in another window.
   useEffect(() => {
     if (!isAdmin) return
-    let alive = true
-    const load = async (): Promise<void> => {
-      try {
-        const state = await loadBuilderControlState()
-        if (alive) { setBuilder(state); setBuilderError(undefined) }
-      } catch (cause) {
-        if (alive) setBuilderError(cause instanceof Error ? cause.message : 'Builder state is unavailable.')
-      }
-    }
     void load()
-    window.addEventListener('focus', load)
-    return () => { alive = false; window.removeEventListener('focus', load) }
-  }, [isAdmin])
+    const onVisible = (): void => { if (!document.hidden) void load() }
+    window.addEventListener('focus', onVisible)
+    window.addEventListener(AGENT_ACCOUNTS_CHANGED, onVisible)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onVisible)
+      window.removeEventListener(AGENT_ACCOUNTS_CHANGED, onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [isAdmin, load])
+  const wasSettingsOpen = useRef(settingsOpen)
+  useEffect(() => {
+    if (wasSettingsOpen.current && !settingsOpen && isAdmin) void load()
+    wasSettingsOpen.current = settingsOpen
+  }, [settingsOpen, isAdmin, load])
 
   const readiness = builder ? builderReadiness(builder) : null
   const providerReady = readiness?.provider === 'ready'
@@ -126,7 +146,7 @@ function OnboardingView() {
                 {isAdmin && !providerReady && (readiness?.provider === 'sign-in-required' ? <ProviderConnect /> : <ProviderSetup />)}
               </Quest>
               <Quest complete={featureReady} active={isAdmin && providerReady && !featureReady} icon={<Layers3 />} title='Adapt and use a recipe' description={featureReady ? `${installed.length} ${installed.length === 1 ? 'recipe is' : 'recipes are'} adapted: ${installed.map(recipe => recipe.title).join(', ')}.` : 'Choose a recipe, then let Builder adapt and verify its source.'}>
-                {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => document.getElementById('recipes')?.scrollIntoView({ behavior: 'smooth' })}><Layers3 />Choose a recipe</Button>}
+                {isAdmin && providerReady && !featureReady && <Button className='mt-4' size='sm' onClick={() => setRecipesAttention(n => n + 1)}><Layers3 />Choose a recipe</Button>}
               </Quest>
               <Quest active={isAdmin && providerReady && featureReady} icon={<Sparkles />} title='Make the dashboard yours' description='Replace onboarding with a dashboard shaped around your adapted recipes and daily decisions.'>
                 {isAdmin && providerReady && featureReady && <Button className='mt-4' size='sm' onClick={() => openBuilderWithBrief(DASHBOARD_PROMPT)}><Hammer />Design with Builder</Button>}
@@ -152,7 +172,7 @@ function OnboardingView() {
           </aside>
         </div>
 
-        <RecommendedRecipes canAdapt={isAdmin} />
+        <RecommendedRecipes canAdapt={isAdmin} attention={recipesAttention} />
       </PageContainer>
     </RouteChrome>
   )

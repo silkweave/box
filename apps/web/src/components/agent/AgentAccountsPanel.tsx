@@ -2,7 +2,7 @@ import * as React from 'react'
 import { CheckCircle2, CircleAlert, CircleDashed } from 'lucide-react'
 import { AccountConnectDialog } from '@workerdeck/ui'
 import { Badge, Button, confirm } from '@silkweave/box-ui'
-import { agentClient, setAgentEngine } from '../../lib/agentStore.ts'
+import { agentClient, notifyAgentAccountsChanged, setAgentEngine } from '../../lib/agentStore.ts'
 import { relativeTime } from '../../lib/format.ts'
 import { useAuth } from '../../lib/useAuth.tsx'
 import { upsertUser } from '../../lib/useUsersData.ts'
@@ -71,6 +71,7 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
     try {
       await agentClient.disconnectAccount(p.name)
       load()
+      notifyAgentAccountsChanged()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -195,6 +196,7 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
           if (connecting && (!chosen || !connected(chosen))) void chooseDefault(connecting)
           setConnecting(undefined)
           load()
+          notifyAgentAccountsChanged()
         }}
       />
     </section>

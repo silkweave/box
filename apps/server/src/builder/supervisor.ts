@@ -1,6 +1,6 @@
 import { createBoxStatusStream } from './box-status-stream.js'
 import { applicationUpgrade } from './application-upgrade.js'
-import { diagnostic, errorKind, requestId, runtimeHeartbeat, setDiagnosticSink, traceHttp, traceSocket } from '../diagnostics/runtime.js'
+import { diagnostic, errorKind, requestId, runtimeHeartbeat, setDiagnosticSink, setDiagnosticTap, traceHttp, traceSocket } from '../diagnostics/runtime.js'
 import { execFileSync } from 'node:child_process'
 import { createServer, request as httpRequest, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from 'node:http'
 import { createGzip } from 'node:zlib'
@@ -24,6 +24,11 @@ import { applicationHeaders, previewResponseHeaders } from './supervisor-http.js
 import { SupervisedApplication } from './supervised-application.js'
 import { builderUiVersion, currentBuilderUi, prepareBuilderUi, runBuilderCommand, serveBuilderUi, stopBuilderCommands } from './builder-ui-snapshot.js'
 import { DevView, parseDevLogLevel } from './dev-view.js'
+import { createBuilderJournal } from './builder-journal.js'
+import { recordedSessions, recordTurn } from './builder-turns.js'
+import { buildSessionExport } from './builder-export.js'
+import { readWorkerdeckConfig } from '../agent/workerdeck.config.js'
+import type { SessionEvent } from '@workerdeck/protocol'
 import { createDevAccessCache, FRONTEND_HEADER, isPreviewDocument, isViteOnlyRequest, isViteSocket, shouldCompressDevResponse } from './frontend-routing.js'
 import { currentWebRelease, prepareWebRelease, serveWebAsset, type WebRelease } from '../web/web-release.js'
 
@@ -49,18 +54,27 @@ async function freePort(): Promise<number> {
 
 /** Owns the public origin and recovery surfaces. App restarts never restart this process. */
 export async function startBuilderSupervisor(options: { signals?: boolean; devView?: DevView } = {}) {
-  const stopHeartbeat = runtimeHeartbeat('supervisor')
   const root = repoRoot()
   const paths = { repoRoot: root, instanceDir: dataPath() }
+  // Everything the supervisor sees, kept for the Builder session export (builder-journal.ts).
+  const journal = createBuilderJournal(paths.instanceDir)
+  setDiagnosticTap(record => journal.diagnostic(record))
+  const stopHeartbeat = runtimeHeartbeat('supervisor')
   const config = boxJson()
   const machine = agentIdentity()
   const internalPort = await freePort()
   const appUrl = `http://127.0.0.1:${internalPort}`
   const app = new SupervisedApplication({
     repoRoot: root, instanceDir: paths.instanceDir, internalPort, vitePort: config.server.vitePort, dev: process.argv.includes('--dev'),
-    ...(options.devView && { onOutput: (source: 'app' | 'vite', level: 'info' | 'warn', line: string) => options.devView!.child(source, level, line) }),
+    // Child output is always piped so the journal sees it; without the dev view it is passed on unchanged.
+    onOutput: (source: 'app' | 'vite', level: 'info' | 'warn', line: string) => {
+      journal.output(source, level, line)
+      if (options.devView) options.devView.child(source, level, line)
+      else (level === 'warn' ? process.stderr : process.stdout).write(`${line}\n`)
+    },
   })
   const report = (level: 'info' | 'warn' | 'error', message: string): void => {
+    journal.report(level, message)
     if (options.devView) options.devView.add('supervisor', level, message)
     else if (level === 'error') console.error(message)
     else if (level === 'warn') console.warn(message)
@@ -73,10 +87,10 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       pending += chunk
       const lines = pending.split(/\r?\n|\r/)
       pending = lines.pop() ?? ''
-      for (const line of lines) if (line) options.devView!.child('build', 'info', line)
+      for (const line of lines) if (line) { journal.output('build', 'info', line); options.devView!.child('build', 'info', line) }
     }
     try { await runBuilderCommand(cwd, args, { onOutput: output }) }
-    finally { if (pending) options.devView.child('build', 'info', pending) }
+    finally { if (pending) { journal.output('build', 'info', pending); options.devView.child('build', 'info', pending) } }
   }
   const auth = new BuilderSupervisorAuth(async cookie => {
     const started = performance.now()
@@ -90,7 +104,14 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     finally { const durationMs = Math.round(performance.now() - started); if (durationMs >= 500) diagnostic('supervisor', 'auth.slow', { durationMs }) }
   })
   diagnostic('supervisor', 'boot.host.start')
-  const host = await createBuilderHost(paths)
+  const host = await createBuilderHost(paths, {
+    onTurnEnd: (sessionId, event) => {
+      const info = host.worker.registry.get(sessionId)?.info()
+      void recordTurn(root, paths.instanceDir, sessionId, event, {
+        engine: info?.engine ?? null, profile: info?.profile ?? null, model: info?.model ?? null, engineSessionId: info?.sdkSessionId ?? null,
+      }).catch(error => diagnostic('supervisor', 'turn-record.failed', { error: errorKind(error) }))
+    },
+  })
   diagnostic('supervisor', 'boot.host.ready')
   const inMaintenance = (): boolean => readMaintenance(paths.instanceDir).enabled
   const statusStream = createBoxStatusStream(maintenancePath(paths.instanceDir), () => {
@@ -160,6 +181,49 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const offline = <T>(fn: () => Promise<T> | T): Promise<T> => app.withStopped(fn)
   const lifecycle = { paths, withAppStopped: offline }
   const verification = createBuilderVerification(paths)
+  /** All events of a runner's current conversation, oldest first (the replay ends at its last seq). */
+  async function conversationEvents(sessionId: string): Promise<SessionEvent[]> {
+    const runner = await host.runnerFor(sessionId)
+    const last = runner.info().lastSeq
+    const events: SessionEvent[] = []
+    await new Promise<void>(done => {
+      let unsubscribe: (() => void) | undefined
+      const timer = setTimeout(() => { unsubscribe?.(); done() }, 5_000)
+      const finish = (): void => { clearTimeout(timer); queueMicrotask(() => unsubscribe?.()); done() }
+      unsubscribe = runner.subscribe(event => { events.push(event); if (event.seq >= last) finish() }, 0, { coalesceReplay: true, truncateResults: true })
+      if (last === 0 || events.at(-1)?.seq === last) finish()
+    })
+    return events.filter(event => event.seq <= last)
+  }
+  /** The session export: the current Builder session, a named one, or the latest with a turn record. */
+  async function exportSession(requested: string | undefined) {
+    const current = readBuilderControl(paths).session
+    const sessionId = requested ?? current?.id ?? recordedSessions(paths.instanceDir)[0]?.id
+    if (!sessionId) throw new BuilderLifecycleError(404, 'No Builder session to export')
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) throw new BuilderLifecycleError(400, 'Invalid Builder session id')
+    const info = await host.session(sessionId)
+    if (!info && !recordedSessions(paths.instanceDir).some(entry => entry.id === sessionId)) throw new BuilderLifecycleError(404, 'Unknown Builder session')
+    let events: SessionEvent[] | null = null
+    const conversations: Array<{ n: number; events: SessionEvent[] }> = []
+    if (info) {
+      events = await conversationEvents(sessionId).catch(() => null)
+      const response = await host.request(`/v1/sessions/${encodeURIComponent(sessionId)}/conversations`).catch(() => null)
+      const history = response?.ok ? ((await response.json()) as { conversation?: number; history?: Array<{ n: number; transcript?: string }> }) : null
+      for (const past of history?.history ?? []) {
+        if (past.transcript === 'unavailable' || past.n === history?.conversation) continue
+        const read = await host.request(`/v1/sessions/${encodeURIComponent(sessionId)}/conversations/${past.n}`).catch(() => null)
+        if (read?.ok) conversations.push({ n: past.n, events: ((await read.json()) as { events?: SessionEvent[] }).events ?? [] })
+      }
+    }
+    journal.flush()
+    const profile = info?.profile
+    const profileHome = readWorkerdeckConfig({ repoRoot: root })?.profiles.find(entry => entry.name === profile)?.home ?? null
+    return buildSessionExport({
+      root, instanceDir: paths.instanceDir, sessionId, info,
+      startedAt: current?.id === sessionId ? current.startedAt : null,
+      events, conversations, verification: verification.read(), application: app.status, profileHome,
+    })
+  }
   const restartFrontend = () => mutate(async () => {
     diagnostic('supervisor', 'local-frontend-restart.start')
     // Refused before touching the preview when there is no Vite to restart (built mode).
@@ -237,6 +301,16 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     if (req.method === 'GET' && path === '/pending-changes') { json(res, 200, readBuilderPendingChanges(paths)); return }
     if (req.method === 'GET' && path === '/state') { json(res, 200, await state(identity.principal)); return }
     if (req.method === 'GET' && path === '/maintenance') { json(res, 200, readMaintenance(paths.instanceDir)); return }
+    if (req.method === 'GET' && (path === '/export' || path === '/export/preview')) {
+      if (!sameOrigin(req)) { json(res, 403, { message: 'Invalid Builder control request' }); return }
+      const session = new URL(req.url ?? '/', 'http://local').searchParams.get('session') ?? undefined
+      const exported = await exportSession(session)
+      diagnostic('supervisor', 'session-export', { requestId: requestId(req), preview: path !== '/export', bytes: exported.zip.length })
+      if (path === '/export/preview') { json(res, 200, { fileName: exported.fileName, files: exported.files, bytes: exported.zip.length }); return }
+      res.writeHead(200, { 'content-type': 'application/zip', 'content-length': exported.zip.length, 'content-disposition': `attachment; filename="${exported.fileName}"`, 'cache-control': 'no-store' })
+      res.end(exported.zip)
+      return
+    }
     if (req.method !== 'POST' || req.headers['x-box-csrf'] !== '1' || !sameOrigin(req)) { json(res, 403, { message: 'Invalid Builder control request' }); return }
     let body: Record<string, unknown>
     try { body = await readJson(req) } catch { json(res, 400, { message: 'Invalid JSON body' }); return }
@@ -500,6 +574,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       refresh: () => mutate(refreshUi),
       promote: promoteLocal,
       maintenance: { read: () => readMaintenance(paths.instanceDir), change: patch => changeMaintenance(patch, null, 'host') },
+      exportSession,
     })
     if (closing) throw new Error('Box supervisor is stopping')
     if (app.dev) await app.startVite().catch(error => report('error', `Box frontend needs repair: ${String(error)}`))
@@ -543,6 +618,8 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       auth.clear()
       stopHeartbeat()
       diagnostic('supervisor', 'shutdown.finish')
+      setDiagnosticTap(undefined)
+      journal.close()
       if (options.signals) { process.removeListener('SIGINT', onSigint); process.removeListener('SIGTERM', onSigterm) }
     })()
     return closing

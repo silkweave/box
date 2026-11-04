@@ -426,9 +426,14 @@ a loud warning at boot when the verdict is negative; a caller that is about to s
 calls `verifyLoopback()` itself.
 
 **Draining on shutdown.** `SIGTERM`/`SIGINT` ask the supervisor to drain the managed application
-and WorkerDeck host before exiting, once. A bare host exit can cut live turns mid-flight. Test
-shutdown and recovery for each configured engine; idle-session recovery does not establish that an
-active turn survives application restart.
+and WorkerDeck host before exiting, once. The application drains running assistant turns for up to
+15 seconds, then closes WorkerDeck, which keeps each session's record for the next boot. To stop
+or restart the application the supervisor sends `SIGTERM` to the application process alone and
+waits up to 20 seconds; only then does it signal the whole process group, and it sweeps the group
+after a clean exit. The engine CLIs run in that group, so signalling it first killed them mid-turn
+and WorkerDeck forgot the session. A restart therefore waits for a running turn (up to the drain
+window) and the open session stays attached. Test shutdown and recovery for each configured engine;
+idle-session recovery does not establish that an active turn survives application restart.
 
 ## 7. Running and serving
 
@@ -663,3 +668,8 @@ during application restarts. Slow clients are disconnected instead of accumulati
 The JSON `/api/box-status` snapshot remains available for diagnostics. Both expose only the
 maintenance flag and the public notice (never its author); application access and admin
 exceptions remain independently authenticated.
+
+Nothing ends maintenance by itself, and an interrupted upgrade or Builder session can leave it on.
+Admins whom it lets through see a notice at the bottom of every app page ("Maintenance is on")
+with **End maintenance**, which switches it off through the same Builder control (the Builder
+Preview omits the notice; Builder shows its own badge).

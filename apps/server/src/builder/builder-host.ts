@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createFileSessionRecordStore, createWorkerServer, type WorkerServerOptions } from '@workerdeck/server'
 import { supportsPermissionMode, type PermissionMode, type ProfileInfo, type SessionInfo } from '@workerdeck/protocol'
 import type { AttachmentInput, Runner } from '@workerdeck/core'
+import type { SessionEvent } from '@workerdeck/protocol'
 import { boxJson } from '@silkweave/box-core'
 import { readWorkerdeckConfig, workerdeckProfileInfo } from '../agent/workerdeck.config.js'
 import { builderRunnerRoot, type BuilderLifecyclePaths } from './builder-lifecycle.js'
@@ -19,7 +20,12 @@ const builderInstructions = ({ sessionId }: { sessionId: string }): string =>
 export const BUILDER_DEFAULT_MODEL: Record<string, string> = { codex: 'gpt-5.6-luna', claude: 'claude-opus-5-5[1m]' }
 
 /** This worker belongs to the supervisor, never to the restartable Nest application. */
-export async function createBuilderHost(paths: BuilderLifecyclePaths) {
+export interface BuilderHostHooks {
+  /** Each finished Builder turn (`turn_result`), for the per-turn git record of the session export. */
+  onTurnEnd?: (sessionId: string, event: Extract<SessionEvent, { type: 'turn_result' }>) => void
+}
+
+export async function createBuilderHost(paths: BuilderLifecyclePaths, hooks: BuilderHostHooks = {}) {
   const deployment = readWorkerdeckConfig({ repoRoot: paths.repoRoot })
   const box = boxJson()
   const profilesConfigured = Object.keys(box.agentProfiles).length > 0
@@ -80,6 +86,8 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
     }) })
     const body = await response.json() as { session?: SessionInfo; error?: string }
     if (!response.ok || !body.session) throw new Error(body.error || 'Builder runner could not start')
+    const runner = worker.registry.get(body.session.id)
+    if (runner) watchTurns(runner)
     return body.session
   }
   async function session(id: string): Promise<SessionInfo | null> {
@@ -98,6 +106,18 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
     const runner = worker.registry.get(id) ?? await worker.parking.ensureLive(id)
     if (!runner) throw new Error('Builder session not found')
     return runner
+  }
+  // One turn watcher per live runner. A parked session wakes as a new runner, which the next
+  // command (or create) subscribes again; the old runner's subscription goes with it.
+  const turnWatchers = new Map<string, { runner: Runner; unsubscribe: () => void }>()
+  function watchTurns(runner: Runner): void {
+    if (!hooks.onTurnEnd || turnWatchers.get(runner.id)?.runner === runner) return
+    turnWatchers.get(runner.id)?.unsubscribe()
+    const unsubscribe = runner.subscribe(event => {
+      if (event.type === 'turn_result') hooks.onTurnEnd!(runner.id, event)
+      if (event.type === 'session_closed') { turnWatchers.get(runner.id)?.unsubscribe(); turnWatchers.delete(runner.id) }
+    }, runner.info().lastSeq)
+    turnWatchers.set(runner.id, { runner, unsubscribe })
   }
   function clearPending(id: string): void {
     const pending = pendingTurns.get(id)
@@ -146,6 +166,7 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
   async function command(sessionId: string, frame: unknown): Promise<void> {
     if (!isPlainObject(frame) || typeof frame.type !== 'string') throw new Error('Builder command must contain a type')
     const runner = await runnerFor(sessionId)
+    watchTurns(runner)
     switch (frame.type) {
       case 'user_message': {
         if (typeof frame.text !== 'string') throw new Error('Builder user messages require text')
@@ -207,6 +228,6 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths) {
       default: throw new Error(`Unknown Builder command: ${frame.type}`)
     }
   }
-  return { worker, url, key, request, availableProfiles, sessionProfiles, create, session, command, hasPendingWork, clearPending }
+  return { worker, url, key, request, availableProfiles, sessionProfiles, create, session, runnerFor, command, hasPendingWork, clearPending }
 }
 export type BuilderHost = Awaited<ReturnType<typeof createBuilderHost>>

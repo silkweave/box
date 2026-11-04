@@ -205,7 +205,11 @@ standalone destinations, including Dashboard and Artifacts.
 the compiled feature registry and the Builder supervisor's provider readiness, then routes an
 administrator through provider setup, adapting a first recipe and replacement of the onboarding
 view with the Box's real dashboard. Progress is derived from live state rather than stored as an
-onboarding ledger. Members see the adapted state but not Builder actions.
+onboarding ledger. Members see the adapted state but not Builder actions. Provider readiness is
+re-read when the window regains focus or visibility, when the Settings dialog closes, and when an
+agent account is connected or disconnected (`AGENT_ACCOUNTS_CHANGED`, fired by Settings > Profile),
+so connecting Claude completes its quest without a reload. "Choose a recipe" scrolls to the
+recommended recipes, outlines them briefly and focuses the first **Adapt recipe**.
 
 The onboarding dashboard does not show the whole catalog. It shows three recommended recipes that are
 not yet adapted (`RECOMMENDED_RECIPES` in `src/lib/recipes.ts`, topped up from other recipes whose
@@ -573,7 +577,9 @@ Tokens are bridged in `src/styles/agent.css` - **never import the worker's own `
 token systems collide on `@theme` names, so the bridge maps the few gaps onto Box vars and
 `@source`-scans the package instead. The panel renders md+ only; small screens keep the copy-paste
 flow. It re-attaches a still-running session on mount and on window focus, so one agent per user
-converges across windows.
+converges across windows. A new session starts in the permission mode last picked on its engine
+(per browser), else `auto` where the engine supports it, as Builder does; bypass is never
+remembered.
 
 `src/components/agent/GenerateCommand.tsx` (`GenerateButton`) is the app-wide "this hands off to AI"
 affordance: a periwinkle Sparkles button that opens an explainer modal, copies the command snippet

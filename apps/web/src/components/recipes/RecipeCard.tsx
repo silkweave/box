@@ -69,7 +69,7 @@ export function RecipeCard({ recipe, canAdapt, onOpen, compact = false }: { reci
       </ul>}
       <div className='flex items-center justify-between gap-2 border-t border-border px-4 py-2.5'>
         <Button variant='ghost' size='sm' onClick={onOpen}>Details</Button>
-        {canAdapt && <Button size='sm' variant={adapted ? 'outline' : 'default'} onClick={() => adaptRecipe(recipe)}><Hammer />{adapted ? 'Update recipe' : 'Adapt recipe'}</Button>}
+        {canAdapt && <Button size='sm' data-recipe-adapt variant={adapted ? 'outline' : 'default'} onClick={() => adaptRecipe(recipe)}><Hammer />{adapted ? 'Update recipe' : 'Adapt recipe'}</Button>}
       </div>
     </article>
   )

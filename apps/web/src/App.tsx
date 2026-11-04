@@ -1,6 +1,6 @@
 // Baked in at build time by apps/web/branding.ts from `box.json` (typed in vite-env.d.ts).
 import brand from 'virtual:box-brand'
-import { useEffect, useReducer, type ReactNode } from 'react'
+import { useEffect, useReducer, useState, type ReactNode } from 'react'
 import { RouterProvider } from '@tanstack/react-router'
 import { router } from './router.tsx'
 import { startChangeFeed } from './lib/changeFeed.ts'
@@ -16,6 +16,8 @@ import { BuilderPreviewBridge } from './lib/BuilderPreviewBridge.tsx'
 import { useBoxStatus } from './lib/useMaintenance.ts'
 import { Button } from '@silkweave/box-ui'
 import { followReturnPath } from './lib/returnPath.ts'
+import { setBuilderMaintenance } from './lib/builderStore.ts'
+import { isBuilderPreview } from './lib/builderPreview.ts'
 
 /**
  * Fills the library's users directory (@silkweave/box-ui `UsersProvider`) from this app's store, so
@@ -33,7 +35,7 @@ function AppUsers({ children }: { children: ReactNode }) {
 function AuthGate() {
   const { loading, principal } = useAuth()
   // Every tab follows maintenance, signed in or not; a blocked tab moves to the supervisor's page.
-  const { known, maintenance, updateAvailable } = useBoxStatus(loading ? { loading: true } : { loading: false, role: principal ? principal.role ?? 'member' : null })
+  const { known, maintenance, paused, updateAvailable } = useBoxStatus(loading ? { loading: true } : { loading: false, role: principal ? principal.role ?? 'member' : null })
   // Start the live-refresh feed (lib/changeFeed.ts) once a session is established - the SSE
   // subscription would just 401 before that. Idempotent, so re-renders are free. Each feature's
   // `onSession` (a chat feed, a notification poller, a push-click listener) starts on the same gate.
@@ -63,15 +65,40 @@ function AuthGate() {
       <AppShellExtensions>
         <RouterProvider router={router} />
       </AppShellExtensions>
-      {updateAvailable && <UpdateNotice />}
+      {(updateAvailable || (paused && principal.role === 'admin' && !isBuilderPreview())) && <div className='fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2'>
+        {paused && principal.role === 'admin' && !isBuilderPreview() && <MaintenanceNotice />}
+        {updateAvailable && <UpdateNotice />}
+      </div>}
     </AppUsers>
+  )
+}
+
+/**
+ * Maintenance is on and lets admins through. Nothing ends it by itself (an interrupted upgrade
+ * leaves it on), and members stay locked out while it lasts, so admins see it and can end it here.
+ * Ending it restarts the application, which reloads open tabs.
+ */
+function MaintenanceNotice() {
+  const [ending, setEnding] = useState(false)
+  const [error, setError] = useState<string>()
+  const end = async (): Promise<void> => {
+    setEnding(true)
+    setError(undefined)
+    try { await setBuilderMaintenance(false) }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not end maintenance.'); setEnding(false) }
+  }
+  return (
+    <div role='status' className='flex items-center gap-3 rounded-full border border-warning/40 bg-warning-bg py-1.5 pl-4 pr-1.5 text-body-sm text-text shadow-lg'>
+      <span>{error ?? 'Maintenance is on: members are kept out and background work is paused.'}</span>
+      <Button size='sm' variant='outline' disabled={ending} onClick={() => void end()}>{ending ? 'Ending…' : 'End maintenance'}</Button>
+    </div>
   )
 }
 
 /** A newer web release was promoted. Never reloads by itself: the user may be mid-edit. */
 function UpdateNotice() {
   return (
-    <div role='status' className='fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-surface py-1.5 pl-4 pr-1.5 text-body-sm text-text shadow-lg'>
+    <div role='status' className='flex items-center gap-3 rounded-full border border-border bg-surface py-1.5 pl-4 pr-1.5 text-body-sm text-text shadow-lg'>
       <span>A new version of this Box is available.</span>
       <Button size='sm' onClick={() => location.reload()}>Reload</Button>
     </div>

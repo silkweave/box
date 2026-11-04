@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowRight, LayoutGrid } from 'lucide-react'
 import { Button, Dialog } from '@silkweave/box-ui'
@@ -17,18 +17,32 @@ function recommendations(): Recipe[] {
 /**
  * Onboarding's recipe step: three suggestions and a way into the Recipe Gallery. The full catalog
  * lives on its own route so it survives when the owner replaces this dashboard.
+ *
+ * `attention` changes when the "Choose a recipe" quest asks for this section: it scrolls into view,
+ * the cards are outlined for a moment and the first Adapt button takes focus. Scrolling alone did
+ * nothing visible when the section was already on screen.
  */
-export function RecommendedRecipes({ canAdapt }: { canAdapt: boolean }) {
+export function RecommendedRecipes({ canAdapt, attention = 0 }: { canAdapt: boolean; attention?: number }) {
   const navigate = useNavigate()
   const [openId, setOpenId] = useState<string>()
+  const [highlight, setHighlight] = useState(false)
+  const section = useRef<HTMLElement>(null)
   const picks = recommendations()
   const open = RECIPES.find(recipe => recipe.id === openId)
+  useEffect(() => {
+    if (!attention || !section.current) return
+    section.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    section.current.querySelector<HTMLButtonElement>('[data-recipe-adapt]')?.focus({ preventScroll: true })
+    setHighlight(true)
+    const timer = window.setTimeout(() => setHighlight(false), 1600)
+    return () => window.clearTimeout(timer)
+  }, [attention])
   return (
-    <section id='recipes' className='mt-10 scroll-mt-6'>
+    <section ref={section} id='recipes' className='mt-10 scroll-mt-6'>
       {picks.length > 0 && <>
         <h2 className='text-heading-2 font-semibold text-text'>Which recipe should Builder adapt first?</h2>
         <p className='mt-1 max-w-2xl text-body-sm text-muted-foreground'>Small, useful places to start. Pick one and Builder adapts its source to this Box, verifies it, and waits for your review.</p>
-        <div className='mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3'>
+        <div className={`mt-4 grid gap-3 rounded-xl transition-shadow duration-500 sm:grid-cols-2 xl:grid-cols-3 ${highlight ? 'ring-2 ring-accent/60 ring-offset-4 ring-offset-bg' : ''}`}>
           {picks.map(recipe => <RecipeCard key={recipe.id} recipe={recipe} canAdapt={canAdapt} compact onOpen={() => setOpenId(recipe.id)} />)}
         </div>
       </>}

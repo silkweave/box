@@ -33,10 +33,12 @@ export function maintenanceBlocks(maintenance: boolean, lockAdmins: boolean, rol
  * learns when a newer one is promoted. A blocked tab moves to the supervisor's maintenance page,
  * the same page a fresh visit gets, which brings it back here once maintenance ends.
  */
-export function useBoxStatus(viewer: BoxStatusViewer): { known: boolean; maintenance: boolean; updateAvailable: boolean } {
+export function useBoxStatus(viewer: BoxStatusViewer): { known: boolean; maintenance: boolean; paused: boolean; updateAvailable: boolean } {
   // False until the first status arrives (or a short wait passes), so the login view does not flash first.
   const [known, setKnown] = useState(false)
   const [maintenance, setMaintenance] = useState(false)
+  // Maintenance is on but lets this viewer in (an admin): shown, so it is not left on unnoticed.
+  const [paused, setPaused] = useState(false)
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const role = viewer.loading ? undefined : viewer.role
   useEffect(() => {
@@ -58,6 +60,7 @@ export function useBoxStatus(viewer: BoxStatusViewer): { known: boolean; mainten
             if (loaded && role !== null && typeof status.release === 'string') setUpdateAvailable(status.release !== loaded)
             const blocked = maintenanceBlocks(status.maintenance, !!status.notice?.lockAdmins, role, openedOnLogin)
             setMaintenance(blocked)
+            setPaused(status.maintenance && !blocked)
             setKnown(true)
             if (blocked) {
               stopped = true
@@ -84,5 +87,5 @@ export function useBoxStatus(viewer: BoxStatusViewer): { known: boolean; mainten
       }
     })
   }, [role])
-  return { known, maintenance, updateAvailable }
+  return { known, maintenance, paused, updateAvailable }
 }

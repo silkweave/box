@@ -37,7 +37,8 @@ describe('SupervisedApplication', () => {
       readinessPollMs: 1,
       probe: async (url) => { requested = url; return ready },
       spawn: () => { child.spawn(); return child },
-      killProcessGroup: () => child.exit(0, 'SIGTERM'),
+      killProcess: () => child.exit(0, 'SIGTERM'),
+      killProcessGroup: () => undefined,
     })
     const starting = app.start()
     await Promise.resolve()
@@ -72,9 +73,9 @@ describe('SupervisedApplication', () => {
     })
   })
 
-  it('waits for the owned process group to exit before reporting stopped', async () => {
+  it('signals the server alone, waits for it to exit, then sweeps its process group', async () => {
     const children: FakeChild[] = []
-    const calls: Array<{ pid: number; signal: NodeJS.Signals }> = []
+    const calls: Array<{ pid: number; signal: NodeJS.Signals; scope: 'process' | 'group' }> = []
     const app = new SupervisedApplication({
       repoRoot: '/box', internalPort: 8191, vitePort: 5191,
       probe: async () => true,
@@ -84,33 +85,36 @@ describe('SupervisedApplication', () => {
         child.spawn()
         return child
       },
-      killProcessGroup: (pid, signal) => { calls.push({ pid, signal }) },
+      killProcess: (pid, signal) => { calls.push({ pid, signal, scope: 'process' }) },
+      killProcessGroup: (pid, signal) => { calls.push({ pid, signal, scope: 'group' }) },
     })
     await app.start()
     const child = children[0]!
     const stopping = app.stop()
     expect(app.status.status).toBe('running')
-    expect(calls).toEqual([{ pid: 4242, signal: 'SIGTERM' }])
+    expect(calls).toEqual([{ pid: 4242, signal: 'SIGTERM', scope: 'process' }])
     child.exit(0, 'SIGTERM')
     await expect(stopping).resolves.toMatchObject({ status: 'stopped' })
     expect(app.status).toEqual({ status: 'stopped' })
+    expect(calls).toEqual([{ pid: 4242, signal: 'SIGTERM', scope: 'process' }, { pid: 4242, signal: 'SIGKILL', scope: 'group' }])
   })
 
-  it('escalates to SIGKILL only after the bounded graceful-stop timeout', async () => {
+  it('escalates to the process group only after the drain window, then to SIGKILL', async () => {
     const child = new FakeChild()
-    const calls: NodeJS.Signals[] = []
+    const calls: string[] = []
     const app = new SupervisedApplication({
-      repoRoot: '/box', internalPort: 8191, vitePort: 5191, killTimeoutMs: 2,
+      repoRoot: '/box', internalPort: 8191, vitePort: 5191, killTimeoutMs: 2, drainTimeoutMs: 2,
       probe: async () => true,
       spawn: () => { child.spawn(); return child },
+      killProcess: (_pid, signal) => { calls.push(`process ${signal}`) },
       killProcessGroup: (_pid, signal) => {
-        calls.push(signal)
+        calls.push(`group ${signal}`)
         if (signal === 'SIGKILL') child.exit(0, signal)
       },
     })
     await app.start()
     await expect(app.stop()).resolves.toMatchObject({ status: 'stopped' })
-    expect(calls).toEqual(['SIGTERM', 'SIGKILL'])
+    expect(calls).toEqual(['process SIGTERM', 'group SIGTERM', 'group SIGKILL'])
   })
 
   it('preserves the operation error when a restart also fails', async () => {
@@ -125,7 +129,8 @@ describe('SupervisedApplication', () => {
         first.spawn()
         return first
       },
-      killProcessGroup: () => first.exit(0, 'SIGTERM'),
+      killProcess: () => first.exit(0, 'SIGTERM'),
+      killProcessGroup: () => undefined,
     })
     await app.start()
 
@@ -145,7 +150,8 @@ describe('SupervisedApplication', () => {
         first.spawn()
         return first
       },
-      killProcessGroup: () => first.exit(0, 'SIGTERM'),
+      killProcess: () => first.exit(0, 'SIGTERM'),
+      killProcessGroup: () => undefined,
     })
     await app.start()
 

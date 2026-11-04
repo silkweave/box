@@ -13,7 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
-import { SessionPanel } from '@workerdeck/ui'
+import { SessionPanel, type SessionVitals } from '@workerdeck/ui'
 import { cn } from '@/lib/utils'
 import {
   agentClient,
@@ -22,6 +22,7 @@ import {
   closeAgentSession,
   loadAgentConfig,
   refreshAgentSession,
+  rememberAgentPermissionMode,
   resolveAgentConflict,
   setAgentEngine,
   setAgentFullscreen,
@@ -45,6 +46,11 @@ import { Button, confirm, Dialog, DialogContent, DialogDescription, DialogTitle,
  * MIN_PANEL, always leaving MIN_MAIN for the view), and fullscreen - fixed over the workspace so
  * <main> keeps its scroll position underneath (AppShell marks it `inert`).
  */
+/** The mode a person picks in a session becomes the starting mode of their next one on that engine. */
+const rememberVitalsMode = (vitals: SessionVitals): void => {
+  if (vitals.engine && vitals.permissionMode) rememberAgentPermissionMode(vitals.engine, vitals.permissionMode)
+}
+
 export function AgentSidebar() {
   const { config, open, width, fullscreen, engine, sessionId, conflict, unavailable, starting, error } = useAgent()
   /** The profile the NEXT session starts under - which is the staged engine's, not the live one's. */
@@ -175,7 +181,7 @@ export function AgentSidebar() {
 
           {sessionId ? (
             // key: SessionPanel attaches per session - remount to switch.
-            <SessionPanel key={sessionId} client={agentClient} sessionId={sessionId} className='min-h-0 flex-1' />
+            <SessionPanel key={sessionId} client={agentClient} sessionId={sessionId} className='min-h-0 flex-1' onVitals={rememberVitalsMode} />
           ) : unmapped ? (
             // Refused before it starts: running this person on another teammate's config dir would
             // mean their Claude account, memory and skills - so say who to ask instead.

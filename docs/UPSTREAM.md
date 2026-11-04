@@ -11,10 +11,10 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `e06a4aaedcf2162d37a154ebc67e4e284692be14` (2026-11-04:
-the upgrade skill covers Boxes installed from silkweave/box, and the Builder status bar has a
-thinking toggle, off by default), materialized with `box:build`;
-`box verify` passed 10/10. Core carries signals, signal events,
+Latest core refresh: Stack commit `677d2352b402333fe9a6869a0f25cd9f2fcccfaf` (2026-11-04:
+field-tester fixes for onboarding, Work session permission modes, app restarts that keep running
+assistant turns, and an admin maintenance notice; Builder "Export session" support zip),
+materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.
 

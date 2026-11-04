@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { WorkerDeckClient } from '@workerdeck/client'
-import type { PermissionMode, SessionInfo } from '@workerdeck/protocol'
+import { supportsPermissionMode, type PermissionMode, type ProfileEngine, type SessionInfo } from '@workerdeck/protocol'
 import { getActiveUserId } from './useActiveUser.ts'
 import { readStored, writeStored } from './usePersistedState.ts'
 import { appKey } from './storage.ts'
@@ -24,6 +24,7 @@ const AGENT_SESSION_APP = 'box'
 const OPEN_KEY = appKey('agent', 'open')
 const ENGINE_KEY = appKey('agent', 'engine')
 const SESSION_KEY = appKey('agent', 'sessionId')
+const PERMISSION_KEY = appKey('agent', 'permissionMode')
 const WIDTH_KEY = appKey('agent', 'width')
 const FULLSCREEN_KEY = appKey('agent', 'fullscreen')
 
@@ -194,18 +195,48 @@ export async function refreshAgentSession(): Promise<SessionInfo | undefined> {
   }
 }
 
+/** Window event fired when someone connects or disconnects an agent account (Settings > Profile). */
+export const AGENT_ACCOUNTS_CHANGED = 'box:agent-accounts-changed'
+
+export function notifyAgentAccountsChanged(): void {
+  window.dispatchEvent(new Event(AGENT_ACCOUNTS_CHANGED))
+}
+
+/** Last permission mode chosen per engine, so the next session starts the way the last one ended up. */
+const storedPermissionModes = (): Record<string, string> =>
+  readStored<Record<string, string>>(PERMISSION_KEY, {}, (v) => typeof v === 'object' && v !== null && !Array.isArray(v))
+
+/** Remembers a mode the person picked in a session (SessionPanel vitals). Bypass is never remembered. */
+export function rememberAgentPermissionMode(engine: string, mode: string): void {
+  if (mode === 'bypassPermissions' || storedPermissionModes()[engine] === mode) return
+  writeStored(PERMISSION_KEY, { ...storedPermissionModes(), [engine]: mode })
+}
+
+/**
+ * The mode a new session starts in: the last one picked on this engine, else `auto` (the engine
+ * decides edits and commands, as Builder does), else the profile's own default.
+ */
+export function startingPermissionMode(engine: string | null): PermissionMode | undefined {
+  if (!engine) return undefined
+  const known = engine as ProfileEngine
+  const stored = storedPermissionModes()[engine] as PermissionMode | undefined
+  if (stored && stored !== 'bypassPermissions' && supportsPermissionMode(known, stored)) return stored
+  return supportsPermissionMode(known, 'auto') ? 'auto' : undefined
+}
+
 async function createSession(prompt: string | undefined): Promise<void> {
   const config = await loadAgentConfig()
   if (!config.enabled) return
   update({ starting: true, error: null })
   try {
     const uid = agentUserId()
+    const permissionMode = (config.permissionMode as PermissionMode | null) ?? startingPermissionMode(state.engine ?? config.defaultEngine)
     // No `profile` here on purpose: the /agent proxy resolves it from the authenticated identity
     // and stamps it onto the body (like meta.user) - the browser never names a config dir.
     const session = await agentClient.createSession({
       cwd: config.cwd,
       prompt,
-      ...(config.permissionMode ? { permissionMode: config.permissionMode as PermissionMode } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
       model: config.model ?? undefined,
       // The ENGINE is named; the profile is not. The proxy maps (identity, engine) → profile name
       // and stamps it. Model stays unset so the worker's own per-profile default applies - which

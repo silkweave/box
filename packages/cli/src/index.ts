@@ -51,6 +51,7 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box maintenance [show|on|off|note|...]     maintenance mode and its public page (status, checklist, estimate)
   box builder refresh                        refresh Builder UI without restarting its session
   box builder browser --session <session-id> <operation> [JSON object]
+  box builder export [--session <id>] [--out <file>]  zip of a Builder session for support
   box start                                  start the Box: promoted web release, Vite for Builder Preview
   box start --prod                           start the production build
   box verify [--plain|--verbose]              run the complete visual validation chain
@@ -114,7 +115,8 @@ function main(argv: string[]): void {
   if (verb === 'builder') {
     if (rest.length === 1 && rest[0] === 'refresh') runScript(root, 'packages/cli/src/builder-refresh.ts', [])
     if (rest[0] === 'browser') runScript(root, 'packages/cli/src/builder-browser.ts', rest.slice(1))
-    die('Expected: box builder refresh or box builder browser --session <id> <operation> [JSON]')
+    if (rest[0] === 'export') runScript(root, 'packages/cli/src/builder-export.ts', rest.slice(1))
+    die('Expected: box builder refresh, box builder export [--session <id>] [--out <file>] or box builder browser --session <id> <operation> [JSON]')
   }
 
   if (verb === 'stack') runScript(root, 'packages/cli/src/stack.ts', rest)

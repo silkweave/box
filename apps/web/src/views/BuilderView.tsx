@@ -1,9 +1,10 @@
 import * as React from 'react'
-import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, Rocket, ShieldCheck, Square } from 'lucide-react'
+import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, Download, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, Rocket, ShieldCheck, Square } from 'lucide-react'
 import { ContextDialog, ModelSelect, PermissionModeSelect, ProgressRing, SessionPanel, UsageDialog, formatTokens, type SessionControls, type SessionVitals } from '@workerdeck/ui'
 import type { UsageWindowRow } from '@workerdeck/protocol'
 import { BuilderFiles } from '../components/builder/BuilderFiles.tsx'
 import { BuilderWrapUp } from '../components/builder/BuilderWrapUp.tsx'
+import { BuilderExportDialog } from '../components/builder/BuilderExport.tsx'
 import { useBuilderBrowser } from '../lib/useBuilderBrowser.ts'
 import { builderModelOptions } from '../lib/builderModels.ts'
 import { safePreviewPath } from '../lib/builderPreview.ts'
@@ -86,9 +87,10 @@ function BuilderStatus({ state }: { state: BuilderControlState }) {
   )
 }
 
-function BuilderMore({ state, busy, onBackup, onRestart, onRestore, onMaintenance, onStop, onClose }: {
+function BuilderMore({ state, busy, onBackup, onRestart, onRestore, onMaintenance, onExport, onStop, onClose }: {
   state: BuilderControlState
   busy: boolean
+  onExport: () => void
   onBackup: () => void
   onRestart: () => void
   onRestore: (id: string) => void
@@ -117,6 +119,7 @@ function BuilderMore({ state, busy, onBackup, onRestart, onRestore, onMaintenanc
         </Button>
         <Button variant='ghost' size='sm' className={menuItem} disabled={busy} onClick={() => runAndClose(onBackup)}><ShieldCheck />Create backup</Button>
         <Button variant='ghost' size='sm' className={menuItem} disabled={busy} onClick={() => runAndClose(onRestart)}><RotateCcw />Check and restart Box</Button>
+        <Button variant='ghost' size='sm' className={menuItem} onClick={() => runAndClose(onExport)}><Download />Export session</Button>
         {state.backups.length > 0 && <div className='mt-1 border-t border-border px-2 py-2'>
           <p className='mb-2 text-xs font-medium uppercase tracking-wider text-fg-4'>Restore backup</p>
           <div className='flex flex-col gap-2'>
@@ -254,6 +257,7 @@ export function BuilderView() {
   const [error, setError] = React.useState<string | null>(null)
   const [view, setView] = React.useState<'preview' | 'files'>('preview')
   const [wrapUp, setWrapUp] = React.useState(false)
+  const [exporting, setExporting] = React.useState(false)
   const [previewLocation, setPreviewLocation] = React.useState(() => safePreviewPath(new URLSearchParams(location.search).get('preview')))
   const [initialPreview] = React.useState(previewLocation)
   const [openFile, setOpenFile] = React.useState<string>()
@@ -399,7 +403,8 @@ export function BuilderView() {
     </main>
     <div role='separator' aria-label='Resize Builder conversation' aria-orientation='vertical' tabIndex={0} aria-valuemin={340} aria-valuemax={800} aria-valuenow={panelWidth} onPointerDown={resize} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setPanelWidth(w => Math.max(340, Math.min(800, w + (e.key === 'ArrowLeft' ? 20 : -20)))) } }} className='hidden w-1 shrink-0 cursor-col-resize touch-none rounded bg-border/40 hover:bg-accent lg:block' />
     <aside style={{ '--builder-width': `${panelWidth}px` } as React.CSSProperties} className='flex h-[45vh] min-h-0 shrink-0 flex-col lg:h-full lg:w-(--builder-width)' aria-label='Shared Builder conversation'>
-      <header className='flex h-12 shrink-0 items-center gap-2 px-2'><Hammer className='size-4 text-accent' /><h1 className='text-body-sm font-semibold'>Box Builder</h1><Badge variant='neutral'>Shared</Badge><div className='ml-auto flex items-center'><BuilderStatus state={state} /><BuilderMore state={state} busy={busy} onBackup={() => void backup()} onRestart={() => void restart()} onRestore={id => void restore(id)} onMaintenance={() => void maintenance()} onStop={() => void stop()} onClose={() => location.assign(previewLocation)} /></div></header>
+      <header className='flex h-12 shrink-0 items-center gap-2 px-2'><Hammer className='size-4 text-accent' /><h1 className='text-body-sm font-semibold'>Box Builder</h1><Badge variant='neutral'>Shared</Badge><div className='ml-auto flex items-center'><BuilderStatus state={state} /><BuilderMore state={state} busy={busy} onBackup={() => void backup()} onRestart={() => void restart()} onRestore={id => void restore(id)} onMaintenance={() => void maintenance()} onExport={() => setExporting(true)} onStop={() => void stop()} onClose={() => location.assign(previewLocation)} /></div></header>
+      <BuilderExportDialog open={exporting} onOpenChange={setExporting} />
       {error && <ErrorNotice message={error} />}
       <div className='flex shrink-0 flex-wrap items-center gap-2 px-2 pb-2 text-label' role='status'>
         {state.ui.building ? <span>Refreshing Builder UI…</span> : state.ui.version && state.ui.version !== loadedUiVersion ? <Button variant='secondary' size='sm' disabled={unsaved} onClick={() => location.reload()}>Builder updated · Reload</Button> : null}

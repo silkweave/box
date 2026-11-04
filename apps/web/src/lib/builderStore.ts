@@ -167,6 +167,18 @@ export function startBuilderSession(engine?: string, adoptChanges?: string): Pro
   return request('/start', { method: 'POST', body: JSON.stringify({ ...(engine && { engine }), ...(adoptChanges && { adoptChanges }) }) }).then(() => undefined)
 }
 
+/** One file of the Builder session export, as the preview lists it before download. */
+export interface BuilderExportFile { name: string; bytes: number; description: string }
+export interface BuilderExportPreview { fileName: string; files: BuilderExportFile[]; bytes: number }
+
+/** What "Export session" would download, built the same way, so the owner sees it first. */
+export async function loadBuilderExportPreview(): Promise<BuilderExportPreview> {
+  return await request('/export/preview', { signal: AbortSignal.timeout(30_000) }) as BuilderExportPreview
+}
+
+/** The download address of the current session's export zip. */
+export const BUILDER_EXPORT_URL = `${CONTROL_BASE}/export`
+
 export function setBuilderMaintenance(enabled: boolean): Promise<void> {
   return request('/maintenance', { method: 'POST', body: JSON.stringify({ enabled }) }).then(() => undefined)
 }

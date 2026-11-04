@@ -6,8 +6,15 @@ type Fields = Record<string, string | number | boolean | null | undefined>
 export type DiagnosticRecord = { time: string; pid: number; component: string; event: string } & Fields
 let diagnosticSink: ((record: DiagnosticRecord) => void) | undefined
 
+let diagnosticTap: ((record: DiagnosticRecord) => void) | undefined
+
 export function setDiagnosticSink(sink: ((record: DiagnosticRecord) => void) | undefined): void {
   diagnosticSink = sink
+}
+
+/** A second receiver of every record, beside the sink or stdout: the supervisor's journal. */
+export function setDiagnosticTap(tap: ((record: DiagnosticRecord) => void) | undefined): void {
+  diagnosticTap = tap
 }
 
 /** Callers supply operational metadata only, never headers, bodies, URLs or error messages. */
@@ -15,6 +22,7 @@ export function diagnostic(component: string, event: string, fields: Fields = {}
   const record: DiagnosticRecord = { time: new Date().toISOString(), pid: process.pid, component, event, ...fields }
   if (diagnosticSink) diagnosticSink(record)
   else console.info(JSON.stringify(record))
+  diagnosticTap?.(record)
 }
 
 export function errorKind(error: unknown): string {
