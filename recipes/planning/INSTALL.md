@@ -8,7 +8,7 @@ so the documents and the code come from the same version.
 
 The reference implementation is the FULL feature: the base (initiatives, nested tasks, initiative
 kinds, impact/effort/quadrant, priority, tags, start and due dates, the All tasks page, hours
-progress, keys, docs and the `planning.tasks_done` measure) plus every powerup. Ask the owner which
+progress, keys, docs and the `planning.tasks_done` tracker) plus every powerup. Ask the owner which
 powerups to add now (goals, milestones, sprints, timeline, cycle-board, mobile; each can be added
 later), then integrate the base and only those. Code that belongs to a powerup is marked in the
 source with a greppable comment: `goals powerup`, `milestones powerup`, `sprints powerup`,
@@ -89,7 +89,7 @@ Core:
 Server:
 
 - `server/planning/planning.module.ts`: base registers `PlanningController`,
-  `registerMeasure(TASKS_DONE_MEASURE)` and `registerUserCleanup('planning', unassignDeletedUser)`.
+  `registerTracker(TASKS_DONE_TRACKER)` and `registerUserCleanup('planning', unassignDeletedUser)`.
   Skip unless milestones: `registerSignalHooks(MILESTONE_SIGNAL_HOOKS)`. Skip unless goals:
   `GoalsController`, `CyclesController`, `registerSignalHooks(GOAL_SIGNAL_HOOKS)`,
   `registerUserCleanup('planning.goals', unassignDeletedGoalOwner)` and the `onRunOutcome` ->
@@ -116,7 +116,7 @@ Web:
   `ItemKind` stays.
 - `web/lib/usePlanningData.ts`: milestone upsert fields and the optimistic `outcome` (milestones),
   sprint fields and their optimistic patch (sprints), `goal_ids` (goals).
-- `web/components/ItemPanel.tsx`: `KindToggle`, `OutcomeStar`, `MeasureEditor`, `NumberInput`, the
+- `web/components/ItemPanel.tsx`: `KindSwitch`, the diamond of `KindMark`, `OutcomeStar`, `MeasureEditor`, `NumberInput`, the
   signal imports, the milestone status hint and inherited-window hints, and the kind control of
   `QuickAddChild` (milestones; the base `QuickAddChild` adds tasks); `reloadSprint` after a kind
   switch and a delete (sprints).

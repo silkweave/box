@@ -30,11 +30,14 @@ errors are expected integration work. Record local exceptions in the Box's docs/
 - **The toolbar is built by `Bun.build` on first request** and cached in memory (rebuilt on source
   change under `--dev`). A build failure serves a 503 script and the page carries on without a
   toolbar; check the server log.
-- **Backups.** `box db backup` covers the warehouse only (catalogue, folders, annotations). The
-  `artifacts-backup` action copies `data/artifacts.db` to `artifacts/artifacts-latest.sqlite` and
-  copies `data/artifacts/` to `artifacts/files/` in the `backup.gcsBucket` bucket. The tree copy never
-  deletes remotely, so it keeps trees the Box has since deleted: on restore, drop the ones with no
-  catalogue row. Schedule it beside `warehouse-backup`. Restore all three together, server stopped.
+- **Backups.** `box db backup` covers every artifact row (catalogue, folders, annotations, kv,
+  views). The `artifacts-backup` action copies `data/artifacts/` to `artifacts/files/` in the
+  `backup.gcsBucket` bucket. The tree copy never deletes remotely, so it keeps trees the Box has
+  since deleted: on restore, drop the ones with no catalogue row. Schedule it beside
+  `warehouse-backup`. Restore both together, server stopped.
+- **kv belongs to an existing page.** A kv write or a view for a slug with no catalogue row is
+  refused (`no artifact '<slug>'`, a foreign key underneath), also when a delete or rename commits
+  between the caller's check and its write.
 - **The public copy is a different tree.** It is rebuilt from the live tree at `/<slug>/` with
   `/rt/runtime.js`. A public page whose JavaScript hard-codes `/artifacts/` breaks there; use
   `artifact.base`.

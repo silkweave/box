@@ -176,6 +176,20 @@
         }
       }
     },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^_": {}
+      },
+      "properties": {
+        "engine": {
+          "enum": ["pgrust", "native"],
+          "default": "pgrust",
+          "description": "The engine the Box creates its first database cluster with: pgrust (default, downloaded from the publisher) or native PostgreSQL 18 (installed on the host by box setup). Read once at initialization; switching an existing Box is `box db switch`, an offline maintenance operation."
+        }
+      }
+    },
     "background": {
       "type": "object",
       "description": "Background work is OFF unless armed here. A dev checkout holding production credentials would otherwise run real schedules and real agent turns off test data. Core never reads these; the features that run the work do, and maintenance boots and typegen force them all off.",

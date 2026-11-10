@@ -49,9 +49,8 @@ method name (`@Controller('reminders')` + `delete()` -> `remindersDelete`), whil
 whatever `@Mcp({ name })` says. The two do not have to agree and here they deliberately read
 differently: tRPC names are namespaced by the controller, MCP tool names by the noun.
 
-Timestamps come back as second-precision ISO-Z (`2026-10-01T09:00:00Z`), not
-`Date#toISOString()`'s millisecond form - DuckDB's `TIMESTAMP` is naive and the record layer
-re-attaches the `Z` on read.
+Timestamps come back as UTC ISO-Z at the precision they were stored with
+(`2026-10-01T09:00:00Z` for a time given to the second), never through `Date#toISOString()`.
 
 `description: ''` clears the description - the `@Mcp()` adapter cannot express `| null`, so this is
 the same convention `crm` and `planning` use. Validation lives in core's `state.ts`, so a tool call

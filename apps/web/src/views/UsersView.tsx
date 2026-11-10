@@ -24,6 +24,8 @@ import {
   createAgent,
   deleteUser,
   setUserRole,
+  previewRoleChange,
+  type PolicyPreview,
   inviteUser,
   signinLink,
   revealUserInvite,
@@ -33,6 +35,7 @@ import {
   type UserInvite,
   type UserSigninLink,
 } from '../lib/useUsersData.ts'
+import { setAgentRole, useRoles } from '../lib/useRoles.ts'
 import { DEFAULT_WORK_ACCESS, USER_STATUS_META, userName, type User, type WorkAccess } from '../user-types.ts'
 import { cn } from '@/lib/utils'
 
@@ -539,7 +542,7 @@ function UserDialog({ state, existingIds, onClose }: { state: NonNullable<Dialog
             </div>
           </section>
         )}
-        {editing && principal?.role === 'admin' && editing.kind !== 'agent' && editing.id !== principal.id && <RoleSection user={editing} />}
+        {editing && principal?.role === 'admin' && editing.id !== principal.id && editing.id !== agent?.id && <RoleSection user={editing} />}
         {showAccounts && editing && (
           <div className='mt-4'>
             <AgentAccountsPanel user={editing} isAgent={editing.kind === 'agent' || editing.id === agent?.id} />
@@ -551,35 +554,58 @@ function UserDialog({ state, existingIds, onClose }: { state: NonNullable<Dialog
   )
 }
 
-/** An admin moves a person between admin and member (never themselves; an agent's role is its file's). */
+/**
+ * An admin gives a person or an agent another role (never themselves; the system agent's role is
+ * box.json's). The coverage preview runs first (PERMISSIONS 7.2): with violations the change is
+ * refused with the list, or confirmed with the preview's revision to remove those room members.
+ */
 function RoleSection({ user }: { user: User }) {
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const { data: roles } = useRoles()
+  const isAgent = user.kind === 'agent'
   const role = user.role ?? 'member'
-  const change = async (next: 'admin' | 'member') => {
+  const change = async (next: string) => {
     if (next === role) return
+    setError(null)
+    let preview: PolicyPreview
+    try {
+      preview = await previewRoleChange(isAgent ? 'agent-role' : 'user-role', user.id, next)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      return
+    }
+    const lines = preview.messages.join('\n')
+    if (preview.messages.length > 0 && preview.confirm === null) {
+      setError(`This change would leave agents with readers who do not cover them, and those readers cannot be removed. Cancel, or change these grants first:\n${lines}`)
+      return
+    }
+    const label = roles?.roles.find((r) => r.id === next)?.label ?? next
     const ok = await confirm({
-      title: next === 'admin' ? `Make ${userName(user)} an admin?` : `Make ${userName(user)} a member?`,
-      message: next === 'admin' ? 'Admins manage users, credentials and every Box setting.' : 'Their admin sessions and tools stop at once.',
-      confirmLabel: next === 'admin' ? 'Make admin' : 'Make member',
-      danger: next === 'admin',
+      title: `Give ${userName(user)} the ${label} role?`,
+      message: preview.messages.length > 0
+        ? isAgent
+          ? `Some readers would no longer cover this agent, and will be removed from those rooms:\n${lines}`
+          : `They would no longer cover agents in rooms they are in, and will be removed from those rooms:\n${lines}`
+        : next === 'admin' ? 'Admins manage users, credentials and every Box setting.' : role === 'admin' ? 'Their admin sessions and tools stop at once.' : isAgent ? 'Its live sessions end and start again with the new role.' : 'Their access changes at once.',
+      confirmLabel: preview.messages.length > 0 ? 'Remove from those rooms and change role' : 'Change role',
+      danger: next === 'admin' || preview.messages.length > 0,
     })
     if (!ok) return
     setBusy(true)
-    setError(null)
-    setUserRole(user.id, next).then(() => setBusy(false), (e: unknown) => { setBusy(false); setError(e instanceof Error ? e.message : String(e)) })
+    const opts = preview.messages.length > 0 ? { revision: preview.revision, confirm: 'remove-members' as const } : {}
+    const save = isAgent ? setAgentRole(user.id, next, opts) : setUserRole(user.id, next, opts)
+    save.then(() => setBusy(false), (e: unknown) => { setBusy(false); setError(e instanceof Error ? e.message : String(e)) })
   }
+  const options = roles?.roles ?? [{ id: 'member', label: 'Member' }, { id: 'admin', label: 'Admin' }]
   return (
     <section className='mt-4 flex flex-col gap-2' aria-label='Role'>
       <h3 className='text-body-sm font-semibold text-text'>Role</h3>
-      <div className='flex items-center gap-2'>
-        {(['member', 'admin'] as const).map((r) => (
-          <Button key={r} type='button' size='sm' variant={role === r ? 'default' : 'outline'} disabled={busy} onClick={() => void change(r)}>
-            {r === 'admin' ? 'Admin' : 'Member'}
-          </Button>
-        ))}
-      </div>
-      {error && <p className='text-label text-danger'>{error}</p>}
+      <select aria-label='Role' value={role} disabled={busy} onChange={(e) => void change(e.target.value)} className={cn(settingsInputCls, 'w-auto')}>
+        {options.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+      </select>
+      <p className='text-label text-muted-foreground'>{isAgent ? 'Written to its file in data/config/agents/. ' : ''}What each role reaches is in Settings &gt; Roles.</p>
+      {error && <p className='whitespace-pre-line text-label text-danger'>{error}</p>}
     </section>
   )
 }

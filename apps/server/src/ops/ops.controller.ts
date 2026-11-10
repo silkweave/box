@@ -3,9 +3,9 @@ import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsInt, IsOptional, IsString, Min } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { z } from 'zod/v4'
-import { RUN_TRIGGERS, listAutomationActions, onChange, onRunLog, readRun, readRuns, startDetachedRun, type IngestProgress, type RunLogLine } from '@silkweave/box-core'
+import { RUN_TRIGGERS, canFollowRun, listAutomationActions, onChange, onRunLog, readRun, readRuns, startDetachedRun, type IngestProgress, type RunLogLine } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
-import { type PrincipalRequest } from '../auth/auth.decorators.js'
+import { type PrincipalRequest, Read, Resource } from '../auth/auth.decorators.js'
 
 // Nested DTO arrays need explicit schemas for precise generated tRPC output types.
 const actionsOutput = z.object({ actions: z.array(z.object({
@@ -168,6 +168,8 @@ export class OpsController {
   @Get('actions')
   @ApiOkResponse({ type: ActionsDto })
   @Trpc({ output: actionsOutput })
+  @Resource('action')
+  @Read()
   actions(): ActionsDto {
     return { actions: listAutomationActions() }
   }
@@ -176,6 +178,8 @@ export class OpsController {
   @Get('runs')
   @ApiOkResponse({ type: RunsDto })
   @Trpc({ output: runsOutput })
+  @Resource('run')
+  @Read()
   async runs(): Promise<RunsDto> {
     const runs = (await readRuns(100)) as RunDto[]
     return { generatedAt: new Date().toISOString(), runs }
@@ -190,6 +194,8 @@ export class OpsController {
   @ApiOkResponse({ type: RunWithLogDto })
   @Trpc({ kind: 'mutation', output: runOutput })
   @Mcp({ name: 'run-get' })
+  @Resource('run')
+  @Read()
   async run(@Body() body: RunGetDto): Promise<RunWithLogDto> {
     const run = await readRun(body.id, { after: body.after, tail: body.tail })
     if (!run) throw new Error(`no run "${body.id}"`)
@@ -203,6 +209,8 @@ export class OpsController {
    * (every signed-in principal; owner decision 2026-10-09). A settled run yields one chunk.
    */
   @Trpc({ kind: 'subscription', chunk: RunTailChunkDto })
+  @Resource('run')
+  @Read()
   async *runTail(@Body() body: RunTailDto): AsyncGenerator<RunTailChunkDto> {
     const queue: RunLogLine[] = []
     let poke = false
@@ -243,6 +251,9 @@ export class OpsController {
           })
           wake = undefined
         }
+        // Every delivery is admitted against the committed policy (BOX-Review d613f4e finding 2):
+        // a revoke committed elsewhere ends the tail even before this process hears of it.
+        if (!(await canFollowRun(body.id))) return
         const fresh = queue.splice(0).filter((l) => (l.seq ?? -1) > last)
         if (fresh.length > 0) last = fresh.at(-1)!.seq ?? last
         if (!poke) {
@@ -273,6 +284,7 @@ export class OpsController {
    */
   @Trpc({ kind: 'subscription', chunk: IngestProgressDto })
   @Mcp({ name: 'run-now' })
+  @Resource('action')
   async *runNow(@Body() body: RunNowDto, @Req() req: PrincipalRequest): AsyncGenerator<IngestProgress> {
     const run = startDetachedRun(body.action_id, {
       trigger: 'manual',

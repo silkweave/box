@@ -64,12 +64,18 @@ Created from the ModelSpecs on boot (`CREATE TABLE IF NOT EXISTS`). Every table 
 | `support_articles` | `id` (slug, made from the title, the public URL slug, never changes) | `type` (`article`, `faq`, `getting_started`; for an `faq` the title is the question and the body the answer), `title`, `one_liner`, `body` (markdown), `status` (`draft`, `published`, `retired`), `needs_update` (bool), `featured` (bool), `owner`, `team_notes` (markdown, never published), `sort`, `published_on`, `retired_on`, `content_updated_on`, `external` |
 | `support_ticket_articles` | `ticket_id` | `article_id`, `linked_by`, `linked_at`: the entry that answered the ticket |
 
-No baseline DDL and no unique indexes: DuckDB checks a unique index eagerly inside the record
-layer's `ON CONFLICT DO UPDATE` and refuses rows that did not change the indexed column, and it has
-no partial indexes. One requester per email and per phone (among live, unmerged requesters), one
-ticket per `(source, source_ref)` and the next ticket number
-are enforced in the write path, which every writer goes through, inside one in-process queue
-(`core/lock.ts`; the server is the one writer).
+Baseline DDL (`SUPPORT_BASELINE` in `core/models.ts`): partial unique indexes for one requester per
+email and per phone among live, unmerged requesters, and one ticket per `(source, source_ref)` when
+`source_ref` is set. The write path checks the same rules first, inside one in-process queue
+(`core/lock.ts`), so a clash gets a message naming the holder; an index violation maps to the same
+message. The next ticket number is max + 1 inside that queue, guarded by the primary key.
+
+A powerup that reads another area (the crm directory and links read `crm`; another feature's link lives
+in that feature's own area) declares it as `area`. A person without read on it gets the ticket without that part:
+`links.<id>` (and `links.requester` when requesters are CRM contacts) is `{ unavailable: 'needs
+read on <area>' }`, and naming a requester or passing that powerup's values is refused with the
+same reason. With read but not write on `crm` they can name an existing contact, not add one.
+Deleting a ticket linked to another feature's record needs write on that feature's area.
 
 ### Powerup tables
 
@@ -86,31 +92,9 @@ swaps the requester directory (see "Rules").
 
 ### Migrations
 
-| key | what |
-|---|---|
-| `support:001-drop-ticket-bug-id` | `ALTER TABLE support_tickets DROP COLUMN IF EXISTS bug_id` |
-| `support:002-drop-ticket-next-step` | `ALTER TABLE support_tickets DROP COLUMN IF EXISTS next_step` |
-| `support:003-drop-bugs` | `DROP TABLE IF EXISTS support_bugs` |
-| `support:004-drop-ticket-theme` | `ALTER TABLE support_tickets DROP COLUMN IF EXISTS theme_id` |
-| `support:005-drop-article-theme` | `ALTER TABLE support_articles DROP COLUMN IF EXISTS theme_id` |
-| `support:006-drop-faq-theme` | `ALTER TABLE support_faqs DROP COLUMN IF EXISTS theme_id` |
-| `support:007-drop-form-submission-theme` | `ALTER TABLE support_form_submissions DROP COLUMN IF EXISTS theme_id` |
-| `support:008-drop-themes` | `DROP TABLE IF EXISTS support_themes` |
-| `support:009-drop-ticket-organization` | `ALTER TABLE support_tickets DROP COLUMN IF EXISTS organization` |
-| `support:010-drop-ticket-crm-account` | `ALTER TABLE support_ticket_crm DROP COLUMN IF EXISTS account_id` |
-| `support:011-drop-ticket-crm-contact` | `ALTER TABLE support_ticket_crm DROP COLUMN IF EXISTS contact_id` |
-| `support:012-drop-requester-crm` | `DROP TABLE IF EXISTS support_requester_crm` |
-| `support:013-article-type` | `ALTER TABLE support_articles ADD COLUMN IF NOT EXISTS type VARCHAR DEFAULT 'article'` |
-| `support:014-faqs-into-articles` | copies each row of `support_faqs`, when that table exists, into `support_articles` as an entry of type `faq` (question as title, answer as body, a slug id from the question) |
-| `support:015-drop-faqs` | `DROP TABLE IF EXISTS support_faqs` |
-| `support:016-drop-article-audiences` | `ALTER TABLE support_articles DROP COLUMN IF EXISTS audiences` |
-
-The manifest's `retiredTables` lists `support_bugs`, `support_themes`, `support_requester_crm` and `support_faqs`.
-
-They drop or add columns and tables so the model above is the one stored, one table-altering statement
-each (`014` moves rows instead). On a fresh Box, and on one that adapts the recipe later, each is a
-no-op. A later change to a shipped table appends a new migration with the next free name
-(`support:017-...`); shipped migrations are never edited.
+The manifest declares none: the baseline creates every table above at the shape shown. A later
+change to a shipped table appends a migration named `001-<slug>` and counting up from there
+(`support:001-<slug>`); shipped migrations are never edited.
 
 ## Rules (`core/tickets.ts`, `core/requesters.ts`, `core/crm/directory.ts`)
 
@@ -162,6 +146,14 @@ The age of an open ticket is the number of working days from `opened_on` (exclus
 today (inclusive), skipping days not in `workingDays` and dates in `holidays`. A ticket opened today
 is 0. It is late when its age exceeds `lateAfterDays`. "Team today" is core's team day (the Box's
 team time zone); the feature never uses UTC dates for this.
+
+## Tracker
+
+**`support.tickets_resolved { type?, owner? }`** (`core/trackers.ts`, registered by `SupportModule`)
+is a Box tracker (docs/SIGNALS.md, "Box trackers"): tickets with status `done`, one point per team
+day of `closed_on`, an increment signal. Dropped tickets are not resolved, and a ticket that opens
+again leaves the count. `type` keeps one ticket type, `owner` one person's tickets. It watches
+`table:support_tickets`, so every ticket write recomputes the signals bound to it.
 
 ## Help Articles (`core/articles/`)
 

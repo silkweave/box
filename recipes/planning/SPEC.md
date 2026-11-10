@@ -26,10 +26,9 @@ The reference implementation in `features/planning/` carries the base and every 
 belongs to a powerup is marked `<name> powerup:` where it sits; [INSTALL.md](INSTALL.md) lists the
 files and seams so an adapting agent can leave out what the Box does not want.
 
-- **dependsOn**: nothing. Signals, measures and saved views are core (`docs/SIGNALS.md`).
-  Core-side, `state.ts` imports `refreshMeasureSignals` / `repointMeasureParam`
-  (`@silkweave/box-core/signals/measure-derive`) so task writes refresh the signals bound to the
-  base measure. The server module registers `TASKS_DONE_MEASURE` into core's `registerMeasure` port
+- **dependsOn**: nothing. Signals, trackers and saved views are core (`docs/SIGNALS.md`).
+  The base tracker watches `table:tasks` and `table:initiatives`, so core recomputes the signals
+  bound to it after task and initiative writes. The server module registers `TASKS_DONE_TRACKER` into core's `registerTracker` port
   and `unassignDeletedUser` into `registerUserCleanup` from `onModuleInit`. Web-side,
   `InitiativeKindsSection` imports core's `apps/web/src/presets/presetIcons.tsx` so a kind picks
   from the same closed icon vocabulary a preset does, and the Initiatives board and All tasks use
@@ -42,7 +41,7 @@ files and seams so an adapting agent can leave out what the Box does not want.
   `StatusSelect` / `StatusLabel` in its web views.
 - **Removal**: remove planning only after adapting or removing every feature that depends on it,
   and every planning powerup. Without planning, core's signals keep working but lose the
-  `planning.tasks_done` measure (signals bound to it keep their binding and points, and
+  `planning.tasks_done` tracker (signals bound to it keep their binding and points, and
   `warehouse-derive` warns).
 
 ## Tables
@@ -53,7 +52,7 @@ Three, `initiatives` and `tasks` with `timestamps: true` and `audit: true` (so e
 | table | pk | what it holds |
 |---|---|---|
 | `initiatives` | `id` (key, `I1`) | title, derived `summary`, `status` (enum `PLANNING_STATUSES`), `kind` (enum from `box.json features.planning.initiativeKinds`), `owner`, `impact` (enum `IMPACT_LEVELS`), `effort` (enum `EFFORT_SIZES`), `start_date`, `due_date`, `priority` 1-3, `tags` JSON, `doc_path`, `sort` |
-| `tasks` | `id` (key, `T1`) | the items. `kind` (always `task` in the base), `parent_id` (same initiative), `initiative_id` (NULL = standalone), title, derived `summary`, `status`, `rank`, `score`, `priority` 1-3, `estimate_hours` 1-8, `tags`, `assignee`, `metadata` JSON, `start_date`, `due_date`, `done_at` |
+| `tasks` | `id` (key, `T1`) | the items. `kind` (always `task` in the base), `parent_id` (same initiative), `initiative_id` (NULL = standalone), title, derived `summary`, `status`, `rank`, `score`, `priority` 1-3, `estimate_hours` 1-8, `tags`, `assignee`, `start_date`, `due_date`, `done_at` |
 | `planning_keys` | `prefix` | the key counters: `last` is the highest number handed out for `I` (initiatives) and `T` (items); a number is never reused |
 
 Powerups add tables and columns, declared in the same `core/models.ts` and marked there: goals
@@ -167,17 +166,17 @@ None. `manifest.ts` declares no `actions`, so planning contributes nothing to co
 there is nothing here on a timer. What the base registers into core's ports:
 
 ```ts
-registerMeasure(TASKS_DONE_MEASURE)                    // planning.tasks_done
+registerTracker(TASKS_DONE_TRACKER)                    // planning.tasks_done
 registerUserCleanup('planning', unassignDeletedUser)   // initiative owner, task assignee
 ```
 
-**`planning.tasks_done { kind?, initiative?, since? }`** (`core/measures.ts`) is the running total
+**`planning.tasks_done { kind?, initiative?, since? }`** (`core/trackers.ts`) is the running total
 of `done` tasks, dated by `done_at` (team day), one point per day with a change and carried to
 today. `kind` keeps tasks under initiatives of that kind, `initiative` one initiative's tasks,
 `since` counts from that day (with the goals powerup, a goal's own signal sets it to the goal's
-start). Any signal can bind it (`signal-upsert` with `measure_key` and `measure_params`). Every task
+start). Any signal can bind it (`signal-upsert` with `tracker_key` and `tracker_params`). Every task
 write, delete and move refreshes the signals bound to it, and Data Sync's `warehouse-derive`
-recomputes it with every other measure; a Box without Data Sync still gets it from the task writes.
+recomputes it with every other tracker; a Box without Data Sync still gets it from the task writes.
 
 A deleted user is set back to NULL as an initiative's `owner` and a task's `assignee`; the rows
 survive, unclaimed.
@@ -245,7 +244,7 @@ hours progress only; initiative `health` is the milestones powerup.
   is a split pane beside the list (`SplitPane`, Esc closes, the list stays clickable); on narrow
   screens it is a push view that slides in from the right and closes back to the page. `ItemPanel`
   is the one item panel: a top bar with the initiative's name on the left (a link to the initiative
-  page, or "No initiative") and copy link on the right (there is no close button; Esc closes), then
+  page, or "No initiative") and copy link and a close button on the right (Esc closes too), then
   the title, the "all children done, complete it?" banner, the item's fields, the children list
   with quick add (left out beside the initiative page's tree, which already shows them), the notes
   doc and delete. The fields sit in a grid of 2, 4, 6 or 8 columns by panel width, Tags and URL
@@ -260,14 +259,16 @@ hours progress only; initiative `health` is the milestones powerup.
   tree (`ItemTree`) is a `section` DataGrid (`@silkweave/box-ui/datagrid`, its rules running to the
   pane's edges) with the heading left and its bar right (search, sort by plan order, due, priority
   or name, columns, typed filters by progress (open or finished), status, owner, due date, priority
-  and estimate, no pins; columns and sort are
-  kept per browser), no height cap, and a footer with the counts and column totals. Rows indent by
+  and estimate, no pins; a "Show done" toggle; columns, sort and Show done are kept per browser), no
+  height cap, and a footer with the counts and column totals. Rows indent by
   depth, the fold chevron at the name's right end; a task shows a muted dot (`TaskMark`), a parent
   task the sum of its children's hours, and a task whose children are all done a check button. In
   plan order, unfiltered, dragging a row by its mark (or arrow keys on it) up or down reorders it,
   right nests it under the row above, left lifts it out, and the sub-tree travels with it; the move
-  shows at once and is written as the parent change plus the initiative's whole rank order. A row's
-  "+" adds a task under it; the bottom row adds a task. Closing an item with open children asks
+  shows at once and is written as the parent change plus the initiative's whole rank order. Finished
+  items (done or dropped) are hidden until Show done is on, except one with something open under it;
+  a move made meanwhile keeps their places in the rank order, and the footer counts them as hidden.
+  A row's "+" adds a task under it; the bottom row adds a task. Closing an item with open children asks
   first. Counts and effort roll up over work items. The milestones powerup adds outcome cards above
   the tree and the goals powerup a Goals section below it.
 - **Creating items**: `NewTaskDialog`, the tree's quick-add and a row's "+" create tasks.

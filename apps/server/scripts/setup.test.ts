@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { boxProfile, chooseProfiles, createBoxProfileHomes, detectProviderProfiles, setupProfilePatch, startsDev, suggestOwner, type ProviderCandidate } from './setup.js'
+import { EngineUnavailable } from '@silkweave/box-core/db/engines'
+import { boxProfile, chooseProfiles, createBoxProfileHomes, detectProviderProfiles, ensureDatabaseHost, setupProfilePatch, startsDev, suggestOwner, type ProviderCandidate } from './setup.js'
 
 const candidate = (engine: 'codex' | 'claude', home = `/profiles/${engine}`): ProviderCandidate => ({
   engine,
@@ -112,5 +113,56 @@ describe('first-run setup', () => {
     expect(startsDev({ yes: true, noStart: false }, true)).toBe(false)
     expect(startsDev({ yes: false, noStart: true }, true)).toBe(false)
     expect(startsDev({ yes: false, noStart: false }, false)).toBe(false)
+  })
+})
+
+describe('database host packages', () => {
+  const tools = { binDir: '/x', version: '18.1', major: 18 }
+  const fake = (state: { native: boolean; tools: boolean }, manager = true) => {
+    const ran: string[][] = []
+    return {
+      ran,
+      deps: {
+        resolveNative: () => { if (!state.native) throw new EngineUnavailable('no native', 'install native'); return {} as never },
+        resolveClientTools: () => { if (!state.tools) throw new EngineUnavailable('no tools', 'install tools'); return tools },
+        hostInstallCommand: (what: 'native' | 'client-tools') => (manager ? ['pkg', 'install', what] : null),
+        install: (cmd: string[]) => { ran.push(cmd); if (cmd[2] === 'native') { state.native = true; state.tools = true } else state.tools = true; return 0 },
+      },
+    }
+  }
+
+  it('does nothing when everything is present', async () => {
+    const f = fake({ native: true, tools: true })
+    expect(await ensureDatabaseHost('native', async () => { throw new Error('asked') }, f.deps)).toEqual([])
+    expect(f.ran).toEqual([])
+  })
+
+  it('installs only after the owner agrees, and native brings the client tools', async () => {
+    const f = fake({ native: false, tools: false })
+    const asked: string[] = []
+    const done = await ensureDatabaseHost('native', async (q) => { asked.push(q); return true }, f.deps)
+    expect(f.ran).toEqual([['pkg', 'install', 'native']])
+    expect(asked).toHaveLength(1)
+    expect(done).toEqual(['PostgreSQL 18 with pgvector'])
+  })
+
+  it('pgrust needs only the client tools', async () => {
+    const f = fake({ native: false, tools: false })
+    await ensureDatabaseHost('pgrust', async () => true, f.deps)
+    expect(f.ran).toEqual([['pkg', 'install', 'client-tools']])
+  })
+
+  it('stops with the install hint when declined or without a package manager', async () => {
+    const declined = fake({ native: true, tools: false })
+    await expect(ensureDatabaseHost('pgrust', async () => false, declined.deps)).rejects.toThrow(/install tools/)
+    expect(declined.ran).toEqual([])
+    const none = fake({ native: true, tools: false }, false)
+    await expect(ensureDatabaseHost('pgrust', async () => true, none.deps)).rejects.toThrow(/install tools/)
+  })
+
+  it('fails with the hint when the install command fails', async () => {
+    const f = fake({ native: true, tools: false })
+    f.deps.install = () => 1
+    await expect(ensureDatabaseHost('pgrust', async () => true, f.deps)).rejects.toThrow(/pkg install client-tools failed \(exit 1\)[\s\S]*install tools/)
   })
 })

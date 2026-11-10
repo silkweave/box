@@ -41,7 +41,7 @@ Each powerup's gotchas live in its POWERUP.md (`powerups/<id>/`).
   its children and its own estimate is ignored. Dropping an item drops its whole sub-tree from
   every count, so progress, `planning.tasks_done`, done counts, the dashboards and the powerups
   must not re-derive the rule.
-- **`tasks.kind` stays in a base-only Box.** Every row is `task`; `workItems`, `measures.ts` and the
+- **`tasks.kind` stays in a base-only Box.** Every row is `task`; `workItems`, `trackers.ts` and the
   cycle-board's initiative card read it. Do not drop the column to slim the base.
 - **`index.tsx` sits on the web feature-registry import cycle.** Never read a registry binding at
   module scope there, and load the app in a browser after touching it - `box verify` has no runtime

@@ -17,7 +17,10 @@
 import { mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import type { CreateSessionRequest } from '@workerdeck/protocol'
 import {
+  asSystem,
+  closeSessionCredential,
   fileToolPaths,
+  openSessionCredential,
   readUser,
   repoRoot,
   workRoots,
@@ -28,6 +31,15 @@ import {
   type WorkAccess,
   type WorkFs,
 } from '@silkweave/box-core'
+import { BOX_MCP_FLOOR, BOX_MCP_SERVER, sweepOnPolicyRevision } from './box-mcp.js'
+import { servicePort } from './loopback-guard.js'
+
+/**
+ * A person's Work settings, read as named system work: the session create, the tool hook and the
+ * credential recheck run outside any request frame the executor would accept (the agent mount, an
+ * engine hook, a policy-revision listener), so the read names its own scope.
+ */
+const readWorkUser = (id: string): Promise<User | null> => asSystem('work: settings', () => readUser(id))
 
 /** The real filesystem, in the shape the classification takes. */
 export const WORK_FS: WorkFs = {
@@ -55,6 +67,11 @@ export interface WorkGrant {
   roots: string[]
   /** Box MCP tools present (the "all data and modules" checkbox). */
   data: boolean
+  /**
+   * The session credential behind the injected `box` server, set by `workRunnerConfig` each time
+   * the runner is built (never by gateCreate or a client). The host closes it when the runner ends.
+   */
+  sid?: string
 }
 
 export class WorkSessionError extends Error {
@@ -84,7 +101,7 @@ export interface WorkPolicyDeps {
 
 // Resolved per call, not at import: test doubles of @silkweave/box-core may not carry every export.
 const defaultDeps = (): WorkPolicyDeps => ({
-  readUser: (id) => readUser(id),
+  readUser: readWorkUser,
   fs: WORK_FS,
   sandboxDir: (id) => workSandboxDir(id),
   mkdir: (dir) => mkdirSync(dir, { recursive: true }),
@@ -143,7 +160,12 @@ export function workGrantOf(meta: unknown): WorkGrant | null {
   if (typeof w !== 'object' || w === null) return null
   const g = w as Record<string, unknown>
   if (typeof g.user !== 'string' || !Array.isArray(g.roots) || typeof g.data !== 'boolean') return null
-  return { user: g.user, roots: g.roots.filter((r): r is string => typeof r === 'string'), data: g.data }
+  return {
+    user: g.user,
+    roots: g.roots.filter((r): r is string => typeof r === 'string'),
+    data: g.data,
+    ...(typeof g.sid === 'string' ? { sid: g.sid } : {}),
+  }
 }
 
 /** The priming text appended to the session's system prompt. */
@@ -156,7 +178,7 @@ export function workInstructions(grant: WorkGrant, cwd: string): string {
     folders,
     'The Box source checkout, its configuration and its git history are off limits: file tools outside the folders above are refused, and shell commands that name the checkout, data/config, walk up with "..", write git history, or run the box CLI are refused. Do not try to work around a refusal; tell the person what you could not do and why.',
     grant.data
-      ? 'The Box tools (the MCP servers of this profile) are available for the team data and modules.'
+      ? `The Box tools (the \`${BOX_MCP_SERVER}\` MCP server, acting as this person with their role) are available for the team data and modules.`
       : 'MCP tools are not available in this session (the Box data and modules are turned off for it); work with files and the web only.',
   ].join('\n')
 }
@@ -198,7 +220,7 @@ export interface WorkGuardDeps {
  * closed: a missing row, a read error or an ungrantable folder denies the call.
  */
 export function createWorkToolGuard(grant: WorkGrant, cwd: string, deps: Partial<WorkGuardDeps> = {}): HookCallback {
-  const d: WorkGuardDeps = { readUser: (id) => readUser(id), fs: WORK_FS, checkout: () => repoRoot(), ...deps }
+  const d: WorkGuardDeps = { readUser: readWorkUser, fs: WORK_FS, checkout: () => repoRoot(), ...deps }
   return async (input) => {
     if (input.hook_event_name !== 'PreToolUse' || !isGuardedTool(input.tool_name, cwd)) return {}
     let access: WorkAccess
@@ -224,18 +246,106 @@ export function createWorkToolGuard(grant: WorkGrant, cwd: string, deps: Partial
   }
 }
 
-/** The host-only runner config a guarded session gets; an unguarded request is returned as is. */
-export function workRunnerConfig<T extends CreateSessionRequest>(req: T, deps: Partial<WorkGuardDeps> = {}): T {
-  const grant = workGrantOf(req.meta)
-  if (!grant) return req
-  const cwd = req.cwd ?? workSandboxDir(grant.user)
-  const guard = createWorkToolGuard(grant, cwd, deps)
+// --- the Box MCP server ---------------------------------------------------------------------------
+
+/**
+ * The env variable the injected `box` server's bearer comes from. Claude Code expands `${VAR}` in a
+ * session MCP server's headers, so the persisted session record holds only the reference; the
+ * credential itself lives in the runner's env, which WorkerDeck never writes to disk.
+ */
+export const WORK_CREDENTIAL_ENV = 'BOX_SESSION_CREDENTIAL'
+
+/** Upper bound of one runner's credential. A session that sleeps and wakes gets a fresh one. */
+export const WORK_SESSION_TTL_MS = 12 * 60 * 60_000
+
+export interface WorkCredentialDeps {
+  open: typeof openSessionCredential
+  readUser: (id: string) => Promise<User | null>
+  port: () => number
+}
+
+/** Why a Work session's credential must stop working now, or null while it may go on. */
+async function workCredentialProblem(user: string, read: WorkCredentialDeps['readUser']): Promise<string | null> {
+  const row = await read(user)
+  if (!row || row.status === 'revoked') return `${user} can no longer use Work`
+  if (!row.work.enabled) return `Work has been turned off for ${user}`
+  if (!row.work.data) return `the Box data and modules are turned off for ${user}'s Work sessions`
+  return null
+}
+
+/**
+ * The host-only runner config a guarded session gets; an unguarded request is returned as is.
+ *
+ * With "all data and modules" on, the session also gets `box` (this Box's /mcp, Box tools only) with
+ * a fresh session credential for the person (docs/AUTH.md "Session credentials"): their own role,
+ * nothing more, closed when the runner ends (`closeWorkCredential`), on a restart, after
+ * `WORK_SESSION_TTL_MS`, and when a policy revision or any request with it finds the person revoked
+ * or their Work or data turned off. A `box` entry in the person's own profile config is replaced for the session, not run
+ * beside it. Runs on every runner build, including a dormant session's wake, so a woken session
+ * never carries a credential from before a restart.
+ *
+ * No loopback probe here (this hook is synchronous): gateCreate probes before a new session, and a
+ * session credential is only valid in this process, so a foreign listener on the port gains nothing.
+ */
+export function workRunnerConfig<T extends CreateSessionRequest>(
+  req: T,
+  deps: Partial<WorkGuardDeps> = {},
+  credentialDeps: Partial<WorkCredentialDeps> = {},
+): T {
+  const stamped = workGrantOf(req.meta)
+  if (!stamped) return req
+  const cwd = req.cwd ?? workSandboxDir(stamped.user)
+  const { sid: _previous, ...grant } = stamped
+  let boxed: Partial<CreateSessionRequest> & { env?: Record<string, string | undefined> } = {}
+  let sid: string | undefined
+  if (grant.data) {
+    const c: WorkCredentialDeps = { open: openSessionCredential, readUser: readWorkUser, port: servicePort, ...credentialDeps }
+    sweepOnPolicyRevision()
+    const opened = c.open({
+      sub: grant.user,
+      kind: 'work',
+      scope: `work:${grant.user}`,
+      toolset: null,
+      ttlMs: WORK_SESSION_TTL_MS,
+      // Both on every policy revision and on every request: a session woken from a saved config
+      // after Work or data was turned off gets a credential that admits nothing.
+      recheck: () => workCredentialProblem(grant.user, c.readUser),
+      admit: () => workCredentialProblem(grant.user, c.readUser),
+    })
+    sid = opened.sid
+    const env = (req as { env?: Record<string, string | undefined> }).env ?? { ...process.env }
+    boxed = {
+      env: { ...env, [WORK_CREDENTIAL_ENV]: opened.credential },
+      mcpServers: {
+        ...req.mcpServers,
+        [BOX_MCP_SERVER]: {
+          type: 'http',
+          url: `http://127.0.0.1:${c.port()}/mcp?passthrough=0`,
+          headers: { Authorization: `Bearer \${${WORK_CREDENTIAL_ENV}}` },
+        },
+      },
+      // Run without asking, as on a serving session: the person's own role decides each call, and
+      // the guard above still refuses them all once Work or data is turned off.
+      allowedTools: [...(req.allowedTools ?? []), `mcp__${BOX_MCP_SERVER}`],
+      disallowedTools: [...(req.disallowedTools ?? []), ...BOX_MCP_FLOOR.map((tool) => `mcp__${BOX_MCP_SERVER}__${tool}`)],
+    }
+  }
+  const finalGrant: WorkGrant = sid ? { ...grant, sid } : grant
+  const guard = createWorkToolGuard(finalGrant, cwd, deps)
   return {
     ...req,
-    instructions: workInstructions(grant, cwd),
+    ...boxed,
+    meta: { ...(req.meta as Record<string, unknown>), work: finalGrant },
+    instructions: workInstructions(finalGrant, cwd),
     extraOptions: {
       hooks: { PreToolUse: [{ hooks: [guard] }] },
       additionalDirectories: grant.roots.filter((r) => r !== cwd),
     },
   }
+}
+
+/** End the credential of a Work runner (idempotent; a session without one is a no-op). */
+export function closeWorkCredential(meta: unknown): void {
+  const sid = workGrantOf(meta)?.sid
+  if (sid) closeSessionCredential(sid)
 }

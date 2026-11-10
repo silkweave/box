@@ -3,7 +3,7 @@
 // See docs/core/SEAM.md for the runtime contracts and dependency direction.
 
 import type { ModelSpec } from './warehouse/model.js'
-import type { Migration } from './warehouse/schema.js'
+import type { PgMigration as Migration } from './warehouse/pg/migrate.js'
 import type { ActionSpec } from './ops/types.js'
 
 export interface CoreFeature {
@@ -27,6 +27,9 @@ export interface CoreFeature {
   /** The boards this feature draws with a preset bar, by preset module id (`config/presets.json`).
    *  Only registered ids are accepted, so a typo cannot create a module nothing renders. */
   presetModules?: readonly string[]
+  /** The `data/docs/<section>` directories this feature writes (`docs:<section>` change events go
+   *  to readers of its area; an undeclared section's events to admins only). */
+  docSections?: readonly string[]
   /** Background capabilities this feature arms from box.json `background.features.<id>.<key>`
    *  (each false unless set), by key, with what each arms. Read only through `isBackgroundEnabled`
    *  (background.ts); a configured key a registered feature does not declare fails the boot. */

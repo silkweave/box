@@ -8,13 +8,13 @@ import { createServer as createNetServer } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
-import { agentIdentity, boxJson, clientIp, dataPath, rateLimit, repoRoot, requestIsSecure, sameOrigin, sessionCookie, setSecurityHeaders } from '@silkweave/box-core'
+import { agentIdentity, boxJson, clientIp, dataPath, dumpRestorePointTo, openDatabase, restoreBuilderDatabase, type OpenDatabase, rateLimit, repoRoot, requestIsSecure, sameOrigin, sessionCookie, setSecurityHeaders } from '@silkweave/box-core'
 import { BuilderSupervisorAuth, type BuilderSupervisorPrincipal } from './builder-auth.js'
 import { createBuilderBrowser } from './builder-browser.js'
 import { startBuilderBrowserLocal } from './builder-browser-local.js'
 import { createBuilderHost } from './builder-host.js'
 import { createBuilderGateway, json, readJson } from './builder-gateway.js'
-import { backupBuilder, BuilderLifecycleError, readBuilderControl, readBuilderPendingChanges, recordBuilderSession, restoreBuilder, startBuilder, stopBuilder } from './builder-lifecycle.js'
+import { backupBuilder, BuilderLifecycleError, type BuilderDatabasePort, readBuilderControl, readBuilderPendingChanges, recordBuilderSession, restoreBuilder, startBuilder, stopBuilder } from './builder-lifecycle.js'
 import { applyMaintenancePatch, MAINTENANCE_PAGE_PATH, MaintenanceError, type MaintenanceSource, maintenancePath, maintenanceReturnPath, publicNotice, readMaintenance, writeMaintenance } from './maintenance.js'
 import { maintenancePage } from './maintenance-page.js'
 import { checkpointBuilder, finishBuilder, reviewBuilder, finalizeCheckout } from './builder-review.js'
@@ -62,6 +62,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   const stopHeartbeat = runtimeHeartbeat('supervisor')
   const config = boxJson()
   const machine = agentIdentity()
+  let database: OpenDatabase | null = null
   const internalPort = await freePort()
   const appUrl = `http://127.0.0.1:${internalPort}`
   const app = new SupervisedApplication({
@@ -184,7 +185,20 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   }
   const appSockets = new Set<Duplex>()
   const offline = <T>(fn: () => Promise<T> | T): Promise<T> => app.withStopped(fn)
-  const lifecycle = { paths, withAppStopped: offline }
+  // Builder backups carry the database, and a Builder restore rebuilds the cluster (R3): the
+  // supervisor owns the cluster, so it lets go for the restore and reopens the new active one.
+  const databasePort: BuilderDatabasePort = {
+    async dump(dir) {
+      if (!database) throw new BuilderLifecycleError(503, 'Box database is not open; repair it before taking a Builder backup')
+      await dumpRestorePointTo(database.running, dir)
+    },
+    async restore(input) {
+      if (database) { await database.running.release(); database = null }
+      try { await restoreBuilderDatabase(input) }
+      finally { database = await openDatabase('supervisor').catch(error => { report('error', `Box database needs repair: ${String(error)}`); return null }) }
+    },
+  }
+  const lifecycle = { paths, withAppStopped: offline, database: databasePort }
   const verification = createBuilderVerification(paths)
   /** All events of a runner's current conversation, oldest first (the replay ends at its last seq). */
   async function conversationEvents(sessionId: string): Promise<SessionEvent[]> {
@@ -586,6 +600,11 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     if (app.dev) await app.startVite().catch(error => report('error', `Box frontend needs repair: ${String(error)}`))
     else if (readBuilderControl(paths).session) await startPreviewVite()
     if (closing) throw new Error('Box supervisor is stopping')
+    // The supervisor owns the database cluster and keeps it across application restarts; the app
+    // and CLI scripts adopt it for connections only (PHASE1.md choice 4). A cluster that will not
+    // open is reported like an app that will not start: the Builder shell stays up to repair it.
+    database = await openDatabase('supervisor').catch(error => { report('error', `Box database needs repair: ${String(error)}`); return null })
+    if (closing) throw new Error('Box supervisor is stopping')
     await app.start(inMaintenance()).catch(error => report('error', `Box app needs repair: ${String(error)}`))
     // Outside a Builder session the checkout is the integrated state: publish it when the current
     // release was built from something else. During a session the checkout holds unpromoted work,
@@ -617,6 +636,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       await closeBrowserLocal?.()
       await closeLocalControl?.()
       await app.close().catch(error => report('error', `Box shutdown: ${String(error)}`))
+      await database?.running.release().catch(error => report('error', `Box database shutdown: ${String(error)}`))
       await host.worker.drain({ timeoutMs: 5_000 }).catch(() => {})
       await host.worker.close()
       server.closeAllConnections()

@@ -5,7 +5,8 @@ import { RouterProvider } from '@tanstack/react-router'
 import { router } from './router.tsx'
 import { startChangeFeed } from './lib/changeFeed.ts'
 import { AuthProvider, useAuth } from './lib/useAuth.tsx'
-import { ALL_WEB_FEATURES } from './web-features.ts'
+import { readableWebFeatures } from './web-features.ts'
+import { accessKey, useAccess } from './lib/access.ts'
 import { BrandProvider, UsersProvider } from '@silkweave/box-ui'
 import { useUsersData } from './lib/useUsersData.ts'
 import { LoginView } from './views/LoginView.tsx'
@@ -40,12 +41,15 @@ function AuthGate() {
   // subscription would just 401 before that. Idempotent, so re-renders are free. Each feature's
   // `onSession` (a chat feed, a notification poller, a push-click listener) starts on the same gate.
   const startFeed = !loading && !!principal && !maintenance
+  useAccess()
+  const accessKeyNow = accessKey()
   useEffect(() => {
     if (!startFeed) return
     startChangeFeed()
-    const teardowns = ALL_WEB_FEATURES.map((f) => f.onSession?.()).filter((t): t is () => void => typeof t === 'function')
+    // Only features whose area the principal reads start (lib/access.ts); restarted when access changes.
+    const teardowns = readableWebFeatures().map((f) => f.onSession?.()).filter((t): t is () => void => typeof t === 'function')
     return () => teardowns.forEach((t) => t())
-  }, [startFeed])
+  }, [startFeed, accessKeyNow])
   // A sign-in link opened while signed in (lib/signinGrant.ts): the same person's link is dropped
   // unspent; another person's asks before switching. Signed out, LoginView takes it.
   const [, rerender] = useReducer((n: number) => n + 1, 0)

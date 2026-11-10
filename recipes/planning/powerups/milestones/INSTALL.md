@@ -60,14 +60,14 @@ None.
      `InitiativeDto`, the measure mapping in `taskUpsert`;
    - web: `planning-types.ts` (`isMilestone`, the milestone types and fields, `Task.health`,
      `Initiative.health`), `lib/usePlanningData.ts` (milestone upsert fields, optimistic
-     `outcome`), `components/ItemPanel.tsx` (`KindToggle`, `OutcomeStar`, `MeasureEditor`,
+     `outcome`), `components/ItemPanel.tsx` (`KindSwitch`, the diamond of `KindMark`, `OutcomeStar`, `MeasureEditor`,
      `NumberInput`, the signal imports, the status and window hints, the kind control in
      `QuickAddChild`), `components/ItemTree.tsx` (the milestone branches),
      `views/InitiativesGrid.tsx` (the milestone branches of the status and task cells),
      `views/InitiativeDetailView.tsx` (`OutcomeCards`), `lib/planningView.ts` (the milestone clause
      of `applyView`), `lib/markdown.ts` (`names.signal`, the milestone line, `measure()`, Kind,
      State, inherited dates, Measure), `components/RecordMenu.tsx` (the signals lookup).
-   - With the sprints powerup: `KindToggle` clears `sprint_id` / `slot_date` and calls
+   - With the sprints powerup: `KindSwitch` clears `sprint_id` / `slot_date` and calls
      `reloadSprint`.
 4. **Register**: `registerSignalHooks(MILESTONE_SIGNAL_HOOKS)` in `onModuleInit` of
    `server/planning/planning.module.ts`, and `export * from './measure.js'` in `core/index.ts` if
@@ -78,12 +78,12 @@ None.
    statement each:
 
    ```ts
-   { name: '<nnn>-tasks-outcome', statements: ['ALTER TABLE tasks ADD COLUMN IF NOT EXISTS outcome BOOLEAN DEFAULT false'] },
-   { name: '<nnn+1>-tasks-outcome-not-null', statements: ['ALTER TABLE tasks ALTER COLUMN outcome SET NOT NULL'] },
-   { name: '<nnn+2>-tasks-signal-id', statements: ['ALTER TABLE tasks ADD COLUMN IF NOT EXISTS signal_id VARCHAR'] },
-   { name: '<nnn+3>-tasks-measure-kind', statements: ['ALTER TABLE tasks ADD COLUMN IF NOT EXISTS measure_kind VARCHAR'] },
-   { name: '<nnn+4>-tasks-target', statements: ['ALTER TABLE tasks ADD COLUMN IF NOT EXISTS target DOUBLE'] },
-   { name: '<nnn+5>-tasks-baseline', statements: ['ALTER TABLE tasks ADD COLUMN IF NOT EXISTS baseline DOUBLE'] },
+   { name: '<nnn>-tasks-outcome', statements: ['ALTER TABLE planning.tasks ADD COLUMN IF NOT EXISTS outcome boolean DEFAULT false'] },
+   { name: '<nnn+1>-tasks-outcome-not-null', statements: ['ALTER TABLE planning.tasks ALTER COLUMN outcome SET NOT NULL'] },
+   { name: '<nnn+2>-tasks-signal-id', statements: ['ALTER TABLE planning.tasks ADD COLUMN IF NOT EXISTS signal_id text'] },
+   { name: '<nnn+3>-tasks-measure-kind', statements: ['ALTER TABLE planning.tasks ADD COLUMN IF NOT EXISTS measure_kind text'] },
+   { name: '<nnn+4>-tasks-target', statements: ['ALTER TABLE planning.tasks ADD COLUMN IF NOT EXISTS target double precision'] },
+   { name: '<nnn+5>-tasks-baseline', statements: ['ALTER TABLE planning.tasks ADD COLUMN IF NOT EXISTS baseline double precision'] },
    ```
 
    `tasks.kind` is base and needs nothing. Back up first (`box db backup`) and rehearse on a
@@ -99,7 +99,7 @@ None.
 2. Promote the milestone to an outcome (the star) and check it also shows as a card at the top of
    the initiative, and the initiative carries a `health` in `initiatives-get`.
 3. Make a second milestone measured by a signal (reach or accumulate, with a target and a window;
-   "New signal" creates a manual one) and check its reading. Rename that signal: the milestone
+   "New signal" opens the signal dialog; make one tracked by the Box) and check its reading. Rename that signal: the milestone
    still reads it. Delete it: the delete report names `task:<key>` and the milestone stays.
 4. Give the initiative dates, then try to put a milestone's due date after the initiative's: the
    write is refused with a message naming the milestone.
@@ -115,6 +115,6 @@ when the goals powerup stays), and `milestones` from `recipes.planning.powerups`
 goes, ask the owner what to do with existing milestone rows (`tasks.kind = 'milestone'`): turn them
 into tasks (`task-upsert { kind: 'task' }` after clearing the measure and outcome) or delete them
 (their children move up). A row left with `kind = 'milestone'` fails the base enum check on its next write.
-Then drop the unused columns with new migrations, one each (back up first): `ALTER TABLE tasks DROP
+Then drop the unused columns with new migrations, one each (back up first): `ALTER TABLE planning.tasks DROP
 COLUMN outcome`, `signal_id`, `measure_kind`, `target`, `baseline`. Run `box verify` and load
 `/initiatives`.

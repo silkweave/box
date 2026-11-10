@@ -1,7 +1,7 @@
 // Presets - the named lenses on the boards that have one (each feature names its own, `presetModules`). "Pipeline",
 // "Quick wins", "Needs review", whatever the team invents. They live in config/presets.json:
 // this is Box CONFIGURATION, it wants a diff and a git history rather than audit stamps in the
-// warehouse, and it travels with the Box's config directory, which is version-controlled (data.db
+// warehouse, and it travels with the Box's config directory, which is version-controlled (the warehouse
 // is not).
 //
 // ONE KIND OF PRESET: a single list per module, team-owned end to end: any internal user may retitle, re-icon, reorder, re-aim or delete
@@ -25,6 +25,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { configPath } from '../io.js'
 import { FEATURE_LIST } from '../generated/features.js'
+import type { AccessLevel } from '../auth/levels.js'
+import { canAccess, requireAccess } from '../request-context.js'
 
 /** The modules that have a preset bar: what the registered features declare as `presetModules`, read
  *  lazily so this module never reads the registry at import time. A closed list all the same, so a
@@ -180,9 +182,35 @@ export function assertKnownModule(module: string): void {
   }
 }
 
-/** Every preset of one module, in the team's order. */
-export function readPresets(module: string): PresetRecord[] {
+// A module's presets belong to the feature that declares the module (W8 R3, PERMISSIONS 8.1): its
+// area at read to see them, at write to change them. The handlers are core resource handlers, so
+// these accessors are where the decision is made.
+
+/** The owning area of a preset module: the id of the feature declaring it. */
+export function presetModuleArea(module: string): string {
   assertKnownModule(module)
+  return FEATURE_LIST.find((f) => f.presetModules?.includes(module))!.id
+}
+
+function requireModule(module: string, level: AccessLevel): void {
+  requireAccess(presetModuleArea(module), level)
+}
+
+/** The presets file as the caller may see it: only modules whose area it reads, plus the modules
+ *  it may write (the SPA offers saving, managing and seeding only there). */
+export function readReadablePresets(): PresetsFile & { writable: string[] } {
+  const file = readPresetsFile()
+  const readable = (m: string) => canAccess(presetModuleArea(m), 'read')
+  return {
+    seeded: file.seeded.filter(readable),
+    modules: Object.fromEntries(Object.entries(file.modules).filter(([m]) => readable(m))),
+    writable: presetModules().filter((m) => canAccess(presetModuleArea(m), 'write')),
+  }
+}
+
+/** Every preset of one module, in the team's order (needs read on the module's area). */
+export function readPresets(module: string): PresetRecord[] {
+  requireModule(module, 'read')
   return readPresetsFile().modules[module] ?? []
 }
 
@@ -229,7 +257,7 @@ export function savePreset(
   icon?: string | null,
   description?: string | null,
 ): PresetRecord[] {
-  assertKnownModule(module)
+  requireModule(module, 'write')
   const trimmed = assertName(name)
   const file = readPresetsFile()
   const existing = (file.modules[module] ?? []).find((v) => v.name === trimmed)
@@ -269,7 +297,7 @@ export function updatePreset(
   patch: { name?: string; description?: string | null; icon?: string | null; state?: Record<string, unknown> },
   actor?: string | null,
 ): PresetRecord[] {
-  assertKnownModule(module)
+  requireModule(module, 'write')
   const file = readPresetsFile()
   const list = file.modules[module] ?? []
   const current = list.find((v) => v.name === name.trim())
@@ -302,7 +330,7 @@ export function updatePreset(
  * "last saved by" lie about who last changed what the preset shows.
  */
 export function reorderPresets(module: string, names: string[]): PresetRecord[] {
-  assertKnownModule(module)
+  requireModule(module, 'write')
   const file = readPresetsFile()
   const list = file.modules[module] ?? []
   const wanted = names.map((n) => n.trim()).filter((n, i, all) => all.indexOf(n) === i)
@@ -315,7 +343,7 @@ export function reorderPresets(module: string, names: string[]): PresetRecord[] 
 /** Remove one preset by name. Deleting one that is not there is a no-op, not an error - two people
  *  clicking the same trash icon should not produce a red toast for the slower one. */
 export function deletePreset(module: string, name: string): PresetRecord[] {
-  assertKnownModule(module)
+  requireModule(module, 'write')
   const trimmed = name.trim()
   const file = readPresetsFile()
   file.modules[module] = (file.modules[module] ?? []).filter((v) => v.name !== trimmed)
@@ -349,9 +377,13 @@ export function seedPresets(
   mode: 'initial' | 'restore' = 'initial',
   actor?: string | null,
 ): PresetRecord[] {
-  assertKnownModule(module)
+  requireModule(module, 'read')
   const file = readPresetsFile()
   if (mode === 'initial' && file.seeded.includes(module)) return file.modules[module] ?? []
+  // Every board load sends `initial`: a reader opening a board nobody has seeded yet gets the list as
+  // it is (seeding is a write, left to the first writer); a reader's `restore` is refused.
+  if (mode === 'initial' && !canAccess(presetModuleArea(module), 'write')) return file.modules[module] ?? []
+  requireModule(module, 'write')
   const list = file.modules[module] ?? []
   const have = new Set(list.map((v) => v.name))
   const now = new Date().toISOString()

@@ -22,6 +22,7 @@ const directory = (ids: string[]) =>
     list: () => ids.map((id) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) })),
     sessionProblem: async () => null,
     personal: async () => [],
+    inAudience: () => false,
     serve: async () => {},
   })
 beforeEach(() => {
@@ -31,6 +32,7 @@ beforeEach(() => {
   writeFileSync(
     join(root, 'box.json'),
     JSON.stringify({
+      agent: { id: 'nova', name: 'Nova', role: 'admin' },
       agentMcp: {
         toolsets: {
           team: { label: 'Team chat', servers: ['google'], allow: ['mcp__google__GmailRead'], deny: ['mcp__google__DraftDelete'] },
@@ -96,12 +98,12 @@ describe('session options', () => {
     expect(toolsetSessionOptions('external')).toEqual({ servers: [], allowedTools: [], disallowedTools: ['Bash', 'mcp__box'], boxTools: null })
   })
 
-  it('a built-in toolset keeps only its Box tools, cannot be edited or shadowed', () => {
+  it('a built-in toolset keeps only its Box tools, cannot be edited or shadowed', async () => {
     registerBuiltinToolset({ id: 'drafting', label: 'Drafting', description: '', boxTools: ['notes-draft', 'notes-thread'], deny: ['Bash'] })
     expect(agentToolset('drafting')).toMatchObject({ builtIn: true, servers: [], deny: ['Bash'], boxTools: ['notes-draft', 'notes-thread'] })
     expect(toolsetSessionOptions('drafting')).toEqual({ servers: [], allowedTools: [], disallowedTools: ['Bash'], boxTools: ['NotesDraft', 'NotesThread'] })
-    expect(() => saveAgentToolset({ id: 'drafting', servers: [] })).toThrow(/built in/)
-    expect(() => deleteAgentToolset('drafting')).toThrow(/built in/)
+    await expect(saveAgentToolset({ id: 'drafting', servers: [] })).rejects.toThrow(/built in/)
+    await expect(deleteAgentToolset('drafting')).rejects.toThrow(/built in/)
   })
 
   it('refuses an unknown toolset', () => {
@@ -110,22 +112,22 @@ describe('session options', () => {
 })
 
 describe('writing', () => {
-  it('refuses a toolset that names an unknown connection, a tool of an unattached one, or allows a built-in', () => {
-    expect(() => saveAgentToolset({ id: 'x', servers: ['nope'] })).toThrow(/no connection "nope"/)
-    expect(() => saveAgentToolset({ id: 'x', servers: ['google'], allow: ['mcp__stripe__stripe_api_read'] })).toThrow(/does not attach/)
-    expect(() => saveAgentToolset({ id: 'x', servers: ['google'], allow: ['Bash'] })).toThrow(/built-in/)
-    expect(() => saveAgentToolset({ id: 'Bad Id' })).toThrow(/lowercase slug/)
+  it('refuses a toolset that names an unknown connection, a tool of an unattached one, or allows a built-in', async () => {
+    await expect(saveAgentToolset({ id: 'x', servers: ['nope'] })).rejects.toThrow(/no connection "nope"/)
+    await expect(saveAgentToolset({ id: 'x', servers: ['google'], allow: ['mcp__stripe__stripe_api_read'] })).rejects.toThrow(/does not attach/)
+    await expect(saveAgentToolset({ id: 'x', servers: ['google'], allow: ['Bash'] })).rejects.toThrow(/built-in/)
+    await expect(saveAgentToolset({ id: 'Bad Id' })).rejects.toThrow(/lowercase slug/)
     expect(existsSync(join(root, 'box.local.json'))).toBe(false)
   })
 
-  it('saves and removes a toolset in box.local.json', () => {
-    saveAgentToolset({ id: 'crm', label: 'CRM sync', servers: ['google', 'stripe'], allow: ['mcp__stripe__stripe_api_read'] })
+  it('saves and removes a toolset in box.local.json', async () => {
+    await saveAgentToolset({ id: 'crm', label: 'CRM sync', servers: ['google', 'stripe'], allow: ['mcp__stripe__stripe_api_read'] })
     expect(agentToolset('crm')).toMatchObject({ label: 'CRM sync', servers: ['google', 'stripe'], allow: ['mcp__stripe__stripe_api_read'], deny: [] })
     expect(readFileSync(join(root, 'box.local.json'), 'utf8')).toContain('"crm"')
     expect(toolsetsAttaching('stripe')).toEqual(['crm'])
-    deleteAgentToolset('crm')
+    await deleteAgentToolset('crm')
     expect(agentToolset('crm')).toBeNull()
-    deleteAgentToolset('team')
+    await deleteAgentToolset('team')
     expect(agentToolset('team')).toBeNull()
   })
 })

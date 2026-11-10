@@ -5,13 +5,13 @@
 //                   processor), shipped as a workspace package and registered statically in
 //                   core's PROVIDERS map. The template ships none - see the note on PROVIDERS. It
 //                   declares its non-secret config fields, its required credential key NAMES, its
-//                   measure catalogue, and a pull().
+//                   tracker catalogue, and a pull().
 //   • Data source - a RECORD. A user-created, user-named instance of a provider ("Mailer EU"
 //                   = provider mailer + config {workspace: 'acme-eu'} + its own credentials). Two
 //                   workspaces are two rows of the same provider. Lives in core's `data_sources`.
-//   • Measure      - a CATALOGUE ENTRY. One data point a provider offers ('DELIVERED'), with
-//                   defaults for a signal bound to it. A measure exists whether or not anyone
-//                   subscribes; a signal becomes connected by BINDING (data_source_id, measure_key).
+//   • Tracker      - a CATALOGUE ENTRY. One data point a provider offers ('DELIVERED'), with
+//                   defaults for a signal bound to it. A tracker exists whether or not anyone
+//                   subscribes; a signal becomes connected by BINDING (data_source_id, tracker_key).
 //
 // pull() is a PURE FETCHER - a Promise plus a progress callback, never an async generator and
 // never a writer. The sync engine in core owns the progress stream, the audit snapshot and every
@@ -26,9 +26,9 @@
 import type { SignalAccumulation, SignalDirection, SignalInterval } from './vocabulary.js'
 
 /** One data point the provider offers, with the defaults a NEW signal bound to it starts from. */
-export interface ProviderMeasure {
-  /** The provider's NATIVE token, verbatim ('FIRST_MESSAGE', uppercase and all). Measure keys never
-   *  enter the signal-id namespace - they live only here and in `signals.measure_key` -
+export interface ProviderTracker {
+  /** The provider's NATIVE token, verbatim ('FIRST_MESSAGE', uppercase and all). Tracker keys never
+   *  enter the signal-id namespace - they live only here and in `signals.tracker_key` -
    *  so imposing this repo's lowercase-slug convention would buy a mapping layer and nothing else. */
   key: string
   /** Human label ('First messages') - prefills the signal's label; the user can override it. */
@@ -63,13 +63,13 @@ export interface DataSourceRef {
 export interface ProviderPull {
   /** Observations at whatever precision the remote serves; the sync engine floors each one per the
    *  BOUND SIGNAL's interval, so a provider never does date math beyond parsing. */
-  points: { measure_key: string; at: string; value: number }[]
+  points: { tracker_key: string; at: string; value: number }[]
   /** The raw remote payload, persisted verbatim as the day's audit snapshot. Nothing reads it
    *  automatically - it exists so a bad mapping can be diagnosed and points rebuilt offline. */
   raw: unknown
   /**
    * The time range this pull actually covers, when the provider knows it (it usually does - it
-   * asked for it). The engine replaces live rows across exactly this window, so a measure that was
+   * asked for it). The engine replaces live rows across exactly this window, so a tracker that was
    * corrected DOWN to zero loses its stale row even though it returned no observation. Omit it and
    * the engine falls back to "from the earliest observation in `points`", which cannot clear a
    * quiet leading edge. `to` omitted = open-ended.
@@ -81,9 +81,9 @@ export interface ProviderPullContext {
   source: DataSourceRef
   /** The provider's declared credential keys, already resolved and non-empty. */
   credentials: Record<string, string>
-  /** Only the measure keys that actually have subscribers - an unsubscribed measure is never fetched
+  /** Only the tracker keys that actually have subscribers - an unsubscribed tracker is never fetched
    *  into anything. May be a subset of the catalogue; never empty (the engine short-circuits). */
-  measures: string[]
+  trackers: string[]
   /** Emit a run-log line. The engine tags it with the source id and funnels it into the run. */
   progress: (message: string) => void
   /**
@@ -132,6 +132,6 @@ export interface Provider {
   config: ProviderConfigField[]
   /** Credential key NAMES only, never values: ['MAILER_API_KEY']. */
   credentials: string[]
-  measures: ProviderMeasure[]
+  trackers: ProviderTracker[]
   pull(ctx: ProviderPullContext): Promise<ProviderPull>
 }

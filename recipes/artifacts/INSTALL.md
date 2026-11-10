@@ -14,7 +14,8 @@ so the documents and the code come from the same version.
   An older core needs `$upgrade` first.
 - No recipe to build on.
 - Feature-specific package imports: `tar` and `lucide-static` (core), `better-sqlite3` (core, already
-  a root dependency for chat), `pindrop.js` (toolbar). Install latest into the root workspace
+  a root dependency for chat; the standalone-host import reads its `meta.sqlite` with it),
+  `pindrop.js` (toolbar). Install latest into the root workspace
   package. `react`, `lucide-react` and the shared UI come from the root workspace already.
 - The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes, and state in _docs/INTEGRATION.md.
@@ -32,9 +33,9 @@ so the documents and the code come from the same version.
 3. Keep `**/toolbar/**` in the server build's swc `--ignore` list (`apps/server/package.json`): the
    toolbar is a browser bundle Bun builds at request time, not server code.
 4. Run `bun run skills` so `publish-artifact` is linked for the Box's agents.
-5. There are no migrations yet. The tables come from the baseline and `data/artifacts.db` creates
-   itself. New schema behaviour gets a new migration (warehouse) or a new `STEPS` entry
-   (`core/kv.ts`); never edit a shipped one.
+5. There are no migrations yet: every table, page state and view counters included, comes from the
+   baseline. New schema behaviour gets a new migration in `core/manifest.ts`; never edit a shipped
+   one.
 6. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record the fetched version and sha256 in the `recipes` ledger of `box.json` only after full validation and a boot pass.
 
 ### Powerups (optional)
@@ -48,8 +49,8 @@ Adapt and validate the recipe first; each powerup can be added then or later.
 
 ### Importing from the standalone artifacts host (optional)
 
-1. Back up the standalone data dir and the Box (`box db backup`, plus `data/artifacts/` and
-   `data/artifacts.db` if they exist).
+1. Back up the standalone data dir and the Box (`box db backup`, plus `data/artifacts/` if it
+   exists).
 2. Make sure every teammate is a Box user. Dry-run first:
    `box artifact-import --from <data dir> --users luna=<agent id>,toby=<id> --dryRun`. Unmapped
    roster ids that are not Box users fall to the system principal and are listed as warnings.
@@ -67,7 +68,7 @@ Run `box verify`, then boot a disposable instance (background work disabled) and
 - publish an HTML page and a gzipped tree over `box artifact-publish`, and a large tree over the
   multipart upload; open both at `/artifacts/<slug>/` signed in, and signed out (expect the sign-in
   round trip back to the page);
-- `artifact.kv` from the page, the toolbar (share dialog, copy link, a pinned comment and a reply);
+- `artifact.kv` from the page (a reader's view counts, a reader's write is refused), the toolbar (share dialog, copy link, a pinned comment and a reply);
 - rename, delete, folder create/delete, filters in the gallery at `/artifacts`;
 - the import dry run against a copy of the standalone data dir, when relevant;
 - without public sharing: the Share dialog shows the setup notice (admins get "Set up public

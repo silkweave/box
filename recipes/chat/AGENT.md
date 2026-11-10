@@ -12,7 +12,7 @@ The recipe documents ship with core at `recipes/chat/`; the reference implementa
 
 Copy or adapt `<fetched recipe>/features/chat/` into the Box's `features/chat/{core,server,web}` and preserve its runtime contracts, registrations, dependency order, and package manifests. Adapt imports to the consolidated layout. Record the fetched version and sha256 in the `recipes` ledger of `box.json`, and the path mapping and skipped upstream changes in the Box's `docs/UPSTREAM.md`; write the active scope and state to `_docs/INTEGRATION.md`.
 
-Chat has a private SQLite ledger keyed by migration object name and stores no checksum. Preserve every shipped name, body, order, and runner. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
+Chat's migrations run on the common runner, keyed `chat:<name>` with a checksum in `core.schema_migrations`. Preserve every shipped name, body and order. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
 ### Mobile module
 
@@ -24,8 +24,8 @@ tab label, icon and order live in the module declaration in `features/chat/mobil
 
 ## 2. Customise for the team
 
-1. **Create the first rooms.** Nothing seeds them - no migration, no boot path. After the first boot,
-   make them in the UI or over MCP: `bun run cli chat-room-create` with a slug, and optionally a `name`,
+1. **Create the first rooms.** A fresh Box has `#general` (migration `chat:001-default-room`). Make
+   the rest in the UI or over MCP: `bun run cli chat-room-create` with a slug, and optionally a `name`,
    `topic` and `icon` from the 69-name `CHAT_ROOM_ICONS` list.
 2. **Read the agent's identity** from the `agent` block of the root `box.json`, chosen before first boot. The
    default is Nova (`nova`), admin; ID changes after initialization are unsupported. Core seeds
@@ -52,7 +52,7 @@ tab label, icon and order live in the module declaration in `features/chat/mobil
    `chat.controller.ts`. Keep it an allowlist; `text/html` and `image/svg+xml` are excluded because
    both execute script when a browser renders them from this origin.
 
-There is no warehouse table to migrate and no seed to load. `chat.db` creates itself on first open.
+The `chat` tables are created by the schema runner at boot (models and `CHAT_BASELINE`), and `chat:001-default-room` seeds `#general` on a fresh Box. Attachment bytes go to `data/chat-uploads/`.
 
 ## 3. Prove it
 
@@ -64,7 +64,7 @@ Open `http://localhost:8190/chat`. With no rooms yet you get the empty shell; **
 the route forwards to it. Then, in one room: type a message (it appears without a refresh - that is
 the `chatFeed` subscription, not a poll), hover it and react, reply to it to open a thread, drag an
 image onto the composer, and open the same room in a second tab to watch the unread badge clear.
-Check the instance directory `data/` afterwards: `chat.db`, `chat.db-wal` and `chat-uploads/` are really there.
+Check `data/chat-uploads/` afterwards (the dropped image is there, named by its hash) and `box db status` (the `chat` tables count rows).
 
 Agent-side, the same operations are MCP tools:
 

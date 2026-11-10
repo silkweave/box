@@ -11,9 +11,11 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `1f443e994f9f81006dc5e057eff229de7f2f0c0a` (2026-11-04:
-Builder "Export session" covers ended Codex sessions and renders their transcript; the core
-raw-upload port behind the artifacts recipe's one-time upload links),
+Latest core refresh: Stack commit `5a736cf130904b7c9154f6d1e6ae9c7428e1901e` (2026-11-10:
+Silkweave 7.0.0; the warehouse moves to PostgreSQL (pgrust by default, native PostgreSQL 18 with
+pgvector as the second engine; `pg_dump`/`pg_restore` 18 required); roles and areas with row
+security and agent coverage; trackers with `watches` and the add-tracker core skill; chat,
+artifacts and the wiki keep their rows in the database),
 materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.

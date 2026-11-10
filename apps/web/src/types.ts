@@ -43,6 +43,8 @@ export interface SignalAggregates {
 export interface Signal {
   id: string
   channel: Channel
+  /** The owning area: write on it edits the signal and its points (lib/access.ts canAccessArea). */
+  area: string
   label: string
   group: string
   unit?: string
@@ -57,11 +59,11 @@ export interface Signal {
   description: string
   depends_on: string[]
   /** The data source whose sync owns this signal's live points; null = not connected. Both this
-   *  and `measure_key` are set together - connectedness IS `data_source_id != null`. */
+   *  and `tracker_key` are set together - connectedness IS `data_source_id != null`. */
   data_source_id: string | null
-  measure_key: string | null
-  /** Parameters of an in-Box measure binding (`measure_key` with no `data_source_id`); `{}` otherwise. */
-  measure_params: Record<string, string>
+  tracker_key: string | null
+  /** Parameters of a Box tracker binding (`tracker_key` with no `data_source_id`); `{}` otherwise. */
+  tracker_params: Record<string, string>
   /** The formula this signal's points are computed from (null = an ordinary signal). A manual
    *  point on a formula signal overrides the computed value of its bucket. */
   formula: string | null

@@ -7,7 +7,7 @@
 // the warehouse the pure-fetcher contract keeps it out of; the kit carries the signal vocabulary
 // and the fetch helpers for that reason.
 
-import type { Provider, ProviderMeasure } from '@silkweave/box-provider-kit'
+import type { Provider, ProviderTracker } from '@silkweave/box-provider-kit'
 
 const PROVIDERS = new Map<string, Provider>()
 
@@ -38,7 +38,7 @@ export function requireProvider(id: string): Provider {
   return p
 }
 
-/** One measure of a provider's catalogue, or null. Measure keys are the provider's native tokens. */
-export function findMeasure(provider: Provider, key: string): ProviderMeasure | null {
-  return provider.measures.find((s) => s.key === key) ?? null
+/** One tracker of a provider's catalogue, or null. Tracker keys are the provider's native tokens. */
+export function findProviderTracker(provider: Provider, key: string): ProviderTracker | null {
+  return provider.trackers.find((s) => s.key === key) ?? null
 }

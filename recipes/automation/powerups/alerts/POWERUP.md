@@ -62,9 +62,11 @@ every signal.
 Table `alerts`, primary key `(rule_id, dedup_key)`: the trigger id, the event kind, the route and
 resolved `target`, the rendered `message` and `payload` JSON, `status` (`pending`, `delivered`,
 `suppressed`, `error`), `event_at` / `created_at` / `delivered_at`, `error`, and `batch_id` (shared by
-every row that went out in one message). `store.ts` is the only write path: `recordAlerts()` is an
+every row that went out in one message), and `areas`: the source event's areas, every area a
+reader needs (docs/AUTH.md "Roles and areas"). `store.ts` is the only write path: `recordAlerts()` is an
 `INSERT ... ON CONFLICT DO NOTHING ... RETURNING`, so re-evaluating the same event inserts nothing.
-The events themselves live in core's `events` table.
+The events themselves live in core's `events` table. The Alerts history (`alerts-list`) and the
+bell list a row only to a reader of every one of its areas.
 
 ### Delivery
 
@@ -72,7 +74,10 @@ The events themselves live in core's `events` table.
 `debounce_sec` (default 300). A pass checks each trigger's cooldown, resolves the route (`channel`
 and an unresolved `owner` become `chat:<features.automation.alerts.channelRoom>`), and hands the
 route to the first registered transport that claims it. Alerts are grouped per (transport, target)
-and one `deliver()` call carries each group. Success marks the rows `delivered` with `target =
+and one `deliver()` call carries each group. Before it, the transport names the target's readers
+as they stand now, and an alert goes out only if every reader reaches all its areas; the rest of the
+group records `error: not delivered to <target>: someone who reads it lacks read access to <areas>`
+(a readers lookup that throws marks the whole group `error`). Success marks the rows `delivered` with `target =
 "<transport id>:<target>"` and a shared `batch_id`; a throw marks the group `error` with the
 message; a route no transport claims records `error: no alert transport handles route "..."`.
 
@@ -95,12 +100,18 @@ a feature links the event kind to a page of its own (core's `eventLink`, used wh
 
 ### The transport port
 
-The powerup has no sink of its own. `registerAlertTransport({ id, matchRoute, deliver })`
+The powerup has no sink of its own. `registerAlertTransport({ id, matchRoute, deliver, readers })`
 (`transports.ts`) is where a dependent feature adds one, from its server module; registering the
 same id twice throws. The Notifications recipe registers `chat` (`chat:<room-slug>`: one post as the
 agent; an unknown room throws) and `dm` (`user:<id>`: one message in the agent's direct message with
-that person, then pushed to their devices; an unknown user or the agent itself throws). The powerup
-never imports its transports.
+that person, then pushed to their devices; an unknown user or the agent itself throws). `readers`
+returns who reads the target, each with their access, judged at one committed policy generation
+(core `auth/recipients.ts`): for a named room, every active person and agent whose role reads
+`chat` (named rooms are open to all of them); for a DM, that person, who must read `chat`. Delivery
+asks for each target right before its send and holds back any alert some reader cannot read in
+full; held-back alerts are recorded after the send. Routes are checked at delivery, not when a
+trigger is saved: an alert's areas come from its event's data. The powerup never imports its
+transports.
 
 ### Run now
 

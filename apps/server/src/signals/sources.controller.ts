@@ -4,7 +4,8 @@ import { IsIn, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { DATA_SOURCE_STATUSES, deleteDataSource, listProviders, readDataSourceViews, upsertDataSource, type DataSourceStatus, type DataSourceView } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
-import { type PrincipalRequest, Admin } from '../auth/auth.decorators.js'
+import { type PrincipalRequest, Admin, Area, Read } from '../auth/auth.decorators.js'
+import { inputError } from '../auth/input-error.js'
 
 // Data sources - the user-named instances of a provider that feed connected signals. Reading is
 // open to any authenticated internal user (understanding where a number comes from is not
@@ -15,11 +16,11 @@ import { type PrincipalRequest, Admin } from '../auth/auth.decorators.js'
 // box.local.json under `credentials → provider → source id → KEY`, hand-edited per docs/SETUP.md; the
 // list surface reports per-key PRESENCE booleans and nothing more.
 
-class ProviderMeasureDto {
+class ProviderTrackerDto {
   @ApiProperty({ description: "The provider's native token, verbatim ('FIRST_MESSAGE')" }) key!: string
   @ApiProperty() label!: string
   @ApiProperty({ required: false, nullable: true }) unit!: string | null
-  @ApiProperty({ description: 'Default bucket width for a signal bound to this measure' }) interval!: string
+  @ApiProperty({ description: 'Default bucket width for a signal bound to this tracker' }) interval!: string
   @ApiProperty({ description: "Default 'snapshot' | 'increment'" }) accumulation!: string
   @ApiProperty() direction!: string
   @ApiProperty({ description: 'Default signal_group' }) group!: string
@@ -38,16 +39,16 @@ class ProviderDto {
   @ApiProperty({ type: [ProviderConfigFieldDto] }) config!: ProviderConfigFieldDto[]
   @ApiProperty({ type: [String], description: 'Credential key NAMES this provider needs (never values)' })
   credentials!: string[]
-  @ApiProperty({ type: [ProviderMeasureDto] }) measures!: ProviderMeasureDto[]
+  @ApiProperty({ type: [ProviderTrackerDto] }) trackers!: ProviderTrackerDto[]
 }
 class ProvidersDto {
   @ApiProperty() generatedAt!: string
   @ApiProperty({ type: [ProviderDto] }) providers!: ProviderDto[]
 }
 
-class DeadMeasureDto {
+class DeadTrackerDto {
   @ApiProperty() signal_id!: string
-  @ApiProperty() measure_key!: string
+  @ApiProperty() tracker_key!: string
 }
 class DataSourceDto {
   @ApiProperty() id!: string
@@ -63,8 +64,8 @@ class DataSourceDto {
   credentials!: Record<string, boolean>
   @ApiProperty({ type: [String], description: 'Signal ids bound to this source - its subscription set' })
   bound_signals!: string[]
-  @ApiProperty({ type: [DeadMeasureDto], description: 'Bindings naming a measure this provider no longer offers' })
-  dead_measures!: DeadMeasureDto[]
+  @ApiProperty({ type: [DeadTrackerDto], description: 'Bindings naming a tracker this provider no longer offers' })
+  dead_trackers!: DeadTrackerDto[]
   @ApiProperty({ required: false, nullable: true }) last_sync_at!: string | null
   @ApiProperty({ required: false, nullable: true }) last_sync_status!: string | null
   @ApiProperty({ required: false, nullable: true }) last_sync_error!: string | null
@@ -80,7 +81,7 @@ class DataSourcesDto {
 }
 
 // Same @Mcp() scalar-inputs constraint as every other controller: `config` travels as a JSON
-// object STRING (the task-upsert `metadata` precedent), and '' clears it.
+// object STRING (the adapter emits no `type` for an object field), and '' clears it.
 class UpsertDataSourceDto {
   @ApiProperty({ description: 'Slug id (lowercase a-z 0-9 dashes). Also the credentials account key and the audit-snapshot channel - pick it once' })
   @IsString() id!: string
@@ -111,18 +112,20 @@ class DataSourceDeleteReportDto {
   @ApiProperty({ type: [String] }) warnings!: string[]
 }
 
+@Area('signals')
 @Controller('sources')
 @UseGuards(AuthGuard)
 export class SourcesController {
   /**
    * tRPC query `sourcesProviders` / MCP `providers-list` - every registered provider with its config
-   * fields, credential key names and full measure catalogue. Static data (providers ship as code),
-   * so it is cheap and cacheable; the signal dialog reads it to offer "data source, then measure".
+   * fields, credential key names and full tracker catalogue. Static data (providers ship as code),
+   * so it is cheap and cacheable; the signal dialog reads it to offer "data source, then tracker".
    */
   @Get('providers')
   @ApiOkResponse({ type: ProvidersDto })
   @Trpc()
   @Mcp({ name: 'providers-list' })
+  @Read()
   providers(): ProvidersDto {
     return { generatedAt: new Date().toISOString(), providers: listProviders() as ProviderDto[] }
   }
@@ -136,6 +139,7 @@ export class SourcesController {
   @ApiOkResponse({ type: DataSourcesDto })
   @Trpc()
   @Mcp({ name: 'data-sources' })
+  @Read()
   async list(): Promise<DataSourcesDto> {
     const sources = (await readDataSourceViews()) as DataSourceView[] as DataSourceDto[]
     return { generatedAt: new Date().toISOString(), sources }
@@ -178,7 +182,7 @@ export class SourcesController {
     } catch (e) {
       // The domain refuses unknown providers, undeclared/missing config fields and colliding ids
       // with a message that says which - a 500 would strip the part the caller needs to act on.
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return this.list()
   }
@@ -198,7 +202,7 @@ export class SourcesController {
     try {
       return await deleteDataSource(body.id)
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 }

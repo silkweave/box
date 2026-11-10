@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { transform } from '@swc/core'
+import { featureFixtures } from '../../packages/core/vitest.features.ts'
 
 // Every core import shares one source module instance, including the test instance override.
 const INCLUDE = ['src/**/*.test.ts', 'scripts/**/*.test.ts', '../../features/*/server/**/*.test.ts']
@@ -15,7 +16,7 @@ const core = fileURLToPath(new URL('../../packages/core/src/', import.meta.url))
 export default defineConfig({
   // Feature files sit outside this package's tsconfig discovery root. Apply the same Nest
   // decorator transform as the server build before Vite parses them for tests.
-  plugins: [{
+  plugins: [featureFixtures(), {
     name: 'server-decorators',
     enforce: 'pre',
     async transform(code, id) {
@@ -40,8 +41,7 @@ export default defineConfig({
       { find: /^@silkweave\/box-core\/(.*)$/, replacement: core + '$1.ts' },
     ],
   },
-  // 10 s, not Vitest's 5: warehouse tests open a DuckDB instance per call, so a loaded host (the
-  // Box's own server, agents) overran 5 s. Suites that spawn real processes (git, the Bun CLI) get
+  // 10 s, not Vitest's 5: a loaded host (the Box's own server, agents) overran 5 s. Suites that spawn real processes (git, the Bun CLI) get
   // their own project with a 60 s budget: Builder review and lifecycle tests make about 60 git
   // calls each, which is 0.5 s on an idle machine and more than 10 s on a Box host running Vite,
   // WorkerDeck and an agent turn beside `box verify`. The timeout catches hangs, not load; the git
@@ -49,7 +49,9 @@ export default defineConfig({
   // Half the cores, not all but one: `box verify` often shares its host with a live Box, Vite and
   // an agent turn. The longest suite bounds wall time, so the cap costs nothing measurable here.
   test: {
-    setupFiles: ['./vitest.setup.ts'], maxWorkers: '50%',
+    // One database cluster per run with a migrated template; each test file clones it (core's
+    // vitest.db-setup.ts, the same harness as core's tests).
+    setupFiles: ['./vitest.setup.ts'], globalSetup: ['../../packages/core/vitest.db-setup.ts'], maxWorkers: '50%',
     projects: [
       {
         extends: true,

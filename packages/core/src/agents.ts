@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { agentIdentity } from './box-config.js'
 import { configPath } from './io.js'
 import type { UserRole } from './users/types.js'
+import { ROLE_REF } from './auth/levels.js'
 
 export interface AgentConfig {
   id: string
@@ -84,7 +85,7 @@ export function parseAgentFile(id: string, text: string, opts: { system: boolean
     }
     body = src.slice(end + 4)
   } else if (!opts.system) {
-    throw new AgentFileError(where, 'needs front matter: ---, name: <display name>, role: admin | member, ---')
+    throw new AgentFileError(where, 'needs front matter: ---, name: <display name>, role: admin | member | <role id>, ---')
   }
   const instructions = body.trim()
   if (opts.system) {
@@ -95,7 +96,7 @@ export function parseAgentFile(id: string, text: string, opts: { system: boolean
   const name = fields['name']
   if (!name) throw new AgentFileError(where, 'name is required')
   const role = fields['role']
-  if (role !== 'admin' && role !== 'member') throw new AgentFileError(where, 'role is required: admin or member')
+  if (!role || !ROLE_REF.test(role)) throw new AgentFileError(where, 'role is required: admin, member or a custom role id')
   return { name, role, instructions }
 }
 
@@ -160,7 +161,7 @@ export function writeNewAgentFile(a: NewAgentFile): string {
   if (!AGENT_ID.test(a.id)) throw new AgentFileError(relativeName(a.id), 'the id must be a lowercase slug (a-z, 0-9, -)')
   if (a.id === agentIdentity().id) throw new AgentFileError(relativeName(a.id), 'that is the system principal\'s id')
   if (!name || name.length > 64 || /[\r\n"]/.test(name)) throw new AgentFileError(relativeName(a.id), 'the name must be 1 to 64 characters on one line, without double quotes')
-  if (a.role !== 'admin' && a.role !== 'member') throw new AgentFileError(relativeName(a.id), 'role must be admin or member')
+  if (!ROLE_REF.test(a.role)) throw new AgentFileError(relativeName(a.id), 'role must be admin, member or a custom role id')
   const text = agentFileText({ ...a, name })
   parseAgentFile(a.id, text, { system: false })
   const file = agentFilePath(a.id)
@@ -168,6 +169,21 @@ export function writeNewAgentFile(a: NewAgentFile): string {
   mkdirSync(agentsDir(), { recursive: true })
   writeFileSync(file, text, { flag: 'wx', mode: 0o644 })
   return file
+}
+
+/**
+ * Agent `id`'s file text with its role set to `role` (front matter `role:` line replaced), checked
+ * by the parser. Refuses the system principal (its role is box.json's) and an agent without a file.
+ */
+export function agentFileWithRole(id: string, role: UserRole): { file: string; before: string; after: string } {
+  if (id === agentIdentity().id) throw new AgentFileError(relativeName(id), "the system principal's role is set in box.json agent.role")
+  if (!ROLE_REF.test(role)) throw new AgentFileError(relativeName(id), 'role must be admin, member or a custom role id')
+  const before = readAgentFile(id)
+  if (before === null) throw new AgentFileError(relativeName(id), `no agent "${id}"`)
+  parseAgentFile(id, before, { system: false })
+  const after = before.replace(/^(---\r?\n(?:.*\r?\n)*?)role:.*$/m, `$1role: ${role}`)
+  if (parseAgentFile(id, after, { system: false }).role !== role) throw new AgentFileError(relativeName(id), 'the role line could not be rewritten')
+  return { file: agentFilePath(id), before, after }
 }
 
 /** The ids with a file in `data/config/agents/` (`.md` only; other files are ignored). */
@@ -240,6 +256,7 @@ export interface AgentRowState {
 export function agentRowProblem(row: AgentRowState): string | null {
   if (row.kind !== 'agent') return null
   if (row.status === 'revoked' || row.token_revoked_at) return `agent "${row.id}" is retired`
+  if (row.status !== 'active' && row.status !== 'invited') return `agent "${row.id}" is not provisioned yet (status ${row.status})`
   // The system principal's identity is box.json's, which is always there; its optional file only
   // adds instructions, and a bad one is refused at boot rather than locking the Box's agent out.
   if (row.id === agentIdentity().id) return null

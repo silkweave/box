@@ -17,6 +17,8 @@ export interface Task {
    * Declared needs let independent checks still run and report after an unrelated failure.
    */
   needs?: string[]
+  /** Variables added to the inherited environment. */
+  env?: Record<string, string>
   /** What the previous passing run of this task took and counted, for progress estimates. */
   expected?: { elapsed: number; total?: number }
 }
@@ -147,7 +149,7 @@ async function execute(task: TaskState, options: RunOptions, update: () => void)
     writeSync(fd, `$ ${task.command}\n`)
     if (options.signal?.aborted) { task.status = 'cancelled'; return }
     child = spawn(task.executable, task.args, {
-      cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'],
+      cwd: options.cwd, stdio: ['ignore', 'pipe', 'pipe'], env: task.env ? { ...process.env, ...task.env } : process.env,
       detached: process.platform !== 'win32',
     })
     options.signal?.addEventListener('abort', stop, { once: true })

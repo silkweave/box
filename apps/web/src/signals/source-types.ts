@@ -3,15 +3,15 @@
 //
 // The vocabulary, because the three nouns are easy to blur: a PROVIDER is code shipped in this
 // repo; a DATA SOURCE is a row someone created and named (two platform spaces = two sources of
-// one provider); a MEASURE is one data point a provider offers. A signal is CONNECTED by binding
-// (data_source_id, measure_key). The word "Measure" appears in the UI only inside that binding flow -
+// one provider); a TRACKER is one series a provider offers. A signal is CONNECTED by binding
+// (data_source_id, tracker_key). The word "Tracker" appears in the UI only inside that binding flow -
 // everywhere else the word stays "signal".
 
 import type { DataSourceStatus, SignalAccumulation, SignalDirection, SignalInterval, SyncStatus } from '../types.ts'
 
 /** One entry in a provider's catalogue; its fields PREFILL a new signal bound to it, and are
  *  ordinary editable fields afterwards - defaults, never locks. */
-export interface ProviderMeasure {
+export interface ProviderTracker {
   /** The provider's native token, verbatim ('FIRST_MESSAGE'). Shown demoted, in a tooltip. */
   key: string
   label: string
@@ -37,7 +37,7 @@ export interface Provider {
   config: ProviderConfigField[]
   /** Credential key NAMES this provider needs. Values never leave the server. */
   credentials: string[]
-  measures: ProviderMeasure[]
+  trackers: ProviderTracker[]
 }
 
 export interface DataSource {
@@ -52,8 +52,8 @@ export interface DataSource {
   /** Credential key → configured? Presence only - there is no API that reports a value. */
   credentials: Record<string, boolean>
   bound_signals: string[]
-  /** Bindings naming a measure the provider no longer offers: flagged, never auto-unbound. */
-  dead_measures: { signal_id: string; measure_key: string }[]
+  /** Bindings naming a tracker the provider no longer offers: flagged, never auto-unbound. */
+  dead_trackers: { signal_id: string; tracker_key: string }[]
   last_sync_at: string | null
   last_sync_status: SyncStatus | null
   last_sync_error: string | null

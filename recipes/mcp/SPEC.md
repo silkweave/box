@@ -51,7 +51,8 @@ Core changes this requires (made in the same Stack change as the reference imple
    tool names.
 4. **Session wiring** (`apps/server/src/agent/box-mcp.ts`): a session's own `box` server URL
    carries `?passthrough=0`; each toolset connection becomes a loopback server at
-   `/mcp/connections/<id>` with the session principal's token, after `sessionProblem` allows it.
+   `/mcp/connections/<id>` with the session's own credential (docs/AUTH.md "Session credentials"),
+   after `sessionProblem` allows it.
    `docs/AGENT-TOOLS.md` and `docs/CONFIGURATION.md` then describe servers as connections of this
    recipe.
 
@@ -75,6 +76,7 @@ Shared shape in `box.json`; edits made in Settings are written to `box.local.jso
           "auth": "key",
           "audience": "everyone",
           "tools": { "stripe_api_read": "on", "stripe_api_search": "on", "stripe_api_write": "off" },
+          "marks": { "stripe_api_read": "read", "stripe_api_search": "read" },
           "rateLimit": 60
         }
       },
@@ -87,13 +89,20 @@ Shared shape in `box.json`; edits made in Settings are written to `box.local.jso
 - **Connection id**: lowercase letters, digits and `_`, 1 to 24 characters; `box` is reserved. It
   is the tool prefix on `/mcp`, the server name in sessions (`mcp__<id>__<tool>`) and the
   credentials account.
-- `url` (https; `http` only for loopback), `type` (`http`, default, or `sse`), `label`.
+- `url` (https; `http` only for loopback), `type` (`http`, default, or `sse`), `label`. The relay
+  negotiates the protocol per connection: MCP 2026-07-28 when the server offers it, else the 2025
+  handshake, so older servers keep working.
 - `auth`: `oauth`, `key` (a static bearer, such as a Stripe agent API key) or `none`. Optional
   `oauth: { clientId, scopes }` for a server that needs a pre-registered client.
 - `audience`: who sees the connection's tools on `/mcp`: `admins` (default for a new connection),
   `everyone` (every human user) or a list of user ids.
 - `tools`: upstream tool name to level: `on` (the audience), `admins` (administrators in the
   audience), `off`. **A tool not listed is held**: hidden until an administrator reviews it.
+- `marks`: upstream tool name to `read` or `write`, an administrator's call (the upstream's
+  `readOnlyHint` is shown as a hint, never trusted). **A tool not marked `read` is a write.** A
+  `read` tool needs `read` on the caller's `mcp` area, every other tool `write` (docs/AUTH.md
+  "Roles and areas"). This applies on `/mcp`, the CLI and sessions alike, and a toolset grant
+  never lifts it: a session acting for a role that reads connections reaches read tools only.
 - `rateLimit`: calls per minute per principal on this connection (default 60).
 - `auditDays`: how long `mcp_calls` rows are kept (default 90).
 
@@ -108,7 +117,7 @@ Only an administrator connects, reconnects, sets a key or disconnects, in Settin
 wired to credentials (docs/AUTH.md).
 
 **OAuth** follows the MCP authorization specification (2026-07-28), with the Box as the client.
-The server side runs on `@modelcontextprotocol/sdk`'s client auth with a Box `OAuthClientProvider`.
+The server side runs on `@modelcontextprotocol/client`'s auth helpers with a Box `OAuthClientProvider`.
 
 1. **Discover** (`mcpOauthStart`): an unauthenticated request to `url` yields the 401
    `WWW-Authenticate` (`resource_metadata`, `scope`); then protected resource metadata (RFC 9728)
@@ -183,7 +192,7 @@ The Box's `McpActionSource` adds, per request, one action per visible upstream t
   "Work with all data and modules" switch covers passthrough tools too.
 
 `/mcp/connections/<id>` serves one connection's visible tools under their upstream names, with the
-same rules. Sessions use it (below); a person may add it as a separate client entry, but `/mcp` is
+same rules, over MCP 2026-07-28 only, like `/mcp`. Sessions use it (below); a person may add it as a separate client entry, but `/mcp` is
 the documented path.
 
 ## Agent sessions
@@ -239,7 +248,7 @@ which is the only per-person record of who called what.
 | `mcpConnectionSave`, `mcpConnectionDelete` | tRPC | admin, human | define, edit, remove a connection (delete refuses while a toolset names it) |
 | `mcpConnectionKeySet` | tRPC | admin, human | write the key (write only) |
 | `mcpOauthStart`, `GET /api/mcp/oauth/callback`, `mcpDisconnect` | tRPC, REST | admin, human | OAuth connect, callback, revoke and delete |
-| `mcpToolsReview` | tRPC | admin, human | set tool levels, accept new or changed tools |
+| `mcpToolsReview` | tRPC | admin, human | set tool levels and marks, accept new or changed tools |
 
 "Human" means refused for agent principals, like toolset edits: a session cannot widen its own
 reach through the Box. Event `mcp.connection.status` (dedup `<id>:<status>:<hour>`) lets

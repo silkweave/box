@@ -149,12 +149,27 @@ The supervisor exposes the current application state and these administrator act
   an idle Builder runner and a clean Box at the matching source revision. It stops the editable
   process before restoring and rejects the operation when those preconditions are not met.
 
-Builder backups live in `data/backups/builder/<id>/` and each holds a full copy of the instance.
+Builder backups live in `data/backups/builder/<id>/` and each holds a full copy of the instance:
+every file under `data/` except the database clusters (`data/db/`), the pgrust engine
+(`data/engines/`), other backups and seeds, plus `box.json` and `box.local.json`, plus a database
+restore point (`root-database/`, [WAREHOUSE.md](WAREHOUSE.md)) taken from the running cluster while
+the app is stopped. A backup refuses while a SQLite store still has an unflushed write-ahead log. A
+restore builds a fresh database cluster from the restore point, stages every instance file and the
+root configuration beside the live ones, and commits all of them together under the database's
+operation journal: a failure or a crash anywhere leaves the previous files, configuration and
+cluster in place, or finishes the whole restore. A backup taken before backups carried the database
+cannot be restored.
 After every start and every manual backup, Builder keeps the newest three per reason (`start`,
 `checkpoint`/manual, `pre-restore`) and deletes the other directories, including completed backup
 directories the control state no longer lists. A restore never prunes, so the point being restored
 from and its safety backup stay in place until the next start or backup. A directory that cannot be
 removed is left for the next prune and does not block the operation.
+
+On APFS, Bun's file copy clones: files unchanged since a backup (git objects, artifacts, uploads, web
+releases) share blocks with the live copy, so only rewritten files such as the database dump take real
+space, and `du` counts every clone in full. Hosts without reflinks store each backup in full, so
+size the disk for the retained backups. Generated UI releases in `data/builder/ui-releases/` are
+ordinary build output, not clones.
 
 ## Export a session for support
 
@@ -178,7 +193,7 @@ Every file is redacted: each credential-like value from `box.local.json` and the
 files is replaced wherever it appears (Box access tokens have no recognisable prefix), then provider
 keys, bearer headers, JWTs, sign-in links, private keys, cookies, URL credentials and `token=`-style
 assignments are replaced too, and object keys that name a secret lose their value. Never included:
-`data.db`, the warehouse, chat and its uploads, other sessions, or any `box.local.json` value.
+the database, chat and its uploads, other sessions, or any `box.local.json` value.
 Anything typed or printed in the session is part of the transcript, so the owner looks it over
 before sending.
 

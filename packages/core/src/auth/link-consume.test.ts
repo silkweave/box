@@ -7,16 +7,15 @@
 // break by accident and are pinned here:
 //
 //   1. Consuming a link invalidates every OLDER outstanding link for that user, not just itself.
-//   2. The watermark keeps MILLISECOND precision. It is a BIGINT of epoch ms rather than a
-//      TIMESTAMP precisely so the record layer cannot round-trip it through `toNaiveUtc`, which
-//      truncates to whole seconds - that would move a watermark BACKWARDS on an ordinary profile
-//      edit and re-arm the link that had just been consumed.
+//   2. The watermark keeps MILLISECOND precision. It is a BIGINT of epoch ms, compared exactly
+//      with the grant's `iat`: a watermark that moved BACKWARDS on an ordinary profile edit would
+//      re-arm the link that had just been consumed.
 
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { ensureSchema, withWrite } from '../warehouse/db.js'
+import { withWrite } from '../warehouse/db.js'
 import { upsertUser, systemUserId } from '../users/state.js'
 import { ensureAgentPrincipals } from './bootstrap.js'
 import { consumeSigninGrant, issuePrincipalToken, issueSigninLink, revokePrincipalToken } from './principal.js'
@@ -28,7 +27,6 @@ let dir: string
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-link-consume-'))
   setInstanceDir(dir)
-  await ensureSchema()
   await ensureAgentPrincipals()
 })
 
@@ -101,7 +99,7 @@ describe('single use', () => {
   })
 
   it('survives the sub-second case that a seconds-precision watermark would replay', async () => {
-    // THE regression test for the `toNaiveUtc` trap. Mint and consume inside the same wall-clock
+    // The regression test for a truncating watermark. Mint and consume inside the same wall-clock
     // second; if the watermark truncates, the grant's own `iat` is still strictly greater than the
     // stored value and the second consume succeeds.
     const now = Date.now()
@@ -146,11 +144,9 @@ describe('single use', () => {
   })
 
   it('survives an ordinary profile edit - the watermark is not rewritten by the record layer', async () => {
-    // THE reason link_watermark is a BIGINT rather than a TIMESTAMP. `upsertUser` rewrites every
-    // column in the ModelSpec from the previous row, and the record layer normalizes timestamps
-    // through `toNaiveUtc`, which truncates to whole seconds. As a TIMESTAMP a watermark of
-    // 10:00:00.500 would be written back as 10:00:00 - moving BACKWARDS past the `iat` of the grant
-    // that had just been consumed, re-arming it for the rest of its 15 minutes.
+    // `upsertUser` rewrites every column in the ModelSpec from the previous row. A watermark written
+    // back with less precision (10:00:00.500 as 10:00:00) would move BACKWARDS past the `iat` of the
+    // grant that had just been consumed, re-arming it for the rest of its 15 minutes.
     const { grant } = await issueSigninLink(alice)
     expect((await consumeSigninGrant(grant)).ok).toBe(true)
 
@@ -161,7 +157,8 @@ describe('single use', () => {
   })
 
   it('refuses two simultaneous consumes of the same link', async () => {
-    // Writes are serialized in-process, so the conditional UPDATE decides the winner. Exactly one.
+    // The conditional UPDATE decides the winner: the second waits on the row lock, then no longer
+    // matches. Exactly one.
     const { grant } = await issueSigninLink(alice)
     const results = await Promise.all([consumeSigninGrant(grant), consumeSigninGrant(grant)])
     expect(results.filter((r) => r.ok)).toHaveLength(1)
@@ -193,8 +190,8 @@ describe('timing and status', () => {
     // Nothing in the codebase writes `invited` today - `upsertUser` does not even accept a status.
     // The flip is defensive (authenticatePrincipal carries the same CASE), so reach the state
     // directly rather than leaving the branch unexercised.
-    await withWrite(async (conn) => {
-      await conn.run(`UPDATE users SET status = 'invited' WHERE id = ?`, ['carol'])
+    await withWrite(async (tx) => {
+      await tx.run(`update core.users set status = 'invited' where id = $1`, ['carol'])
     })
     const { grant } = await issueSigninLink('carol')
     const res = await consumeSigninGrant(grant)

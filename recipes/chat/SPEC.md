@@ -2,73 +2,91 @@
 
 Rooms, threads, mentions, reactions, attachments, read pointers and a live multiplexed feed - plus
 `nova`, the service account that answers when you mention it in a channel. The biggest feature in the
-Box (~58 files, ~20k lines) and the only one that runs its own database engine: **chat owns no
-warehouse table**, it owns `chat.db`, a SQLite file with its own migration chain. Everything else it
-touches - who the users are, who the agent's worker profile is - it reads from core.
+Box (~58 files, ~20k lines). Its tables are in the `chat` schema of the Box database; attachment
+bytes are files. Everything else it touches - who the users are, who the agent's worker profile is -
+it reads from core.
 
 - **dependsOn**: nothing. Chat is a root of the dependency graph; it imports core (`io.ts`,
-  `auth/principal.ts`, `users/state.ts`, `ops/*`, `warehouse/backup.ts`) and no other feature.
+  `auth/principal.ts`, `users/state.ts`, `ops/*`, `warehouse/*`) and no other feature.
 - **Depended on by**: `notifications` (`dependsOn: ['chat', 'automation']`) - the bell, web + FCM push,
   and alert delivery into chat rooms. It is glue, and it lives entirely on chat's store and chat's
-  bus: `onChatEvent` for delivery, and five of chat's own SQLite tables (`mentions`,
-  `notification_reads`, `notification_dismissals`, `push_subscriptions`, `device_tokens`) for its
-  state. Remove or adapt `notifications` before removing `chat`, because notifications consumes
-  chat's store and bus.
+  bus: `onChatEvent` for delivery, and chat's tables (`chat_mentions`, `chat_notification_reads`,
+  `chat_notification_dismissals`, `chat_push_subscriptions`, `chat_device_tokens`) through
+  `chatStore()` for its state. Remove or adapt `notifications` before removing `chat`.
 - **Removal**: remove the feature's `core`, `server`, and `web` source trees only after
-  dependent registrations have been adapted. `chat.db` and `chat-uploads/` under the instance
-  dir are untouched - they are the team's messages, not the feature's.
+  dependent registrations have been adapted. The `chat` schema and `data/chat-uploads/` are left
+  in place - they are the team's messages, not the feature's.
 
-## Tables
+## Tables (schema `chat`, `features/chat/core/models.ts`)
 
-None in the warehouse. `models: []`, `migrations: []` in `manifest.ts`, by design.
+| Table | Holds |
+|---|---|
+| `chat_rooms` | id, slug (unique), name, topic, `kind` (`room` \| `dm`), `mode` (`open` \| `members`), icon, `head_at` (the order-key guard), `agent_toolset`, created/updated |
+| `chat_room_members` | who belongs to a `members` room: a DM's pair, or a named room's member list (room, user, added_at, added_by) |
+| `chat_room_agents` | agent seats in named rooms (room, agent, added_at/by, `disabled_at`, `disabled_reason`) |
+| `chat_read_pointers` | one user's read pointer in one room (`last_read_at`, an order key) |
+| `chat_messages` | messages; `created_at` is the room's order key (unique per room), `meta` jsonb (cards), `parent_id` (thread root) |
+| `chat_events` | the outbox: one `message.created` per message, `id` the global feed cursor |
+| `chat_event_head` | one row, `last_id`: the outbox id counter |
+| `chat_mentions` | the bell's mention rows (and in a DM, the agent's guest pass) |
+| `chat_reactions` | (message, user, emoji) |
+| `chat_attachments` | upload rows; the bytes are the file at the `sha256` address |
+| `chat_agent_sessions`, `chat_agent_budgets` | one agent's worker session and turn budget per room |
+| `chat_notification_reads`, `chat_notification_dismissals` | the bell's per-user watermarks and tombstones |
+| `chat_push_subscriptions`, `chat_device_tokens` | Web Push subscriptions and mobile FCM tokens |
 
-## Its own store
+Times are epoch milliseconds in `bigint` columns: `chat_messages.created_at` is the order key every
+cursor, pointer and outbox row is expressed in. Foreign keys cascade from rooms and messages, except
+`chat_attachments.message_id` and `chat_messages.parent_id` (`no action`): a message's deletion
+removes its attachment rows and its replies explicitly, so a path that forgot would fail rather than
+strand blobs. Indexes are the feature's baseline (`CHAT_BASELINE`). Migrations run on the common
+runner (`core.schema_migrations`, keys `chat:<name>`): `chat:001-default-room` seeds `#general` on a
+fresh Box. `chat_rooms`, `chat_room_members` and `chat_room_agents` are policy tables
+(`policyTable: true`, docs/WAREHOUSE.md): the policy service writes mode, members and seats in the
+same transaction as the role changes they are judged with.
 
-`data/chat.db` - SQLite via `better-sqlite3`, opened lazily by `chatStore()` in
-`features/chat/core/store.ts` (one process-wide, long-lived connection; `closeChatStore()`
-on shutdown). The path is the feature's own `chatPath()` (`features/chat/core/paths.ts`) = `dataPath('chat.db')`.
+**Who may read a room.** `mode = 'open'`: every principal with chat access. `mode = 'members'`: the
+room's `chat_room_members` rows. A DM is always `members` (a CHECK pins it, and pins `kind` to the
+`dm:` slug namespace); a named room is either. One exception, in code only: a configured agent may
+read and post in a DM between two people while a surviving message there mentions it (its guest
+pass, the mention row). A read pointer is separate per-user state: opening an open channel writes a
+pointer, never a membership.
 
-Why not the warehouse: chat is many tiny writes at interactive latency plus point reads, which is
-exactly what DuckDB's single-writer, ephemeral-connection design is wrong for. `docs/core/SEAM.md` § 3.6
-makes chat the precedent - "a feature with its own engine follows the chat precedent: own file under
-`instanceDir()`, own ledger, own chain, and its `manifest.models` lists only what it puts in the
-warehouse (for chat: nothing)."
+## Its store (`features/chat/core/store.ts`)
 
-`openChatDatabase` pins the pragmas in one place: `journal_mode = WAL`, `synchronous = NORMAL`,
-`busy_timeout = 5000`, and `foreign_keys` OFF across the migration then ON, with a
-`foreign_key_check` that refuses to hand back a database with violations. Before an **existing**
-database runs a pending migration it takes `chat.db.pre-<first-pending>.bak` with `VACUUM INTO`
-(never `cp` - under WAL a copied file opens clean and has silently lost the log), keeping the two
-newest.
+`chatStore()` returns the process-wide `ChatStore` (its blob directory `data/chat-uploads/`); a test
+constructs `new ChatStore(dir)`. Every method is one asynchronous executor transaction on the
+current context's login, after a `chat` area check:
 
-### The chain (`migrations.ts`, 15 entries, append-only, keyed by name in `chat.db`'s own `schema_migrations`)
-
-| # | name | what it does |
-|---|---|---|
-| 001 | `001-chat-schema` | `rooms`, `room_members`, `messages`, `events` (the outbox) |
-| 002 | `002-mentions` | `mentions`, `notification_reads` |
-| 003 | `003-notification-dismissals` | `notification_dismissals` |
-| 004 | `004-push-subscriptions` | `push_subscriptions` |
-| 005 | `005-device-tokens` | `device_tokens` |
-| 006 | `006-attachments` | `attachments` (rows only - bytes live on disk) |
-| 007 | `007-agent-sessions` | `agent_sessions` |
-| 008 | `008-message-meta` | `messages.meta` - the approval card's structure |
-| 009 | `009-threads` | `messages.parent_id` - a reply is a message |
-| 010 | `010-time-order-key` | rebuilds `messages` and `events` onto a time order key |
-| 011 | `011-reactions` | `message_reactions` |
-| 012 | `012-direct-messages` | `rooms.kind` (`room` \| `dm`) |
-| 013 | `013-room-icon` | `rooms.icon` |
-| 014 | `014-room-name` | `rooms.name` (free-form display name; slug stays the address) |
-| 015 | `015-open-channels` | rebuilds `rooms`; kind is the whole access rule |
-
-Twelve tables plus the ledger. Two rules the file states and both lose data if broken: never edit,
-rename or reorder a shipped migration (the name is the ledger key), and every rebuild asserts its
-row count inside its own transaction. There is deliberately no baseline - `001` builds the whole
-schema, so a fresh database runs the entire chain on every dev boot and every test.
+- A person's request runs on their role's login; the database grants back the check.
+- A reader's own read pointer (`markRead`) and the bell's per-user state (watermarks, dismissals,
+  mention seen stamps, push subscriptions and device tokens, reachable without chat access) run as
+  named system entries after the check, as do the push transports' delivery state, the agent's
+  trigger reads and the boot sweeps (listed in `packages/core/src/system-entries.test.ts`).
+- **Publish after commit.** Every bus event is queued with `afterCommit`: a rollback announces
+  nothing, and an enclosing transaction delays the events until it commits.
+- **Order keys** are issued by the room's guard: `UPDATE chat_rooms SET head_at = greatest(head_at
+  + 1, now)`, which also locks the room for the posting transaction. Mutations in a room (post,
+  delete, reshape) lock the room row, so a reply can never land under a root being deleted.
+- **Outbox ids** come from `chat_event_head`: the posting transaction bumps it as its last write and
+  holds the row until it commits, so ids commit in id order, are never reused (a rollback takes the
+  bump back, a deleted message leaves a gap), and the counter travels with the rows in a restore
+  point. Publication is not ordered: each transaction publishes after its own COMMIT
+  acknowledgement, so event N can reach the bus after N+1. The feed therefore treats a bus event as
+  a wakeup: an event that is not the next id makes it drain the outbox after its cursor in id order
+  (access-filtered) before the cursor moves past it. Resume (`id > cursor`) and live delivery read
+  the same order.
+- **Blobs** are written before the row that names them, and collected only when a fresh read finds
+  no committed row naming the sha, both under one in-process lock per address; the sweep's directory
+  pass leaves files younger than the orphan window (24 h) alone. A committed row therefore always
+  names bytes that exist; a blob whose row never committed is garbage the next sweep collects.
+- **Readability snapshot.** Core's agent-session rule is synchronous (workerdeck's `canSee`), so
+  `canReadRoomNow` answers from an in-memory map of room modes and members, loaded at boot
+  (`loadRoomAccess`) and updated after every commit that creates or deletes a room or changes its
+  members.
 
 Attachment **bytes** are not in the database: `blobs.ts` content-addresses them under
-`<instance>/chat-uploads/<sha[0:2]>/<sha>`, git-objects shaped, synchronous on purpose so a row
-write and its blob write happen in one event-loop tick.
+`data/chat-uploads/<sha[0:2]>/<sha>`, git-objects shaped (temp file and rename).
 
 ## Ports it owns, and what it registers into core
 
@@ -79,7 +97,7 @@ write and its blob write happen in one event-loop tick.
   membership before yielding. Registered into by `notifications/delivery.ts` and by this feature's own
   `chat-agent.ts`.
 - **`chatStore()`** - the store handle itself is the second port. `notifications` reads and writes its
-  five tables through it; core's agent host uses `canReadRoom`.
+  tables through it; core's agent host uses the readability snapshot (`canReadRoomNow`).
 - **Into core's run funnel**: one `ActionSpec` (below).
 - **Not** registered: chat subscribes to no core `onEvent`, registers no `onRunOutcome`, and
   contributes no web `slots`.
@@ -124,6 +142,29 @@ reaches further back. Each ask names the asker's user id and identity email (fro
 directory, read per turn); `user-get` and `users-list` give the agent anyone's profile, so a tool
 that acts for a person (a mail or calendar account) takes that person's email from there.
 
+**Seats and coverage.** An agent answers and posts in a named room only from an enabled seat
+(`chat_room_agents`). In a `members` room it also needs every member to cover it (docs/AUTH.md
+"Agents and coverage"). An `open` room trusts its seated agents: everyone with `chat` read sees
+what they write there, with no coverage check, so only an admin seats or enables an agent in an
+open room or opens a room that has enabled seats. In a DM the readers are the people in it. A turn without a seat or coverage is refused with a generic note in the room, naming nobody.
+Admins and the room's creator change mode, members and seats in the room's settings
+(`chat-room-access-set`) through the policy service: a change that would leave a reader who does not
+cover a seated agent is refused with the list, or, for existing members of a `members` room,
+confirmed with the preview's revision, which also removes them. Removing a seat never opens a room;
+opening a room drops its member rows. A seat found uncovered by a policy change or the boot check is
+disabled with its reason until an admin enables it. Live `room:` sessions end on the policy revision
+that breaks their coverage. The room's agent toolset is set through the policy service too.
+
+**More than one agent.** Every agent from [docs/AUTH.md](../../docs/AUTH.md) ("More agents") has its
+own seat: sessions, claims and turn budgets are keyed by room and agent, so one message that
+mentions several active agents starts a turn for each. An unaddressed follow-up in a thread goes to
+the agent whose answer completed last there. An agent's finished answer (never a card, checkpoint
+or failure notice, and never its own `chat-post` calls) that mentions another agent hands that agent
+a turn. `agentHop` in the answer's meta counts the chain (a person's message is 0) and
+`AGENT_HOP_LIMIT = 3` stops it with a visible note. The hop limit bounds chain length, not fan-out;
+the per-agent room budget bounds the total. A member agent that mentions an admin agent invokes the
+admin agent's authority, as a member person can. Approval cards are decided by a person only.
+
 **The host.** `chat-agent.ts` creates a workerdeck `SessionHandle` per room against
 `agentWorkerUrl()` with `hostAuth`, under the agent's default profile (`users.agent_profile`, set on
 its user detail; unset means Claude first among its `agentProfiles`), resolved as
@@ -136,8 +177,8 @@ catalogue first and **omitted if the profile does not declare it** rather than f
 interrupted, with the watchdog standing down while the turn is legitimately blocked on an approval.
 **The agent's Box MCP server.** On an engine that takes per-session MCP servers (Claude; the
 profile's `capabilities.sessionMcpServers`), the session is created with the Box's own MCP server as
-`box` (`http://127.0.0.1:<server.port>/mcp`, Bearer the agent's token: revealed, issued only when the
-agent has none), `allowedTools: ["mcp__box"]` and the floor `CHAT_AGENT_BOX_MCP_FLOOR` (`ServiceRestart`,
+`box` (`http://127.0.0.1:<server.port>/mcp`, Bearer a session credential for the agent scoped to
+`room:<id>`, closed when the session is dropped; docs/AUTH.md "Session credentials"), `allowedTools: ["mcp__box"]` and the floor `CHAT_AGENT_BOX_MCP_FLOOR` (`ServiceRestart`,
 `UserDelete`, `UserSetRole`, `UserAccessRevoke`) as `mcp__box__<Tool>` in `disallowedTools`. A
 `box` entry in the profile's own config is replaced for that session, not run beside it. Codex
 takes the same session options; it honours only MCP entries in the tool lists, which the floor is
@@ -199,15 +240,17 @@ with the request principal - never a client-supplied id. Reads that take input a
 | `chatEdit` (mutation) | `chat-edit` | replace your own message's body; sender-only, issues no key and no outbox row |
 | `chatReact` (mutation) | `chat-react` | toggle one of the twelve palette emoji (`CHAT_REACTION_EMOJI`) |
 | `chatDelete` (mutation, `@Trpc({ name: 'Chat.delete' })`) | `chat-message-delete` | delete a message; `moderate: true` for any sender |
-| `chatRoomCreate` (mutation) | `chat-room-create` | create a room - everyone can read and write it at once |
+| `chatRoomCreate` (mutation) | `chat-room-create` | create a room. It starts `open`: everyone with chat access can read and write it at once |
+| `chatRoomAccess` (mutation) | `chat-room-access` | a room's mode, members and seats, and for the member picker every person with chat access with the reason they cannot join. Any reader of the room |
+| `chatRoomAccessSet` (mutation) | `chat-room-access-set` | change mode, members or seats (admins and the room's creator, never an agent). `preview` returns the coverage violations; a refusal returns `{ applied: false, refused }`; `revision` with `confirm: 'remove-members'` also removes the listed members; a stale revision is 409 |
 | `chatDirectOpen` (mutation) | `chat-direct-open` | open a DM with one person. Idempotent: the slug is `dm:<a>:<b>` from the sorted pair |
 | `chatRoomUpdate` (mutation) | `chat-room-update` | rename / topic / icon. Empty string clears; a DM answers 400 |
 | `chatRoomDelete` (mutation) | `chat-room-delete` | PURGE a room. Three guards: `confirm` must repeat the slug, an API client gets an approval card and `status: 'pending'`, and the store requires readability |
-| `chatBackup` (mutation) | `ChatBackup` (bare `@Mcp()`, name derived) | `VACUUM INTO` chat.db to GCS through the recorded run funnel |
+| `chatBackup` (mutation) | `ChatBackup` (bare `@Mcp()`, name derived) | copy new attachment blobs to GCS through the recorded run funnel |
 | `chatMarkRead` (mutation) | - | advance the member's read pointer (clamped, monotonic) and get the server's unread recount |
 | `chatAgentStatus` (mutation) | - | what the turn in this room is doing right now; covers a late joiner and a reconnected feed, since `agent.activity` is ephemeral |
 | `chatAgentDecision` (mutation) | - | approve or deny an approval card. **Any** user who can read the room may answer, worker cards and chat-op cards alike |
-| `chatFeed` (subscription) | - | ONE multiplexed live stream per client over every room the principal belongs to. A `cursor` replays the outbox, then it goes live; every frame is membership-filtered server-side |
+| `chatFeed` (subscription) | - | ONE multiplexed live stream per client over every room the principal belongs to. A `cursor` replays the outbox, then it goes live; every frame is membership-filtered server-side, and a member removed from a room gets `room.left` |
 
 Plain REST, because multipart does not project onto tRPC or MCP:
 
@@ -222,7 +265,7 @@ One, in `actions.ts`:
 
 | id | group | what |
 |---|---|---|
-| `chat-backup` | Warehouse | Snapshot `chat.db` (`VACUUM INTO`, through the live store) to the private GCS bucket as `chat/chat-latest.sqlite` (bucket versioning keeps the history), then copy new `chat-uploads/` blobs to `chat/uploads/` (never deletes remotely) |
+| `chat-backup` | Warehouse | Copy new `data/chat-uploads/` blobs to `chat/uploads/` in the private GCS bucket (never deletes remotely). Chat's rows travel in the database restore points (`box db backup`) |
 
 It is in core's action registry, so `automation` can schedule it and every invocation lands in
 `automation_runs` - the `chatBackup` procedure calls `executeRecorded('chat-backup', …)` rather than

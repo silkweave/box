@@ -48,7 +48,38 @@ async function main(): Promise<number> {
   // server is lazy (inside a function), so a setter called here has the same ordering guarantee the
   // environment variable had, and unlike the variable it cannot arrive from a shell.
   const { setInstanceDir } = await import('@silkweave/box-core/testing')
+  const { boxJson } = await import('@silkweave/box-core/box-config')
+  const engine = boxJson().database.engine
   setInstanceDir(dataDir)
+  // The app boots for real, so it gets a real, throwaway database: a private cluster outside the
+  // Box (engine cache under the system temp dir), migrated like a Box's, stopped at the end.
+  const database = await startTypegenDatabase(engine)
+  try {
+    return await generate()
+  } finally {
+    await database.stop()
+  }
+}
+
+async function startTypegenDatabase(engine: 'pgrust' | 'native'): Promise<{ stop(): Promise<void> }> {
+  const { startTestCluster } = await import('@silkweave/box-core/db/testing')
+  const { bootDatabase } = await import('@silkweave/box-core/warehouse/pg/boot')
+  const { closeExecutor } = await import('@silkweave/box-core/warehouse/executor')
+  const { boxSchemaOwners } = await import('@silkweave/box-core/warehouse/schema')
+  const { BUILTIN_ROLES, knownAreas } = await import('@silkweave/box-core/auth/roles')
+  const cluster = await startTestCluster(engine)
+  try {
+    await bootDatabase({ socket: cluster.running.socket, port: cluster.running.port }, {
+      ...boxSchemaOwners(),
+      builtinRoles: BUILTIN_ROLES.map((r) => ({ id: r.id, default: r.default, areas: r.areas })),
+      knownAreas: knownAreas(),
+      checkFiles: false,
+    })
+  } catch (e) { await cluster.stop(); throw e }
+  return { async stop() { await closeExecutor(); await cluster.stop() } }
+}
+
+async function generate(): Promise<number> {
   const { NestFactory } = await import('@nestjs/core')
   const { ControllerDiscovery } = await import('@silkweave/nestjs')
   const { repoRoot } = await import('@silkweave/box-core')
@@ -110,7 +141,7 @@ async function main(): Promise<number> {
 main()
   .then((code) => {
     rmSync(dataDir, { recursive: true, force: true })
-    // Explicit: DuckDB handles, timers and the express server keep the loop alive past app.close().
+    // Explicit: database handles, timers and the express server keep the loop alive past app.close().
     process.exit(code)
   })
   .catch((err) => {

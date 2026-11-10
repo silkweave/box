@@ -59,10 +59,12 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box auth login [<id>]                       short-lived, single-use browser sign-in
   box auth reveal <id>                        re-print an access token, breaking nothing
   box auth replace <old> <new> [--name "Name"] a new agent takes over an agent's config; the old one retires
-  box db backup                               a safety copy of the warehouse, kept generationally
+  box db backup                               a restore point of the database (online), kept generationally
   box db list                                 every restore point, with its time and size
-  box db restore [name] [--keep-agent-files]  restore one (warehouse + agent files) over the live Box (previous parked)
+  box db restore <name>                       restore one into a fresh cluster (Box stopped; previous parked)
   box db snapshot [name]                      a named dev seed you own; nothing ever prunes it
+  box db switch --engine <pgrust|native>      move the database to the other engine (Box stopped)
+  box db clusters | prune                     the cluster directories; delete stopped, non-active ones
   box tools                                   browse and invoke MCP tools interactively
   box where                                   which Box this acts on, and why
   box stack where                             the configured Stack source and where it resolves
@@ -89,7 +91,7 @@ const DEV_HELP = `  box dev [--log-level <level>] [--plain]
 
 const AUTH = { token: 'auth-token.ts', login: 'auth-login.ts', reveal: 'auth-reveal.ts', replace: 'auth-replace.ts' } as const
 // `seeds` stays as an alias for `list` so older AGENT recipes and muscle memory keep working.
-const DB = { backup: 'backup', list: 'list', seeds: 'list', restore: 'restore', snapshot: 'snapshot' } as const
+const DB = { backup: 'backup', list: 'list', seeds: 'list', restore: 'restore', snapshot: 'snapshot', switch: 'switch', clusters: 'clusters', prune: 'prune' } as const
 
 function main(argv: string[]): void {
   const [verb, ...rest] = argv

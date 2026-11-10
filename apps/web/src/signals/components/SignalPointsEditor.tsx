@@ -5,6 +5,7 @@ import { fetchSignalPoints, removeSignalPoint, saveSignalPoint, saveSignalPoints
 import { formatBucket, formatNumber, relativeTime } from '../../lib/format.ts'
 import { UserChip, Button, DateInput, Popover, PopoverContent, PopoverTrigger, todayUtc } from '@silkweave/box-ui'
 import { cn } from '@/lib/utils'
+import { canAccessArea, useAccess } from '@/lib/access'
 
 const inputCls =
   'rounded-md border border-border bg-bg px-2 py-1 text-body-sm text-text transition-colors hover:border-accent/40 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60'
@@ -21,6 +22,9 @@ const inputCls =
  * interval.
  */
 export function SignalPointsEditor({ signal }: { signal: Signal }) {
+  useAccess() // re-render when access changes
+  // Points take write on the signal's owning area; a reader sees the table without its controls.
+  const canWrite = canAccessArea(signal.area, 'write')
   const [data, setData] = useState<SignalPointsPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -33,7 +37,7 @@ export function SignalPointsEditor({ signal }: { signal: Signal }) {
         if (!cancelled) setData(d)
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e))
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       })
     return () => {
       cancelled = true
@@ -49,7 +53,7 @@ export function SignalPointsEditor({ signal }: { signal: Signal }) {
         return true
       })
       .catch((e) => {
-        setError(String(e))
+        setError(e instanceof Error ? e.message : String(e))
         return false
       })
       .finally(() => setBusy(false))
@@ -66,10 +70,11 @@ export function SignalPointsEditor({ signal }: { signal: Signal }) {
         point stays underneath and resurfaces if the live source retreats.
         {signal.data_source_id &&
           ' This signal is connected, so its live buckets belong to its source’s sync - correcting one here shadows that value rather than replacing it.'}
+        {!canWrite && ' Your role can read this signal but not change its points.'}
       </p>
-      <PointsTable signal={signal} data={data} busy={busy} run={run} />
+      <PointsTable signal={signal} data={data} busy={busy} run={run} canWrite={canWrite} />
       {error && <p className='mt-2 text-label text-danger'>{error}</p>}
-      <BulkPasteBox signal={signal} busy={busy} run={run} />
+      {canWrite && <BulkPasteBox signal={signal} busy={busy} run={run} />}
     </section>
   )
 }
@@ -81,11 +86,13 @@ function PointsTable({
   data,
   busy,
   run,
+  canWrite,
 }: {
   signal: Signal
   data: SignalPointsPayload
   busy: boolean
   run: (op: () => Promise<SignalPointsPayload>) => Promise<boolean>
+  canWrite: boolean
 }) {
   const hourly = data.interval === 'hour'
   const [editing, setEditing] = useState<string | null>(null) // bucket being edited
@@ -146,7 +153,7 @@ function PointsTable({
           {rows.length === 0 && (
             <tr className='border-b border-border bg-bg/40'>
               <td colSpan={6} className='px-3 py-3 text-muted-foreground'>
-                No manual points yet - add one below, or paste a batch.
+                {canWrite ? 'No manual points yet - add one below, or paste a batch.' : 'No manual points yet.'}
               </td>
             </tr>
           )}
@@ -212,7 +219,7 @@ function PointsTable({
                   </>
                 )}
                 <td className='px-3 py-1.5 text-right whitespace-nowrap'>
-                  {isEditing ? (
+                  {!canWrite ? null : isEditing ? (
                     <>
                       <Button size='xs' disabled={busy} onClick={() => saveEdit(p)}>
                         Save
@@ -241,6 +248,7 @@ function PointsTable({
             )
           })}
           {/* The inline add row. */}
+          {canWrite && (
           <tr className='bg-surface/60'>
             <td className='px-3 py-2 whitespace-nowrap'>
               <DateInput
@@ -285,6 +293,7 @@ function PointsTable({
               </Button>
             </td>
           </tr>
+          )}
         </tbody>
       </table>
     </div>

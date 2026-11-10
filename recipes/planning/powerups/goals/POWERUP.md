@@ -6,14 +6,14 @@ Goals that say why the work matters and, when they have a number, measure it aga
 
 - Goals: the why and an optional target (a signal, a number and a window), measured with a health reading (on track, at risk, off track, met); a goal without a target is qualitative
 - Goals are one flat layer; an initiative names the goals it contributes to
-- A goal without a signal gets its own: values typed weekly, or computed by a measure such as tasks done
+- A goal without a signal gets its own: values typed weekly, or computed by a tracker such as tasks done
 - Cycles that group goals into a period, with a review step to close goals and carry open goals forward
 - A Goals page with health counts, a review panel and the gaps: open work that moves no goal, and goals nothing works on
 - A Goals section on every initiative and a goals column on the Initiatives board
 
 ## Needs
 
-- Nothing outside the Box: core's signals and measures
+- Nothing outside the Box: core's signals and trackers
 
 ## Requires
 
@@ -48,12 +48,12 @@ in its own Box.
 
 **The goal's own signal.** A measurable goal created without a `signal_id` gets its own signal
 `goal.<id>` on channel `planning`, group `Goals`, labelled with the goal's title: manual by default
-(`accumulation` increment for an accumulate goal, otherwise snapshot), or bound to an in-Box measure
-when `measure_key` (+ `measure_params`) is given, in which case a measure that takes `since` gets the
+(`accumulation` increment for an accumulate goal, otherwise snapshot), or bound to a Box tracker
+when `tracker_key` (+ `tracker_params`) is given, in which case a tracker that takes `since` gets the
 goal's start (and follows it). The goal owns it: renaming the goal renames it, deleting the goal
 deletes it with its points (unless a carried-forward goal still measures it), and dropping the
 target keeps it. `goal-value-set { goal_id, value, date? }` writes a point on it, the inline weekly
-entry; it is refused on any other signal and on an own signal a measure computes. Every number is a
+entry; it is refused on any other signal and on an own signal a tracker computes. Every number is a
 signal: a goal never stores its actual.
 
 **Kinds.** The default comes from the signal's accumulation on create (`increment` -> `accumulate`,
@@ -131,7 +131,7 @@ behind `AuthGuard`, in `server/planning/goals.controller.ts`:
 |---|---|---|
 | `goalsList` (query) | - | every goal with its reading and health, no daily series |
 | `goalsGet` (mutation) | `goals-get` | all goals or one by `id`, each with health; the daily series is included for one goal, opt-in for all |
-| `goalsUpsert` (mutation) | `goal-upsert` | create or partially update; an optional target (`target` with a window: dates or a `cycle_id`; `signal_id`, or none for an own signal, or `measure_key` + `measure_params` for an own measure-bound signal; `unit`); `clear_target` makes it qualitative; `status` closes it (`met`, `missed`, `dropped`) or reopens it (`active`); `clear_baseline` drops the override |
+| `goalsUpsert` (mutation) | `goal-upsert` | create or partially update; an optional target (`target` with a window: dates or a `cycle_id`; `signal_id`, or none for an own signal, or `tracker_key` + `tracker_params` for an own tracker-bound signal; `unit`); `clear_target` makes it qualitative; `status` closes it (`met`, `missed`, `dropped`) or reopens it (`active`); `clear_baseline` drops the override |
 | `goalsDelete` (mutation) | `goal-delete` | remove a goal and its doc; initiatives stop contributing, its own signal is deleted |
 | `goalsRename` (mutation) | `goal-rename` | change the slug; contributing initiatives, its own signal and the doc follow |
 | `goalsValueSet` (mutation) | `goal-value-set` | `{ goal_id, value, date? }`: a point on the goal's own manual signal (default today); refused on any other signal |
@@ -143,9 +143,9 @@ behind `AuthGuard`, in `server/planning/goals.controller.ts`:
 On the base: `initiative-upsert` takes `goal_ids` (replaces the goals it contributes to, each must
 exist), initiatives carry `goal_ids` on every read, and `doc-read` / `doc-save` take the `goal` and
 `cycle` kinds. With goals, `planning.tasks_done` binds to a goal too (`goal-upsert` with
-`measure_key`). Refusals (400s): a goal whose signal is not registered, whose `end_date` is before
+`tracker_key`). Refusals (400s): a goal whose signal is not registered, whose `end_date` is before
 `start_date`, whose target is half set or whose cycle does not exist; a `goal_ids` entry naming no
-goal; a `goal-value-set` on a signal the goal does not own or that a measure computes.
+goal; a `goal-value-set` on a signal the goal does not own or that a tracker computes.
 
 ## UI
 
@@ -161,8 +161,8 @@ goal; a `goal-value-set` on a signal the goal does not own or that a measure com
   `GoalsLayout` is the shell with a sidebar of cycles.
 - **Nav**: `Goals` (icon `Goal`, order 200), first in the Operations section.
 - **The goal dialog** (`GoalDialog`) sets the title, the target (none; a number typed in, which
-  creates the goal's manual own signal with an optional unit; an existing signal; or an in-Box
-  measure from `signalsMeasures` with a field per parameter, `since` left to the goal's start),
+  creates the goal's manual own signal with an optional unit; an existing signal; or a Box
+  tracker from `signalsTrackers` with a field per parameter, `since` left to the goal's start),
   kind, target or bound, baseline, window, cycle, and owner. The status is set in the goal page's
   top bar, not in the dialog.
 - **Inline value entry** (`GoalValueEntry`): a goal measuring its own manual signal takes one
@@ -181,7 +181,7 @@ goal; a `goal-value-set` on a signal the goal does not own or that a measure com
   `components/HealthChip.tsx`, shared with the milestones powerup.
 - **Stores**: `useGoalsData` reloads on `table:goals`, `table:initiatives` (the contributes-to lists
   live on initiatives), the signal tables and `docs:goals`, and its cycles store on `table:cycles`.
-  The measures list is not a table; it loads once per page.
+  The trackers list is not a table; it loads once per page.
 
 ## Settings
 

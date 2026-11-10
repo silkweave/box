@@ -36,10 +36,8 @@ ledgers before replaying an operation.
    target Box as part of the adaptation.
 3. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record
    path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Record the fetched version and sha256 in the `recipes` ledger of `box.json` only after the full validation and boot pass.
-4. Migrations: `automation:001-import-schedules` (config schedules become time triggers),
-   `automation:002-trigger-permission-mode` (adds `triggers.permission_mode`), with
-   core's `004-runs-trigger-id` and `005-runs-event-id`. Remove `features.automation.schedules` from
-   the config files after the live boot.
+4. Migration: `automation:001-default-trigger-group` (the `default` trigger group). Remove
+   `features.automation.schedules` from the config files: it is not read.
 5. For migrations, stage the runner, registration, and minimum code first. Test against a restored
    backup in isolation, confirm completion and boot compatibility, then continue with unrelated
    changes. Never edit or rename an applied migration.

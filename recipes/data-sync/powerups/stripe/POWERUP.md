@@ -5,10 +5,10 @@ Revenue signals from the team's Stripe account: a `stripe` provider for data sou
 ## Highlights
 
 - One data source per Stripe account, created in Settings > Data sources, with its own restricted read-only key
-- Five measures: gross volume, net volume and refunds per day (from balance transactions), MRR and active subscriptions per day (rebuilt from subscriptions)
+- Five trackers: gross volume, net volume and refunds per day (from balance transactions), MRR and active subscriptions per day (rebuilt from subscriptions)
 - Every sync rebuilds a configurable window (default 90 days, up to three years), so the first sync is also the backfill
 - Reports in USD; activity in any other currency converts at the ECB rate of its own day, named in the run log, with the rates kept in the audit snapshot
-- Bound signals only: an unbound measure is never fetched
+- Bound signals only: an unbound tracker is never fetched
 
 ## Needs
 

@@ -8,7 +8,7 @@ Delivered outputs in the task tree: a milestone is an item measured by the tasks
 - A milestone is measured by its tasks (hours, 1h by default) or by a signal (reach or accumulate, with a target), and reads met, missed and on track or off track from that
 - Milestone windows inherit from the milestone above or the initiative, and are checked on every write
 - Outcome milestones show as cards at the top of the initiative, and the initiative's health is the worst of theirs
-- "New signal" in the milestone editor creates a manual signal for a milestone that has none
+- "New signal" in the milestone editor opens the signal dialog for a milestone that has none: typed by hand, tracked automatically by the Box (deals won, tasks done) or from a data source
 
 ## Needs
 
@@ -68,8 +68,10 @@ may have subtasks. An initiative's `health` is the worst health of its live outc
 (`initiativeReading`, `worstHealth`: off track, at risk, no data, upcoming, on track, met; null
 without any). Its `progress` stays the base hours progress.
 
-**Ad-hoc signals**: "New signal" in the milestone editor creates a manual signal on channel
-`planning` labelled with the milestone title and no ownership link. Signals are archived by hand
+**Ad-hoc signals**: "New signal" in the milestone editor opens core's signal dialog with the
+milestone title as the label and channel `planning`; the signal can be typed by hand, tracked by a
+Box tracker or fed by a data source. The created signal is picked in the editor and the measure
+saves with "Save measure". There is no ownership link. Signals are archived by hand
 (core `signals.archived_at`, `signal-archive` / `signal-unarchive`, admin-only): archived signals
 are hidden from pickers and the Signals page, and stay readable. `MILESTONE_SIGNAL_HOOKS`
 (`core/state.ts`, id `planning.milestones`) is registered into core's `registerSignalHooks`: a
@@ -89,16 +91,18 @@ its ancestor's or the initiative's (the message names each milestone).
 
 ## UI
 
-- **The item panel** (`ItemPanel`): the Task / Milestone switch (`KindToggle`) as the header's
-  leading control, the outcome star (`OutcomeStar`), the milestone measure editor (`MeasureEditor`:
+- **The item panel** (`ItemPanel`): the Task / Milestone switch (`KindSwitch`) as the first
+  field and the diamond as the header mark, the outcome star (`OutcomeStar`), the milestone measure editor (`MeasureEditor`:
   Tasks or Signal toggle; signal, counts as reach or accumulate, target and baseline save together;
-  "New signal"), the inherited-window hints on the date fields, and a kind control in the children
+  "New signal", which any member may use), the inherited-window hints on the date fields, and a kind control in the children
   quick add (`QuickAddChild`).
 - **The initiative page**: the outcome milestones as cards (`OutcomeCards`: reading, progress and
   state) between the fields and the Tasks tree. In the tree (`ItemTree`) a milestone row shows a
   filled accent diamond (`MilestoneMark`, its state in the tooltip), a progress bar
   (`MilestoneProgressCell`) and a state chip (`MilestoneStateChip`); the footer counts "N of M
-  milestones met"; effort excludes milestones. A row's "+" adds a task or a milestone under it. A
+  milestones met"; effort excludes milestones; a met milestone counts as finished for Show done. A
+  row's "+" adds a task or a milestone under it, the bottom row has a Task / Milestone switch, and
+  "Add milestone" in the bar sets it to milestone and focuses the row. A
   refused re-parent (a window) puts the row back and is shown in a dialog.
 - **The Initiatives board**: milestone rows in each initiative's tree, with the same marks, and the
   board's filters keep a milestone that holds a kept task (`applyView`).

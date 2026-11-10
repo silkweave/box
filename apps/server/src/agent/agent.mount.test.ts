@@ -92,6 +92,8 @@ vi.mock('./workerdeck.host.js', () => ({
   }),
 }))
 vi.mock('./session-relay.js', () => ({ relayReadOnly: () => undefined }))
+vi.mock('./loopback-guard.js', () => ({ verifyLoopback: async () => ({ ours: true, detail: '' }), servicePort: () => 8190 }))
+vi.mock('./box-mcp.js', () => ({ BOX_MCP_SERVER: 'box', BOX_MCP_FLOOR: [], sweepOnPolicyRevision: () => undefined }))
 
 const { createAgentMount } = await import('./agent.mount.js')
 

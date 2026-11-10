@@ -31,7 +31,8 @@
 //   --name    the display name for a user this script creates. Defaults to the id.
 
 import {
-  ensureSchema,
+  asSystem,
+  withDatabase,
   ensureAgentPrincipals,
   hasHumanUsers,
   issuePrincipalToken,
@@ -64,7 +65,6 @@ async function main(): Promise<void> {
   if (nameAt >= 0 && (!name?.trim() || name.startsWith('--'))) {
     throw new Error('--name requires a nonempty display name')
   }
-  await ensureSchema()
   // The machine account every Box needs (scheduler attribution, the agent's seat):
   // its name and role are chosen on the host in box.json.
   await ensureAgentPrincipals()
@@ -134,7 +134,8 @@ async function main(): Promise<void> {
   commandLine(`Or paste the token at ${appUrl()}/ · later: box auth login ${id}`, 'muted')
 }
 
-main()
+// A CLI script: adopts the running Box's database (or owns it while it runs), as named system work.
+asSystem('cli: auth token', () => withDatabase(main))
   .then(() => process.exit(0))
   .catch((err) => {
     commandError(err instanceof Error ? err.message : String(err))

@@ -53,7 +53,7 @@ describe('createFxRates', () => {
     const first = await fx.usdRates('sgd', ['2026-10-03', '2026-10-06'])
     expect(first.get('2026-10-03')).toMatchObject({ rate: 0.78, rateDate: '2026-10-02' })
     expect(first.get('2026-10-06')).toMatchObject({ rate: 0.79, rateDate: '2026-10-05' })
-    const stored = await withRead<{ day: string }>(`SELECT CAST(day AS VARCHAR) AS day FROM fx_rates WHERE currency = 'SGD' ORDER BY day`)
+    const stored = await withRead<{ day: string }>(`select day from core.fx_rates where currency = 'SGD' order by day`)
     expect(stored.map((r) => r.day)).toEqual(['2026-10-03'])
 
     // A later publication makes 2026-10-06 final; a stored day keeps its rate even if a source

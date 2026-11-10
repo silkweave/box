@@ -21,10 +21,14 @@
 // Zero-fill for increment signals happens at READ within the served window, not in storage -
 // storage stays sparse.
 
+import { requireReachArea } from '../request-context.js'
+import { pointWrite } from './write.js'
 import { randomUUID } from 'node:crypto'
-import { emitChange } from '../changes.js'
-import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
-import { deleteRecord, readRecord, readRecords, toNaiveUtc, upsertRecord } from '../warehouse/model.js'
+import { emitAreaChange } from '../changes.js'
+import { deleteRecord, readRecord, upsertRecord } from '../warehouse/model.js'
+import { db } from '../warehouse/core-db.js'
+import { sql } from '../warehouse/kysely.js'
+import { insertPoints } from './write.js'
 import { SIGNAL_POINTS } from './models.js'
 import { recordEvent } from '../events.js'
 import { assertKnownActor } from '../users/state.js'
@@ -69,7 +73,7 @@ function parseUtc(at: string | Date): Date {
  *
  * Conventions:
  *   • Offset-less inputs are UTC (see parseUtc), never machine-local.
- *   • `week` buckets are ISO weeks: Monday 00:00 UTC (matches DuckDB's date_trunc('week')).
+ *   • `week` buckets are ISO weeks: Monday 00:00 UTC (matches PostgreSQL's date_trunc('week')).
  *   • Returns a canonical second-precision ISO-Z string ('2026-08-01T00:00:00Z'), the same shape
  *     the record layer's reads produce - flooring is idempotent on its own output.
  */
@@ -106,6 +110,8 @@ export function serializeBucket(bucket: string, interval: SignalInterval): strin
 /** One stored `signal_points` row, mapped by the record layer (bucket as ISO-Z). */
 export interface SignalPointRecord {
   signal_id: string
+  /** The signal's area (copied; the foreign key keeps it equal). */
+  area: string
   bucket: string
   value: number
   source: SignalPointSource
@@ -144,7 +150,13 @@ export interface MergedSignalPoint {
   shadowed_computed?: number
 }
 
-const utcNow = (): string => toNaiveUtc(new Date().toISOString())
+
+/** requireDefinition plus write on the signal's area: every point write goes through it (8.1). */
+async function requireWritableDefinition(signalId: string): Promise<SignalDefinition> {
+  const def = await requireDefinition(signalId)
+  requireReachArea(def.area, 'write')
+  return def
+}
 
 async function requireDefinition(signalId: string): Promise<SignalDefinition> {
   const def = await readSignalDefinition(signalId)
@@ -171,7 +183,7 @@ function assertNotConnected(def: SignalDefinition, what: 'events'): void {
   }
   if (!def.data_source_id) return
   throw new Error(
-    `signal ${def.id} is connected to data source ${def.data_source_id} (measure ${def.measure_key}) - its live points come from that sync, so counting ${what} into it would destroy them. Hand-correct a bucket with signal-point-set instead, or unbind the signal first.`,
+    `signal ${def.id} is connected to data source ${def.data_source_id} (tracker ${def.tracker_key}) - its live points come from that sync, so counting ${what} into it would destroy them. Hand-correct a bucket with signal-point-set instead, or unbind the signal first.`,
   )
 }
 
@@ -237,16 +249,12 @@ export function mergeSignalPoints(
 
 /** Every stored `signal_points` row, ascending - the signalsData bulk read (storage is sparse). */
 export async function readAllSignalPointRecords(): Promise<SignalPointRecord[]> {
-  return readRecords<SignalPointRecord>(SIGNAL_POINTS, { orderBy: 'signal_id, bucket, source' })
+  return (await db.selectFrom('signal_points').selectAll().orderBy('signal_id').orderBy('bucket').orderBy('source').execute()) as SignalPointRecord[]
 }
 
 /** One signal's stored `signal_points` rows, ascending. */
 export async function readSignalPointRecords(signalId: string): Promise<SignalPointRecord[]> {
-  return readRecords<SignalPointRecord>(SIGNAL_POINTS, {
-    where: 'signal_id = ?',
-    params: [signalId],
-    orderBy: 'bucket, source',
-  })
+  return (await db.selectFrom('signal_points').selectAll().where('signal_id', '=', signalId).orderBy('bucket').orderBy('source').execute()) as SignalPointRecord[]
 }
 
 /**
@@ -307,33 +315,37 @@ const checkValue = (signalId: string, value: unknown): number => {
 
 /** Upsert ONE manual point at floor(at, interval). Unknown signal ids are refused with the reason. */
 export async function setSignalPoint(input: SignalPointInput): Promise<SignalPointRecord> {
-  const def = await requireDefinition(input.signal_id)
+  const def = await requireWritableDefinition(input.signal_id)
   const bucket = floorSignalBucket(input.at, def.interval)
-  return upsertRecord<SignalPointRecord>(SIGNAL_POINTS, {
+  const value = checkValue(input.signal_id, input.value)
+  return pointWrite([def], () => upsertRecord<SignalPointRecord>(SIGNAL_POINTS, {
     signal_id: input.signal_id,
+    area: def.area,
     bucket,
     source: 'manual',
-    value: checkValue(input.signal_id, input.value),
+    value,
     ...(input.note !== undefined ? { note: input.note } : {}),
     ...(input.actor ? { actor: input.actor } : {}),
-  })
+  }))
 }
 
 /** Remove one manual point (the bucket containing `at`). Refused when no such point exists. */
 export async function deleteSignalPoint(signalId: string, at: string): Promise<SignalPointRecord> {
-  const def = await requireDefinition(signalId)
+  const def = await requireWritableDefinition(signalId)
   const bucket = floorSignalBucket(at, def.interval)
   const pk = { signal_id: signalId, bucket, source: 'manual' }
-  const prev = await readRecord<SignalPointRecord>(SIGNAL_POINTS, pk)
-  if (!prev) throw new Error(`signal ${signalId}: no manual point at bucket ${bucket}`)
-  await deleteRecord(SIGNAL_POINTS, pk)
-  return prev
+  return pointWrite([def], async () => {
+    const prev = await readRecord<SignalPointRecord>(SIGNAL_POINTS, pk)
+    if (!prev) throw new Error(`signal ${signalId}: no manual point at bucket ${bucket}`)
+    await deleteRecord(SIGNAL_POINTS, pk)
+    return prev
+  })
 }
 
 /**
  * The bulk manual path - twelve monthly Cash Balance points in one call. Validates every entry
  * BEFORE writing anything (all-or-nothing), floors each `at` through the shared helper (two
- * entries landing in one bucket: the last wins), and writes the batch inside one connection -
+ * entries landing in one bucket: the last wins), and writes the batch in one statement -
  * the replaceSignalRows precedent, not N record-layer round-trips. Existing manual points at
  * the same buckets are updated (created_at/created_by preserved); live points are untouched.
  */
@@ -342,7 +354,7 @@ export async function setSignalPoints(
   points: { at: string; value: number; note?: string | null }[],
   actor?: string,
 ): Promise<SignalPointRecord[]> {
-  const def = await requireDefinition(signalId)
+  const def = await requireWritableDefinition(signalId)
   if (actor) await assertKnownActor(actor)
   const byBucket = new Map<string, { value: number; note: string | null }>()
   for (const p of points) {
@@ -353,21 +365,19 @@ export async function setSignalPoints(
   }
   if (byBucket.size === 0) return []
 
-  await ensureSchema()
-  const now = utcNow()
-  await withWrite(async (conn) => {
-    for (const [bucket, p] of byBucket) {
-      await conn.run(
-        `INSERT INTO signal_points (signal_id, bucket, value, source, note, created_at, updated_at, created_by, updated_by)
-         VALUES (?, ?::TIMESTAMP, ?, 'manual', ?, ?::TIMESTAMP, ?::TIMESTAMP, ?, ?)
-         ON CONFLICT (signal_id, bucket, source) DO UPDATE SET
-           value = excluded.value, note = excluded.note,
-           updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-        [signalId, toNaiveUtc(bucket), p.value, p.note, now, now, actor ?? null, actor ?? null],
-      )
-    }
+  const now = new Date().toISOString()
+  const entries = [...byBucket]
+  await pointWrite([def], async () => {
+    // Raw sql: a bulk INSERT ... SELECT over unnest() arrays joined to the signal, one statement.
+    await sql`insert into ${sql.table('signal_points')} (signal_id, area, bucket, value, source, note, created_at, updated_at, created_by, updated_by)
+       select s.id, s.area, p.bucket, p.value, 'manual', p.note, ${now}::timestamptz, ${now}::timestamptz, ${actor ?? null}::text, ${actor ?? null}::text
+         from unnest(${entries.map(([b]) => b)}::timestamptz[], ${entries.map(([, p]) => p.value)}::float8[], ${entries.map(([, p]) => p.note)}::text[]) as p(bucket, value, note)
+         join ${sql.table('signals')} s on s.id = ${signalId}
+       on conflict (signal_id, bucket, source) do update set
+         value = excluded.value, note = excluded.note,
+         updated_at = excluded.updated_at, updated_by = excluded.updated_by`.execute(db)
+    emitAreaChange('table:signal_points', [def.area])
   })
-  emitChange('table:signal_points')
   return readSignalPointRecords(signalId).then((rows) =>
     rows.filter((r) => r.source === 'manual' && byBucket.has(r.bucket)),
   )
@@ -402,44 +412,28 @@ export async function replaceLiveSignalPoints(
 ): Promise<number> {
   const defs = new Map<string, SignalDefinition>()
   for (const id of new Set([...signalIds, ...entries.map((e) => e.signal_id)])) {
-    defs.set(id, await requireDefinition(id))
+    defs.set(id, await requireWritableDefinition(id))
   }
   const floored = entries.map((e) => ({
     signal_id: e.signal_id,
     bucket: floorSignalBucket(e.at, defs.get(e.signal_id)!.interval),
     value: checkValue(e.signal_id, e.value),
   }))
-  await ensureSchema()
-  const now = utcNow()
-  await withWrite(async (conn) => {
+  // One transaction: readers never see the window empty between the delete and the insert.
+  await pointWrite([...defs.values()], async (tx) => {
     for (const id of signalIds) {
       const def = defs.get(id)!
-      const from = toNaiveUtc(floorSignalBucket(range.from, def.interval))
-      if (range.to === undefined) {
-        await conn.run(
-          `DELETE FROM signal_points WHERE signal_id = ? AND source = 'live' AND bucket >= ?::TIMESTAMP`,
-          [id, from],
-        )
-      } else {
-        await conn.run(
-          `DELETE FROM signal_points
-            WHERE signal_id = ? AND source = 'live' AND bucket >= ?::TIMESTAMP AND bucket <= ?::TIMESTAMP`,
-          [id, from, toNaiveUtc(floorSignalBucket(range.to, def.interval))],
-        )
-      }
+      const from = floorSignalBucket(range.from, def.interval)
+      const to = range.to === undefined ? undefined : floorSignalBucket(range.to, def.interval)
+      await db.deleteFrom('signal_points')
+        .where('signal_id', '=', id).where('source', '=', 'live').where('bucket', '>=', from)
+        .$if(to !== undefined, (q) => q.where('bucket', '<=', to!))
+        .execute()
     }
-    for (const p of floored) {
-      // ON CONFLICT is belt-and-braces for entries outside the deleted range / duplicate buckets.
-      await conn.run(
-        `INSERT INTO signal_points (signal_id, bucket, value, source, note, created_at, updated_at, created_by, updated_by)
-         VALUES (?, ?::TIMESTAMP, ?, 'live', NULL, ?::TIMESTAMP, ?::TIMESTAMP, NULL, NULL)
-         ON CONFLICT (signal_id, bucket, source) DO UPDATE SET
-           value = excluded.value, updated_at = excluded.updated_at`,
-        [p.signal_id, toNaiveUtc(p.bucket), p.value, now, now],
-      )
-    }
+    // The upsert is belt-and-braces for entries outside the deleted range / duplicate buckets.
+    await insertPoints(tx, floored, 'live')
+    emitAreaChange('table:signal_points', [...defs.values()].map((d) => d.area))
   })
-  emitChange('table:signal_points')
   return floored.length
 }
 
@@ -453,34 +447,25 @@ export async function replaceLiveSignalPoints(
  * process rather than SQL date math, so the ONE bucket implementation stays the only one.
  */
 export async function deriveSignalIncrements(signalId: string): Promise<number> {
-  const def = await requireDefinition(signalId)
+  const def = await requireWritableDefinition(signalId)
   if (def.accumulation !== 'increment') {
     throw new Error(`signal ${signalId} is a '${def.accumulation}' signal - only 'increment' signals derive buckets from events`)
   }
   assertNotConnected(def, 'events')
-  await ensureSchema()
-  const rows = await withRead<{ at: string }>(
-    `SELECT CAST(COALESCE(event_at, received_at) AS VARCHAR) AS at
-       FROM events WHERE kind = ? AND subject = ?`,
-    [SIGNAL_INCREMENT_KIND, signalId],
-  )
   const counts = new Map<string, number>()
-  for (const r of rows) {
-    const b = floorSignalBucket(`${r.at.replace(' ', 'T')}Z`, def.interval)
-    counts.set(b, (counts.get(b) ?? 0) + 1)
-  }
-  const now = utcNow()
-  await withWrite(async (conn) => {
-    await conn.run(`DELETE FROM signal_points WHERE signal_id = ? AND source = 'live'`, [signalId])
-    for (const [bucket, value] of counts) {
-      await conn.run(
-        `INSERT INTO signal_points (signal_id, bucket, value, source, note, created_at, updated_at, created_by, updated_by)
-         VALUES (?, ?::TIMESTAMP, ?, 'live', NULL, ?::TIMESTAMP, ?::TIMESTAMP, NULL, NULL)`,
-        [signalId, toNaiveUtc(bucket), value, now, now],
-      )
+  // Read and replace in one transaction, so an increment recorded meanwhile is either counted here
+  // or re-derives after this commits.
+  await pointWrite([def], async (tx) => {
+    const rows = await db.selectFrom('events').select((eb) => eb.fn.coalesce('event_at', 'received_at').as('at'))
+      .where('kind', '=', SIGNAL_INCREMENT_KIND).where('subject', '=', signalId).execute()
+    for (const r of rows) {
+      const b = floorSignalBucket(r.at, def.interval)
+      counts.set(b, (counts.get(b) ?? 0) + 1)
     }
+    await db.deleteFrom('signal_points').where('signal_id', '=', signalId).where('source', '=', 'live').execute()
+    await insertPoints(tx, [...counts].map(([bucket, value]) => ({ signal_id: signalId, bucket, value })), 'live')
+    emitAreaChange('table:signal_points', [def.area])
   })
-  emitChange('table:signal_points')
   return counts.size
 }
 
@@ -512,7 +497,7 @@ export interface SignalIncrementResult {
  * matching hook (refreshEventSignals).
  */
 export async function recordSignalIncrement(input: SignalIncrementInput): Promise<SignalIncrementResult> {
-  const def = await requireDefinition(input.signal_id)
+  const def = await requireWritableDefinition(input.signal_id)
   if (def.accumulation !== 'increment') {
     throw new Error(
       `signal ${input.signal_id} is a '${def.accumulation}' signal - occurrences only count into 'increment' signals; enter a value with signal-point-set instead`,
@@ -531,6 +516,7 @@ export async function recordSignalIncrement(input: SignalIncrementInput): Promis
     actor: input.actor ?? '',
     source: 'api',
     fields: { signal_id: input.signal_id },
+    areas: [def.area],
   })
   if (fresh) await deriveSignalIncrements(input.signal_id)
   const row = await readRecord<SignalPointRecord>(SIGNAL_POINTS, {

@@ -3,7 +3,7 @@
 // `bun run cli <Tool>` and `box <tool-name>` are the fastest commands this repo has, and they are
 // fast because `mcp-proxy.ts` imports four published packages and nothing from this workspace.
 // Pull in `@silkweave/box-core` - directly, or through a barrel that re-exports it, or by adding a
-// workspace dependency to `packages/cli` - and every tool invocation starts loading DuckDB.
+// workspace dependency to `packages/cli` - and every tool invocation starts loading the warehouse stack.
 //
 // This was a PACKAGE boundary until 2026-09-17: the proxy lived in `apps/cli`, whose package.json
 // simply did not depend on core, so the property was structural and could not regress. Folding the
@@ -53,7 +53,7 @@ test('the MCP proxy reaches nothing in this workspace, so no tool call loads the
   assert.deepEqual(
     forbidden,
     [],
-    `mcp-proxy.ts must not import ${forbidden.join(', ')}. Anything from this workspace drags DuckDB into every tool call.`,
+    `mcp-proxy.ts must not import ${forbidden.join(', ')}. Anything from this workspace drags the warehouse stack into every tool call.`,
   )
   // A relative import out of this package would slip past the allowlist entirely.
   const escapes = files.map((f) => relative(repoRoot, f)).filter((p) => !p.startsWith('packages/cli/src/'))

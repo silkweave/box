@@ -36,6 +36,12 @@ does, instead of serving the promoted release. `backup.gcsBucket` names a privat
 backup is also uploaded to with the host's ambient gcloud credentials; null keeps backups local
 (see [WAREHOUSE.md](WAREHOUSE.md)).
 
+`database.engine` is the engine a new Box creates its database with: `pgrust` (default, downloaded
+on the first start) or `native` (PostgreSQL 18 with pgvector from the host's package manager,
+which `box setup` offers to install). Every start checks it against the active cluster; changing
+it never moves existing data. A mismatch refuses to start and names `box db switch --engine <e>`,
+the offline move to the other engine (see [WAREHOUSE.md](WAREHOUSE.md)).
+
 `background` arms work that runs without a request: `automation` (time and event triggers),
 `chatAgent` (agent replies in chat) and `relay` (the automation recipe's webhook relay connection,
 see `recipes/automation/powerups/relay/`). Arm `relay` on exactly one Box per relay Worker: a
@@ -63,7 +69,7 @@ Core exports `teamDay()` (server, reads `box.json` at call time), `dayInZone()` 
 (pure, `@silkweave/box-core/team-day`); the web app reads the zone from `/api/auth/me` through
 `apps/web/src/lib/teamDay.ts`. API windows of external services and exchange rates stay in UTC.
 
-Core sections include `agent`, `timeZone`, `brand`, `server`, `backup`, `background`, `http`, `auth`, `mcp`,
+Core sections include `agent`, `timeZone`, `brand`, `server`, `backup`, `database`, `background`, `http`, `auth`, `mcp`,
 `stack`, `recipes`, `signals`, `browsers`, `agentMcp`, `accounts`, `credentials`, `agentProfiles` and
 `workerdeck`. Feature settings live under `features.<id>`, keyed by the feature id, and are
 described in the documentation of the recipe the feature came from (`recipes/<id>/`). For example,

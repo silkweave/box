@@ -5,12 +5,13 @@ import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { SESSION_COOKIE, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, isRawUploadRoute, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
+import { SESSION_COOKIE, accessOf, checkCoverageAtBoot, recoverPolicyJournal, asSystem, startDatabase, startPolicyListener, fillRequest, runInRequest, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, isRawUploadRoute, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
 import { AppModule, trpcTransport } from './app.module.js'
 import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
 import { bootWorkerdeck, shutdownWorkerdeck } from './agent/workerdeck.host.js'
 import { servicePort, verifyLoopback } from './agent/loopback-guard.js'
+import { AreaAccessFilter } from './auth/area-access.filter.js'
 import { AuthGuard } from './auth/auth.guard.js'
 import { createDevProxyGuard, devSourceScope } from './auth/dev-proxy-guard.js'
 import { join } from 'node:path'
@@ -51,13 +52,24 @@ async function bootstrap(): Promise<void> {
   // maintenance boot reads every capability off, so it skips this and stays able to repair.
   assertBackgroundDeclared()
 
-  // Seed the agent principals before anything can reference them (the scheduler's attribution, the
-  // agent's seat in chat, alert delivery into rooms all assume the row): upsert each configured
-  // agent, retire agent rows whose file is gone. It also applies the schema, which is otherwise lazy.
-  // Deliberately NOT wrapped in a try: a Box that cannot write its own warehouse should fail here,
-  // loudly, rather than at the first request.
+  // The database: adopt the supervisor's cluster (or own one when run unsupervised), bring the
+  // schema, role logins and catalog check to service, then point the executor at it. Then seed the
+  // agent principals before anything can reference them (the scheduler's attribution, the agent's
+  // seat in chat, alert delivery into rooms all assume the row): upsert each configured agent,
+  // retire agent rows whose file is gone. Deliberately NOT wrapped in a try: a Box that cannot open
+  // or write its own database should fail here, loudly, rather than at the first request.
   diagnostic('app', 'boot.schema.start')
-  await ensureAgentPrincipals()
+  const database = await startDatabase('cli')
+  // Policy changes committed by another process (a CLI role change) reach this one at once; the
+  // executor's admission check is the guarantee, this only shortens the wait (PERMISSIONS 11.10).
+  await startPolicyListener()
+  // A file-backed policy change a crash interrupted (agent config, toolsets) is resumed or rolled
+  // back before the agents are reconciled from their files (PERMISSIONS 9.2).
+  await recoverPolicyJournal()
+  await asSystem('boot: agent principals', () => ensureAgentPrincipals())
+  // Agent config edited by hand: seats whose agent is no longer covered by its readers are
+  // disabled until an admin resolves them; the rest is logged and refused at write time.
+  await checkCoverageAtBoot()
   diagnostic('app', 'boot.schema.ready', { durationMs: Math.round(performance.now() - started) })
 
   diagnostic('app', 'boot.nest.start')
@@ -68,6 +80,10 @@ async function bootstrap(): Promise<void> {
   diagnostic('app', 'boot.nest.ready', { durationMs: Math.round(performance.now() - started) })
   // Request diagnostics name a route root only when core or a registered feature serves it.
   addRouteRoots(SERVER_FEATURE_LIST.flatMap((f) => [f.id, ...(f.routeRoots ?? [])]))
+  // The request context (core request-context.ts), opened FIRST so it survives every middleware
+  // below: an empty holder per HTTP request that AuthGuard, a path mount or the connection endpoint
+  // fills once it knows the principal. tRPC and MCP calls open their own per call (call-context.ts).
+  app.use((_req: IncomingMessage, _res: ServerResponse, next: () => void) => runInRequest(next))
   app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => { traceHttp('app', req, res, true); next() })
   app.setGlobalPrefix('api')
 
@@ -100,6 +116,7 @@ async function bootstrap(): Promise<void> {
   // leaked anonymously until 9339a16 proved it. The real boundary there is class-level
   // @UseGuards(AuthGuard) on every data controller; add it to any new controller.
   app.useGlobalGuards(new AuthGuard(app.get(Reflector)))
+  app.useGlobalFilters(new AreaAccessFilter())
 
   // Three frontend topologies. `--dev` (box dev) or a configured viteDevUrl: every SPA request goes
   // to Vite. Supervised without `--dev` (box start): the dual mode - everyone gets the promoted
@@ -164,6 +181,7 @@ async function bootstrap(): Promise<void> {
         }
         return
       }
+      fillRequest({ principal, access: await accessOf(principal), credential: viaBearer ? 'bearer' : 'session', handler: `mount:${mount.id}` })
       setTrustedContentHeaders(res)
       await mount.handle({ req, res, path, principal, credential: viaBearer ? 'bearer' : 'session' })
     })().catch((err: unknown) => {
@@ -196,6 +214,7 @@ async function bootstrap(): Promise<void> {
       if (typeof authz !== 'string' || !/^Bearer\s+/i.test(authz)) return json(401, { message: 'bearer token required' })
       const principal = await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim())
       if (!principal) return json(401, { message: 'invalid token' })
+      fillRequest({ principal, access: await accessOf(principal), credential: 'bearer', handler: `mcp-connection:${id}` })
       await directory.serve({ req, res, id, principal })
     })().catch((err: unknown) => {
       diagnostic('app', 'mcp-connection.error', { connection: id, error: errorKind(err) })
@@ -213,7 +232,7 @@ async function bootstrap(): Promise<void> {
   // agent, which sweeps orphan sessions against that URL immediately.
   // Warm the default-agent-profile cache (core agent-defaults.ts) before anything can start an agent:
   // the engine rule reads it synchronously. A failure only means the deployment rule applies.
-  await readUsers().catch((err: unknown) => diagnostic('app', 'boot.agent-defaults.error', { error: errorKind(err) }))
+  await asSystem('boot: agent defaults', () => readUsers()).catch((err: unknown) => diagnostic('app', 'boot.agent-defaults.error', { error: errorKind(err) }))
   try {
     diagnostic('app', 'boot.workerdeck.start')
     await bootWorkerdeck()
@@ -295,7 +314,7 @@ async function bootstrap(): Promise<void> {
   // authenticated agent mount, everything else to the Vite HMR proxy (dev only; in prod other
   // upgrades are refused). The HMR socket is not put behind the
   // dev proxy guard: it carries no file reads. Vite creates the browser-facing environment with
-  // `disableFetchModule: true` (vite 8.3.0, `defaultCreateClientDevEnvironment`), so the one
+  // `disableFetchModule: true` (vite 8.3.7, `defaultCreateClientDevEnvironment`), so the one
   // `vite:invoke` handler that could return module source over the socket throws instead.
   app.getHttpServer().on('upgrade', (req: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer) => {
     traceSocket('app', req, socket, true)
@@ -326,6 +345,12 @@ async function bootstrap(): Promise<void> {
       trpcTransport.close()
       void shutdownWorkerdeck()
         .catch((err: unknown) => console.error('  agent: drain failed -', err))
+        // Module shutdown hooks (chat closes its SQLite store, which checkpoints the WAL; a Builder
+        // backup refuses an unflushed one), bounded so a stuck connection cannot hold the exit.
+        .then(() => Promise.race([app.close(), new Promise((resolve) => setTimeout(resolve, 10_000))]))
+        .catch((err: unknown) => console.error('  modules: shutdown failed -', err))
+        .then(() => database.close())
+        .catch((err: unknown) => console.error('  database: close failed -', err))
         .finally(() => { stopHeartbeat(); diagnostic('app', 'shutdown.finish'); process.exit(0) })
     })
   }

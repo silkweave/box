@@ -6,7 +6,7 @@
 //
 //   box auth replace <old-id> <new-id> [--name "Display Name"]
 
-import { ensureSchema, replaceAgent } from '@silkweave/box-core'
+import { asSystem, withDatabase, replaceAgent } from '@silkweave/box-core'
 import { commandError, commandHeader, commandLine, commandWarning } from '../../../packages/cli/src/command-ui.js'
 
 async function main(): Promise<void> {
@@ -22,7 +22,6 @@ async function main(): Promise<void> {
     commandError('Usage: box auth replace <old-id> <new-id> [--name "Display Name"]')
     process.exit(1)
   }
-  await ensureSchema()
   const result = await replaceAgent({ from, to, name })
   commandHeader('auth replace')
   commandLine(`${to} replaces ${from}${result.system ? ' as the system principal' : ''}; ${from} is retired.`)
@@ -36,7 +35,8 @@ async function main(): Promise<void> {
   commandLine(`Next: box auth token ${to} --quiet, then update every client that used ${from}'s token (mcp.token, MCP profiles).`, 'muted')
 }
 
-main()
+// A CLI script: adopts the running Box's database (or owns it while it runs), as named system work.
+asSystem('cli: auth replace', () => withDatabase(main))
   .then(() => process.exit(0))
   .catch((err) => {
     commandError(err instanceof Error ? err.message : String(err))

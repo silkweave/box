@@ -94,9 +94,16 @@ export interface BoardNodeKind {
   layer: number
   /** Always on the top row when the board is arranged, above everything it does not move. */
   lead?: boolean
+  /**
+   * The owning area of every object of this kind (planning's goals and initiatives: `planning`).
+   * A caller without read on it gets placeholders and no candidates, and the kind's functions are not
+   * called for it. Leave unset when the objects carry their own areas (signals): the kind's reads go
+   * through accessors that filter row by row, and what they leave out shows as a placeholder.
+   */
+  area?: string
   /** Change-feed scopes whose events can alter this kind's cards or edges. */
   watch: string[]
-  /** The refs that exist (write validation). */
+  /** The refs that exist and the caller can read (write validation, placeholders). */
   exists: (refs: string[]) => Promise<Set<string>>
   /** Cards for the refs that resolve; a missing ref is simply absent from the map. */
   resolve: (refs: string[]) => Promise<Map<string, BoardNodeCard>>

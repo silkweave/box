@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Archive, ArchiveRestore, ArrowDownRight, ArrowLeft, ArrowUpRight, Minus, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { canAccessArea, useAccess } from '@/lib/access'
 import type { Channel, Signal, SignalDataSource } from '../../types.ts'
 import { channelLabel } from '../../types.ts'
 import { setSignalArchivedState, setSignalOwner, useSignalsDataWithArchived } from '../lib/useSignalsData.ts'
@@ -12,6 +13,7 @@ import { useSettingsDialog } from '../../lib/settingsDialog.ts'
 import { signalLabel, signalMap } from '../lib/signalLabel.ts'
 import { SignalChart } from '../components/SignalChart.tsx'
 import { SignalDialog } from '../components/SignalDialog.tsx'
+import { SignalUsage } from '../components/SignalUsage.tsx'
 import { SignalPointsEditor } from '../components/SignalPointsEditor.tsx'
 import { SETTINGS_GUTTER, Button, UserPicker } from '@silkweave/box-ui'
 import { computeDelta, formatBucket, formatDelta, formatNumber, relativeTime } from '../../lib/format.ts'
@@ -26,6 +28,7 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
   const { open } = useSettingsDialog()
   const { principal } = useAuth()
   const isAdmin = principal?.role === 'admin'
+  useAccess() // re-render when access changes
   const [editOpen, setEditOpen] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [archiveError, setArchiveError] = useState<string | null>(null)
@@ -135,7 +138,7 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
               {signal.archived_at && <ArchivedBadge className='font-sans' />}
             </h1>
           </div>
-          {/* Definitions are configuration - editing is admin-only, like the owner picker below. */}
+          {/* Write on the signal's area edits a definition; archiving is admin-only, like the owner picker below. */}
           <div className='flex shrink-0 items-center gap-2'>
             {isAdmin && (
               <Button
@@ -147,9 +150,11 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
                 {signal.archived_at ? <ArchiveRestore /> : <Archive />} {signal.archived_at ? 'Unarchive' : 'Archive'}
               </Button>
             )}
-            <Button size='sm' variant='outline' onClick={() => setEditOpen(true)}>
-              <Pencil /> Edit
-            </Button>
+            {canAccessArea(signal.area, 'write') && (
+              <Button size='sm' variant='outline' onClick={() => setEditOpen(true)}>
+                <Pencil /> Edit
+              </Button>
+            )}
           </div>
         </div>
         {signal.archived_at && (
@@ -193,6 +198,7 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
         {signal.description && (
           <p className='mt-3 max-w-prose text-body-sm leading-relaxed text-muted-foreground'>{signal.description}</p>
         )}
+        <SignalUsage signalId={signal.id} className='mt-3' />
         {signal.depends_on.length > 0 && (
           <p className='mt-2 text-label text-muted-foreground'>
             Driven by:{' '}
@@ -300,7 +306,7 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
 }
 
 /**
- * The connection line for a signal bound to a data source: which source, which measure, and when it
+ * The connection line for a signal bound to a data source: which source, which tracker, and when it
  * last landed. Three honest states beyond "fine": the source was DELETED out from under the binding
  * (dangling - the points stay, they just stop refreshing), the last sync FAILED, or it has gone
  * STALE (read-side only, ~2x the daily cadence every source runs on - no stored staleness).
@@ -323,7 +329,7 @@ function ConnectionChip({ signal, sources }: { signal: Signal; sources: SignalDa
         </>
       ) : (
         <>
-          {source.label} · <span title={`provider measure key: ${signal.measure_key}`}>{signal.measure_key}</span> ·{' '}
+          {source.label} · <span title={`provider tracker key: ${signal.tracker_key}`}>{signal.tracker_key}</span> ·{' '}
           {source.last_sync_at ? (
             <span title={source.last_sync_at}>
               {failed ? 'last sync FAILED ' : 'synced '}

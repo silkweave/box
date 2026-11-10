@@ -66,8 +66,8 @@ None.
    its ledger), one table-altering statement each:
 
    ```ts
-   { name: '<nnn>-tasks-sprint-id', statements: ['ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sprint_id VARCHAR'] },
-   { name: '<nnn+1>-tasks-slot-date', statements: ['ALTER TABLE tasks ADD COLUMN IF NOT EXISTS slot_date DATE'] },
+   { name: '<nnn>-tasks-sprint-id', statements: ['ALTER TABLE planning.tasks ADD COLUMN IF NOT EXISTS sprint_id text'] },
+   { name: '<nnn+1>-tasks-slot-date', statements: ['ALTER TABLE planning.tasks ADD COLUMN IF NOT EXISTS slot_date date'] },
    ```
 
    Both are nullable, so no NOT NULL step. Back up first (`box db backup`) and rehearse on a
@@ -93,7 +93,7 @@ None.
 Reverse the Steps: remove the registrations, the seams and the wholly owned files, and `sprints`
 from `recipes.planning.powerups`. Ask the owner what to do with existing sprints and check-ins
 (tasks made on a sprint grid are ordinary standalone tasks and stay). Then drop what is unused with
-new migrations, one each (back up first): `ALTER TABLE tasks DROP COLUMN sprint_id`, `ALTER TABLE
-tasks DROP COLUMN slot_date`, and, if the owner lets the rows go, `DROP TABLE sprint_checkins` and
-`DROP TABLE sprints` with both added to the manifest's `retiredTables` so the ownership check counts
+new migrations, one each (back up first): `ALTER TABLE planning.tasks DROP COLUMN sprint_id`, `ALTER TABLE
+planning.tasks DROP COLUMN slot_date`, and, if the owner lets the rows go, `DROP TABLE planning.sprint_checkins` and
+`DROP TABLE planning.sprints` with both added to the manifest's `retiredTables` so the ownership check counts
 them as planning's. Run `box verify` and load `/initiatives` and `/tasks`.

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -13,6 +13,7 @@ import {
   startBuilder,
   readBuilderPendingChanges,
   stopBuilder,
+  type BuilderDatabasePort,
   type BuilderLifecyclePaths,
 } from './builder-lifecycle.js'
 
@@ -39,7 +40,7 @@ describe('live Builder lifecycle', () => {
     writeFileSync(join(repoRoot, 'box.local.json'), '{"local":true}\n')
     mkdirSync(join(instanceDir, 'config'), { recursive: true })
     mkdirSync(join(instanceDir, 'chat-uploads', 'aa'), { recursive: true })
-    writeFileSync(join(instanceDir, 'data.db'), 'warehouse-v1\n')
+    writeFileSync(join(instanceDir, 'store.db'), 'warehouse-v1\n')
     writeFileSync(join(instanceDir, 'config', 'box.json'), '{"name":"fixture"}\n')
     writeFileSync(join(instanceDir, 'chat-uploads', 'aa', 'upload'), 'attachment-v1\n')
     return { repoRoot, instanceDir }
@@ -60,7 +61,7 @@ describe('live Builder lifecycle', () => {
     expect(result.state.session).toBeNull()
     expect(result.state.branch).toMatch(/^builder\/live\//)
     expect(git(paths.repoRoot, 'branch', '--show-current')).toBe(result.state.branch)
-    expect(result.backup.files.map((file) => file.path)).toEqual(['chat-uploads/aa/upload', 'config/box.json', 'data.db'])
+    expect(result.backup.files.map((file) => file.path)).toEqual(['chat-uploads/aa/upload', 'config/box.json', 'store.db'])
     expect(result.backup.config?.files.map((file) => file.path)).toEqual(['box.json', 'box.local.json'])
     expect(existsSync(builderControlPath(paths))).toBe(true)
     expect(existsSync(join(builderBackupRoot(paths), result.backup.id, 'manifest.json'))).toBe(true)
@@ -165,12 +166,12 @@ describe('live Builder lifecycle', () => {
   it('restores a verified instance snapshot and records a pre-restore safety backup', async () => {
     const paths = fixture()
     const initial = await backupBuilder('manual', { paths, offline: true })
-    writeFileSync(join(paths.instanceDir, 'data.db'), 'warehouse-v2\n')
+    writeFileSync(join(paths.instanceDir, 'store.db'), 'warehouse-v2\n')
     writeFileSync(join(paths.instanceDir, 'config', 'box.json'), '{"name":"changed"}\n')
     writeFileSync(join(paths.repoRoot, 'box.local.json'), '{"local":false}\n')
 
     const restored = await restoreBuilder(initial.id, { paths, offline: true })
-    expect(readFileSync(join(paths.instanceDir, 'data.db'), 'utf8')).toBe('warehouse-v1\n')
+    expect(readFileSync(join(paths.instanceDir, 'store.db'), 'utf8')).toBe('warehouse-v1\n')
     expect(readFileSync(join(paths.instanceDir, 'config', 'box.json'), 'utf8')).toBe('{"name":"fixture"}\n')
     expect(readFileSync(join(paths.repoRoot, 'box.json'), 'utf8')).toBe('{"name":"fixture-root"}\n')
     expect(readFileSync(join(paths.repoRoot, 'box.local.json'), 'utf8')).toBe('{"local":true}\n')
@@ -178,11 +179,104 @@ describe('live Builder lifecycle', () => {
     expect(readBuilderControl(paths).backups.map((backup) => backup.id)).toContain(restored.safetyBackup.id)
   })
 
+  it('never copies or removes the database clusters and engines', async () => {
+    const paths = fixture()
+    for (const dir of ['db/pgrust-1/base', 'engines/pgrust']) mkdirSync(join(paths.instanceDir, dir), { recursive: true })
+    writeFileSync(join(paths.instanceDir, 'db', 'pgrust-1', 'base', 'page'), 'cluster-v1\n')
+    writeFileSync(join(paths.instanceDir, 'engines', 'pgrust', 'postgres'), 'binary\n')
+    const initial = await backupBuilder('manual', { paths, offline: true })
+    expect(initial.files.map((file) => file.path).filter((path) => /^(db|engines)\//.test(path))).toEqual([])
+
+    writeFileSync(join(paths.instanceDir, 'db', 'pgrust-1', 'base', 'page'), 'cluster-v2\n')
+    await restoreBuilder(initial.id, { paths, offline: true })
+    expect(readFileSync(join(paths.instanceDir, 'db', 'pgrust-1', 'base', 'page'), 'utf8')).toBe('cluster-v2\n')
+    expect(existsSync(join(paths.instanceDir, 'engines', 'pgrust', 'postgres'))).toBe(true)
+  })
+
+  // A database port that writes a restore point's three files and, on restore, applies the staged
+  // swaps the way core's journal does (live -> parked, staged -> live).
+  const fakeDatabase = (log: string[]): BuilderDatabasePort => ({
+    async dump(dir) {
+      log.push('dump')
+      mkdirSync(dir, { recursive: true })
+      for (const name of ['box.dump', 'agents.json', 'manifest.json']) writeFileSync(join(dir, name), `${name}\n`)
+    },
+    async restore({ point, engine, stageFiles }) {
+      log.push(`restore ${engine} ${existsSync(join(point, 'box.dump'))}`)
+      for (const w of stageFiles('t1')) {
+        if (w.hadLive && existsSync(w.live)) renameSync(w.live, w.parked)
+        if (existsSync(w.staged)) renameSync(w.staged, w.live)
+        rmSync(w.parked, { recursive: true, force: true })
+      }
+    },
+  })
+
+  it('carries the database in a Builder backup and restores files, config and database together', async () => {
+    const paths = fixture()
+    const log: string[] = []
+    const database = fakeDatabase(log)
+    writeFileSync(join(paths.repoRoot, 'box.local.json'), '{"local":true,"database":{"engine":"native"}}\n')
+    const initial = await backupBuilder('manual', { paths, offline: true, database })
+    expect(initial.database?.files.map((file) => file.path)).toEqual(['box.dump', 'agents.json', 'manifest.json'])
+
+    writeFileSync(join(paths.instanceDir, 'store.db'), 'warehouse-v2\n')
+    writeFileSync(join(paths.instanceDir, 'stray.txt'), 'created after the backup\n')
+    writeFileSync(join(paths.repoRoot, 'box.local.json'), '{"local":false}\n')
+    const restored = await restoreBuilder(initial.id, { paths, offline: true, database })
+    expect(log).toEqual(['dump', 'dump', 'restore native true'])
+    expect(readFileSync(join(paths.instanceDir, 'store.db'), 'utf8')).toBe('warehouse-v1\n')
+    expect(existsSync(join(paths.instanceDir, 'stray.txt'))).toBe(false)
+    expect(readFileSync(join(paths.repoRoot, 'box.local.json'), 'utf8')).toContain('"engine":"native"')
+    expect(restored.safetyBackup.database).toBeDefined()
+    expect(readdirSync(paths.instanceDir).filter((name) => name.startsWith('.builder-'))).toEqual([])
+  })
+
+  it('keeps every staged and parked path while the database journal is unsettled', async () => {
+    const paths = fixture()
+    const database = fakeDatabase([])
+    const initial = await backupBuilder('manual', { paths, offline: true, database })
+    writeFileSync(join(paths.instanceDir, 'store.db'), 'warehouse-v2\n')
+    // A restore whose rollback failed: half the swaps applied, the journal left for the next start.
+    const failing: BuilderDatabasePort = {
+      dump: database.dump,
+      async restore({ stageFiles }) {
+        const [first] = stageFiles('t2')
+        if (first?.hadLive) renameSync(first.live, first.parked)
+        mkdirSync(join(paths.instanceDir, 'db'), { recursive: true })
+        writeFileSync(join(paths.instanceDir, 'db', 'switch.json'), '{"format":"box-db-operation/1"}\n')
+        throw new Error('restore failed and rolling back also failed')
+      },
+    }
+    await expect(restoreBuilder(initial.id, { paths, offline: true, database: failing })).rejects.toThrow(/rolling back also failed/)
+    expect(readdirSync(paths.instanceDir).filter((name) => name.startsWith('.builder-')).sort()).toEqual(['.builder-parked-t2', '.builder-restore-t2'])
+    expect(readdirSync(join(paths.instanceDir, '.builder-parked-t2')).length).toBe(1)
+    // The next start settles the journal (rollback: parked back, staged root config removed); the
+    // next restore then clears the instance staging roots that are left.
+    const parked = readdirSync(join(paths.instanceDir, '.builder-parked-t2'))[0]!
+    renameSync(join(paths.instanceDir, '.builder-parked-t2', parked), join(paths.instanceDir, parked))
+    for (const name of readdirSync(paths.repoRoot)) if (name.startsWith('.builder-')) rmSync(join(paths.repoRoot, name), { force: true })
+    rmSync(join(paths.instanceDir, 'db', 'switch.json'))
+    await restoreBuilder(initial.id, { paths, offline: true, database })
+    expect(readdirSync(paths.instanceDir).filter((name) => name.startsWith('.builder-'))).toEqual([])
+  })
+
+  it('refuses to restore a Builder backup without a database when the database is managed', async () => {
+    const paths = fixture()
+    const initial = await backupBuilder('manual', { paths, offline: true })
+    await expect(restoreBuilder(initial.id, { paths, offline: true, database: fakeDatabase([]) })).rejects.toThrow(/carries no database/)
+  })
+
+  it('refuses a Builder backup while a SQLite store is still open', async () => {
+    const paths = fixture()
+    writeFileSync(join(paths.instanceDir, 'chat.db-wal'), 'uncheckpointed')
+    await expect(backupBuilder('manual', { paths, offline: true })).rejects.toThrow(/SQLite stores still open/)
+  })
+
   it('rejects a corrupted backup and a backup from another codebase revision', async () => {
     const paths = fixture()
     const initial = await backupBuilder('manual', { paths, offline: true })
-    writeFileSync(join(paths.instanceDir, 'data.db'), 'tampered backup source\n')
-    writeFileSync(join(builderBackupRoot(paths), initial.id, 'data.db'), 'tampered backup\n')
+    writeFileSync(join(paths.instanceDir, 'store.db'), 'tampered backup source\n')
+    writeFileSync(join(builderBackupRoot(paths), initial.id, 'store.db'), 'tampered backup\n')
     await expect(restoreBuilder(initial.id, { paths, offline: true })).rejects.toThrow(/failed validation/)
 
     const fresh = fixture()

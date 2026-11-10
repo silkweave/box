@@ -2,10 +2,13 @@
 // hand-maintained list: it is the union of what every present feature declares in its manifest.
 
 import { FEATURE_LIST } from '../generated/features.js'
+import { storedArea } from '../auth/owning-area.js'
+import { canReachArea } from '../request-context.js'
 import { CORE_ACTIONS } from './core-actions.js'
 import type { ActionInfo, ActionRunOpts, ActionSpec, IngestProgress } from './types.js'
 
 let cache: Map<string, ActionSpec> | null = null
+let owners: Map<string, string> | null = null
 
 function index(): Map<string, ActionSpec> {
   if (cache) return cache
@@ -17,6 +20,7 @@ function index(): Map<string, ActionSpec> {
   const owner = new Map<string, string>()
   for (const [id, specs] of contributions) {
     for (const spec of specs) {
+      if (spec.area !== undefined && id !== 'core') throw new Error(`action "${spec.id}" of "${id}" may not declare an area: a feature's actions are its own`)
       const prev = owner.get(spec.id)
       if (prev) throw new Error(`action "${spec.id}" is declared by both "${prev}" and "${id}"`)
       owner.set(spec.id, id)
@@ -24,12 +28,36 @@ function index(): Map<string, ActionSpec> {
     }
   }
   cache = map
+  owners = owner
   return map
 }
 
-/** Every runnable action, catalog view (no runner) - the dashboard grid, the scheduler, MCP. */
+/** The action id of agent-job runs (`automation_runs.action_id`); owned by the automation area. */
+export const AGENT_RUN_ACTION = 'agent'
+
+/** Whether a run row is an agent job's (`action_id` 'agent'). */
+export function isAgentRun(actionId: string): boolean {
+  return actionId === AGENT_RUN_ACTION
+}
+
+/**
+ * The owning area of an action's runs (PERMISSIONS 8.1): its declaring feature, `ops` for core
+ * actions, `automation` for agent jobs; `admin` for an id nothing declares (8.3).
+ */
+export function actionOwner(actionId: string): string {
+  index()
+  const declared = owners!.get(actionId)
+  if (declared) return declared === 'core' ? storedArea(cache!.get(actionId)!.area ?? 'ops') : declared
+  if (actionId === AGENT_RUN_ACTION && FEATURE_LIST.some((f) => f.id === 'automation')) return 'automation'
+  return 'admin'
+}
+
+/**
+ * Every runnable action, catalog view (no runner) - the dashboard grid, the scheduler, MCP. A
+ * request sees the actions whose owning area it can read (PERMISSIONS 8.1); system sees all.
+ */
 export function listAutomationActions(): ActionInfo[] {
-  return [...index().values()].map(({ run: _run, ...info }) => info)
+  return [...index().values()].filter((a) => canReachArea(actionOwner(a.id), 'read')).map(({ run: _run, ...info }) => info)
 }
 
 /** The full spec, or null if nothing declares the id. */

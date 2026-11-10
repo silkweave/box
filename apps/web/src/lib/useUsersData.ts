@@ -60,12 +60,25 @@ export async function createAgent(input: { id: string; name: string; role: 'admi
 }
 
 /** Move a person between admin and member (admin only; never yourself, never an agent), then reload. */
-export async function setUserRole(id: string, role: 'admin' | 'member'): Promise<void> {
-  await trpc.usersSetRole.mutate({ id, role })
+export async function setUserRole(id: string, role: string, opts: { revision?: number; confirm?: 'remove-members' } = {}): Promise<void> {
+  await trpc.usersSetRole.mutate({ id, role, ...opts })
   await store.reload()
 }
 
 /** Delete a user (the server also unassigns it everywhere), then reload. */
+/** The coverage preview of a policy change (PERMISSIONS 7.2): the violations it would cause. */
+export interface PolicyPreview {
+  revision: number
+  messages: string[]
+  confirm: 'remove-members' | null
+  options: string[]
+}
+
+/** Preview a user's or an agent's role change before saving it. */
+export async function previewRoleChange(kind: 'user-role' | 'agent-role', id: string, role: string): Promise<PolicyPreview> {
+  return (await trpc.rolesPreview.mutate({ kind, id, role })) as PolicyPreview
+}
+
 export async function deleteUser(id: string): Promise<void> {
   await trpc.usersDelete.mutate({ id })
   await store.reload()

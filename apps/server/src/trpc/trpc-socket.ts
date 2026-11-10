@@ -1,17 +1,48 @@
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { isStreamingAction } from '@silkweave/core'
+import { isStreamingAction, type Action, type SilkweaveContext } from '@silkweave/core'
 import { trpc } from '@silkweave/nestjs/trpc'
-import { buildRouter, createActionLogger } from '@silkweave/trpc'
+import { buildRouter, createActionLogger, mapError } from '@silkweave/trpc'
+import { initTRPC } from '@trpc/server'
 import { applyWSSHandler } from '@trpc/server/adapters/ws'
 import { WebSocketServer } from 'ws'
 import { sameOrigin } from '@silkweave/box-core'
+import { withCallContext } from '../auth/call-context.js'
 
 type TrpcAdapter = ReturnType<typeof trpc>
 type RegisterArgs = Parameters<TrpcAdapter['register']>[0]
 
 /** Live feeds are small JSON frames; the client sends only subscribe and stop messages. */
 const MAX_PAYLOAD_BYTES = 64 * 1024
+
+/**
+ * The socket's router: each streaming action as a subscription whose call context carries tRPC's
+ * `signal`, which aborts when the client stops that subscription or its socket closes. The adapter's
+ * own router drops the signal, so a feed parked in a wait would hold its listeners until its next
+ * wake. Procedure keys come from the adapter's router, so both routers name an action the same way.
+ */
+function socketRouter(actions: Action[]) {
+  const t = initTRPC.context<{ silkweaveContext: SilkweaveContext }>().create()
+  const record: Record<string, ReturnType<typeof subscription>> = {}
+  function subscription(action: Action) {
+    const run = action.run as (input: unknown, context: SilkweaveContext) => AsyncIterable<unknown>
+    return t.procedure.input(action.input as never).subscription(async function* ({ input, ctx, signal }) {
+      try {
+        for await (const chunk of run(input, ctx.silkweaveContext.fork({ signal }))) {
+          if (signal?.aborted) return
+          yield chunk
+        }
+      } catch (error) {
+        throw mapError(error)
+      }
+    })
+  }
+  for (const action of actions) {
+    const [key] = Object.keys((buildRouter([action]) as unknown as { _def: { procedures: Record<string, unknown> } })._def.procedures)
+    record[key!] = subscription(action)
+  }
+  return t.router(record)
+}
 
 /**
  * The tRPC adapter plus one WebSocket per tab for live subscriptions.
@@ -33,13 +64,15 @@ export function trpcWithSocket(options: Parameters<typeof trpc>[0]): { adapter: 
   let ready = false
   const adapter: TrpcAdapter = {
     ...http,
-    register(args: RegisterArgs) {
+    register(registered: RegisterArgs) {
+      // Every call, over HTTP (batches included) and over the socket, runs in its own request frame.
+      const args = { ...registered, actions: registered.actions.map(withCallContext) }
       http.register(args)
       const { baseContext } = args
       const logger = createActionLogger()
       applyWSSHandler({
         wss,
-        router: buildRouter(args.actions.filter(isStreamingAction)),
+        router: socketRouter(args.actions.filter(isStreamingAction)),
         createContext: ({ req }) => ({ silkweaveContext: baseContext.fork({ logger, request: req }) }),
         // Server pings find sockets whose peer vanished (a sleeping laptop, a dropped network).
         keepAlive: { enabled: true, pingMs: 30_000, pongWaitMs: 10_000 },

@@ -1,6 +1,6 @@
 # chat gotchas
 
-Back up chat.db before migrations. Chat applies migrations one transaction at a time, so an interrupted run may have completed a prefix. Inspect its ledger and restore the matching application/data pair when recovery is needed.
+Chat's tables are in the `chat` schema of the Box database and its migrations run on the common runner (`core.schema_migrations`, keys `chat:<name>`); the runner takes a `pre-migrate` restore point before a pending migration or a changed model. Attachment bytes are files under `data/chat-uploads/` and are not in a restore point: back them up with `chat-backup` or the file backup.
 
 The feature id (`chat`, the same as the recipe id) is part of runtime registration and migration identity. Keep it stable. Existing
 migrations are byte-exact source: preserve names, order, evaluated SQL, and callback behavior.
@@ -28,18 +28,30 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   holds the IPv6 wildcard, and every MCP write from a "local" turn then lands on the other machine
   with nova's real credentials. A second Box must therefore never be one default away from the
   first: give it its own `server.port` and `server.vitePort`.
-- **Never `cp` chat.db.** Recent commits live in `chat.db-wal`; a copied file opens perfectly clean
-  and has silently lost the last hour. Use `VACUUM INTO` - which is what `chatBackup`,
-  `backupChat()` and the pre-migration snapshot all do.
-- **Never edit, rename or reorder a shipped migration.** The name is the ledger key in a database
-  that is already deployed. Append `016` instead.
+- **Never edit, rename or reorder a shipped migration.** The key is `chat:<name>` with a checksum;
+  new behaviour is a new migration.
 - **Do not start an agent turn from inside a write.** `ChatStore.post` commits message + mentions +
-  outbox in one transaction and publishes on the bus strictly after; that is why `chat-agent.ts` and
-  `notifications/delivery.ts` are both bus subscribers. Holding a worker's REST latency inside a
-  SQLite write transaction is the one thing a single-writer file database must never do.
-- **`chatStore()` is a process-wide long-lived handle.** Close it on shutdown (`closeChatStore()` in
-  `onModuleDestroy`, timers stopped first) or WAL never checkpoints cleanly. Tests construct
-  `ChatStore` directly instead.
+  outbox in one transaction and publishes on the bus strictly after (`afterCommit`); that is why
+  `chat-agent.ts` and `notifications/delivery.ts` are both bus subscribers. A worker's REST latency
+  inside the posting transaction would hold the room's row lock and the outbox counter.
+- **The outbox counter is the feed's order; the bus is not.** `chat_event_head` is bumped last in
+  the posting transaction and held until commit, so ids commit in id order. Bus events can still
+  arrive out of order (each follows its own COMMIT acknowledgement), so the feed drains the outbox
+  on a gap instead of trusting callback order; do not deliver from the bus payload alone past a
+  gap. Do not replace the counter with a sequence,
+  and keep any new write that adds outbox rows going through `post`; an import sets `last_id` to the
+  highest imported id, or the next post collides.
+- **The store is asynchronous; the agent's writes are ordered.** A checkpoint that overtook a turn's
+  final write would cut the answer short, so `chat-agent.ts` queues writes per message and per
+  session row. Keep new fire-and-forget writes on those queues.
+- **A blob before its row, a collection after its rows.** Write the bytes first, collect only after
+  the referencing rows are committed gone and a fresh read finds none, under the per-address lock
+  (store.ts "Blob sequencing"). A sweep never removes a file younger than the orphan window.
+- **Core's agent-session rule is synchronous.** It reads the store's in-memory readability snapshot
+  (`canReadRoomNow`); a new write that changes a room's mode or members must update it after commit
+  (`noteRoomAccess`) or the transcript readers drift from the room's readers.
+- **Tests** construct `ChatStore` with their own blob directory and empty the chat tables between
+  cases; the per-file database clone is the cluster's (`vitest.setup.ts`).
 - **Import `ComposerLazy`, never `Composer`.** The composer pulls in the rich editor; the room list
   does not need it.
 - **`index.tsx` sits on the web feature-registry import cycle.** Never read a registry binding at

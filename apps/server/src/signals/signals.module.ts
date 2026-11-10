@@ -1,5 +1,5 @@
 import { Module, type OnModuleInit } from '@nestjs/common'
-import { evaluateSignalEvents, onEvent, onRunOutcome, refreshEventSignals, watchSignalWrites } from '@silkweave/box-core'
+import { evaluateSignalEvents, onEvent, onRunOutcome, refreshEventSignals, watchSignalWrites, watchTrackerSources } from '@silkweave/box-core'
 import { BrowserController } from './browser.controller.js'
 import { PresetsController } from './presets.controller.js'
 import { SignalsController } from './signals.controller.js'
@@ -14,6 +14,8 @@ export class SignalsModule implements OnModuleInit {
   onModuleInit(): void {
     // A successful run that wrote signals records `signal.increase` / `signal.threshold` events.
     watchSignalWrites()
+    // A signal bound to a Box tracker is recomputed when what the tracker watches changes.
+    watchTrackerSources()
     onRunOutcome(async (outcome) => {
       if (outcome.status === 'success') await evaluateSignalEvents()
     })

@@ -114,7 +114,7 @@ export function DataSourcesSection() {
       <>
         <SettingsIntro>
           Named instances of a provider - two platform spaces are two sources, each with its own
-          key and its own sync health. A signal connects by binding one of a source&rsquo;s measures.
+          key and its own sync health. A signal connects by binding one of a source&rsquo;s trackers.
         </SettingsIntro>
 
         {sources.length === 0 ? (
@@ -230,7 +230,7 @@ function SourceCard({
         ))}
       </div>
 
-      {/* Health, the "Stripe connected to …, last measure received on …" line. Never-synced is a
+      {/* Health, the "Stripe connected to …, last point received on …" line. Never-synced is a
           distinct state from failed - it is what a brand-new source looks like. */}
       <p className='text-body-sm text-muted-foreground'>
         {s.last_sync_at ? (
@@ -263,12 +263,12 @@ function SourceCard({
           </span>
         </p>
       )}
-      {s.dead_measures.length > 0 && (
+      {s.dead_trackers.length > 0 && (
         <p className='flex items-start gap-1.5 text-label text-warning'>
           <AlertTriangle className='mt-px size-3.5 shrink-0' />
           <span>
-            {s.dead_measures.map((d) => `${d.signal_id} → ${d.measure_key}`).join(', ')} - the provider no longer
-            offers that measure. The binding is left in place; re-point or clear it on the signal.
+            {s.dead_trackers.map((d) => `${d.signal_id} → ${d.tracker_key}`).join(', ')} - the provider no longer
+            offers that tracker. The binding is left in place; re-point or clear it on the signal.
           </span>
         </p>
       )}
@@ -380,7 +380,7 @@ function SourceDialog({
               }}
               disabled={editing}
               title={editing ? 'Changing the provider would strand this source’s config and credentials' : undefined}
-              options={providers.map((p) => ({ value: p.id, label: `${p.label} (${p.measures.length} measures)` }))}
+              options={providers.map((p) => ({ value: p.id, label: `${p.label} (${p.trackers.length} trackers)` }))}
             />
           </Field>
           {provider && <p className='-mt-1 text-label text-muted-foreground'>{provider.description}</p>}

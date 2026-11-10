@@ -2,6 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { setActiveUser } from './useActiveUser.ts'
 import { setTeamTimeZone } from './teamDay.ts'
 import { grantSubject } from './signinGrant.ts'
+import { clientAccess, lostAreas, setClientAccess, type ClientAccess } from './access.ts'
+import { leaveLostAreas } from './lostAreas.ts'
+import { onPolicyChange } from './changeFeed.ts'
 
 // Client auth state. Probes GET /api/auth/me on mount; no principal means the login gate. The
 // authenticated principal drives the active-user scope (its id stamps `actor` on mutations) and
@@ -39,7 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refetch = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/me', { credentials: 'same-origin' })
-      const data = (await res.json()) as { principal: Principal | null; agent: AuthState['agent']; needsOwner?: boolean; timeZone?: string }
+      const data = (await res.json()) as { principal: Principal | null; agent: AuthState['agent']; access?: ClientAccess | null; needsOwner?: boolean; timeZone?: string }
+      // Before the principal: everything built after the auth gate reads access on first use.
+      const lost = lostAreas(clientAccess(), data.access ?? null)
+      setClientAccess(data.access ?? null)
+      void leaveLostAreas(lost)
       setPrincipal(data.principal)
       setAgent(data.agent)
       setNeedsOwner(data.needsOwner === true)
@@ -56,6 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refetch()
   }, [refetch])
+
+  // A policy change (the change feed's `policy`): the role, its areas or admin may have moved.
+  useEffect(() => onPolicyChange(() => void refetch()), [refetch])
 
   const login = useCallback(
     async (token: string): Promise<{ ok: boolean; error?: string }> => {
@@ -114,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     setPrincipal(null)
     setActiveUser(null)
+    setClientAccess(null)
     await refetch()
   }, [refetch])
 

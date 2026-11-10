@@ -25,7 +25,7 @@ import { createZip, type ZipEntry } from './zip.js'
  * - `box/UPSTREAM.md`: the Box's recorded source ancestry
  *
  * Every text goes through the redactor (known secret values from box.local.json and profile token
- * files, plus token patterns). Never included: data.db, warehouse or chat stores, uploads, other
+ * files, plus token patterns). Never included: the warehouse or chat stores, uploads, other
  * sessions, box.local.json values.
  */
 

@@ -33,8 +33,8 @@ includes child output and `--force` bypasses Turbo's cache. `bun run verify` rem
 - Each repo has one `bun.lock`. Use `bun install --frozen-lockfile` for reproducible installation. Existing `workspace:*`
   dependencies and source export conditions are retained.
 - `bunfig.toml` selects the isolated dependency linker and Bun execution for JavaScript tool
-  shebangs, with no-orphans handling for launcher shutdown. `trustedDependencies` in `package.json` explicitly permits the SWC, esbuild,
-  better-sqlite3 and `@ladybugdb/core` install scripts. Other dependency lifecycle scripts are not implicitly trusted.
+  shebangs, with no-orphans handling for launcher shutdown. `trustedDependencies` in `package.json` explicitly permits the SWC, esbuild
+  and better-sqlite3 install scripts. Other dependency lifecycle scripts are not implicitly trusted.
 - Automatic dotenv loading is disabled with `env = false`. Public entry points also pass
   `--no-env-file`. Box settings still come from `box.json` and `box.local.json`; no environment
   configuration or replacement instance-data location is introduced.

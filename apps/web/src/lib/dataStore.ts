@@ -12,6 +12,10 @@ export interface DataStore<T> {
   reload(): Promise<T>
   /** Current cached value without fetching (null before the first load). */
   peek(): T | null
+  /** Whether a fetch is in flight (a first load not yet settled counts). */
+  pending(): boolean
+  /** Drop the cached value and notify subscribers (null again, as before the first load). */
+  clear(): void
   /** Optimistically patch the cache and notify subscribers (no-op before the first load). */
   set(updater: (current: T) => T): void
   /** React hook: subscribe to the store; triggers the initial load. Pass `enabled: false` to skip
@@ -25,20 +29,38 @@ export function createDataStore<T>(fetcher: () => Promise<T>): DataStore<T> {
   const listeners = new Set<() => void>()
   const emit = (): void => listeners.forEach((l) => l())
 
+  // Bumped by every forced load and every clear(): a request that settles under an older
+  // generation was issued before the invalidation, so its result never refills the cache.
+  let generation = 0
+
   function load(force = false): Promise<T> {
     if (cache !== null && !force) return Promise.resolve(cache)
-    if (!inflight) {
-      inflight = fetcher()
-        .then((d) => {
-          cache = d
-          emit()
-          return d
-        })
-        .finally(() => {
-          inflight = null
-        })
-    }
-    return inflight
+    // A forced load never joins an in-flight request: that one may be a pre-invalidation read.
+    if (inflight && !force) return inflight
+    if (force) generation++
+    const mine = generation
+    const request: Promise<T> = fetcher().then(
+      (d) => {
+        if (mine !== generation) return inflight && inflight !== request ? inflight : d
+        cache = d
+        emit()
+        return d
+      },
+      (e: unknown) => {
+        if (mine !== generation && inflight && inflight !== request) return inflight
+        throw e
+      },
+    )
+    inflight = request
+    void request
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        if (inflight === request) inflight = null
+      })
+    return request
   }
 
   // A fresh top-level reference per emit so React re-renders (arrays stay arrays - `{...}` on an
@@ -68,6 +90,13 @@ export function createDataStore<T>(fetcher: () => Promise<T>): DataStore<T> {
     load,
     reload: () => load(true),
     peek: () => cache,
+    pending: () => inflight !== null,
+    clear: () => {
+      generation++
+      inflight = null
+      cache = null
+      emit()
+    },
     set: (updater) => {
       if (cache === null) return
       cache = updater(cache)

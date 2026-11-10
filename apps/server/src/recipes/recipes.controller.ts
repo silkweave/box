@@ -7,6 +7,7 @@ import { createReadStream, existsSync, readdirSync, readFileSync, statSync } fro
 import { join } from 'node:path'
 import { boxJson, cachedRecipe, configRoot, fetchRecipe, RegistryError, registryCatalog, type RegistryRecipe } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
+import { Authenticated, Read } from '../auth/auth.decorators.js'
 
 // The Recipe Gallery's registry half. The gallery's own list is built from the `recipes/` docs that
 // ship with this Box; this adds what the recipe registry offers beyond them (with this Box's access
@@ -108,6 +109,8 @@ export class RecipesController {
   @Get('registry')
   @ApiOkResponse({ type: RegistryDto })
   @Trpc({ output: registryOutput })
+  @Authenticated()
+  @Read()
   async registry(): Promise<RegistryDto> {
     return await load()
   }
@@ -118,6 +121,8 @@ export class RecipesController {
   @Header('X-Content-Type-Options', 'nosniff')
   // An SVG opened directly is a document: sandboxed, no script, no requests.
   @Header('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox")
+  @Authenticated()
+  @Read()
   screenshot(@Param('id') id: string, @Param('version') version: string, @Param('file') file: string): StreamableFile {
     if (!/^[a-z][a-z0-9-]*$/.test(id) || !/^[0-9a-f]{40}$/.test(version) || !SCREENSHOT.test(file)) throw new NotFoundException('no such screenshot')
     const dir = cachedRecipe(configRoot(), id, version)

@@ -7,13 +7,16 @@
 // onRunOutcome() (core itself records signal events on success and a `run.error` event on
 // failure). Listeners are best-effort and never affect the run's own outcome.
 //
-// Queue semantics: in-process FIFO, concurrency 1 (the warehouse is single-writer and heavy pulls
-// are subprocesses anyway). Callers that want skip-instead-of-queue (the scheduler) check
+// Queue semantics: in-process FIFO, concurrency 1 (runs execute strictly in order; heavy pulls
+// are subprocesses and never overlap). Callers that want skip-instead-of-queue (the scheduler) check
 // isActionBusy() first and record a 'skipped' row via insertSkippedRun().
 
-import { resolveRunner } from './registry.js'
+import { AreaAccessError } from '../auth/access.js'
+import { asSystem, requireReachArea } from '../request-context.js'
+import { admitFrame } from '../warehouse/core-command.js'
+import { actionOwner, resolveRunner } from './registry.js'
 import { appendRunLog, closeRunLog } from './run-log.js'
-import { finalizeRun, insertRun, markRunning, newRunId } from './runs.js'
+import { canFollowRun, finalizeRun, insertRun, markRunning, newRunId } from './runs.js'
 import type { IngestProgress, RunLogLine, RunTrigger } from './types.js'
 
 interface ActiveRun {
@@ -54,7 +57,8 @@ export function onRunOutcome(listener: RunOutcomeListener): () => void {
 export async function notifyRunOutcome(outcome: RunOutcome): Promise<void> {
   for (const listener of outcomeListeners) {
     try {
-      await listener(outcome)
+      // Subscribers are bookkeeping after a run: named system work, whoever ran it.
+      await asSystem(`run outcome: ${outcome.actionId}`, () => listener(outcome))
     } catch (err) {
       console.error(`[ops] run-outcome listener failed for ${outcome.actionId}: ${String((err as Error)?.message ?? err)}`)
     }
@@ -103,10 +107,17 @@ export interface RunMeta {
  * Run an automation action, recording it as an automation_runs row while re-yielding its progress
  * chunks (so live SSE subscribers still see everything). Throws on an unknown action id; a runtime
  * failure finalizes the row as 'error' and re-throws so streaming consumers see the stream error.
+ *
+ * A request run needs write on the action's owning area (W8 R3; BOX-Review W8 finding 3 and
+ * d613f4e finding 3): checked before the row is written and again after the queue wait, against the
+ * committed policy, before the runner starts. The runner then executes in the caller's frame, so
+ * each accessor it touches decides. System callers pass.
  */
 export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGenerator<IngestProgress> {
   const runner = resolveRunner(actionId, { date: meta.date, params: meta.params })
   if (!runner) throw new Error(`unknown automation action "${actionId}" (see listAutomationActions)`)
+  const owner = actionOwner(actionId)
+  requireReachArea(owner, 'write')
 
   const runId = meta.runId ?? newRunId()
   await insertRun({
@@ -143,8 +154,11 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
     }
     await turn
 
+    // The wait may be long: admit the caller again (a policy commit meanwhile re-resolves it).
+    await admitFrame()
+    requireReachArea(owner, 'write')
     entry.state = 'running'
-    await markRunning(runId)
+    if (!(await markRunning(runId))) throw new Error(`run ${runId} is no longer queued`)
     let summary: string | undefined
     for await (const chunk of runner()) {
       push(chunk)
@@ -181,8 +195,17 @@ export async function* executeRecorded(actionId: string, meta: RunMeta): AsyncGe
  * detaches the viewer - the run itself finishes and finalizes normally, exactly like a scheduled
  * fire (which has no subscriber at all). tail() rethrows the run's error at the end so streaming
  * consumers still see a stream error.
+ *
+ * tail() authorizes every delivery in the frame that pulls it (BOX-Review d613f4e finding 1): before
+ * each buffered or new chunk, and before the final error, the subscriber must still be able to
+ * follow the run (runs.ts canFollowRun: admitted against the committed policy). A subscriber that
+ * lost it gets an area refusal; the run goes on.
  */
-export function startDetachedRun(actionId: string, meta: RunMeta): { tail: () => AsyncGenerator<IngestProgress> } {
+export function startDetachedRun(actionId: string, meta: RunMeta): { runId: string; tail: () => AsyncGenerator<IngestProgress> } {
+  // Checked here too so a refusal is synchronous for the caller (executeRecorded checks again).
+  const owner = actionOwner(actionId)
+  requireReachArea(owner, 'write')
+  const runId = meta.runId ?? newRunId()
   const chunks: IngestProgress[] = []
   let done = false
   let error: string | undefined
@@ -195,7 +218,7 @@ export function startDetachedRun(actionId: string, meta: RunMeta): { tail: () =>
 
   void (async () => {
     try {
-      for await (const chunk of executeRecorded(actionId, meta)) {
+      for await (const chunk of executeRecorded(actionId, { ...meta, runId })) {
         chunks.push(chunk)
         notify()
       }
@@ -207,16 +230,27 @@ export function startDetachedRun(actionId: string, meta: RunMeta): { tail: () =>
     }
   })()
 
+  const deliverable = async (): Promise<void> => {
+    if (!(await canFollowRun(runId, actionId))) throw new AreaAccessError(owner, 'read')
+  }
+
   return {
+    runId,
     async *tail() {
       let i = 0
       for (;;) {
-        while (i < chunks.length) yield chunks[i++]
+        if (i < chunks.length) {
+          await deliverable()
+          yield chunks[i++]
+          continue
+        }
         if (done) break
         await new Promise<void>((wake) => waiters.push(wake))
       }
-      while (i < chunks.length) yield chunks[i++]
-      if (error) throw new Error(error)
+      if (error) {
+        await deliverable()
+        throw new Error(error)
+      }
     },
   }
 }

@@ -180,7 +180,7 @@ with the eye button; hidden entries stay in place, muted, until Done. Outside Cu
 entries are gone, and a section whose entries are all hidden goes with them; the collapsed rail
 follows the same arrangement. An entry you reach while it is hidden (a link, a bookmark) appears at
 its own place, with an eye-off mark, for as long as you are there. The arrangement is stored per
-person on the server (`users.sidebar`, migration `core:010-users-sidebar`, procedures `usersSidebar`
+person on the server (`users.sidebar`, procedures `usersSidebar`
 and `usersSidebarSave`), so it follows the person across browsers; a copy in this browser only
 saves the first paint from jumping. Reset to default clears it. Ids the Box no longer shows are
 kept, so an entry that comes back finds its place, and a new entry starts at its default place.
@@ -449,7 +449,7 @@ catches this.
 ## How data reaches a view
 
 ```
-DuckDB warehouse -> a feature's controller -> tRPC -> lib/trpc.ts -> a data store -> useData() -> the view
+the Box database -> a feature's controller -> tRPC -> lib/trpc.ts -> a data store -> useData() -> the view
                                               ^
                          change bus -> changesFeed (WebSocket) -> lib/changeFeed.ts invalidates the store
 ```
@@ -515,10 +515,10 @@ Events carry a **scope, never data**:
 
 - `table:<name>` - emitted by the warehouse record layer on every in-process write, so mutations
   from the web UI, MCP agents, REST and cron actions all announce themselves;
-- `docs:<section>` / `config:<file>` / `warehouse` - emitted by the server's recursive fs watcher
-  (`apps/server/src/changes/changes.watcher.ts`) for OUT-of-process edits: a local agent session
-  editing markdown, a human in an editor, an external DuckDB writer. A `warehouse` event invalidates
-  every `table:`-scoped registration.
+- `docs:<section>` / `config:<file>` - emitted by the server's recursive fs watcher
+  (`apps/server/src/changes/changes.watcher.ts`) for OUT-of-process file edits: a local agent
+  session editing markdown, a human in an editor. Database writes made outside the Box raise no
+  event.
 
 A matching event reloads the store, debounced 300ms, and **only if it has ever loaded** - a route
 you never visited costs nothing. State that does not live in a global store opts in with
@@ -593,7 +593,7 @@ not be removed.
 
 **Never index a UI map with a value that came out of the warehouse.** A warehouse holds values the
 current vocabulary has never heard of - a renamed status still sitting in rows written before the
-rename took a whole view down with `Cannot destructure property 'icon' of 'MAP[status]'`. A `data.db`
+rename took a whole view down with `Cannot destructure property 'icon' of 'MAP[status]'`. The database
 never travels by git, so a `git pull` does not fix it and a reseed only fixes it until the next
 rename. Every data-driven lookup goes through a resolver that degrades: an unknown value renders as
 a muted question-mark chip instead. The crm app's `crmStatus.tsx` is the pattern; an adopted app

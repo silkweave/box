@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Autocomplete, Dialog, DialogContent, DialogDescription, DialogTitle, Button, confirm, SelectField, UserPicker } from '@silkweave/box-ui'
+import { useAuth } from '../../lib/useAuth.tsx'
+import { missingTrackerParams, trackerParamsPayload, TRACKER_SINCE_PARAM, useTrackers, type TrackerInfo } from '../lib/useTrackers.ts'
+import { TrackerParams } from './TrackerParams.tsx'
+import { SignalUsage } from './SignalUsage.tsx'
 import { deleteSignal, upsertSignal, useSignalsData, useSignalsDataWithArchived, type SignalUpsert } from '../lib/useSignalsData.ts'
 import { useDataSources, useProviders } from '../lib/useSourcesData.ts'
-import type { ProviderMeasure } from '../source-types.ts'
+import type { ProviderTracker } from '../source-types.ts'
 import {
   SIGNAL_ACCUMULATIONS,
   SIGNAL_DIRECTIONS,
@@ -30,9 +34,9 @@ const ACCUMULATION_LABEL: Record<SignalAccumulation, string> = {
 const DIRECTION_LABEL: Record<SignalDirection, string> = { up: 'Up is good', down: 'Down is good (churn-like)' }
 
 /**
- * Create/edit a signal definition (admin-only surface - callers gate on canAdmin). With `signal`
+ * Create/edit a signal definition (write on the signal's area creates or edits one). With `signal`
  * it edits in place (id fixed); without, it creates a new `manual` signal with the id derived from
- * the label slug. Deleting removes only the definition - points are never deleted with it.
+ * the label slug. Deleting removes the definition and its data points.
  */
 export function SignalDialog({
   open,
@@ -40,10 +44,13 @@ export function SignalDialog({
   signal,
   onSaved,
   onDeleted,
+  defaults,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   signal?: Signal
+  /** A new signal's starting values (e.g. a milestone's title and the planning channel). */
+  defaults?: Partial<Pick<Form, 'label' | 'channel' | 'group' | 'description'>>
   /** Called with (id, channel) after a save - detail views re-navigate if the channel moved. */
   onSaved?: (id: string, channel: string) => void
   onDeleted?: () => void
@@ -53,60 +60,96 @@ export function SignalDialog({
   // Ids are taken by archived signals too (an upsert would silently rewrite one), and a formula may
   // still name one: both read the list with archived signals in it. The dependency picker stays live.
   const { data: everySignal } = useSignalsDataWithArchived()
+  const { principal } = useAuth()
+  const isAdmin = principal?.role === 'admin'
   // The catalogue is static and the sources list is small - both are cached stores, so opening the
   // dialog costs no round-trip once either has been read anywhere in the session.
   const { data: providers } = useProviders()
   const { data: sources } = useDataSources()
-  const [f, setF] = useState(() => seed(signal))
+  const { data: boxTrackers } = useTrackers()
+  const [f, setF] = useState(() => seed(signal, defaults))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    setF(seed(signal))
+    setF(seed(signal, defaults))
     setError(null)
     setSaving(false)
+    // `defaults` is read when the dialog opens; a caller's fresh object each render must not reseed it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, signal])
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((p) => ({ ...p, [k]: v }))
 
   const id = editing ? signal.id : slugify(f.label)
   const duplicate = !editing && !!id && (everySignal ?? data)?.signals.some((s) => s.id === id) === true
-  const derived = editing && signal.source === 'derived'
+  // Deriver-owned: its rows come from deriver code, so it gets no binding choice. A Box tracker
+  // signal is `derived` too, but its binding is the dialog's to change.
+  const derived = editing && signal.source === 'derived' && !signal.tracker_key
   const channels = [...new Set(['business', ...(data?.channels ?? [])])].sort()
 
-  // --- the binding (source → measure) ---
+  // --- the binding: typed by hand, a Box tracker, or a data source's tracker ---
+  const boxTracker = f.mode === 'box' ? boxTrackers?.find((t) => t.key === f.trackerKey) : undefined
+  const deadBoxTracker = f.mode === 'box' && !!f.trackerKey && !!boxTrackers && !boxTracker
+  const hasSources = (sources ?? []).length > 0
+  const pickMode = (mode: Mode): void => {
+    setError(null)
+    setF((p) => ({ ...p, mode, sourceId: '', trackerKey: '', trackerParams: {}, formula: mode === 'manual' ? p.formula : '' }))
+  }
+  /** A Box tracker picked: a new signal takes its semantics like a provider tracker's (free-text
+   *  fields only when blank); `since` carries over, the other params belonged to the old tracker. */
+  const pickBoxTracker = (key: string): void => {
+    const tracker: TrackerInfo | undefined = boxTrackers?.find((t) => t.key === key)
+    setF((p) => {
+      const since = p.trackerParams[TRACKER_SINCE_PARAM]
+      const next: Form = { ...p, trackerKey: key, trackerParams: since ? { [TRACKER_SINCE_PARAM]: since } : {} }
+      if (editing || !tracker) return next
+      return {
+        ...next,
+        label: p.label.trim() ? p.label : tracker.label,
+        group: p.group.trim() ? p.group : (tracker.group ?? ''),
+        unit: p.unit.trim() ? p.unit : (tracker.unit ?? ''),
+        description: p.description.trim() ? p.description : (tracker.description ?? ''),
+        channel: key.split('.')[0] || p.channel,
+        interval: tracker.interval as SignalInterval,
+        accumulation: tracker.accumulation as SignalAccumulation,
+        direction: tracker.direction as SignalDirection,
+      }
+    })
+  }
+
   const source = (sources ?? []).find((s) => s.id === f.sourceId)
   const provider = providers?.find((p) => p.id === source?.provider)
-  const measures = provider?.measures ?? []
-  // A binding to a measure the provider no longer offers stays visible rather than silently
+  const trackers = provider?.trackers ?? []
+  // A binding to a tracker the provider no longer offers stays visible rather than silently
   // resetting - it is the row a human has to re-point.
-  const deadMeasure = !!f.sourceId && !!f.measureKey && !!provider && !measures.some((s) => s.key === f.measureKey)
+  const deadTracker = !!f.sourceId && !!f.trackerKey && !!provider && !trackers.some((s) => s.key === f.trackerKey)
   const alsoBound = (data?.signals ?? []).filter(
-    (s) => s.id !== id && s.data_source_id === f.sourceId && s.measure_key === f.measureKey,
+    (s) => s.id !== id && s.data_source_id === f.sourceId && s.tracker_key === f.trackerKey,
   )
 
-  /** Measure defaults PREFILL a new signal: the selects take the measure's semantics outright (they
+  /** Tracker defaults PREFILL a new signal: the selects take the tracker's semantics outright (they
    *  always hold a value, so "only if empty" is meaningless there), the free-text fields only fill
    *  when still blank. Every one stays an ordinary editable field - defaults, not locks. Editing an
    *  existing signal never touches curated values when the binding changes. */
-  const pickMeasure = (key: string) => {
-    const measure: ProviderMeasure | undefined = measures.find((s) => s.key === key)
+  const pickTracker = (key: string) => {
+    const tracker: ProviderTracker | undefined = trackers.find((s) => s.key === key)
     setF((p) => {
-      const next = { ...p, measureKey: key }
-      if (editing || !measure) return next
+      const next = { ...p, trackerKey: key }
+      if (editing || !tracker) return next
       return {
         ...next,
-        label: p.label.trim() ? p.label : measure.label,
-        group: p.group.trim() ? p.group : measure.group,
-        unit: p.unit.trim() ? p.unit : (measure.unit ?? ''),
-        description: p.description.trim() ? p.description : measure.description,
+        label: p.label.trim() ? p.label : tracker.label,
+        group: p.group.trim() ? p.group : tracker.group,
+        unit: p.unit.trim() ? p.unit : (tracker.unit ?? ''),
+        description: p.description.trim() ? p.description : tracker.description,
         // The provider id is the default channel: one dashboard section per provider, with every
         // space's signals grouped there. Freely overridable below.
         channel: provider ? provider.id : p.channel,
-        interval: measure.interval,
-        accumulation: measure.accumulation,
-        direction: measure.direction,
+        interval: tracker.interval,
+        accumulation: tracker.accumulation,
+        direction: tracker.direction,
       }
     })
   }
@@ -116,8 +159,13 @@ export function SignalDialog({
     if (!f.label.trim()) return setError('A label is required.')
     if (!id) return setError('Could not derive an id from that label.')
     if (duplicate) return setError(`Signal "${id}" already exists.`)
-    if (f.sourceId && !f.measureKey) return setError('Pick a measure, or set the data source back to none.')
-    if (f.sourceId && f.formula.trim()) return setError('A formula signal is computed - clear the data source or the formula.')
+    if (f.mode === 'source' && !f.sourceId) return setError('Pick the data source, or choose another way to get the numbers.')
+    if (f.mode === 'source' && !f.trackerKey) return setError('Pick a tracker, or choose another way to get the numbers.')
+    if (f.mode === 'box') {
+      if (!f.trackerKey) return setError('Pick what the Box should track.')
+      const missing = boxTracker ? missingTrackerParams(boxTracker, f.trackerParams) : []
+      if (missing.length > 0) return setError(`Set ${missing.join(', ')}.`)
+    }
     const thresholds = parseThresholds(f.thresholds)
     if (!thresholds) return setError('Thresholds are numbers separated by commas, e.g. 1000, 5000.')
 
@@ -133,9 +181,14 @@ export function SignalDialog({
       owner: f.owner ?? '', // '' clears → ownership falls back to the chain
       description: f.description.trim(),
       depends_on: f.dependsOn,
-      // '' on either field clears BOTH server-side (both-or-neither) - unbinding keeps the points.
-      data_source_id: f.sourceId,
-      measure_key: f.sourceId ? f.measureKey : '',
+      // The whole binding, every save: a data source and its tracker, a Box tracker with its
+      // params, or neither ('' clears; unbinding keeps the points). Never '' by default for a Box
+      // tracker signal: that unbinds it and its live points stop.
+      ...(f.mode === 'source'
+        ? { data_source_id: f.sourceId, tracker_key: f.trackerKey }
+        : f.mode === 'box'
+          ? { data_source_id: '', tracker_key: f.trackerKey, tracker_params: JSON.stringify(trackerParamsPayload(f.trackerParams)) }
+          : { data_source_id: '', tracker_key: '' }),
       thresholds,
     }
     // Only sent when it changes something: '' clears an existing formula; a fresh signal without
@@ -143,8 +196,9 @@ export function SignalDialog({
     if (!derived && (f.formula.trim() || signal?.formula)) input.formula = f.formula.trim()
     // A formula owns depends_on (the server derives it from the formula's ids).
     if (f.formula.trim()) delete input.depends_on
-    // Editing keeps the signal's source: a derived signal stays the deriver's.
-    if (editing) input.source = signal.source
+    // A deriver-owned signal stays the deriver's. Otherwise the server sets the source from the
+    // binding (a Box tracker makes it derived, leaving one makes it manual again).
+    if (derived) input.source = signal.source
 
     setSaving(true)
     void upsertSignal(input)
@@ -166,7 +220,7 @@ export function SignalDialog({
     const ok = await confirm({
       title: `Delete signal "${signal.label}"?`,
       message:
-        'Only the definition (identity + curation) is removed - data points are never deleted with it.\n' +
+        'The definition and all its data points are removed. This cannot be undone.\n' +
         (derived
           ? 'This signal is still written by a deriver: the next derive will re-register it. Deletion is for retired signal.\n'
           : '') +
@@ -205,62 +259,105 @@ export function SignalDialog({
         </div>
 
         <form onSubmit={submit} className='flex max-h-[70vh] flex-col gap-3 overflow-y-auto pr-1'>
-          {/* Source first: picking one prefills most of what follows. A derived signal is refused a
-              binding server-side (a deriver already owns its rows), so it never sees this. */}
-          {!derived && (sources ?? []).length > 0 && (
-            <fieldset className='rounded-md border border-border p-3'>
-              <legend className='px-1 text-label text-muted-foreground'>Source (optional)</legend>
-              <div className='grid grid-cols-2 gap-3'>
-                <Field label='Data source'>
-                  <SelectField
-                    value={f.sourceId}
-                    onValueChange={(v) => setF((p) => ({ ...p, sourceId: v, measureKey: '' }))}
-                    options={[
-                      { value: '', label: 'None (manual entry)' },
-                      ...[...new Set((sources ?? []).map((s) => s.provider))].map((pid) => ({
-                        label: providers?.find((p) => p.id === pid)?.label ?? pid,
-                        options: (sources ?? [])
-                          .filter((s) => s.provider === pid)
-                          .map((s) => ({ value: s.id, label: `${s.label}${s.status === 'disabled' ? ' (disabled)' : ''}` })),
-                      })),
-                    ]}
-                  />
-                </Field>
-                {f.sourceId && (
-                  <Field label='Measure'>
+          {/* Where the numbers come from, first: picking a tracker prefills most of what follows. A
+              deriver-owned signal is refused a binding server-side, so it never sees this. */}
+          {!derived && (
+            <fieldset className='flex flex-col gap-3 rounded-md border border-border p-3'>
+              <legend className='px-1 text-label text-muted-foreground'>Where the numbers come from</legend>
+              <SelectField
+                aria-label='Where the numbers come from'
+                value={f.mode}
+                onValueChange={(v) => pickMode(v as Mode)}
+                options={[
+                  { value: 'manual', label: 'Typed by hand (or recorded by an agent)' },
+                  { value: 'box', label: 'Tracked automatically by the Box' },
+                  ...(hasSources || f.mode === 'source' ? [{ value: 'source', label: 'From a connected data source' }] : []),
+                ]}
+              />
+
+              {f.mode === 'box' && (
+                <>
+                  <Field label='Tracker'>
                     <SelectField
-                      value={f.measureKey}
-                      onValueChange={(v) => pickMeasure(v)}
+                      value={f.trackerKey}
+                      onValueChange={pickBoxTracker}
                       options={[
-                        { value: '', label: 'Pick a measure…' },
-                        ...(deadMeasure ? [{ value: f.measureKey, label: `${f.measureKey} (no longer offered)` }] : []),
-                        ...measures.map((s) => ({ value: s.key, label: s.label })),
+                        { value: '', label: boxTrackers?.length === 0 ? 'Nothing to track yet' : 'Pick one…' },
+                        ...(deadBoxTracker ? [{ value: f.trackerKey, label: `${f.trackerKey} (no longer registered)` }] : []),
+                        ...(boxTrackers ?? []).map((t) => ({ value: t.key, label: t.label })),
                       ]}
                     />
                   </Field>
-                )}
-              </div>
-              {f.sourceId && (
-                <p className='mt-2 text-label text-muted-foreground'>
-                  {deadMeasure ? (
-                    <span className='text-warning'>
-                      {source?.label ?? f.sourceId} no longer offers <code>{f.measureKey}</code>. The binding is kept
-                      as-is - pick another measure or clear the source; the points stay either way.
-                    </span>
-                  ) : (
-                    <>
-                      This signal&rsquo;s live points come from {source?.label ?? f.sourceId}&rsquo;s sync. Occurrence
-                      counting (<code>signal-event</code>) is refused while it is connected - hand-correct a bucket
-                      below the chart instead.
-                      {alsoBound.length > 0 && (
+                  {boxTracker && <TrackerParams tracker={boxTracker} value={f.trackerParams} onChange={(v) => set('trackerParams', v)} />}
+                  <p className='text-label text-muted-foreground'>
+                    {deadBoxTracker ? (
+                      <span className='text-warning'>
+                        This Box no longer registers <code>{f.trackerKey}</code>. The binding and the points are kept; pick another tracker or type the numbers by hand.
+                      </span>
+                    ) : boxTracker ? (
+                      <>{boxTracker.description} The Box recomputes it when its data changes; typing a point by hand overrides one bucket.</>
+                    ) : (
+                      'The Box computes the numbers from its own data, so nobody has to type them.'
+                    )}
+                  </p>
+                </>
+              )}
+
+              {f.mode === 'source' && (
+                <>
+                  <div className='grid grid-cols-2 gap-3'>
+                    <Field label='Data source'>
+                      <SelectField
+                        value={f.sourceId}
+                        onValueChange={(v) => setF((p) => ({ ...p, sourceId: v, trackerKey: '' }))}
+                        options={[
+                          { value: '', label: 'Pick one…' },
+                          ...[...new Set((sources ?? []).map((s) => s.provider))].map((pid) => ({
+                            label: providers?.find((p) => p.id === pid)?.label ?? pid,
+                            options: (sources ?? [])
+                              .filter((s) => s.provider === pid)
+                              .map((s) => ({ value: s.id, label: `${s.label}${s.status === 'disabled' ? ' (disabled)' : ''}` })),
+                          })),
+                        ]}
+                      />
+                    </Field>
+                    {f.sourceId && (
+                      <Field label='Tracker'>
+                        <SelectField
+                          value={f.trackerKey}
+                          onValueChange={(v) => pickTracker(v)}
+                          options={[
+                            { value: '', label: 'Pick a tracker…' },
+                            ...(deadTracker ? [{ value: f.trackerKey, label: `${f.trackerKey} (no longer offered)` }] : []),
+                            ...trackers.map((s) => ({ value: s.key, label: s.label })),
+                          ]}
+                        />
+                      </Field>
+                    )}
+                  </div>
+                  {f.sourceId && (
+                    <p className='text-label text-muted-foreground'>
+                      {deadTracker ? (
                         <span className='text-warning'>
-                          {' '}
-                          Also bound by {alsoBound.map((s) => s.label).join(', ')}.
+                          {source?.label ?? f.sourceId} no longer offers <code>{f.trackerKey}</code>. The binding is kept
+                          as-is - pick another tracker or clear the source; the points stay either way.
                         </span>
+                      ) : (
+                        <>
+                          This signal&rsquo;s live points come from {source?.label ?? f.sourceId}&rsquo;s sync. Occurrence
+                          counting (<code>signal-event</code>) is refused while it is connected - hand-correct a bucket
+                          below the chart instead.
+                          {alsoBound.length > 0 && (
+                            <span className='text-warning'>
+                              {' '}
+                              Also bound by {alsoBound.map((s) => s.label).join(', ')}.
+                            </span>
+                          )}
+                        </>
                       )}
-                    </>
+                    </p>
                   )}
-                </p>
+                </>
               )}
             </fieldset>
           )}
@@ -312,6 +409,8 @@ export function SignalDialog({
             </Field>
           </div>
 
+          {editing && id && <SignalUsage signalId={id} />}
+
           <Field label='Description'>
             <textarea
               value={f.description}
@@ -340,7 +439,7 @@ export function SignalDialog({
 
           {/* Formula signals compute their points from other signals on read. Not for derived or
               connected signals (a deriver or a sync already owns their points). */}
-          {!derived && !f.sourceId && (
+          {!derived && f.mode === 'manual' && (
             <Field label='Formula (optional)'>
               <input
                 value={f.formula}
@@ -403,7 +502,8 @@ export function SignalDialog({
 
           <div className='mt-1 flex items-center justify-between gap-2'>
             <span>
-              {editing && (
+              {/* Deleting is admin-only (the server refuses a member). */}
+              {editing && isAdmin && (
                 <Button type='button' variant='destructive' size='sm' disabled={saving} onClick={() => void remove()}>
                   Delete
                 </Button>
@@ -424,6 +524,8 @@ export function SignalDialog({
   )
 }
 
+type Mode = 'manual' | 'box' | 'source'
+
 interface Form {
   label: string
   group: string
@@ -436,9 +538,12 @@ interface Form {
   description: string
   /** Signal ids this one is driven by - the board's incoming edges. */
   dependsOn: string[]
-  /** The provider binding: both set, or both empty. '' on either clears both server-side. */
+  /** Where the numbers come from; it decides which of the binding fields below are sent. */
+  mode: Mode
+  /** `source`: the data source and its provider tracker. `box`: the Box tracker and its params. */
   sourceId: string
-  measureKey: string
+  trackerKey: string
+  trackerParams: Record<string, string>
   /** The formula expression; '' = an ordinary signal. */
   formula: string
   /** Threshold levels as typed: numbers separated by commas. */
@@ -452,8 +557,8 @@ function parseThresholds(raw: string): number[] | null {
   return values.every((v) => Number.isFinite(v)) ? values : null
 }
 
-function seed(s?: Signal): Form {
-  return {
+function seed(s?: Signal, defaults?: Partial<Form>): Form {
+  const base: Form = {
     label: s?.label ?? '',
     group: s?.group ?? '',
     unit: s?.unit ?? '',
@@ -464,11 +569,14 @@ function seed(s?: Signal): Form {
     owner: s?.owner ?? null,
     description: s?.description ?? '',
     dependsOn: s?.depends_on ?? [],
+    mode: s?.data_source_id ? 'source' : s?.tracker_key ? 'box' : 'manual',
     sourceId: s?.data_source_id ?? '',
-    measureKey: s?.measure_key ?? '',
+    trackerKey: s?.tracker_key ?? '',
+    trackerParams: { ...s?.tracker_params },
     formula: s?.formula ?? '',
     thresholds: (s?.thresholds ?? []).join(', '),
   }
+  return s ? base : { ...base, ...defaults }
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

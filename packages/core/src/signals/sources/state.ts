@@ -3,11 +3,12 @@
 // keys at once - see sources/types.ts), config validation against the provider's declared fields,
 // the delete report, and the health stamps the sync engine writes.
 
-import { ensureSchema, withRead } from '../../warehouse/db.js'
-import { deleteRecord, readRecord, readRecords, upsertRecord } from '../../warehouse/model.js'
+import { canAccess } from '../../request-context.js'
+import { db } from '../../warehouse/core-db.js'
+import { deleteRecord, readRecord, upsertRecord } from '../../warehouse/model.js'
 import { DATA_SOURCES } from '../models.js'
 import { credential } from '../../credentials.js'
-import { findProvider, findMeasure, requireProvider } from './registry.js'
+import { findProvider, findProviderTracker, requireProvider } from './registry.js'
 import type { DataSource, DataSourceDeleteReport, DataSourceInput, DataSourceView, SyncStatus } from './types.js'
 
 // Slug charset, stricter than the signal-id one: this string becomes a JSON object key in
@@ -22,13 +23,20 @@ const norm = (s: DataSource): DataSource => ({ ...s, config: bag(s.config) })
 
 // --- reads ----------------------------------------------------------------------------------------
 
-/** Every data source, id-sorted. */
+// Data sources belong to the `signals` area (W8 R1): one area for the whole table, so no row
+// security; these reads check it. A caller without signals read sees none (not an error: a board or
+// a signal list that mentions sources simply has none to show).
+const sourcesReadable = (): boolean => canAccess('signals', 'read')
+
+/** Every data source, id-sorted; none without signals read. */
 export async function readDataSources(): Promise<DataSource[]> {
-  return (await readRecords<DataSource>(DATA_SOURCES, { orderBy: 'id' })).map(norm)
+  if (!sourcesReadable()) return []
+  return ((await db.selectFrom('data_sources').selectAll().orderBy('id').execute()) as DataSource[]).map(norm)
 }
 
-/** One data source, or null. */
+/** One data source, or null (also without signals read). */
 export async function readDataSource(id: string): Promise<DataSource | null> {
+  if (!sourcesReadable()) return null
   const s = await readRecord<DataSource>(DATA_SOURCES, { id })
   return s ? norm(s) : null
 }
@@ -40,28 +48,20 @@ export async function requireDataSource(id: string): Promise<DataSource> {
   return s
 }
 
-/** Every signal bound to a source, with the measure each one subscribes to - the subscription set. */
-export async function readSourceBindings(sourceId: string): Promise<{ signal_id: string; measure_key: string }[]> {
-  await ensureSchema()
-  const rows = await withRead<{ id: string; measure_key: string | null }>(
-    `SELECT id, measure_key FROM signals WHERE data_source_id = ? ORDER BY sort, id`,
-    [sourceId],
-  )
-  return rows.filter((r) => !!r.measure_key).map((r) => ({ signal_id: r.id, measure_key: r.measure_key! }))
+/** Every signal bound to a source, with the tracker each one subscribes to - the subscription set. */
+export async function readSourceBindings(sourceId: string): Promise<{ signal_id: string; tracker_key: string }[]> {
+  const rows = await db.selectFrom('signals').select(['id', 'tracker_key']).where('data_source_id', '=', sourceId).orderBy('sort').orderBy('id').execute()
+  return rows.filter((r) => !!r.tracker_key).map((r) => ({ signal_id: r.id, tracker_key: r.tracker_key! }))
 }
 
 /** Every binding, grouped by source id - one query for the list view. */
-async function readAllBindings(): Promise<Map<string, { signal_id: string; measure_key: string }[]>> {
-  await ensureSchema()
-  const rows = await withRead<{ id: string; data_source_id: string | null; measure_key: string | null }>(
-    `SELECT id, data_source_id, measure_key FROM signals
-      WHERE data_source_id IS NOT NULL ORDER BY sort, id`,
-  )
-  const out = new Map<string, { signal_id: string; measure_key: string }[]>()
+async function readAllBindings(): Promise<Map<string, { signal_id: string; tracker_key: string }[]>> {
+  const rows = await db.selectFrom('signals').select(['id', 'data_source_id', 'tracker_key']).where('data_source_id', 'is not', null).orderBy('sort').orderBy('id').execute()
+  const out = new Map<string, { signal_id: string; tracker_key: string }[]>()
   for (const r of rows) {
-    if (!r.data_source_id || !r.measure_key) continue
+    if (!r.data_source_id || !r.tracker_key) continue
     const list = out.get(r.data_source_id) ?? []
-    list.push({ signal_id: r.id, measure_key: r.measure_key })
+    list.push({ signal_id: r.id, tracker_key: r.tracker_key })
     out.set(r.data_source_id, list)
   }
   return out
@@ -70,7 +70,7 @@ async function readAllBindings(): Promise<Map<string, { signal_id: string; measu
 /**
  * The API read surface: each source with its provider label, per-key credential PRESENCE (never
  * values - there is no code path in this repo that reports a secret), its bound signals, and any
- * binding naming a measure the provider no longer offers.
+ * binding naming a tracker the provider no longer offers.
  */
 export async function readDataSourceViews(): Promise<DataSourceView[]> {
   const [sources, bindings] = await Promise.all([readDataSources(), readAllBindings()])
@@ -84,8 +84,8 @@ export async function readDataSourceViews(): Promise<DataSourceView[]> {
         (provider?.credentials ?? []).map((key) => [key, credential(s.provider, s.id, key) !== undefined]),
       ),
       bound_signals: bound.map((b) => b.signal_id),
-      dead_measures: provider
-        ? bound.filter((b) => !findMeasure(provider, b.measure_key)).map((b) => ({ signal_id: b.signal_id, measure_key: b.measure_key }))
+      dead_trackers: provider
+        ? bound.filter((b) => !findProviderTracker(provider, b.tracker_key)).map((b) => ({ signal_id: b.signal_id, tracker_key: b.tracker_key }))
         : [],
     }
   })
@@ -134,11 +134,10 @@ export async function upsertDataSource(input: DataSourceInput): Promise<DataSour
     // channel pull already writes snapshots under - two writers on one `snapshots.channel` would
     // silently overwrite each other's daily payload. (Checked against real rows rather than the
     // derived-channel list so it also catches snapshot-only channels like reddit-radar.)
-    await ensureSchema()
-    const clash = await withRead<{ n: number }>(`SELECT count(*) AS n FROM snapshots WHERE channel = ?`, [input.id])
-    if (Number(clash[0]?.n ?? 0) > 0) {
+    const clash = await db.selectFrom('snapshots').select((eb) => eb.fn.countAll<number>().as('n')).where('channel', '=', input.id).executeTakeFirstOrThrow()
+    if (clash.n > 0) {
       throw new Error(
-        `data source id "${input.id}" already keys ${clash[0].n} snapshot row(s) from another ingest - the id is also this source's audit-snapshot channel; pick another`,
+        `data source id "${input.id}" already keys ${clash.n} snapshot row(s) from another ingest - the id is also this source's audit-snapshot channel; pick another`,
       )
     }
   }

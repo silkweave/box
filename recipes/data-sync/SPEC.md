@@ -102,7 +102,7 @@ deriver appends `contributedChannelRows(channel)` so Planning's PR rows ride alo
 | reddit | `reddit` | `reddit`, `reddit-engagement`, `reddit-radar` | `reddit`, `reddit-engagement`, `reddit-radar` | `reddit.total_karma`, `.link_karma`, `.comment_karma`, `.posts`, `.comments`, `.top_post_score`, `.engagement_open` |
 | linkedin | `linkedin` | `linkedin`, `backfill-linkedin` | `linkedin` | `linkedin.followers`, `.connections`, `.impressions`, `.members_reached`, `.reactions`, `.comments`, `.reshares`, `.org_followers`, `.org_impressions` |
 | substack | `substack` | `substack-pull` | `substack` | `substack.posts`, `.drafts`, `.views`, `.subscribers`, `.paid_subscribers`, `.open_rate`, `.posts_with_stats` |
-| stripe | `stripe` | none (core's `source-sync` / `sources-sync`) | the data source id | the measures its bound signals subscribe to |
+| stripe | `stripe` | none (core's `source-sync` / `sources-sync`) | the data source id | the trackers its bound signals subscribe to |
 
 ### npm (base)
 

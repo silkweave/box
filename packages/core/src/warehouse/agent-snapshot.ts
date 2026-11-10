@@ -1,17 +1,18 @@
-// The agent files (`data/config/agents/*.md`) that travel with a warehouse restore point. The users
-// rows of the Box's agents and the files that say which agents exist belong together, so every
-// restore point the machine writes carries `<name>.agents.json` beside `<name>.db`, and a restore
-// puts both back or neither.
+// The agent files (`data/config/agents/*.md`) that travel with a database restore point. The files
+// are the agents (agents.ts); the users rows are derived from them at boot. A restore point carries
+// the files as they were when its database snapshot was taken (`agents.json`), and a restore puts
+// both back; boot reconciliation then brings any derived row in step before work is admitted.
 //
-// The sidecar has a format marker, so a restore can tell a valid snapshot (an empty one included)
-// from damage. A restore point WITHOUT a sidecar is either from before agent files were backed up or
-// an interrupted backup; the two look the same, so restoring one needs an explicit acknowledgement
-// (backup.ts `keepAgentFiles`). Seeds are the owner's fixtures and keep the live files by default.
-import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, copyFileSync } from 'node:fs'
+// Also: the intent record of an agent replacement (`data/config/agent-replace.json`). A replacement
+// changes several files and rows in sequence; while its record exists, boot, backups and restores
+// refuse and name the re-run that completes it.
+
+import { createHash, randomUUID } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, copyFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { agentsDir } from '../agents.js'
-import { agentsSnapshotPath } from './restore-points.js'
+import { configPath } from '../io.js'
+import { fsyncDir, writeDurable } from '../db/durable.js'
 
 const FORMAT = 'box-agent-files/1'
 const FILE_NAME = /^[a-z0-9][a-z0-9-]{0,62}\.md$/
@@ -20,7 +21,11 @@ export type AgentFiles = Record<string, string>
 
 /** The regular `.md` files in `data/config/agents/` (symlinks and other files are not agent files). */
 export function captureAgentFiles(): AgentFiles {
-  const dir = agentsDir()
+  return captureAgentFilesFrom(agentsDir())
+}
+
+/** The regular `.md` files in `dir` (a staged agents directory, or the live one). */
+export function captureAgentFilesFrom(dir: string): AgentFiles {
   if (!existsSync(dir)) return {}
   const out: AgentFiles = {}
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -29,28 +34,23 @@ export function captureAgentFiles(): AgentFiles {
   return out
 }
 
-/** Write `files` as the sidecar of restore point `dbPath`, atomically (temp file, then rename). */
-export function writeAgentsSnapshot(dbPath: string, files: AgentFiles = captureAgentFiles()): string {
-  const file = agentsSnapshotPath(dbPath)
-  const tmp = `${file}.tmp-${randomUUID().slice(0, 8)}`
-  try {
-    writeFileSync(tmp, `${JSON.stringify({ format: FORMAT, files }, null, 2)}\n`, { mode: 0o600 })
-    renameSync(tmp, file)
-  } catch (error) {
-    rmSync(tmp, { force: true })
-    throw error
-  }
-  return file
+export function agentFilesText(files: AgentFiles): string {
+  const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => a.localeCompare(b)))
+  return `${JSON.stringify({ format: FORMAT, files: sorted }, null, 2)}\n`
+}
+
+/** Write `files` to `file` durably; returns the SHA-256 of what was written. */
+export function writeAgentFiles(file: string, files: AgentFiles): string {
+  const text = agentFilesText(files)
+  writeDurable(file, text)
+  return createHash('sha256').update(text).digest('hex')
 }
 
 /**
- * The agent files of restore point `dbPath`, validated in full, or null when it has no sidecar.
- * Throws on anything that is not exactly a snapshot this code wrote: the caller has not touched
- * live state yet.
+ * The agent files in `file`, validated in full. Throws on anything that is not exactly a snapshot
+ * this code wrote: the caller has not touched live state yet.
  */
-export function readAgentsSnapshot(dbPath: string): AgentFiles | null {
-  const file = agentsSnapshotPath(dbPath)
-  if (!existsSync(file)) return null
+export function readAgentFiles(file: string): AgentFiles {
   let raw: unknown
   try {
     raw = JSON.parse(readFileSync(file, 'utf8'))
@@ -72,17 +72,19 @@ export function readAgentsSnapshot(dbPath: string): AgentFiles | null {
  * Build the restored `data/config/agents/` beside the live one, before anything live changes: the
  * snapshot's `.md` files plus the live directory's other regular files (left alone by a restore).
  */
-export function stageAgentFiles(files: AgentFiles): string {
+export function stageAgentFiles(files: AgentFiles, id = randomUUID().slice(0, 8)): string {
   const live = agentsDir()
-  const staged = join(dirname(live), `agents.restoring-${randomUUID().slice(0, 8)}`)
+  const staged = join(dirname(live), `agents.restoring-${id}`)
   try {
+    rmSync(staged, { recursive: true, force: true })
     mkdirSync(staged, { recursive: true })
     if (existsSync(live)) {
       for (const e of readdirSync(live, { withFileTypes: true })) {
         if (e.isFile() && !e.name.endsWith('.md')) copyFileSync(join(live, e.name), join(staged, e.name))
       }
     }
-    for (const [name, text] of Object.entries(files)) writeFileSync(join(staged, name), text)
+    for (const [name, text] of Object.entries(files)) writeFileSync(join(staged, name), text, { mode: 0o644 })
+    fsyncDir(staged)
     return staged
   } catch (error) {
     rmSync(staged, { recursive: true, force: true })
@@ -90,77 +92,41 @@ export function stageAgentFiles(files: AgentFiles): string {
   }
 }
 
-export interface AgentFilesSwap {
-  /** Put the previous directory back (the database swap failed) and clear the marker. */
-  undo(): void
-  /** Both halves are in place: clear the marker, then drop the previous directory. Never throws: a
-   *  directory that cannot be removed is left behind and returned for the summary. */
-  commit(): string | null
+/** Where the live agent directory is parked during a swap. */
+export function parkedAgentsDir(id: string): string {
+  return join(dirname(agentsDir()), `agents.pre-restore-${id}`)
 }
 
-/** Present only while a restore has swapped the agent files but not yet the database. */
-const markerPath = (): string => join(dirname(agentsDir()), 'agents.restore-in-progress.json')
+// ---- Agent replacement intent ----
 
-/**
- * Why this Box must not boot, or null: a restore that swapped the agent files and died before
- * swapping the database leaves its marker, and the files no longer match the warehouse. Boot
- * reconciliation would otherwise retire or change agents against that mixed state.
- */
-export function interruptedAgentRestore(): string | null {
-  const marker = markerPath()
-  if (!existsSync(marker)) return null
-  let detail = ''
-  try {
-    const m = JSON.parse(readFileSync(marker, 'utf8')) as { restorePoint?: string; previous?: string | null }
-    detail = ` (restoring ${m.restorePoint ?? '?'}; the previous agent files are in ${m.previous ? basename(m.previous) : 'no directory'})`
-  } catch {
-    // An unreadable marker still means the restore did not finish.
-  }
+export interface ReplaceIntent { from: string; to: string; step: string; at: string; [extra: string]: unknown }
+
+export function replaceIntentPath(): string {
+  return configPath('agent-replace.json')
+}
+
+export function readReplaceIntent(): ReplaceIntent | null {
+  const f = replaceIntentPath()
+  if (!existsSync(f)) return null
+  try { return JSON.parse(readFileSync(f, 'utf8')) as ReplaceIntent }
+  catch { return { from: '?', to: '?', step: 'unreadable', at: '?' } }
+}
+
+export function writeReplaceIntent(intent: Omit<ReplaceIntent, 'at'>): void {
+  writeDurable(replaceIntentPath(), `${JSON.stringify({ ...intent, at: new Date().toISOString() })}\n`)
+}
+
+export function clearReplaceIntent(): void {
+  rmSync(replaceIntentPath(), { force: true })
+  fsyncDir(dirname(replaceIntentPath()))
+}
+
+/** Why agent state must not be used (boot, backup, restore), or null. */
+export function interruptedAgentChange(): string | null {
+  const intent = readReplaceIntent()
+  if (!intent) return null
   return (
-    `a warehouse restore was interrupted after swapping data/config/agents/${detail}. ` +
-    `Run the restore again (box db restore <name>), or put the previous agent files back, then delete ${basename(marker)} in data/config/`
+    `an agent replacement (${intent.from} -> ${intent.to}) was interrupted at step "${intent.step}". ` +
+    `Complete it by running \`box auth replace ${intent.from} ${intent.to}\` again.`
   )
-}
-
-/**
- * Replace `data/config/agents/` with a staged directory: two renames in one filesystem, under a
- * durable marker naming the restore point. A failure of the second rename puts the first back. A
- * process that dies before `commit` leaves the marker, and boot refuses until an operator resolves
- * it (`interruptedAgentRestore`).
- */
-export function swapAgentFiles(staged: string, restorePoint: string): AgentFilesSwap {
-  const live = agentsDir()
-  const marker = markerPath()
-  const previous = join(dirname(live), `agents.pre-restore-${randomUUID().slice(0, 8)}`)
-  const hadLive = existsSync(live) && lstatSync(live).isDirectory()
-  writeFileSync(marker, `${JSON.stringify({ restorePoint, previous: hadLive ? previous : null, at: new Date().toISOString() })}\n`)
-  try {
-    if (hadLive) renameSync(live, previous)
-    try {
-      renameSync(staged, live)
-    } catch (error) {
-      if (hadLive) renameSync(previous, live)
-      throw error
-    }
-  } catch (error) {
-    rmSync(marker, { force: true })
-    throw error
-  }
-  return {
-    undo() {
-      rmSync(live, { recursive: true, force: true })
-      if (hadLive) renameSync(previous, live)
-      rmSync(marker, { force: true })
-    },
-    commit() {
-      rmSync(marker, { force: true })
-      if (!hadLive) return null
-      try {
-        rmSync(previous, { recursive: true, force: true })
-        return null
-      } catch {
-        return previous
-      }
-    },
-  }
 }

@@ -15,7 +15,7 @@
 // Works with no server running: it talks to the warehouse directly, like the other auth scripts.
 // It never CREATES a user - that is `box auth token`, and only on a Box that has none yet.
 
-import { ensureSchema, ensureAgentPrincipals, issueSigninLink, resolvePrincipalById } from '@silkweave/box-core'
+import { asSystem, withDatabase, ensureAgentPrincipals, issueSigninLink, resolvePrincipalById } from '@silkweave/box-core'
 import { systemUserId } from '@silkweave/box-core/box-config'
 import { readUsers } from '@silkweave/box-core/users/state'
 import { signinLinkUrl } from '../src/auth/app-url.js'
@@ -39,7 +39,6 @@ async function main(): Promise<void> {
   const ttlAt = argv.indexOf('--ttl')
   const [named] = argv.filter((a, i) => !a.startsWith('--') && (ttlAt < 0 || i !== ttlAt + 1))
 
-  await ensureSchema()
   await ensureAgentPrincipals()
   const id = named ?? await onlyPerson()
   const principal = await resolvePrincipalById(id)
@@ -70,7 +69,8 @@ async function onlyPerson(): Promise<string> {
   process.exit(1)
 }
 
-main()
+// A CLI script: adopts the running Box's database (or owns it while it runs), as named system work.
+asSystem('cli: auth login', () => withDatabase(main))
   .then(() => process.exit(process.exitCode ?? 0))
   .catch((err) => {
     commandError(err instanceof Error ? err.message : String(err))

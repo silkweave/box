@@ -7,7 +7,7 @@ import '../api/box_api.dart';
 /// The Box's change feed (`changesFeed`), shared by every module of a session.
 ///
 /// The server streams invalidation hints, never data: each event names a
-/// scope (`table:initiatives`, `docs:initiatives`, `warehouse`, ...) and the
+/// scope (`table:initiatives`, `docs:initiatives`, ...) and the
 /// client reloads whatever it shows from that scope. This is the same feed the
 /// web app's data stores reload from, so a change made on the web, by an agent
 /// or by another phone reaches the app without a pull-to-refresh.
@@ -22,8 +22,7 @@ import '../api/box_api.dart';
 /// ```
 ///
 /// One connection serves every listener. It opens with the first listener,
-/// closes with the last, and reconnects after a drop. A `warehouse` event (an
-/// external writer) matches every `table:` scope. After a reconnect the server
+/// closes with the last, and reconnects after a drop. After a reconnect the server
 /// greets again with `hello`; events may have been missed in between, so every
 /// listener fires once.
 class BoxChanges {
@@ -77,9 +76,7 @@ class BoxChanges {
   }
 
   @visibleForTesting
-  static bool matches(String registered, String scope) =>
-      registered == scope ||
-      (scope == 'warehouse' && registered.startsWith('table:'));
+  static bool matches(String registered, String scope) => registered == scope;
 
   void _remove(_Listener l) {
     _listeners.remove(l);
@@ -126,6 +123,13 @@ class BoxChanges {
   void _onEvent(Map<String, dynamic> event) {
     final scope = event['scope'];
     if (scope is! String || scope == 'ping') return;
+    // The access policy moved: every store reloads (rows of areas lost go, rows gained appear).
+    if (scope == 'policy') {
+      for (final l in List.of(_listeners)) {
+        l._fire();
+      }
+      return;
+    }
     if (scope == 'hello') {
       if (_sawHello) {
         for (final l in List.of(_listeners)) {

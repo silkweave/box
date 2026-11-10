@@ -10,9 +10,8 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 
 ## Recipe-specific operational details
 
-- **`features.automation.schedules` is imported once, then ignored.** Migration
-  `automation:001-import-schedules` copies it into `triggers` on the first boot with triggers. Edits
-  to the key afterwards do nothing; the boot log warns while it is present. Remove it.
+- **`features.automation.schedules` is not read.** Triggers live in the `triggers` table; the key
+  does nothing, and the boot log warns while it is present. Remove it.
 - **Imported triggers have no owner.** The first admin to edit one becomes its owner.
 - **Cron is evaluated in the trigger's zone.** Empty means the server's zone, which on a launchd
   host is the machine's; set the zone explicitly when the team and the host differ.
@@ -26,7 +25,7 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
   it, and those turns are lost.
 - **A busy action is skipped, not queued.** On fire, the scheduler checks `isActionBusy()` and, if
   the action is already queued or running, writes a `skipped` run row instead of stacking a second
-  execution. Core's funnel is FIFO with concurrency 1 (the warehouse is single-writer).
+  execution. Core's funnel is FIFO with concurrency 1 (runs execute in order and heavy pulls never overlap).
 - **An event listener never awaits the work.** `recordEvent` awaits its listeners and is often
   called from inside a funnel run; awaiting a second funnel run there would wait on the single slot
   forever. The dispatcher queues the event and starts the run detached.

@@ -11,29 +11,40 @@ server behaviour is a fixed runtime API: per-artifact JSON state (`kv`), pinned 
   `packages/core/src/path-mounts.ts`) to serve `/artifacts/<slug>/`, the user-cleanup port, the
   events spine (`recordEvent`) and the run funnel (one action).
 - **Depended on by**: nothing.
-- **Removal**: unregister it and remove `features/artifacts/`. Its tables, `data/artifacts.db` and
-  `data/artifacts/` stay on disk until deleted by hand. Public copies stay on Cloudflare until purged
+- **Removal**: unregister it and remove `features/artifacts/`. Its tables and `data/artifacts/`
+  stay until deleted by hand. Public copies stay on Cloudflare until purged
   (revoke them first).
 
 ## Tables
 
-Warehouse (DuckDB), all created by the baseline:
+Box database (schema `artifacts`), all created by the baseline:
 
 | Table | Key | What |
 |---|---|---|
 | `artifacts` | `slug` | The catalogue: title, description, lucide `icon`, `entry`, `spa`, `owner` (a Box user id, never null), `tags` (json), `kind`, `source`, `folder`, size, file count, `published_at`, and the public-copy state (`is_public`, `password_hash`, `expires_at`, `revoked_at`, `public_synced_at`, `public_sync_error`). Audited. |
 | `artifact_folders` | `id` | Flat drawers: `id` derived from the first name and frozen, `name`, `icon`. |
 | `artifact_annotations` | `artifact, id` | One row per pinned thread. `data` is the pindrop `Comment` JSON the in-page toolbar reads and writes; `author` is the opener's Box user id. |
+| `artifact_kv` | `artifact, key` | A page's own persisted JSON (`artifact.kv`): `value` is the JSON text as the page sent it (key order kept), at most 1 MB of UTF-8, `key` 1 to 200 characters; both limits are CHECK constraints too. `updated_at`, `updated_by`. |
+| `artifact_views` | `artifact` | `view_count` and `last_viewed_at`, bumped on every entry-document load. |
 
-Feature-private SQLite, `data/artifacts.db` (WAL; schema ledger `PRAGMA user_version`):
+`artifact_kv` and `artifact_views` reference `artifacts.slug` (cascading foreign keys): state for a
+page that does not exist is refused, and a rename or delete moves or removes it in the same
+transaction as the catalogue row. Every write is one statement on its own key (an upsert, a delete,
+an increment). A view increment is atomic, so concurrent views all count. A kv write replaces the
+whole value: between writers of the same key the last one wins, and a get-then-set from a page can
+overwrite another writer's change.
 
-| Table | Key | What |
-|---|---|---|
-| `kv` | `artifact, key` | A page's own persisted JSON (`artifact.kv`), at most 1 MB per value. |
-| `views` | `artifact` | View count and last-viewed stamp, bumped on every entry-document load. |
+Access follows the `artifacts` area on the caller's own login: reading kv needs read, writing it
+needs write, and the area grants refuse the same statements in the database. A view is counted for
+anyone who may read the page: the increment is the read's upkeep and runs as named system work
+(`artifacts: upkeep view count`). Changes are announced per artifact, `table:artifact_kv` and
+`table:artifact_views` with the slug as detail, so page traffic never reloads the gallery (which
+listens to `table:artifacts` and `table:artifact_folders`).
 
-These live outside the warehouse because pages write them at interactive rates; a warehouse write
-is a serialized DuckDB connection plus a change event to every open dashboard.
+## Migrations
+
+None yet; every table comes from the baseline. New behaviour gets a new migration in
+`core/manifest.ts`, never an edit to a shipped one (docs/WAREHOUSE.md, "The migration ledger").
 
 ## Files on disk
 
@@ -102,7 +113,7 @@ reason; a missing slug is a 404.
 | `artifact-sharing-status` | Admin. Whether public sharing is set up and working: `configured`, `ok`, the `missing` keys with their files, and live `checks` (`worker`: reachable, token accepted, storage bound; `public-host`: the public address serves the Worker; `separate-origin`; `https`). Never returns the token. |
 | `artifact-annotations`, `artifact-annotate`, `artifact-annotation-reply`, `artifact-annotation-resolve`, `artifact-annotation-delete` | Threads. The author is always the caller; `source` is `agent` for bearer callers, `human` for sessions. |
 | `artifact-kv-list`, `artifact-kv-set` | A page's state; `value` is a JSON string, omitted deletes. |
-| `artifact-import` | Admin. Import from a standalone host's data dir (`from`), with a roster map (`users`, `luna=nova,toby=toby`), `dryRun`, `replace`. |
+| `artifact-import` | Admin. Import from a standalone host's data dir (`from`), with a roster map (`users`, `luna=nova,toby=toby`), `dryRun`, `replace`. Reads the host's `meta.sqlite` read-only and writes through the same functions as every other caller; it is never a second store. |
 
 tRPC also has `artifactsGallery` (query, everything, for the dashboard). REST only:
 
@@ -129,9 +140,10 @@ them with a deliver trigger; artifacts does not depend on notifications.
 `artifacts-expire` withdraws public copies whose expiry has passed (the Worker already refuses them;
 this removes the bytes and corrects the Box's state). Schedulable.
 
-`artifacts-backup` copies `data/artifacts.db` (`VACUUM INTO`) to `artifacts/artifacts-latest.sqlite`
-and the published trees to `artifacts/files/` in the `backup.gcsBucket` bucket. The tree copy only
-adds and updates, never deletes remotely. Schedulable, beside `warehouse-backup`.
+`artifacts-backup` copies the published trees to `artifacts/files/` in the `backup.gcsBucket`
+bucket. The copy only adds and updates, never deletes remotely. Every row (catalogue, folders,
+annotations, kv, views) is in the Box database and travels in its restore points. Schedulable,
+beside `warehouse-backup`.
 
 ## Public copies
 
@@ -156,7 +168,12 @@ was removed can still be made private.
   platform. The cost is accepted trust: a page runs with the viewer's session. See GOTCHAS.md.
 - **Owners are Box users, authors are callers.** Nothing on the wire can attribute words or pages to
   someone else; a publish can fill an owner in, never replace one.
-- **kv beside the warehouse.** Interactive writes do not belong on the warehouse's single writer.
+- **kv and views are rows next to the catalogue.** One database, one backup and restore boundary,
+  one access rule. Their change events are scoped to the artifact so page traffic stays cheap for
+  every open dashboard.
+- **kv keeps the page's JSON text.** A page that relies on key order reads back what it wrote;
+  `jsonb` would reorder keys and refuse a `\u0000` escape.
+- **Files stay files.** The published trees are in `data/artifacts/`, outside SQL.
 - **Annotations are rows, not kv.** A page can clobber its own kv; review feedback must survive it.
 
 ## UI

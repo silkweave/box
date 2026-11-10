@@ -1,7 +1,7 @@
 // The live-refresh feed: one `changesFeed` tRPC subscription per tab, over the tab's live-feed socket, streaming invalidation
 // hints from the server's change bus - `table:<name>` for warehouse writes (web UI, MCP agents,
 // REST, cron ingests), `docs:<section>` / `config:<file>` for tenant file edits (local Claude
-// sessions, editors), `warehouse` for external DuckDB writers. Store modules self-register the
+// sessions, editors). Store modules self-register the
 // scopes they depend on; a matching event reloads the store (debounced, and only if it has ever
 // loaded - a page you never visited costs nothing). So agent-made changes appear in an open
 // dashboard within moments, without polling.
@@ -30,26 +30,44 @@ const RETRY_MS = 5_000
 
 const registry: Registration[] = []
 
-const matches = (registered: string, ev: ChangeEvent): boolean =>
-  registered === ev.scope ||
-  // A generic external-writer event invalidates every table-scoped registration.
-  (ev.scope === 'warehouse' && registered.startsWith('table:'))
+const matches = (registered: string, ev: ChangeEvent): boolean => registered === ev.scope
 
 /** Register a data store: a matching change event reloads it (debounced; no-op until first load).
  *  Structurally typed to the two members it uses, so any DataStore<T> fits. */
-export function registerStoreReloads(scopes: string[], store: { peek(): unknown; reload(): Promise<unknown> }): void {
+export function registerStoreReloads(scopes: string[], store: { peek(): unknown; pending?(): boolean; reload(): Promise<unknown>; clear?(): void }): void {
   let timer: number | undefined
   registry.push({
     scopes,
-    fire: () => {
-      if (store.peek() === null) return
+    fire: (ev) => {
+      // A store never used is left alone; one whose first load is still pending is not: that read
+      // may predate the event, so a policy change must invalidate it.
+      if (store.peek() === null && !store.pending?.()) return
       if (timer !== undefined) clearTimeout(timer)
+      // After a policy change a store that is now refused (the principal lost its area) drops
+      // what it holds rather than keep showing it as current.
+      const reload = (): void => {
+        void store.reload().catch((error: unknown) => {
+          if (ev.scope === 'policy' && isRefusal(error)) store.clear?.()
+        })
+      }
+      if (ev.scope === 'policy') {
+        timer = undefined
+        reload()
+        return
+      }
       timer = window.setTimeout(() => {
         timer = undefined
-        void store.reload().catch(() => undefined)
+        reload()
       }, DEBOUNCE_MS)
     },
   })
+}
+
+/** Whether a failed fetch was the server refusing this principal (HTTP 403, tRPC FORBIDDEN). */
+export function isRefusal(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return /\b403\b|forbidden/i.test(String(error))
+  const { data, status, message } = error as { data?: { code?: string; httpStatus?: number }; status?: number; message?: unknown }
+  return data?.code === 'FORBIDDEN' || data?.httpStatus === 403 || status === 403 || /\b403\b|forbidden|area_access|no (read|write) access to/i.test(String(message ?? ''))
 }
 
 /**
@@ -77,14 +95,15 @@ export function subscribeChanges(scopes: string[], cb: (ev: ChangeEvent) => void
   }
 }
 
-const dispatch = (ev: ChangeEvent): void => {
+/** Deliver one change event to the registered stores and subscribers (the feed own path). */
+export const dispatch = (ev: ChangeEvent): void => {
   for (const reg of registry) {
     if (reg.scopes.some((s) => matches(s, ev))) reg.fire(ev)
   }
 }
 
-const reloadAll = (): void => {
-  const ev: ChangeEvent = { seq: 0, ts: new Date().toISOString(), scope: 'hello', detail: null }
+const reloadAll = (scope = 'hello'): void => {
+  const ev: ChangeEvent = { seq: 0, ts: new Date().toISOString(), scope, detail: null }
   for (const reg of registry) reg.fire(ev)
 }
 
@@ -99,6 +118,14 @@ function reconnect(): void {
   retry = window.setTimeout(() => { retry = undefined; connect() }, RETRY_MS)
 }
 
+const policyListeners = new Set<() => void>()
+
+/** Call `listener` when the server says the access policy moved (`policy`). Returns the unsubscribe. */
+export function onPolicyChange(listener: () => void): () => void {
+  policyListeners.add(listener)
+  return () => { policyListeners.delete(listener) }
+}
+
 function connect(): void {
   if (!active) return
   const sub = trpc.changesFeed.subscribe(
@@ -108,6 +135,13 @@ function connect(): void {
         if (activeSub !== sub) return
         const ev = raw as ChangeEvent
         if (ev.scope === 'ping') return
+        if (ev.scope === 'policy') {
+          // The access policy moved: refetch this principal's access, then every loaded store
+          // (rows of areas it lost are gone, rows it gained appear).
+          for (const l of policyListeners) l()
+          reloadAll('policy')
+          return
+        }
         if (ev.scope === 'hello') {
           // Reconnect or server restart after the first hello: events may have been missed.
           if (sawHello) reloadAll()

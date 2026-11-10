@@ -28,8 +28,8 @@ export function repoRoot(): string {
 let override: string | undefined
 
 /**
- * The BOX INSTANCE dir - `<repoRoot>/data`: holds `box.json`, `config/`, `docs/` and the DuckDB
- * warehouse (`data.db`). Gitignored, so the checkout stays free of any one Box's data.
+ * The BOX INSTANCE dir - `<repoRoot>/data`: holds `box.json`, `config/`, `docs/` and the Box's
+ * local warehouse files. Gitignored, so the checkout stays free of any one Box's data.
  *
  * A test redirects with `setInstanceDir()` from `@silkweave/box-core/testing`.
  */
@@ -85,10 +85,6 @@ export function docsDir(): string {
   return join(instanceDir(), 'docs')
 }
 
-/** The DuckDB warehouse file (`<instance>/data.db`) - the ground truth. */
-export function warehousePath(): string {
-  return join(instanceDir(), 'data.db')
-}
 
 /** Join an arbitrary path under the Box instance dir (e.g. evidence/backup scratch). */
 export function dataPath(...parts: string[]): string {

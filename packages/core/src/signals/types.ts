@@ -15,7 +15,7 @@
 export type SignalSource = 'derived' | 'manual'
 export const SIGNAL_SOURCES: SignalSource[] = ['derived', 'manual']
 
-// interval / accumulation / direction are the slice of this vocabulary a PROVIDER's measure
+// interval / accumulation / direction are the slice of this vocabulary a PROVIDER's tracker
 // catalogue declares defaults in, so they live in @silkweave/box-provider-kit - the package a provider is
 // allowed to depend on. Re-exported here so this file stays the one import site for the signal
 // vocabulary.
@@ -81,21 +81,28 @@ export interface SignalDefinition {
    */
   depends_on: string[]
   /**
+   * The owning area (PERMISSIONS 8.1): a Box tracker's feature, `signals` for a data-source
+   * binding, otherwise what the writer declared (a feature's own signal: its feature; derived rows:
+   * the writing feature; manual and formula signals: `signals`). Kept across edits that do not
+   * change the binding. A formula is readable only when every input is too (accessor rule).
+   */
+  area: string
+  /**
    * The provider binding (Track C): the `data_sources.id` whose sync owns this signal's live
-   * points, and the provider-native measure key it subscribes to. Both or neither - CONNECTEDNESS
+   * points, and the provider-native tracker key it subscribes to. Both or neither - CONNECTEDNESS
    * IS `data_source_id != null`, which is why `source` above stays derived|manual. A connected
    * signal is a MANUAL signal (human-named, renameable, hand-correctable) that happens to have a
    * live feed; a `derived` one may never carry a binding, since a deriver already owns its rows.
    */
   data_source_id: string | null
-  measure_key: string | null
+  tracker_key: string | null
   /**
-   * An in-Box measure's parameters (`measure_key` set, `data_source_id` null), e.g.
+   * A Box tracker's parameters (`tracker_key` set, `data_source_id` null), e.g.
    * `{ "kind": "oss-pr" }` for `planning.tasks_done`. Values are strings. `{}` for every other
-   * signal. An in-Box measure signal is `source: 'derived'`: the measure computes its live points
-   * (signals/measure-derive.ts).
+   * signal. A Box tracker signal is `source: 'derived'`: the tracker computes its live points
+   * (signals/tracker-derive.ts).
    */
-  measure_params: Record<string, string>
+  tracker_params: Record<string, string>
   /**
    * The formula this signal's points are COMPUTED from (signals/formula.ts), e.g.
    * `churned-mrr / start(mrr) * 100`, or null for an ordinary signal. A formula signal IS
@@ -133,15 +140,19 @@ export interface SignalDefinitionInput {
   owner?: string | null
   description?: string
   depends_on?: string[]
-  /** Set both to bind a provider measure; set `measure_key` alone (data_source_id null) to bind an
-   *  in-Box measure; null for both unbinds. A provider binding's points stay on unbind (real
-   *  observations); an in-Box measure's computed points go with it. A data source without a
-   *  measure is refused. */
+  /** The owning area a feature declares for its own signal (`planning` for a goal's signal). A
+   *  Box tracker binding takes the tracker's feature and a data-source binding takes `signals`
+   *  regardless; omitted, an existing row keeps its area and a new one is `signals`. */
+  area?: string
+  /** Set both to bind a provider tracker; set `tracker_key` alone (data_source_id null) to bind an
+   *  Box tracker; null for both unbinds. A provider binding's points stay on unbind (real
+   *  observations); a Box tracker's computed points go with it. A data source without a
+   *  tracker is refused. */
   data_source_id?: string | null
-  measure_key?: string | null
-  /** An in-Box measure's parameters, validated against the measure's declared params. Replaces
+  tracker_key?: string | null
+  /** A Box tracker's parameters, validated against the tracker's declared params. Replaces
    *  the stored object. */
-  measure_params?: Record<string, string>
+  tracker_params?: Record<string, string>
   /** Set to make this a formula signal (depends_on then follows the formula's refs); null clears
    *  the formula (depends_on is kept as it is). */
   formula?: string | null

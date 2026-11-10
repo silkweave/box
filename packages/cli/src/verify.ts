@@ -49,7 +49,9 @@ export function verifyEvent(state: RunState, now = performance.now()): string {
   }) + '\n'
 }
 
-export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun', { force = false } = {}): Task[] {
+export type VerifyEngine = 'pgrust' | 'native'
+
+export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun', { force = false, engine = 'pgrust' as VerifyEngine } = {}): Task[] {
   const definitions: [string, string, string, string[], string[]][] = [
     ['build', 'Build workspace', 'Build', ['build'], []],
     ['skills', 'Link skills', 'Prepare', ['skills'], ['build']],
@@ -79,9 +81,14 @@ export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun
     // file, position, message and rule on the one line a warning excerpt shows.
     const args = TEST_SCRIPTS.has(script[0]!) ? [forced[0]!, '--', ...forced.slice(1), '--', '--reporter=default']
       : script[0] === 'lint' ? [...forced, '--format=unix'] : forced
+    // The database tests run on one engine per verify run: pgrust by default, native with
+    // `--engine native`. BOX_TEST_ENGINE is a Stack-maintainer switch read by the test harness only
+    // (packages/core/vitest.db-setup.ts), never a Box setting; turbo.json hashes it, so the two
+    // engines' results are cached apart.
+    const env = id === 'package-tests' && engine === 'native' ? { BOX_TEST_ENGINE: 'native' } : undefined
     return {
-      id, name, phase, needs, command: `bun run ${forced.join(' ')}`,
-      executable: bun, args: ['--bun', '--no-env-file', 'run', ...args],
+      id, name: env ? `${name} (native PostgreSQL)` : name, phase, needs, command: `${env ? 'BOX_TEST_ENGINE=native ' : ''}bun run ${forced.join(' ')}`,
+      executable: bun, args: ['--bun', '--no-env-file', 'run', ...args], ...(env ? { env } : {}),
     }
   })
 }
@@ -90,16 +97,18 @@ export async function main(argv: string[]): Promise<number> {
   let values
   try {
     ({ values } = parseArgs({ args: argv, options: {
-      plain: { type: 'boolean' }, json: { type: 'boolean' }, list: { type: 'boolean' }, verbose: { type: 'boolean' }, force: { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      plain: { type: 'boolean' }, json: { type: 'boolean' }, list: { type: 'boolean' }, verbose: { type: 'boolean' }, force: { type: 'boolean' }, engine: { type: 'string' }, help: { type: 'boolean', short: 'h' },
     } }))
+    if (values.engine !== undefined && values.engine !== 'pgrust' && values.engine !== 'native') throw new Error(`--engine must be pgrust or native, not "${values.engine}"`)
   } catch (error) { process.stderr.write(`${(error as Error).message}\nUse box verify --help for usage.\n`); return 2 }
+  const engine: VerifyEngine = values.engine === 'native' ? 'native' : 'pgrust'
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core and server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck, tests and the mobile check instead of replaying cached results\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core and server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck, tests and the mobile check instead of replaying cached results\n  box verify --engine native  Run the core and server tests on native PostgreSQL instead of pgrust\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   if (values.list) {
     const history = readHistory(repoRoot)
-    process.stdout.write(JSON.stringify(verifyTasks().map(({ id, name, phase, command }) => ({ id, name, phase, command, expected: history[id]?.elapsed }))) + '\n')
+    process.stdout.write(JSON.stringify(verifyTasks(undefined, { engine }).map(({ id, name, phase, command }) => ({ id, name, phase, command, expected: history[id]?.elapsed }))) + '\n')
     return 0
   }
   const out = process.stdout, input = process.stdin
@@ -144,7 +153,7 @@ export async function main(argv: string[]): Promise<number> {
       timer = setInterval(() => { if (state && !state.finished) write(verifyEvent(state)) }, 1000)
     } else write(`silkweave / verify · ${target}\n`)
     const history = readHistory(repoRoot)
-    const tasks = verifyTasks(undefined, { force: values.force }).map(t => ({ ...t, expected: history[t.id] }))
+    const tasks = verifyTasks(undefined, { force: values.force, engine }).map(t => ({ ...t, expected: history[t.id] }))
     let lastEvent = 0, lastShape = ''
     const result = await runTasks(tasks, {
       cwd: repoRoot, signal: controller.signal,

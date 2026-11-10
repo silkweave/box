@@ -2,7 +2,7 @@ import { Controller, ForbiddenException, Get, Query, UseGuards } from '@nestjs/c
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { DEFAULT_AGENT_ENGINE, agentEnginesFor, agentProfileFor, agentProfileMapFor, agentProfilesConfigured, preferredAgentEngine, readUser, repoRoot, type Principal } from '@silkweave/box-core'
 import { isGuardedPrincipal } from './work-session.js'
-import { CurrentPrincipal } from '../auth/auth.decorators.js'
+import { CurrentPrincipal, Authenticated, Read } from '../auth/auth.decorators.js'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { agentAccountProfiles, agentWorkerUrl } from './workerdeck.host.js'
 
@@ -92,6 +92,8 @@ class AgentAccountsDto {
 export class AgentController {
   @Get('config')
   @ApiOkResponse({ type: AgentConfigDto })
+  @Authenticated()
+  @Read()
   async config(@CurrentPrincipal() principal: Principal | null): Promise<AgentConfigDto> {
     const engines = principal ? agentEnginesFor(principal.id) : []
     const byEngine = principal ? agentProfileMapFor(principal.id) : {}
@@ -128,6 +130,8 @@ export class AgentController {
    */
   @Get('accounts')
   @ApiOkResponse({ type: AgentAccountsDto })
+  @Authenticated()
+  @Read()
   async accounts(@CurrentPrincipal() principal: Principal | null, @Query('user') user?: string): Promise<AgentAccountsDto> {
     if (!principal || agentWorkerUrl() === undefined) return { enabled: false, profiles: [] }
     // `?user=` narrows to one person (Settings > Profile, the Users detail). Another person's list

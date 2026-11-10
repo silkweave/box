@@ -75,10 +75,13 @@ export interface SignalUpsert {
   /** Signal ids this one is DRIVEN BY (the circuit board's edges). The server refuses unknown ids
    *  and cycles with the reason - surface that message, never swallow it. `[]` clears every edge. */
   depends_on?: string[]
-  /** The provider binding. Both are required together; '' on EITHER clears both (unbind - the
-   *  points stay, they simply stop refreshing). */
+  /** The binding: `data_source_id` + `tracker_key` is a provider tracker, `tracker_key` with
+   *  `data_source_id: ''` a Box tracker; '' on both unbinds (the points stay, they stop refreshing). */
   data_source_id?: string
-  measure_key?: string
+  tracker_key?: string
+  /** A Box tracker's param values as a JSON object string (the binding with `tracker_key` and
+   *  `data_source_id: ''`). */
+  tracker_params?: string
   /** Make this a formula signal (points computed on read; depends_on follows its ids). '' clears
    *  it. The server refuses a formula that does not parse, names an unknown signal or would cycle,
    *  with the reason (and the character position for syntax errors). */
@@ -87,7 +90,7 @@ export interface SignalUpsert {
   thresholds?: number[]
 }
 
-/** Create or update a signal definition (admin), then reload. */
+/** Create or update a signal definition, then reload. */
 export async function upsertSignal(input: SignalUpsert): Promise<void> {
   await trpc.signalsUpsert.mutate({ ...input, actor: actor() })
   await reloadSignals()

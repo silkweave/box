@@ -19,11 +19,10 @@ feature's own controllers, tables and tools are described in the recipe it came 
   `bun --conditions=@silkweave/box-source` resolves `@silkweave/box-core` to `packages/core/src/`,
   Bun without that condition resolves it to the tsdown-built `packages/core/build/`. A stale `build/` after a
   rename fails the server tests with a confusing resolution error; `box build` fixes it.
-- **Warehouse access** goes through core's ephemeral-connection layer
-  (`packages/core/src/warehouse/db.ts`): reads open `read_only`, writes open `read_write`
-  serialized in-process and retried on a file-lock conflict, and both close immediately. The server
-  never holds the DuckDB lock, so a read-only `duckdb` CLI or MCP server keeps working in between.
-  See [`WAREHOUSE.md`](./WAREHOUSE.md).
+- **Database access** goes through core's executor (`packages/core/src/warehouse/db.ts`,
+  `withRead` / `withWrite`): every statement runs in a transaction on the login the current context
+  chooses (the caller's role, `box_core` for core accessors, `box_system` for named system work),
+  from pools inside one connection budget. See [`WAREHOUSE.md`](./WAREHOUSE.md).
 
 ---
 
@@ -38,14 +37,22 @@ export class OpsController {
   @Get('actions')
   @ApiOkResponse({ type: ActionsDto })
   @Trpc()                                  // → tRPC query `opsActions`
+  @Resource('action')                      // its category (AUTH.md "Roles and areas")
+  @Read()                                  // changes nothing shared
   actions(): ActionsDto { ... }
 
   @Trpc({ kind: 'subscription', chunk: IngestProgressDto })
   @Mcp({ name: 'run-now' })                // → tRPC subscription `opsRunNow` + an MCP tool
+  @Resource('action')
   async *runNow(@Body() body: RunNowDto, @Req() req: PrincipalRequest) { ... }
 }
 ```
 
+- **Classification:** every handler is classified at boot (`auth/handler-map.ts`) and boot
+  refuses one that is not: a feature's handlers are its area, at `read` with `@Read()` and `write`
+  otherwise; a core handler carries `@Resource(kind)`, `@Authenticated()`, `@Area(...)`, `@Admin()`
+  or `@Public()`. Mark `@Read()` by what the code does, never by verb. A GET route and a tRPC query
+  must carry it (`handler-map.test.ts`). See [AUTH.md](./AUTH.md#roles-and-areas).
 - **Input** reflects from `@Param` / `@Query` / `@Body` plus class-validator DTOs; **output** from
   `@ApiOkResponse({ type })`. The DTO classes are not ceremony - they are the schema all three
   transports share.
@@ -60,18 +67,25 @@ export class OpsController {
   adapters switch to per-chunk delivery: a tRPC subscription over SSE, MCP `notifications/progress`,
   NDJSON on the CLI. MCP buffers the chunks into a final result for hosts that pass no
   progressToken.
-- **MCP** is mounted by `mcp({ basePath: '/mcp' })` in `app.module.ts` over Streamable HTTP. **The
+- **MCP** is mounted by `mcp({ basePath: '/mcp' })` in `app.module.ts` over Streamable HTTP and
+  speaks MCP protocol 2026-07-28 only: a 2025-era client is refused (`-32022`). Claude Code
+  negotiates 2026-07-28 by itself; Codex needs `[features] mcp_2026_07_28 = true` in its
+  `config.toml` (docs/AGENT-TOOLS.md "Engines"). **The
   transport itself demands a bearer token**, not just the individual tools: a per-tool guard cannot
   gate `tools/list`, which is a transport route rather than a controller method, so without
   transport auth an anonymous client could enumerate every tool the Box has. `verifyToken` calls
-  core's `authenticatePrincipal`. The adapter's `filterActions` is the passthrough hook
-  (`agent/mcp-passthrough.ts`): a registered source (the `mcp` recipe) adds, per request, the outside
-  MCP servers' tools the calling person may use. Without one, and for a request carrying
-  `?passthrough=0` (a server-owned session's own `box` server), `/mcp` is the Box's own actions; a
-  passthrough action never shadows a Box action.
+  core's `authenticatePrincipal`. The adapter's `filterActions` (`agent/mcp-passthrough.ts`)
+  first keeps only the Box tools the caller's role reaches, on every `tools/list` and `tools/call`
+  (the transport refuses a call to a tool it did not list). Then it is the passthrough hook: a
+  registered source (the `mcp` recipe) adds, per request, the outside MCP servers' tools the calling
+  person may use, given `mcp` read, never for a request carrying `?passthrough=0` (a server-owned
+  session's own `box` server); a passthrough action never shadows a Box action.
+- **Request context:** each tRPC and MCP action call runs in its own request frame
+  (`auth/call-context.ts` wraps every action's `run`), and REST requests in the frame the first
+  middleware opens; `AuthGuard` fills it.
 - **Connection endpoints:** `POST /mcp/connections/<id>` serves one connection's tools under their
   upstream names to agent sessions (core port `mcp-connections.ts`, dispatched in `main.ts` with a
-  bearer token, answered by the `mcp` recipe's relay; 404 without the recipe).
+  bearer token, answered by the `mcp` recipe's relay; 404 without the recipe), over 2026-07-28 only.
 - **CLI:** `box <tool-name>` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
   a running server's `/mcp` - one subcommand per tool. Configure `mcp.url` and `mcp.token` in
   `box.local.json`. Without an explicit URL, the proxy uses the configured `server.port`. Its
@@ -214,11 +228,11 @@ from an agent, the CLI - goes through `executeRecorded()`, which wraps the gener
 `automation_runs` row (`queued` → `running` → `success`/`error`) and keeps the progress stream as
 the run's live log (`ops/run-log.ts`, shared with agent trigger runs): `readRun` serves it from
 memory while the run is active, a throttled flush writes it to the row at most every 5 seconds
-(never per line: the warehouse is single-writer), and finalization writes it in full (capped at the
+(never per line, which keeps run-log writes small), and finalization writes it in full (capped at the
 last 2000 lines - backfills stream thousands; each line has a per-run `seq`). `onRunLog` hands
 each new line to `opsRunTail`, and every row state change emits `table:automation_runs` (with the
 run id) on the change bus. The queue is in-process FIFO with
-concurrency 1, because the warehouse is single-writer. A caller that wants skip-instead-of-queue
+concurrency 1, so runs execute in order and heavy pulls never overlap. A caller that wants skip-instead-of-queue
 checks `isActionBusy()` first and records a `skipped` row.
 
 **"Run now" is detached from its viewer.** `startDetachedRun(actionId, meta)` starts the run and
@@ -253,18 +267,30 @@ Two producers feed it:
   write, so the web UI, MCP tools, REST and scheduled runs all funnel through the one producer;
 - **coarse and watched**: `apps/server/src/changes/changes.watcher.ts` runs a recursive fs watcher
   over the Box's data directory for edits that bypass the server entirely (a local agent session
-  editing markdown, an editor, an external DuckDB writer), debounced 300ms per scope. Its
-  `data.db*` events are suppressed within 3s of an in-process write (`lastWarehouseWriteAt()`), so
-  the precise `table:` events are not doubled by a generic `warehouse` one. A missing data directory
-  degrades the feed to in-process events rather than taking the server down.
+  editing markdown, an editor), debounced 300ms per scope: `docs/<section>/...` becomes
+  `docs:<section>` and `config/<file>` becomes `config:<file>`. Database writes made outside the Box
+  raise no event. A missing data directory degrades the feed to in-process events rather than taking
+  the server down.
 
 `ChangesController` exposes one long-lived tRPC subscription, `changesFeed`. Its first event is a
 `hello` carrying a per-process `BOOT_ID`: a client that sees a **second** hello (a reconnect, a
 server restart) knows events may have been missed and reloads its stores instead of replaying. A
 `ping` every 45s keeps idle connections off the reaper. The web app subscribes over the `/trpc`
-WebSocket (see [WEB.md](WEB.md), "The client"); the mobile app over SSE. Events are invalidation hints only, so
-fanning them out to any authenticated principal leaks nothing beyond "something in `<scope>`
-changed".
+WebSocket (see [WEB.md](WEB.md), "The client"); the mobile app over SSE. Events are invalidation hints only,
+but a scope and its detail still say where activity happens, so each subscriber gets only the
+scopes of areas it reads (`change-access.ts`): a feature's table to readers of that feature; a core
+table whose rows carry their own areas (signals, points, snapshots, events, runs) to readers of the
+areas the writer recorded on the change (`emitAreaChange`; the record layer records them for
+tables with an `area` column), without the detail (a run id) unless the reader is an admin, and to
+admins only when no areas were recorded; the directory (users, roles, fx rates) to everyone;
+`data_sources` to signals readers; `docs:<section>` to readers of the feature declaring the section
+(manifest `docSections`); `<feature>:<topic>` to that feature's readers; `config:` scopes, other
+core tables and unknown scopes to admins. Every delivery is admitted against the committed policy
+first (one core read), so a revoke committed anywhere applies to the next event, queued ones
+included, or ends the feed when the principal can no longer act. When the policy moved since the
+last delivery the feed sends `policy` first: the web app refetches `me` and reloads its stores
+(a store the server now refuses drops what it holds), and leaves the open route of an area the
+principal lost for the dashboard; mobile reloads its stores.
 
 **`packages/core/src/events.ts` is the persisted spine.** The server-relevant half: `recordEvent()`
 is idempotent on `(kind, dedup_key)` and returns whether the event was **fresh**; `onEvent(listener)`
@@ -364,7 +390,7 @@ Codex profile reads as connected from its availability. `requireApiKey` must sta
 WorkerDeck's own PTY loader picks Bun's PTY (`@lydell/node-pty` loads under Bun but never starts
 the child); without a PTY the routes answer 501.
 
-**Default profile.** Each user's `users.agent_profile` (migration `core:006-users-agent-profile`)
+**Default profile.** Each user's `users.agent_profile`
 names one of their `agentProfiles`. The first account connected on the panel becomes the default
 when no connected default exists; "Use as default" and "Clear" appear only once a second account is
 connected (or the chosen default is no longer connected). Null keeps the deployment rule (Claude
@@ -580,12 +606,8 @@ export default defineServerFeature({ id: 'sink', module: SinkModule })
   `registerUserCleanup` - happens in the module's `onModuleInit`, and the module unregisters on
   destroy. This is the direction the seam prescribes: a dependent registers into a dependency, never
   the reverse. See [`docs/core/SEAM.md`](./core/SEAM.md) § 4.3.
-- **A feature may own a store outside the warehouse.** DuckDB is single-writer across processes and
-  every query opens an ephemeral connection with lock-conflict backoff - right for "one UPSERT plus
-  a re-derive", wrong for many tiny writes at interactive latency plus point reads, and a feature
-  contending for that lock would degrade every read-only reader of the warehouse too. So a feature
-  with that access pattern is allowed its own file, entirely inside its own directories; the `chat`
-  feature is the one that does it today.
+- **A feature may own a store outside the database**, entirely inside its own directories, with
+  its own ledger and backups ([`docs/core/SEAM.md`](./core/SEAM.md) § 3.6); none does today.
 - **Actions, tables and migrations** are declared on the *core* manifest (`defineCoreFeature`), not
   this one. A feature with no schema of its own ships `migrations: []` - the ledger is append-only
   and starts empty. See [`docs/core/SEAM.md`](./core/SEAM.md) § 3 and [`WAREHOUSE.md`](./WAREHOUSE.md).

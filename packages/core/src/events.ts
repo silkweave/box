@@ -10,12 +10,18 @@
 // The freshness-gate insert stays raw (INSERT … ON CONFLICT DO NOTHING … RETURNING is the
 // idempotency semantics the record layer's partial upsert must not replace); plain row reads go
 // through the record layer (warehouse/model.ts + the EVENTS spec). Aggregate queries stay raw.
-// Raw writes stamp their own UTC-naive timestamps (never SQL now(), which is local wall time).
+// Timestamps are instants (timestamptz); writes pass ISO-8601 text.
 
+import { asSystem, canReachAreas } from './request-context.js'
+import { emitAreaChange } from './changes.js'
+import { isStoredArea } from './auth/owning-area.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { ensureSchema, withRead, withWrite } from './warehouse/db.js'
-import { readRecords, toNaiveUtc } from './warehouse/model.js'
-import { EVENTS } from './warehouse/core-models.js'
+import { withWrite } from './warehouse/db.js'
+import { db } from './warehouse/core-db.js'
+import { anyOf, json, sql } from './warehouse/kysely.js'
+import type { ExpressionBuilder } from './warehouse/kysely.js'
+import type { CoreDb } from './warehouse/core-models.js'
+import { toInstant } from './warehouse/model.js'
 
 /** One event as producers hand it in. */
 export interface EventInput {
@@ -35,6 +41,24 @@ export interface EventInput {
   subject?: string
   /** Permalink for the event, when one exists (also mirrored in fields for templates). */
   url?: string
+  /**
+   * Every area a reader needs (PERMISSIONS 8.3), from the data: the producing feature for its own
+   * records, a signal's area for `signal.*`, the union of the inputs for a digest. Never empty;
+   * `admin` when nothing classifies it.
+   */
+  areas: readonly string[]
+}
+
+/**
+ * The validated area list of an event: non-empty, each an owning area (an installed feature,
+ * `signals`, `ops` or `admin`), stored sorted and unique.
+ */
+export function eventAreas(areas: readonly string[] | undefined): string[] {
+  const out = [...new Set((areas ?? []).map((a) => (typeof a === 'string' ? a.trim() : '')))]
+  if (!out.length || out.some((a) => !a)) throw new Error('an event needs a non-empty list of areas (PERMISSIONS 8.3); use admin when nothing classifies it')
+  const unknown = out.filter((a) => !isStoredArea(a))
+  if (unknown.length) throw new Error(`event areas ${unknown.join(', ')} are not owning areas (an installed feature, signals, ops or admin)`)
+  return out.sort()
 }
 
 /** A recorded event row (mirrors the `events` table). */
@@ -49,10 +73,22 @@ export interface EventRecord {
   fields: Record<string, string>
   event_at: string | null
   received_at: string
+  /** Every area a reader needs (EventInput.areas). */
+  areas: string[]
 }
 
 /** UTC-naive "now" for raw writes - the same stamp convention the record layer uses. */
-const utcNow = (): string => toNaiveUtc(new Date().toISOString())
+const CORE = { reach: 'core' } as const
+
+/** `coalesce(event_at, received_at)`: when the event happened, else when it arrived. */
+const happenedAt = (eb: ExpressionBuilder<CoreDb, 'events'>) => eb.fn.coalesce('event_at', 'received_at')
+
+/** A row limit, validated as the record layer does. */
+function rowLimit(limit: number): number {
+  const n = Math.trunc(Number(limit))
+  if (!Number.isInteger(n) || n < 0) throw new Error(`invalid limit ${n}`)
+  return n
+}
 
 // --- event chain depth ---------------------------------------------------------------------------
 // A run that an event trigger started can emit events of its own, which can fire triggers again.
@@ -104,7 +140,9 @@ export function onEvent(listener: EventListener): () => void {
 async function fanOut(event: EventInput): Promise<void> {
   for (const listener of listeners) {
     try {
-      await listener(event)
+      // Subscribers are derivations and runners after an authorized write: named system work,
+      // whoever recorded the event (request-context.ts).
+      await asSystem(`events: ${event.kind}`, () => listener(event))
     } catch (err) {
       console.error(`[events] listener failed for ${event.kind}:${event.dedup_key}: ${String((err as Error)?.message ?? err)}`)
     }
@@ -121,71 +159,79 @@ export async function recordEvent(input: EventInput): Promise<boolean> {
   const depth = currentEventDepth()
   const event: EventInput =
     depth !== undefined && input.fields?.['depth'] === undefined ? { ...input, fields: { ...input.fields, depth: String(depth) } } : input
-  await ensureSchema()
-  const fresh = await withWrite(async (conn) => {
-    const res = await conn.runAndReadAll(
-      `INSERT INTO events (id, kind, dedup_key, source, actor, subject, url, fields, event_at, received_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?::JSON, ?::TIMESTAMP, ?::TIMESTAMP)
-       ON CONFLICT (kind, dedup_key) DO NOTHING
-       RETURNING id`,
-      [
-        `${event.kind}:${event.dedup_key}`,
-        event.kind,
-        event.dedup_key,
-        event.source ?? '',
-        event.actor ?? '',
-        event.subject ?? '',
-        event.url ?? event.fields.url ?? event.fields.permalink ?? '',
-        JSON.stringify(event.fields ?? {}),
-        event.event_at ? toNaiveUtc(event.event_at) : null,
-        utcNow(),
-      ],
-    )
-    return (res.getRowObjectsJson() as unknown[]).length > 0
-  })
+  const fresh = await withWrite(async () => {
+    const rows = await db.insertInto('events')
+      .values({
+        id: `${event.kind}:${event.dedup_key}`,
+        kind: event.kind,
+        dedup_key: event.dedup_key,
+        source: event.source ?? '',
+        actor: event.actor ?? '',
+        subject: event.subject ?? '',
+        url: event.url ?? event.fields.url ?? event.fields.permalink ?? '',
+        fields: json(event.fields ?? {}),
+        event_at: event.event_at ? toInstant(event.event_at) : null,
+        received_at: new Date().toISOString(),
+        areas: eventAreas(event.areas),
+      })
+      .onConflict((oc) => oc.columns(['kind', 'dedup_key']).doNothing())
+      .returning('areas')
+      .execute()
+    // A fresh row only, with the areas as stored: the feed delivers it to readers of all of them.
+    if (rows[0]) emitAreaChange('table:events', rows[0].areas)
+    return rows.length > 0
+  }, CORE)
   if (fresh) await fanOut(event)
   return fresh
 }
 
-/** Recent events of the given kinds (newest first) - the digest + Inbox read side. */
+/**
+ * Recent events of the given kinds (newest first) - the digest + Inbox read side.
+ *
+ * Reads by area (W8 R3, PERMISSIONS 8.3): a request caller sees only events whose every area it can
+ * read (row security applies the same predicate at the database); system work sees all. A caller
+ * that summarizes events into a shared output (a derived signal, a digest, a detector) reads as
+ * named system work after its own admission, so one reader's view never becomes everyone's result.
+ */
 export async function listEvents(kinds: string[], sinceIso: string, limit = 500): Promise<EventRecord[]> {
   if (kinds.length === 0) return []
-  const placeholders = kinds.map(() => '?').join(', ')
-  return readRecords<EventRecord>(EVENTS, {
-    where: `kind IN (${placeholders}) AND COALESCE(event_at, received_at) >= ?::TIMESTAMP`,
-    params: [...kinds, toNaiveUtc(sinceIso)],
-    orderBy: `COALESCE(event_at, received_at) DESC LIMIT ${Number(limit)}`,
-  })
+  const rows = (await db.selectFrom('events').selectAll()
+    .where('kind', '=', anyOf(kinds))
+    .where((eb) => eb(happenedAt(eb), '>=', toInstant(sinceIso)))
+    .orderBy(happenedAt, 'desc')
+    .limit(rowLimit(limit))
+    .execute()) as EventRecord[]
+  return rows.filter((e) => canReachAreas(e.areas, 'read'))
 }
 
-/** The kinds recorded since `sinceIso`, most frequent first - what an event trigger can listen for. */
+/**
+ * The kinds recorded since `sinceIso`, most frequent first - what an event trigger can listen for.
+ * Counts only the events the caller can read (row security; listEvents).
+ */
 export async function recentEventKinds(sinceIso: string, limit = 200): Promise<{ kind: string; count: number }[]> {
-  await ensureSchema()
-  const rows = await withRead<{ kind: string; n: unknown }>(
-    `SELECT kind, count(*) AS n FROM events
-      WHERE COALESCE(event_at, received_at) >= ?::TIMESTAMP
-      GROUP BY kind ORDER BY n DESC, kind LIMIT ${Number(limit)}`,
-    [toNaiveUtc(sinceIso)],
-  )
+  const rows = await db.selectFrom('events')
+    .select(['kind', (eb) => eb.fn.countAll<number>().as('n')])
+    .where((eb) => eb(happenedAt(eb), '>=', toInstant(sinceIso)))
+    .groupBy('kind').orderBy('n', 'desc').orderBy('kind')
+    .limit(rowLimit(limit))
+    .execute()
   return rows.map((r) => ({ kind: r.kind, count: Number(r.n) }))
 }
 
 /**
  * Events-per-UTC-day for the given kinds, ascending - the event-derived-signals read side
- * (e.g. the `x.engagement` signal). Days with no events are absent; callers zero-fill.
+ * (e.g. the `x.engagement` signal). Days with no events are absent; callers zero-fill. Counts only
+ * the events the caller can read (row security): a deriver reads as named system work (listEvents).
  */
 export async function dailyKindCounts(kinds: string[]): Promise<{ date: string; value: number }[]> {
   if (kinds.length === 0) return []
-  await ensureSchema()
-  const placeholders = kinds.map(() => '?').join(', ')
-  const rows = await withRead<{ date: string; value: unknown }>(
-    `SELECT CAST(CAST(COALESCE(event_at, received_at) AS DATE) AS VARCHAR) AS date, count(*) AS value
-       FROM events
-      WHERE kind IN (${placeholders})
-      GROUP BY 1
-      ORDER BY 1`,
-    kinds,
-  )
+  // Sessions run in UTC, so the date of an instant is its UTC day.
+  const rows = await db.selectFrom('events')
+    // Raw sql: the ::date cast of the event instant.
+    .select([sql<string>`coalesce(event_at, received_at)::date`.as('date'), (eb) => eb.fn.countAll<number>().as('value')])
+    .where('kind', '=', anyOf(kinds))
+    .groupBy('date').orderBy('date')
+    .execute()
   return rows.map((r) => ({ date: r.date, value: Number(r.value) }))
 }
 
@@ -195,38 +241,46 @@ export interface SubjectActivity {
   total: number
   /** Per-kind counts within the window, e.g. { 'x.like': 12, 'x.reply': 3 }. */
   byKind: Record<string, number>
-  /** Latest event for the subject in the window - carries a representative url + fields. */
+  /** Every area of the counted events, sorted: a summary's reader needs them all (8.3). */
+  areas: string[]
+  /** Latest counted event for the subject (of the given kinds, in the window) - a representative url + fields. */
   latest: EventRecord
 }
 
+/**
+ * Activity per subject for the given kinds since `sinceIso`, busiest first. Counts only the events
+ * the caller can read (row security; listEvents for system callers).
+ */
 export async function subjectActivity(kinds: string[], sinceIso: string): Promise<SubjectActivity[]> {
   if (kinds.length === 0) return []
-  await ensureSchema()
-  const placeholders = kinds.map(() => '?').join(', ')
-  const rows = await withRead<Record<string, unknown>>(
-    `SELECT subject, kind, count(*) AS n
-       FROM events
-      WHERE subject <> '' AND kind IN (${placeholders}) AND COALESCE(event_at, received_at) >= ?::TIMESTAMP
-      GROUP BY subject, kind`,
-    [...kinds, toNaiveUtc(sinceIso)],
-  )
-  const bySubject = new Map<string, { total: number; byKind: Record<string, number> }>()
+  const since = toInstant(sinceIso)
+  // One statement, one snapshot (BOX-Review d7f5f4e finding 5): the counts, their areas and each
+  // subject's newest counted event come from the same rows, so the representative event's areas are
+  // always among the summary's. Events are append-only, so reading it by id afterwards returns the
+  // same row (or none, if pruned meanwhile: that subject is skipped). The window's rows are few
+  // (a trailing window of the given kinds), and this shape runs on both engines.
+  const rows = await db.selectFrom('events').select(['id', 'subject', 'kind', 'areas'])
+    .where('subject', '<>', '').where('kind', '=', anyOf(kinds))
+    .where((eb) => eb(happenedAt(eb), '>=', since))
+    .orderBy('subject').orderBy(happenedAt, 'desc').orderBy('id')
+    .execute()
+  const bySubject = new Map<string, { total: number; byKind: Record<string, number>; areas: Set<string>; latestId: string }>()
   for (const r of rows) {
-    const subject = String(r.subject)
-    const entry = bySubject.get(subject) ?? { total: 0, byKind: {} }
-    const n = Number(r.n)
-    entry.total += n
-    entry.byKind[String(r.kind)] = n
-    bySubject.set(subject, entry)
+    // Ordered newest first per subject: the first row of a subject is its representative.
+    const entry = bySubject.get(r.subject) ?? { total: 0, byKind: {}, areas: new Set<string>(), latestId: r.id }
+    entry.total += 1
+    entry.byKind[r.kind] = (entry.byKind[r.kind] ?? 0) + 1
+    for (const a of r.areas ?? []) entry.areas.add(a)
+    bySubject.set(r.subject, entry)
   }
+  if (bySubject.size === 0) return []
+  const latest = new Map<string, EventRecord>()
+  const picked = (await db.selectFrom('events').selectAll().where('id', '=', anyOf([...bySubject.values()].map((e) => e.latestId))).execute()) as EventRecord[]
+  for (const e of picked) latest.set(e.subject, e)
   const out: SubjectActivity[] = []
-  for (const [subject, { total, byKind }] of bySubject) {
-    const latest = await readRecords<EventRecord>(EVENTS, {
-      where: 'subject = ?',
-      params: [subject],
-      orderBy: 'COALESCE(event_at, received_at) DESC LIMIT 1',
-    })
-    if (latest[0]) out.push({ subject, total, byKind, latest: latest[0] })
+  for (const [subject, { total, byKind, areas }] of bySubject) {
+    const last = latest.get(subject)
+    if (last) out.push({ subject, total, byKind, areas: [...areas].sort(), latest: last })
   }
-  return out.sort((a, b) => b.total - a.total)
+  return out.sort((a, b) => b.total - a.total || a.subject.localeCompare(b.subject))
 }

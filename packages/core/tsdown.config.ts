@@ -11,6 +11,6 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  // Keep every bare dependency external (duckdb native addon, playwright, etc.).
+  // Keep every bare dependency external (pg, playwright, etc.).
   deps: { neverBundle: [/^[^./]/] },
 })

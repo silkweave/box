@@ -43,14 +43,17 @@ export interface PresetSeed {
 
 interface PresetsPayload {
   seeded: string[]
+  /** Modules the signed-in principal may write presets in. */
+  writable: string[]
   modules: Record<string, PresetRecord[]>
 }
 
 const store = createDataStore<PresetsPayload>(() =>
   trpc.presetsList.query({}).then((d) => {
-    const payload = d as { seeded?: unknown; modules?: Record<string, PresetRecord[]> }
+    const payload = d as { seeded?: unknown; writable?: unknown; modules?: Record<string, PresetRecord[]> }
     return {
       seeded: Array.isArray(payload.seeded) ? (payload.seeded as string[]) : [],
+      writable: Array.isArray(payload.writable) ? (payload.writable as string[]) : [],
       modules: payload.modules ?? {},
     }
   }),

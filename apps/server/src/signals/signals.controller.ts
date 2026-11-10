@@ -1,10 +1,11 @@
 import { BadRequestException, Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '../auth/auth.guard.js'
-import { type PrincipalRequest, Admin } from '../auth/auth.decorators.js'
+import { type PrincipalRequest, Admin, Read, Resource } from '../auth/auth.decorators.js'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
-import { assertKnownUser, computeSignalAggregates, listMeasures, measureOptions, deleteSignalDefinition, deleteSignalPoint, floorSignalBucket, mergeSignalPoints, SIGNAL_ACCUMULATIONS, SIGNAL_DIRECTIONS, SIGNAL_INTERVALS, SIGNAL_SOURCES, readAllSignalPointRecords, readDataSources, readSignalDefinition, readSignalDefinitions, readSignalOwnersFile, readSignalPointRecords, readSignalPoints, recordSignalIncrement, setSignalArchived, resolveSignalHistory, renameSignalDefinition, resolveSignalOwner, serializeBucket, setSignalPoint, setSignalPoints, SUBDAILY_WINDOW_DAYS, upsertSignalDefinition, writeSignalOwnersFile, type SignalAccumulation, type SignalDefinition, type SignalDirection, type MergedSignalPoint, type SignalInterval, type SignalPointRecord, type SignalSource } from '@silkweave/box-core'
+import { assertKnownUser, computeSignalAggregates, trackerCatalogue, deleteSignalDefinition, deleteSignalPoint, floorSignalBucket, mergeSignalPoints, SIGNAL_ACCUMULATIONS, SIGNAL_DIRECTIONS, SIGNAL_INTERVALS, SIGNAL_SOURCES, readAllSignalPointRecords, readDataSources, readSignalDefinition, readSignalDefinitions, readSignalOwnersFile, readSignalPointRecords, readSignalPoints, recordSignalIncrement, signalReferences, setSignalArchived, resolveSignalHistory, renameSignalDefinition, resolveSignalOwner, serializeBucket, setSignalPoint, setSignalPoints, SUBDAILY_WINDOW_DAYS, upsertSignalDefinition, writeSignalOwnersFile, type SignalAccumulation, type SignalDefinition, type SignalDirection, type MergedSignalPoint, type SignalInterval, type SignalPointRecord, type SignalSource } from '@silkweave/box-core'
+import { inputError } from '../auth/input-error.js'
 
 // DTOs document the REST/Swagger surface and drive the generated tRPC output type. The dashboard
 // keeps its own SignalsData type and casts the result; runtime shape is a superset of the old
@@ -32,6 +33,8 @@ class SignalAggregatesDto {
 class SignalDto {
   @ApiProperty() id!: string
   @ApiProperty() channel!: string
+  @ApiProperty({ description: 'The owning area (a Box tracker\'s feature, `signals` for a data-source or hand-typed signal, a feature\'s own signal\'s area): write on it edits the signal and its points' })
+  area!: string
   @ApiProperty() label!: string
   @ApiProperty() group!: string
   @ApiProperty({ required: false }) unit?: string
@@ -45,10 +48,10 @@ class SignalDto {
   @ApiProperty({ type: [String] }) depends_on!: string[]
   @ApiProperty({ required: false, nullable: true, description: 'The data source whose sync owns this signal\'s live points (null = not connected)' })
   data_source_id!: string | null
-  @ApiProperty({ required: false, nullable: true, description: 'The provider measure this signal subscribes to, or (with no data_source_id) the in-Box measure that computes it' })
-  measure_key!: string | null
-  @ApiProperty({ type: Object, description: "An in-Box measure's parameter values ({} otherwise)" })
-  measure_params!: Record<string, string>
+  @ApiProperty({ required: false, nullable: true, description: 'The provider tracker this signal subscribes to, or (with no data_source_id) the Box tracker that computes it' })
+  tracker_key!: string | null
+  @ApiProperty({ type: Object, description: "A Box tracker's parameter values ({} otherwise)" })
+  tracker_params!: Record<string, string>
   @ApiProperty({ required: false, nullable: true, description: 'The formula this signal is computed from (null = an ordinary signal)' })
   formula!: string | null
   @ApiProperty({ type: [Number], description: 'Levels that record a signal.threshold event when reached or crossed upward, ascending' })
@@ -80,6 +83,8 @@ class SignalsDataDto {
 
 class SignalDefinitionDto {
   @ApiProperty() id!: string
+  @ApiProperty({ description: 'The owning area: write on it edits the signal and its points' })
+  area!: string
   @ApiProperty() label!: string
   @ApiProperty() signal_group!: string
   @ApiProperty({ required: false, nullable: true }) unit!: string | null
@@ -92,9 +97,9 @@ class SignalDefinitionDto {
   @ApiProperty() description!: string
   @ApiProperty({ type: [String] }) depends_on!: string[]
   @ApiProperty({ required: false, nullable: true }) data_source_id!: string | null
-  @ApiProperty({ required: false, nullable: true }) measure_key!: string | null
-  @ApiProperty({ type: Object, description: "An in-Box measure's parameter values ({} otherwise)" })
-  measure_params!: Record<string, string>
+  @ApiProperty({ required: false, nullable: true }) tracker_key!: string | null
+  @ApiProperty({ type: Object, description: "A Box tracker's parameter values ({} otherwise)" })
+  tracker_params!: Record<string, string>
   @ApiProperty({ required: false, nullable: true, description: 'The formula this signal is computed from (null = an ordinary signal)' })
   formula!: string | null
   @ApiProperty({ type: [Number] }) thresholds!: number[]
@@ -106,21 +111,23 @@ class SignalDefinitionDto {
   @ApiProperty({ required: false, nullable: true }) created_by!: string | null
   @ApiProperty({ required: false, nullable: true }) updated_by!: string | null
 }
-class MeasureOptionDto {
+class TrackerOptionDto {
   @ApiProperty() value!: string
   @ApiProperty() label!: string
 }
-class MeasureParamDto {
+class TrackerParamDto {
   @ApiProperty() key!: string
   @ApiProperty() label!: string
   @ApiProperty({ enum: ['enum', 'text', 'date', 'user'] }) kind!: string
-  @ApiProperty({ type: [MeasureOptionDto], description: 'enum params: the allowed values (resolved now); [] otherwise' })
-  options!: MeasureOptionDto[]
+  @ApiProperty({ type: [TrackerOptionDto], description: 'enum params: the allowed values (resolved now); [] otherwise' })
+  options!: TrackerOptionDto[]
   @ApiProperty() required!: boolean
   @ApiProperty() description!: string
 }
-class MeasureDto {
-  @ApiProperty({ description: '<feature>.<name>, the measure_key a signal binds' }) key!: string
+class TrackerDto {
+  @ApiProperty({ enum: ['box', 'source'], description: "box: computed from Box data (bind tracker_key + tracker_params). source: fed by a data source's sync (bind data_source_id + tracker_key)" })
+  origin!: string
+  @ApiProperty({ description: "The tracker_key a signal binds: <feature>.<name> for a Box tracker, the provider's token for a source one" }) key!: string
   @ApiProperty() label!: string
   @ApiProperty({ required: false, nullable: true }) unit!: string | null
   @ApiProperty() interval!: string
@@ -128,11 +135,14 @@ class MeasureDto {
   @ApiProperty() direction!: string
   @ApiProperty() group!: string
   @ApiProperty() description!: string
-  @ApiProperty({ type: [MeasureParamDto] }) params!: MeasureParamDto[]
+  @ApiProperty({ type: [TrackerParamDto] }) params!: TrackerParamDto[]
+  @ApiProperty({ required: false, nullable: true, description: 'Source trackers: the data source that feeds it' }) data_source_id!: string | null
+  @ApiProperty({ required: false, nullable: true }) data_source_label!: string | null
+  @ApiProperty({ required: false, nullable: true }) provider!: string | null
 }
-class MeasuresDto {
+class TrackersDto {
   @ApiProperty() generatedAt!: string
-  @ApiProperty({ type: [MeasureDto] }) measures!: MeasureDto[]
+  @ApiProperty({ type: [TrackerDto] }) trackers!: TrackerDto[]
 }
 
 class SignalDefinitionsDto {
@@ -198,12 +208,12 @@ class UpsertSignalDto {
   @IsOptional() @IsString() description?: string
   @ApiProperty({ required: false, type: [String], description: 'Signal ids this one is driven by (must exist, no cycles)' })
   @IsOptional() @IsArray() @IsString({ each: true }) depends_on?: string[]
-  @ApiProperty({ required: false, description: "Connect this signal to a data source (data-sources); needs measure_key too. '' with a measure_key binds an in-Box measure instead; '' without one unbinds" })
+  @ApiProperty({ required: false, description: "Connect this signal to a data source (data-sources); needs tracker_key too. '' with a tracker_key binds a Box tracker instead; '' without one unbinds" })
   @IsOptional() @IsString() data_source_id?: string
-  @ApiProperty({ required: false, description: "With data_source_id: the provider's measure key, verbatim (providers-list), e.g. FIRST_MESSAGE. Alone: an in-Box measure key (measures-list), e.g. planning.tasks_done; the signal becomes derived and the measure computes its points. '' unbinds (a provider's points stay; an in-Box measure's go)" })
-  @IsOptional() @IsString() measure_key?: string
-  @ApiProperty({ required: false, description: 'In-Box measures only: JSON object string of parameter values, e.g. {"kind":"oss-pr"} (measures-list names each param). Replaces the stored values' })
-  @IsOptional() @IsString() measure_params?: string
+  @ApiProperty({ required: false, description: "With data_source_id: the provider's tracker key, verbatim (providers-list), e.g. FIRST_MESSAGE. Alone: a Box tracker key (trackers-list), e.g. planning.tasks_done; the signal becomes derived and the tracker computes its points. '' unbinds (a provider's points stay; a Box tracker's go)" })
+  @IsOptional() @IsString() tracker_key?: string
+  @ApiProperty({ required: false, description: 'Box trackers only: JSON object string of parameter values, e.g. {"kind":"oss-pr"} (trackers-list names each param). Replaces the stored values' })
+  @IsOptional() @IsString() tracker_params?: string
   @ApiProperty({
     required: false,
     nullable: true,
@@ -239,6 +249,21 @@ class SignalListQueryDto {
   @IsOptional() include_archived?: boolean
 }
 
+class SignalReferencesQueryDto {
+  @ApiProperty({ description: 'Signal id' }) @IsString() id!: string
+}
+class SignalReferenceDto {
+  @ApiProperty({ description: 'What it is: goal, task, trigger' }) kind!: string
+  @ApiProperty({ description: "Its id in the owning feature" }) id!: string
+  @ApiProperty({ description: 'What a person calls it (a goal title, a trigger name)' }) label!: string
+  @ApiProperty({ description: 'How it uses the signal: goal measure, milestone measure, trigger filter' }) via!: string
+  @ApiProperty({ nullable: true, type: String, description: 'App URL that opens it, or null' }) href!: string | null
+}
+class SignalReferencesDto {
+  @ApiProperty() id!: string
+  @ApiProperty({ type: [SignalReferenceDto] }) references!: SignalReferenceDto[]
+}
+
 class ArchiveSignalDto {
   @ApiProperty({ description: 'Signal id' }) @IsString() id!: string
   @ApiProperty({ required: false, description: 'users.id performing this mutation (audit stamp; defaults to the authenticated principal)' })
@@ -249,7 +274,7 @@ class ArchiveSignalDto {
 const flag = (v: unknown): boolean => v === true || v === 'true'
 
 class DeleteSignalDto {
-  @ApiProperty({ description: 'Signal id to delete (points are never deleted with the definition)' })
+  @ApiProperty({ description: 'Signal id to delete (its data points are deleted with it)' })
   @IsString() id!: string
   @ApiProperty({ required: false, description: 'users.id performing this mutation (audit stamp; defaults to the authenticated principal)' })
   @IsOptional() @IsString() actor?: string
@@ -360,6 +385,7 @@ class SignalEventResultDto {
 }
 
 
+@Resource('signal')
 @Controller('signals')
 @UseGuards(AuthGuard)
 export class SignalsController {
@@ -375,6 +401,7 @@ export class SignalsController {
   @Get()
   @ApiOkResponse({ type: SignalsDataDto })
   @Trpc()
+  @Read()
   async data(@Query() query: SignalListQueryDto = {}): Promise<SignalsDataDto> {
     const [allDefinitions, pointRows, sourceRows] = await Promise.all([readSignalDefinitions(), readAllSignalPointRecords(), readDataSources()])
     // Archived signals are left out unless asked for. Formulas still resolve against every
@@ -421,6 +448,7 @@ export class SignalsController {
       signalById.set(d.id, {
         id: d.id,
         channel: d.channel,
+        area: d.area,
         label: d.label,
         group: d.signal_group,
         unit: d.unit ?? undefined,
@@ -432,8 +460,8 @@ export class SignalsController {
         description: d.description,
         depends_on: d.depends_on,
         data_source_id: d.data_source_id,
-        measure_key: d.measure_key,
-        measure_params: d.measure_params,
+        tracker_key: d.tracker_key,
+        tracker_params: d.tracker_params,
         formula: d.formula,
         thresholds: d.thresholds,
         archived_at: d.archived_at ?? null,
@@ -465,73 +493,73 @@ export class SignalsController {
   @ApiOkResponse({ type: SignalDefinitionsDto })
   @Trpc()
   @Mcp({ name: 'signals-list' })
+  @Read()
   async list(@Query() query: SignalListQueryDto = {}): Promise<SignalDefinitionsDto> {
     const definitions = (await readSignalDefinitions({ includeArchived: flag(query?.include_archived) })) as SignalDefinition[] as SignalDefinitionDto[]
     return { generatedAt: new Date().toISOString(), definitions }
   }
 
   /**
-   * tRPC query `signalsMeasures` / MCP `measures-list` - the in-Box measures this Box registers,
-   * with their parameters (enum options resolved), for binding a signal (signal-upsert with
-   * measure_key and measure_params) or a goal (goal-upsert with measure_key).
+   * tRPC query `signalsTrackers` / MCP `trackers-list` - everything a signal can be bound to: the
+   * Box trackers this Box registers (with their parameters, enum options resolved) and the
+   * trackers of every connected data source. Bind a Box tracker with signal-upsert tracker_key and
+   * tracker_params (or goal-upsert tracker_key), a source tracker with data_source_id and tracker_key.
    */
-  @Get('measures')
-  @ApiOkResponse({ type: MeasuresDto })
+  @Get('trackers')
+  @ApiOkResponse({ type: TrackersDto })
   @Trpc()
-  @Mcp({ name: 'measures-list' })
-  async measures(): Promise<MeasuresDto> {
-    const measures: MeasureDto[] = []
-    for (const m of listMeasures()) {
-      const params: MeasureParamDto[] = []
-      for (const p of m.params) {
-        params.push({ key: p.key, label: p.label, kind: p.kind, options: await measureOptions(p), required: Boolean(p.required), description: p.description ?? '' })
-      }
-      measures.push({
-        key: m.key,
-        label: m.label,
-        unit: m.unit,
-        interval: m.interval,
-        accumulation: m.accumulation,
-        direction: m.direction,
-        group: m.group,
-        description: m.description,
-        params,
-      })
-    }
-    return { generatedAt: new Date().toISOString(), measures }
+  @Mcp({ name: 'trackers-list' })
+  @Read()
+  async trackers(): Promise<TrackersDto> {
+    return { generatedAt: new Date().toISOString(), trackers: await trackerCatalogue() }
+  }
+
+  /**
+   * tRPC query `signalsReferences` / MCP `signal-references` - where a signal is used: the goals,
+   * milestones and trigger filters that name it, each with a label, how it uses the signal and a
+   * link. Reported by the features that hold them; a Box without a feature simply lists fewer.
+   */
+  @Get('references')
+  @ApiOkResponse({ type: SignalReferencesDto })
+  @Trpc()
+  @Mcp({ name: 'signal-references' })
+  @Read()
+  async references(@Query() query: SignalReferencesQueryDto): Promise<SignalReferencesDto> {
+    if (!(await readSignalDefinition(query.id))) throw inputError(new Error(`signal ${query.id} not found`))
+    return { id: query.id, references: await signalReferences(query.id) }
   }
 
   /**
    * tRPC mutation `signalsUpsert` / MCP `signal-upsert` - create or partially update a signal
-   * definition. Definitions are configuration (like signal-owner-set), so admin-only.
+   * definition. A member's: whoever plans the work makes the signal that measures it (a milestone's
+   * "New signal"). Re-keying, deleting, archiving and owners stay admin-only.
    */
   @Post('definition')
   @ApiOkResponse({ type: SignalDefinitionDto })
   @Trpc({ kind: 'mutation' })
-  @Admin()
   @Mcp({ name: 'signal-upsert' })
   async upsert(@Body() body: UpsertSignalDto, @Req() req: PrincipalRequest): Promise<SignalDefinitionDto> {
     body.actor ??= req.principal?.id
-    const { unit, owner, data_source_id, measure_key, measure_params, formula, ...rest } = body
-    // '' on measure_key unbinds, and so does '' on data_source_id when no measure_key comes with it.
-    // data_source_id '' WITH a measure_key is an in-Box measure binding (no data source).
-    const unbind = measure_key === '' || (data_source_id === '' && measure_key === undefined)
+    const { unit, owner, data_source_id, tracker_key, tracker_params, formula, ...rest } = body
+    // '' on tracker_key unbinds, and so does '' on data_source_id when no tracker_key comes with it.
+    // data_source_id '' WITH a tracker_key is a Box tracker binding (no data source).
+    const unbind = tracker_key === '' || (data_source_id === '' && tracker_key === undefined)
     let params: Record<string, string> | undefined
-    if (measure_params !== undefined) {
+    if (tracker_params !== undefined) {
       try {
-        const parsed: unknown = measure_params.trim() === '' ? {} : JSON.parse(measure_params)
+        const parsed: unknown = tracker_params.trim() === '' ? {} : JSON.parse(tracker_params)
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object')
         params = parsed as Record<string, string>
       } catch {
-        throw new BadRequestException(`measure_params must be a JSON object string, got: ${measure_params}`)
+        throw new BadRequestException(`tracker_params must be a JSON object string, got: ${tracker_params}`)
       }
     }
     const binding = unbind
-      ? { data_source_id: null, measure_key: null }
+      ? { data_source_id: null, tracker_key: null }
       : {
           ...(data_source_id !== undefined ? { data_source_id: data_source_id === '' ? null : data_source_id } : {}),
-          ...(measure_key !== undefined ? { measure_key } : {}),
-          ...(params !== undefined ? { measure_params: params } : {}),
+          ...(tracker_key !== undefined ? { tracker_key } : {}),
+          ...(params !== undefined ? { tracker_params: params } : {}),
         }
     // '' explicitly CLEARS unit/owner (the flattened scalar DTO has no other way to say null).
     try {
@@ -546,7 +574,7 @@ export class SignalsController {
     } catch (e) {
       // The domain refuses unknown depends_on ids, cycles and out-of-enum values with
       // a message that says which - a 500 would strip exactly the part the caller needs to act on.
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -568,13 +596,13 @@ export class SignalsController {
         body.actor ?? req.principal?.id,
       )) as SignalDefinition as SignalDefinitionDto
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
   /**
    * tRPC mutation `signalsDelete` / MCP `signal-delete` - remove a definition. Prunes depends_on
-   * edges; reports (never touches) initiatives still binding the id; never deletes points.
+   * edges; reports (never touches) initiatives still binding the id; its points go with it.
    */
   @Post('definition/delete')
   @ApiOkResponse({ type: SignalDeleteReportDto })
@@ -585,7 +613,7 @@ export class SignalsController {
     try {
       return await deleteSignalDefinition(body.id, body.actor ?? req.principal?.id)
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -604,7 +632,7 @@ export class SignalsController {
     try {
       return (await setSignalArchived(body.id, true, body.actor ?? req.principal?.id)) as SignalDefinition as SignalDefinitionDto
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -618,7 +646,7 @@ export class SignalsController {
     try {
       return (await setSignalArchived(body.id, false, body.actor ?? req.principal?.id)) as SignalDefinition as SignalDefinitionDto
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -627,6 +655,7 @@ export class SignalsController {
   @ApiOkResponse({ type: OwnersDto })
   @Trpc()
   @Mcp({ name: 'signal-owners' })
+  @Read()
   owners(): OwnersDto {
     return readSignalOwnersFile()
   }
@@ -710,7 +739,7 @@ export class SignalsController {
    * a pull or a deriver feeds. Read as "the tool is
    * broken" from the outside, and reasonably so, because the only method that returned a real series
    * was `GET /signals`, which carries `@Trpc()` and no `@Mcp()`. So over MCP there was no way to read
-   * a signal's numbers at all, and every report that wanted one had to query DuckDB directly.
+   * a signal's numbers at all, and every report that wanted one had to query the warehouse directly.
    *
    * Deliberately per-signal and windowable rather than exposing `GET /signals`: that returns every
    * definition with its full history, which on a Box with any real history is a report's payload,
@@ -720,6 +749,7 @@ export class SignalsController {
   @ApiOkResponse({ type: SignalSeriesDto })
   @Trpc({ kind: 'mutation' })
   @Mcp({ name: 'signal-series' })
+  @Read()
   async series(@Body() body: SignalSeriesListDto): Promise<SignalSeriesDto> {
     const def = await readSignalDefinition(body.signal_id)
     if (!def) {
@@ -757,6 +787,7 @@ export class SignalsController {
   @ApiOkResponse({ type: SignalPointsDto })
   @Trpc({ kind: 'mutation' })
   @Mcp({ name: 'signal-points' })
+  @Read()
   async points(@Body() body: SignalPointsListDto): Promise<SignalPointsDto> {
     return this.pointsPayload(body.signal_id)
   }
@@ -781,7 +812,7 @@ export class SignalsController {
       })
       return await this.pointsPayload(body.signal_id)
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -795,7 +826,7 @@ export class SignalsController {
       await deleteSignalPoint(body.signal_id, body.at)
       return await this.pointsPayload(body.signal_id)
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -828,7 +859,7 @@ export class SignalsController {
       await setSignalPoints(body.signal_id, entries, body.actor ?? req.principal?.id)
       return await this.pointsPayload(body.signal_id)
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -850,7 +881,7 @@ export class SignalsController {
         actor: body.actor ?? req.principal?.id,
       })
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 }

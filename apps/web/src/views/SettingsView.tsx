@@ -1,15 +1,17 @@
 import * as React from 'react'
-import { LogOut, Plug2, UserCircle2, Users as UsersIcon } from 'lucide-react'
+import { LogOut, Plug2, ShieldCheck, UserCircle2, Users as UsersIcon } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogTitle, InlineDialogScope, ConfirmHost, SETTINGS_GUTTER, SettingsFooterBar, SettingsPane, useSettingsFooter } from '@silkweave/box-ui'
 import { useSettingsDialog } from '../lib/settingsDialog.ts'
 import type { SettingsSection } from '../feature.ts'
-import { ALL_WEB_FEATURES } from '../web-features.ts'
+import { readableWebFeatures } from '../web-features.ts'
+import { accessKey } from '../lib/access.ts'
 import { useAuth } from '../lib/useAuth.tsx'
 import { upsertUser, useUsersData } from '../lib/useUsersData.ts'
 import type { User } from '../user-types.ts'
 import { cn } from '@/lib/utils'
 import { UsersView } from './UsersView.tsx'
 import { AgentToolsView } from './AgentToolsView.tsx'
+import { RolesView } from './RolesView.tsx'
 import { AgentAccountsPanel } from '../components/agent/AgentAccountsPanel.tsx'
 import { UserProfileForm, userFormDirty, userFormValues, userUpsertInput } from '../components/UserProfileForm.tsx'
 
@@ -18,16 +20,23 @@ import { UserProfileForm, userFormDirty, userFormValues, userUpsertInput } from 
 /** Core's sections; features add theirs through `settings` in their manifest (order bands as nav). */
 const CORE_SECTIONS: SettingsSection[] = [
   { id: 'users', label: 'Users', icon: UsersIcon, order: 100, render: () => <UsersView /> },
+  { id: 'roles', label: 'Roles', icon: ShieldCheck, order: 102, render: () => <RolesView /> },
   { id: 'agent-tools', label: 'Agent tools', icon: Plug2, order: 105, render: () => <AgentToolsView /> },
   { id: 'profile', label: 'Profile', icon: UserCircle2, order: 0, render: () => <ProfileSection /> },
 ]
 
-let cachedSections: SettingsSection[] | undefined
+let cachedSections: { key: string; list: SettingsSection[] } | undefined
 function allSections(): SettingsSection[] {
-  cachedSections ??= [...CORE_SECTIONS, ...ALL_WEB_FEATURES.flatMap((f) => f.settings ?? [])].sort(
-    (a, b) => a.order - b.order || a.id.localeCompare(b.id),
-  )
-  return cachedSections
+  // Feature sections only for areas the principal reads (lib/access.ts); rebuilt when access changes.
+  if (cachedSections?.key !== accessKey()) {
+    cachedSections = {
+      key: accessKey(),
+      list: [...CORE_SECTIONS, ...readableWebFeatures().flatMap((f) => f.settings ?? [])].sort(
+        (a, b) => a.order - b.order || a.id.localeCompare(b.id),
+      ),
+    }
+  }
+  return cachedSections.list
 }
 
 /** One app-wide overlay. Feature registration is read lazily to avoid import cycles. */

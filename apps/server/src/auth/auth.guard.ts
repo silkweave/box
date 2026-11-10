@@ -1,7 +1,8 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
-import { authenticatePrincipal, resolveSessionPrincipal, type Principal, type PrincipalCredential } from '@silkweave/box-core'
+import { accessOf, areaDestinationProblem, toolsetConnections, authenticatePrincipal, fillRequest, resolveSessionPrincipal, type Access, type Principal, type PrincipalCredential } from '@silkweave/box-core'
 import { IS_ADMIN, IS_PUBLIC } from './auth.decorators.js'
+import { handlerPolicy, refusalFor } from './handler-map.js'
 
 interface GuardRequest {
   headers: { cookie?: string; authorization?: string; 'x-box-csrf'?: string | string[] }
@@ -51,6 +52,14 @@ export class AuthGuard implements CanActivate {
     // browser from an API client (chat-op approvals). Only meaningful WITH a principal: a bearer
     // that failed to authenticate is not a credential, it is a rejected request.
     if (principal) req.credential = viaBearer ? 'bearer' : 'session'
+    // The request context (core request-context.ts): the transport opened an empty holder for this
+    // call, and this is where it is filled, so every accessor below the handler knows who it serves.
+    // Without a principal it stays empty, which denies area data.
+    let access: Access | undefined
+    if (principal) {
+      access = await accessOf(principal)
+      fillRequest({ principal, access, credential: req.credential, handler: `${ctx.getClass().name}.${ctx.getHandler().name}` })
+    }
 
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [ctx.getHandler(), ctx.getClass()])
     if (isPublic) return true
@@ -61,8 +70,27 @@ export class AuthGuard implements CanActivate {
     // "admin only" whichever way they called it, rather than a header complaint that suggests the
     // request would have worked with one more header.
     const adminOnly = this.reflector.getAllAndOverride<boolean>(IS_ADMIN, [ctx.getHandler(), ctx.getClass()])
-    if (adminOnly && req.principal.role !== 'admin') {
+    if (adminOnly && !access?.admin) {
       throw new ForbiddenException('admin only - ask an admin (Settings -> Users)')
+    }
+
+    // Area access (docs/AUTH.md "Roles and areas"), from the boot-time handler map. A handler the
+    // map does not know is refused: classification is not optional, and a missing entry is a bug.
+    const policy = handlerPolicy(ctx.getHandler())
+    if (!policy) throw new ForbiddenException('this handler is not classified (handler map)')
+    const refusal = refusalFor(policy, access, principal?.session)
+    if (refusal?.reason === 'session') throw new ForbiddenException('not available to this agent session')
+    if (refusal?.reason === 'admin') throw new ForbiddenException('admin only - ask an admin (Settings -> Users)')
+    if (refusal?.reason === 'area') {
+      throw new ForbiddenException({ error: 'area_access', area: refusal.area, needed: refusal.needed, message: `no ${refusal.needed} access to ${refusal.area}` })
+    }
+    // An agent's write into an area destination (artifacts: read by
+    // everyone with read on the area) needs every such reader to cover the agent, with the
+    // connections its session's toolset gives it (PERMISSIONS 7.2). Rooms check their own readers.
+    // A job whose output returns to the caller only (a tool whose answer returns to the caller alone) writes nothing into the area.
+    if (principal?.kind === 'agent' && policy.category.kind === 'area' && !policy.read && !policy.answersCaller) {
+      const problem = await areaDestinationProblem(policy.category.area, principal.id, toolsetConnections(principal.session?.toolset ?? null))
+      if (problem) throw new ForbiddenException({ error: 'coverage', area: policy.category.area, message: problem })
     }
 
     // CSRF: a cookie-authed state-changing request must carry the x-box-csrf header (the SPA sets it

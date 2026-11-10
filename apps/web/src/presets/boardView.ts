@@ -144,6 +144,9 @@ export interface ViewStore<S> {
   reset: () => void
   /** The shared list has not arrived yet. */
   loading: boolean
+  /** The signed-in principal may write this module's presets (save, manage, restore). A reader
+   *  selects and resets only; before a writer seeds the module it sees the built-ins, read-only. */
+  canWrite: boolean
   /** The last read or write failure, for the bar to show verbatim. */
   error: string | null
 }
@@ -282,8 +285,13 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
       }
     }, [])
 
+    const canWrite = data?.writable.includes(spec.module) ?? false
+    const seeded = data?.seeded.includes(spec.module) ?? false
+
     useEffect(() => {
-      if (!data || data.seeded.includes(spec.module) || seeding) return
+      // Seeding is a write: a reader's seed would be refused, so a reader waits for a writer and
+      // sees the built-ins locally meanwhile (below).
+      if (!data || seeded || !canWrite || seeding) return
       seeding = seedPresets(spec.module, seed, 'initial').catch(() => {
         // Leave it unset so the next load retries; an unseeded module renders its (empty) list
         // rather than blocking the board.
@@ -293,7 +301,19 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
 
     // Repair each preset through THIS module's normalize; one the client cannot parse at all is
     // hidden rather than shown broken (it stays on disk, so a fix is a release away, not a re-entry).
-    const presets: Preset<S>[] = (data?.modules[spec.module] ?? []).flatMap((r: PresetRecord) => {
+    // A reader on a module no writer has seeded yet sees the list as the seed would leave it: what is
+    // stored, then each built-in not already there by name. Nothing is written, nothing to edit.
+    const stored: PresetRecord[] = data?.modules[spec.module] ?? []
+    const records: PresetRecord[] =
+      data && !seeded && !canWrite
+        ? [
+            ...stored,
+            ...spec.defaultPresets
+              .filter((p) => !stored.some((r) => r.name === p.name))
+              .map((p) => ({ name: p.name, description: p.description ?? null, state: p.state, icon: p.icon ?? null, updated_at: '', updated_by: null })),
+          ]
+        : stored
+    const presets: Preset<S>[] = records.flatMap((r: PresetRecord) => {
       const state = spec.normalize(r.state)
       return state
         ? [{ name: r.name, description: r.description, state, icon: r.icon, updated_at: r.updated_at, updated_by: r.updated_by }]
@@ -452,6 +472,7 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
       missingDefaults: data ? spec.defaultPresets.filter((p) => !have.has(p.name)).length : 0,
       reset,
       loading: !data,
+      canWrite,
       error: writeError ?? readError,
     }
   }

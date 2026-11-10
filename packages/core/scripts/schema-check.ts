@@ -1,65 +1,47 @@
 // `bun run schema:check` runs the schema matrix as part of `box verify`.
-// It exercises the installed feature set against isolated files, without schema lockfiles or
+// It exercises the installed feature set against isolated databases, without schema lockfiles or
 // byte-equality checks on adaptable source. Runtime migration identity and checksum refusals
-// remain in applySchema because those protect the database rather than enforce authoring style.
+// remain in the runner (warehouse/pg/migrate.ts) because those protect the database rather than
+// enforce authoring style.
 //
-// What this proves, on throwaway files under a temp dir:
+// What this proves, on one throwaway cluster (pgrust, or BOX_TEST_ENGINE=native) with one database
+// per pass:
 //
-//   1. FRESH + REBOOT - applySchema(FEATURES) on an empty file, then again on the same file. Every
-//      table every manifest declares exists afterwards. (The second pass is the boot path of an
-//      existing Box: baselines are IF NOT EXISTS / OR REPLACE, ledger rows are already there.)
-//   2. ENABLED LATER, for each feature F - applySchema(FEATURES minus F minus everything that
-//      depends on F) on a new file, then applySchema(FEATURES) on it. This is the pass that catches
-//      an undeclared dependency: a view or a migration reaching for a table its feature never
-//      listed in `dependsOn` works on a full Box and fails on the Box without that feature. Every
-//      Box has a different feature set, so "the schema applies" is not one question, and the unit
-//      tests cannot see this: it takes a real DuckDB file.
-//   3. OWNERSHIP - migrations whose static SQL names a table the feature does not own, reported as
-//      a WARNING (migration-ownership.ts explains why it is advice now).
+//   1. FRESH + REBOOT - the schema of every owner on an empty database, then again on the same
+//      database. Every table every manifest declares exists afterwards, in its owner's schema.
+//      (The second pass is the boot path of an existing Box: baselines are IF NOT EXISTS / OR
+//      REPLACE, ledger rows are already there.)
+//   2. ENABLED LATER, for each feature F - the schema without F and everything that depends on F
+//      on a new database, then the full set on it. This catches an undeclared dependency: a view
+//      or a migration reaching for a table its feature never listed in `dependsOn` works on a full
+//      Box and fails on the Box without that feature.
+//   3. OWNERSHIP - migrations whose static SQL names a table the feature does not own, or a table
+//      that is not schema-qualified, reported as a WARNING (migration-ownership.ts explains why).
 //
 // Run it after changing a model, a baseline or a migration. What it cannot prove: a data migration
-// against real rows. Back the warehouse up (`box db backup`) and rehearse against a restored copy
-// whose rows match the migration's WHERE clause. The `run(conn)` hook is opaque to the lint;
-// complex SQL and transitive code changes need review, not a regex.
+// against real rows. Back the database up and rehearse against a restored copy whose rows match
+// the migration's WHERE clause. A migration's `run` is opaque to the lint; review it.
 
-import { mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { DuckDBInstance } from '@duckdb/node-api'
-import { applySchema, orderFeatures, type MigrationConn } from '../src/warehouse/schema.js'
-import { CORE_MODELS } from '../src/warehouse/core-models.js'
+import pg from 'pg'
+import type { DatabaseEngine } from '../src/box-json.js'
+import { OWNER_LOGIN } from '../src/db/cluster.js'
+import { startTestCluster } from '../src/db/testing.js'
 import { FEATURE_LIST as FEATURES } from '../src/generated/features.js'
-import { repoRoot } from '../src/io.js'
 import { migrationOwnershipErrors } from '../src/warehouse/migration-ownership.js'
+import { buildAreaMap } from '../src/warehouse/pg/areas.js'
+import { applyPgSchema } from '../src/warehouse/pg/migrate.js'
+import { ensureDatabase } from '../src/warehouse/pg/policy.js'
+import { boxSchemaOwners, orderOwners, type SchemaOwner } from '../src/warehouse/schema.js'
 import type { CoreFeature } from '../src/feature.js'
 
-const root = repoRoot()
-const dir = mkdtempSync(join(root, 'box-projection-schema-check-'))
-let file = 0
 const failures: string[] = []
+const { core, features: allOwners } = boxSchemaOwners(FEATURES)
 
-/** A fresh warehouse file and a connection to it. Caller closes. */
-async function open(): Promise<{ conn: MigrationConn; tables: () => Promise<Set<string>>; close: () => void }> {
-  const instance = await DuckDBInstance.create(join(dir, `w${++file}.db`))
-  const conn = await instance.connect()
-  await conn.run(`SET TimeZone = 'UTC'`)
-  return {
-    conn: conn as unknown as MigrationConn,
-    tables: async () => {
-      const rows = (await conn.runAndReadAll(`SELECT table_name FROM information_schema.tables`)).getRowObjectsJson()
-      return new Set(rows.map((r) => String(r.table_name)))
-    },
-    close: () => {
-      conn.disconnectSync()
-      instance.closeSync()
-    },
-  }
+/** Every table the given feature set (plus core) declares, as `schema.table`. */
+const declared = (owners: readonly SchemaOwner[]): string[] => {
+  const map = buildAreaMap(core.models, owners)
+  return [...core.models, ...owners.flatMap((o) => o.models)].map((m) => `${map.schemaOf(map.ownerOf(m.table))}.${m.table}`)
 }
-
-/** Every table the given feature set (plus core) declares. */
-const declared = (features: readonly CoreFeature[]): string[] => [
-  ...CORE_MODELS.map((m) => m.table),
-  ...features.flatMap((f) => f.models.map((m) => m.table)),
-]
 
 function expectTables(label: string, want: readonly string[], have: Set<string>): void {
   const missing = want.filter((t) => !have.has(t))
@@ -77,63 +59,81 @@ function withDependents(id: string): Set<string> {
 }
 
 async function main(): Promise<number> {
-  const all = [...FEATURES]
-  const allTables = declared(all)
-  const ordered = orderFeatures(all)
-  const ownership = migrationOwnershipErrors(ordered)
-  for (const warning of ownership) console.warn(`schema:check: ${warning}`)
-
-  // 1. fresh, then reboot on the same file.
-  {
-    const w = await open()
-    try {
-      await applySchema(w.conn, all)
-      expectTables('fresh', allTables, await w.tables())
-      await applySchema(w.conn, all)
-      expectTables('reboot', allTables, await w.tables())
-    } catch (err) {
-      failures.push(`fresh/reboot: ${String((err as Error)?.message ?? err)}`)
-    } finally {
-      w.close()
+  const engine = (process.env.BOX_TEST_ENGINE ?? 'pgrust') as DatabaseEngine
+  const cluster = await startTestCluster(engine)
+  const { socket, port } = cluster.running
+  let n = 0
+  /** A fresh database and an owner session on it. Caller closes. */
+  const open = async () => {
+    const name = `schema_check_${++n}`
+    const admin = new pg.Client({ host: socket, port, user: OWNER_LOGIN, database: 'postgres' })
+    await admin.connect()
+    try { await ensureDatabase(admin, name) } finally { await admin.end() }
+    const c = new pg.Client({ host: socket, port, user: OWNER_LOGIN, database: name })
+    await c.connect()
+    return {
+      apply: (owners: readonly SchemaOwner[]) => applyPgSchema(c, core, owners),
+      tables: async () => new Set((await c.query<{ t: string }>(
+        `select table_schema || '.' || table_name as t from information_schema.tables where table_type = 'BASE TABLE'`)).rows.map((r) => r.t)),
+      close: () => c.end(),
     }
   }
+  try {
+    const allTables = declared(allOwners)
+    const ordered = orderOwners(core, allOwners)
+    const ownership = migrationOwnershipErrors(FEATURES as readonly CoreFeature[])
+    for (const warning of ownership) console.warn(`schema:check: ${warning}`)
 
-  // 2. every feature enabled later, onto a Box that never had it.
-  for (const f of FEATURES) {
-    const dropped = withDependents(f.id)
-    const subset = all.filter((x) => !dropped.has(x.id))
-    const label = `without ${[...dropped].sort().join(' + ')}`
-    const w = await open()
-    try {
-      await applySchema(w.conn, subset)
-      expectTables(label, declared(subset), await w.tables())
-      await applySchema(w.conn, all)
-      expectTables(`${label} -> enabled later`, allTables, await w.tables())
-    } catch (err) {
-      failures.push(`${label}: ${String((err as Error)?.message ?? err)}`)
-    } finally {
-      w.close()
+    // 1. fresh, then reboot on the same database.
+    {
+      const w = await open()
+      try {
+        await w.apply(allOwners)
+        expectTables('fresh', allTables, await w.tables())
+        await w.apply(allOwners)
+        expectTables('reboot', allTables, await w.tables())
+      } catch (err) {
+        failures.push(`fresh/reboot: ${String((err as Error)?.message ?? err)}`)
+      } finally {
+        await w.close()
+      }
     }
-  }
 
-  if (failures.length) {
-    console.error(`schema:check found ${failures.length} problem(s):\n  ${failures.join('\n  ')}`)
-    return 1
+    // 2. every feature enabled later, onto a Box that never had it.
+    for (const f of FEATURES) {
+      const dropped = withDependents(f.id)
+      const subset = allOwners.filter((x) => !dropped.has(x.id))
+      const label = `without ${[...dropped].sort().join(' + ')}`
+      const w = await open()
+      try {
+        await w.apply(subset)
+        expectTables(label, declared(subset), await w.tables())
+        await w.apply(allOwners)
+        expectTables(`${label} -> enabled later`, allTables, await w.tables())
+      } catch (err) {
+        failures.push(`${label}: ${String((err as Error)?.message ?? err)}`)
+      } finally {
+        await w.close()
+      }
+    }
+
+    if (failures.length) {
+      console.error(`schema:check found ${failures.length} problem(s):\n  ${failures.join('\n  ')}`)
+      return 1
+    }
+    console.info(
+      `schema:check (${engine}): ${ordered.length} owners (core first), ${allTables.length} tables - fresh, reboot and ${FEATURES.length} enabled-later paths all apply` +
+        (ownership.length ? `; ${ownership.length} ownership warning(s) above` : '; no ownership warnings'),
+    )
+    return 0
+  } finally {
+    await cluster.stop()
   }
-  console.info(
-    `schema:check: ${ordered.length} features (core first), ${allTables.length} tables - fresh, reboot and ${FEATURES.length} enabled-later paths all apply` +
-      (ownership.length ? `; ${ownership.length} ownership warning(s) above` : '; no ownership warnings'),
-  )
-  return 0
 }
 
 main()
-  .then((code) => {
-    rmSync(dir, { recursive: true, force: true })
-    process.exit(code)
-  })
+  .then((code) => process.exit(code))
   .catch((err) => {
-    rmSync(dir, { recursive: true, force: true })
     console.error('schema:check failed:', err)
     process.exit(1)
   })

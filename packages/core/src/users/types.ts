@@ -4,9 +4,13 @@ import type { WorkAccess } from '../work-access.js'
 // referenced by initiatives.owner and tasks.assignee (both store a user `id`). The structured state
 // lives in the warehouse `users` table. See docs/AUTH.md.
 
-/** Access lifecycle. `invited` = a token was minted and never used; first use flips it to `active`. */
-export type UserStatus = 'invited' | 'active' | 'revoked'
-export const USER_STATUSES: UserStatus[] = ['invited', 'active', 'revoked']
+/**
+ * Access lifecycle. `invited` = a token was minted and never used; first use flips it to `active`.
+ * `pending` = a new row waiting for its role (users/state.ts upsertUser): never authenticatable; a
+ * row left pending by a failed provisioning stays unusable until it is saved again.
+ */
+export type UserStatus = 'pending' | 'invited' | 'active' | 'revoked'
+export const USER_STATUSES: UserStatus[] = ['pending', 'invited', 'active', 'revoked']
 
 /**
  * The two trust tiers (docs/core/AUTH.md § 3). The line between them is one sentence, and every feature
@@ -15,8 +19,11 @@ export const USER_STATUSES: UserStatus[] = ['invited', 'active', 'revoked']
  * member's, which is the whole working surface - signals, boards, tasks, content, chat, records,
  * running an action, reading anything.
  */
-export type UserRole = 'admin' | 'member'
-export const USER_ROLES: UserRole[] = ['admin', 'member']
+export type BuiltinRole = 'admin' | 'member'
+/** A built-in role or a custom role id (auth/roles.ts). An id that names no role grants nothing. */
+export type UserRole = BuiltinRole | (string & {})
+/** The built-in roles. Custom roles are rows in `roles`. */
+export const USER_ROLES: BuiltinRole[] = ['admin', 'member']
 
 /**
  * What a principal is. `agent` rows are the Box's agents (agents.ts): their name and role come from
@@ -49,7 +56,7 @@ export interface User {
   kind: UserKind
   /** The tailscale login this user signs in as (`tailscale whois` prints it, e.g. `alice@github`),
    *  when the Box runs behind `tailscale serve` with AUTH_TAILSCALE_SERVE=1. null = token only.
-   *  Unique across users; `upsertUser` enforces it (DuckDB cannot ALTER in a UNIQUE constraint). */
+   *  Unique across users; `upsertUser` enforces it, backed by the unique index in users/state.ts. */
   tailscale_login: string | null
   /** channel → handle map, the source of truth for per-person presence (whatever a feature checks
    *  or links per person on a channel). */

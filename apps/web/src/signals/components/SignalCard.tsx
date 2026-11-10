@@ -21,11 +21,20 @@ const SPARK_DAYS = 30
  *  sparkline of one point is a dot. Fall back to trailing buckets rather than render nothing. */
 const SPARK_MIN_POINTS = 10
 
-function sparkWindow<T extends { date: string }>(points: T[]): T[] {
+export function sparkWindow<T extends { date: string }>(points: T[]): T[] {
   if (points.length === 0) return points
   const cutoff = new Date(Date.now() - SPARK_DAYS * 86_400_000).toISOString().slice(0, 10)
   const recent = points.filter((p) => p.date.slice(0, 10) >= cutoff)
   return recent.length >= SPARK_MIN_POINTS ? recent : points.slice(-SPARK_MIN_POINTS)
+}
+
+/** The headline reading of a signal, as the card and the list show it: the last COMPLETE bucket
+ *  (an increment signal's newest bucket is still filling) and the change from the one before. */
+export function signalReading(signal: Signal) {
+  const isIncrement = signal.accumulation === 'increment'
+  const complete = isIncrement && signal.points.length > 0 ? signal.points.slice(0, -1) : signal.points
+  const latest: (typeof signal.points)[number] | null = complete[complete.length - 1] ?? null
+  return { isIncrement, latest, delta: computeDelta(complete) }
 }
 
 export function SignalCard({ signal }: { signal: Signal }) {
@@ -38,10 +47,7 @@ export function SignalCard({ signal }: { signal: Signal }) {
   // increment signal through the current bucket, so the last point is ALWAYS the partial one and
   // the card defaults to the last COMPLETE bucket (yesterday, for day grain). The delta compares
   // the two last complete buckets for the same reason. Hover still scrubs every bucket.
-  const isIncrement = signal.accumulation === 'increment'
-  const complete = isIncrement && signal.points.length > 0 ? signal.points.slice(0, -1) : signal.points
-  const latest: (typeof signal.points)[number] | null = complete[complete.length - 1] ?? null
-  const delta = computeDelta(complete)
+  const { isIncrement, latest, delta } = signalReading(signal)
   // Only the CHART is windowed (see sparkWindow). Hover scrubbing therefore indexes into the same
   // windowed array - reading `signal.points[hoverIdx]` here would scrub to the wrong bucket.
   const spark = sparkWindow(signal.points)

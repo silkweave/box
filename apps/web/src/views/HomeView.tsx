@@ -158,7 +158,7 @@ function OnboardingView() {
             <section className='rounded-xl border border-border bg-surface p-5'>
               <h2 className='text-heading-sm font-semibold text-text'>Your Box now</h2>
               <dl className='mt-4 space-y-3 text-body-sm'>
-                <StatusRow label='Owner' value={principal?.display ?? 'Signed in'} tone='success' />
+                <StatusRow label='Signed in as' value={principal?.display ?? 'Checking'} tone='success' />
                 <StatusRow label='Builder' value={!isAdmin ? 'Admin only' : builderError ? 'Unavailable' : providerReady ? 'Ready' : builder ? 'Needs setup' : 'Checking'} tone={providerReady ? 'success' : builderError ? 'danger' : 'warning'} />
                 <StatusRow label='Recipes' value={installed.length ? `${installed.length} adapted` : 'Core only'} tone={installed.length ? 'success' : 'neutral'} />
                 <StatusRow label='Safety backup' value={builder?.backups[0] ? new Date(builder.backups[0].createdAt).toLocaleDateString() : 'Created when Builder starts'} tone='neutral' />

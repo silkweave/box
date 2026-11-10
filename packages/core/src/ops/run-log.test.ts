@@ -30,13 +30,13 @@ afterEach(() => {
 
 async function startRun(): Promise<string> {
   const id = newRunId()
-  await insertRun({ id, action_id: 'agent', trigger: 'manual', triggered_by: 'dan' })
+  await insertRun({ id, action_id: 'agent', trigger: 'manual', triggered_by: 'dan', acts_as: 'dan' })
   await markRunning(id)
   return id
 }
 
 const storedLog = async (id: string): Promise<RunLogLine[]> => {
-  const rows = await withRead<{ log: string | null }>(`SELECT CAST(log AS VARCHAR) AS log FROM automation_runs WHERE id = ?`, [id])
+  const rows = await withRead<{ log: string | null }>(`select log::text as log from core.automation_runs where id = $1`, [id])
   return rows[0]?.log ? (JSON.parse(rows[0].log) as RunLogLine[]) : []
 }
 
@@ -113,7 +113,7 @@ describe('run log', () => {
     const id = newRunId()
     const heard: RunLogEvent[] = []
     const off = onRunLog(id, (ev) => heard.push(ev))
-    await insertRun({ id, action_id: 'agent', trigger: 'manual', triggered_by: 'dan' })
+    await insertRun({ id, action_id: 'agent', trigger: 'manual', triggered_by: 'dan', acts_as: 'dan' })
     appendRunLog(id, line('one'))
     appendRunLog(id, line('two'))
     await closeRunLog(id)

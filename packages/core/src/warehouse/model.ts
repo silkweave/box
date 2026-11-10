@@ -1,129 +1,84 @@
-// The record layer - one shared implementation of the row↔domain plumbing every warehouse entity
-// used to hand-roll (the Row interface + CAST column list + toX() mapper + read-prev-then-merge
-// upsert, previously copied ~8 times across the state modules). A ModelSpec describes a table once
-// (warehouse/models.ts); this module derives from it:
+// The record layer: one shared implementation of the row <-> domain plumbing for every table a
+// ModelSpec describes. From the spec it derives:
 //
-//   • the CREATE TABLE DDL (schema.ts baselines every model at boot),
-//   • the SELECT column list (JSON/TIMESTAMP columns CAST to VARCHAR for JSON-safe reads),
-//   • the row → domain mapping (JSON parsed, naive-UTC timestamps re-attached a Z),
-//   • enum validation on write (DuckDB has no CHECK constraints here - this is the app-level gate),
-//   • the partial UPSERT (missing input keys keep the previous row's values), with `timestamps`
-//     (created_at/updated_at) and `audit` (created_by/updated_by from `actor`) managed centrally.
+//   - the DDL (pg/ddl.ts; the schema runner creates every model at boot),
+//   - the SELECT column list and the row -> domain mapping (the executor's type parsers already
+//     return timestamps as exact ISO `...Z` strings, dates as `YYYY-MM-DD`, jsonb parsed),
+//   - enum validation on write (the app-level gate; enum lists can be tenant configuration),
+//   - the partial UPSERT (missing input keys keep the previous row's values), with `timestamps`
+//     (created_at/updated_at) and `audit` (created_by/updated_by from `actor`) managed centrally,
+//     read, merged and written in one transaction with the previous row locked.
 //
+// Tables are schema-qualified through the area map (tables.ts); core's shared tables run on
+// box_core (`reach: 'core'`), a feature's on the caller's role login. Placeholders are `$n`.
+// The statements here are generic over a runtime ModelSpec (table and columns known only at
+// run time), so they stay parameterized strings; typed queries on a known table use Kysely
+// (kysely.ts) next to this layer.
 // Domain semantics stay in the domain modules: cascade deletes, re-keying renames, deep-merge
-// bags, derived signals, side-effect hooks. This layer only owns the mechanical plumbing.
+// bags, derived signals, side-effect hooks.
 
-import type { DuckDBValue } from '@duckdb/node-api'
-import { emitChange } from '../changes.js'
-import { ensureSchema, withRead, withWrite } from './db.js'
+import { emitAreaChange, emitChange } from '../changes.js'
+import { withRead, withWrite, type Tx } from './pg/store.js'
+import { quoteIdent } from './pg/areas.js'
+import { columnType } from './pg/ddl.js'
+import { reachOf, table } from './tables.js'
 
-export type ColumnKind = 'text' | 'int' | 'bigint' | 'float' | 'bool' | 'json' | 'timestamp' | 'date'
+export { modelColumns, type ColumnKind, type ColumnSpec, type ModelSpec } from './model-spec.js'
+import { modelColumns, type ColumnSpec, type ModelSpec } from './model-spec.js'
 
-export interface ColumnSpec {
-  kind: ColumnKind
-  /** Columns are NOT NULL unless explicitly nullable (PK columns are always NOT NULL). */
-  nullable?: boolean
-  /** SQL default, emitted verbatim into the DDL (quote string literals yourself: `"'draft'"`). */
-  default?: string
-  /** Allowed values, validated on every write - the app-level CHECK constraint. A thunk when the
-   *  list is tenant configuration rather than code (`initiatives.kind`), so the gate reads whatever
-   *  the team's list says at write time instead of what it said at import time. */
-  enum?: readonly string[] | (() => readonly string[])
-}
+// --- instants ---------------------------------------------------------------------------------------
+// timestamptz columns hold instants. Writes pass ISO-8601 text (an offset, or none for UTC: every
+// executor session runs in UTC); reads come back as `YYYY-MM-DDTHH:MM:SS[.ffffff]Z`.
 
-export interface ModelSpec {
-  table: string
-  /** Primary-key column names (must exist in `columns`). */
-  pk: readonly string[]
-  columns: Record<string, ColumnSpec>
-  /** Adds managed created_at/updated_at TIMESTAMP columns. */
-  timestamps?: boolean
-  /** Adds managed created_by/updated_by columns, stamped from the upsert input's `actor`. */
-  audit?: boolean
-}
+const ISO_TEXT = /^(\d{4}-\d\d-\d\d)(?:[T ](\d\d:\d\d(?::\d\d)?)(?:\.(\d{1,9}))?)?\s*(Z|[+-]\d\d(?::?\d\d)?)?$/i
 
-// --- timestamp handling (one rule for every table) -------------------------------------------------
-// DuckDB TIMESTAMP is timezone-naive and a CAST silently DROPS a string's offset. One convention:
-// naive values in the file ARE UTC. Writes normalize any ISO offset to naive UTC; reads re-attach
-// the Z. (Previously solved only in content/state.ts; every other module had its own ad-hoc path.)
-
-/** ISO-8601 (any offset) → naive UTC `YYYY-MM-DD HH:MM:SS` for a DuckDB TIMESTAMP write. */
-export function toNaiveUtc(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) throw new Error(`invalid timestamp "${iso}"`)
-  return d.toISOString().slice(0, 19).replace('T', ' ')
-}
-
-/** Naive UTC string from a DuckDB read (`YYYY-MM-DD HH:MM:SS[.ffffff]`) → ISO-8601 with Z. */
-export function fromNaiveUtc(value: string): string {
-  if (value.includes('Z') || /[+-]\d\d:\d\d$/.test(value)) return value
-  return `${value.replace(' ', 'T')}Z`
-}
-
-// --- DDL + column lists ---------------------------------------------------------------------------
-
-const SQL_TYPE: Record<ColumnKind, string> = {
-  text: 'VARCHAR',
-  int: 'INTEGER',
-  // For values that outgrow INTEGER's 32 bits - epoch milliseconds being the case that
-  // introduced it (auth's sign-in-link watermark). Deliberately NOT a TIMESTAMP: a value the
-  // record layer round-trips through toNaiveUtc loses its milliseconds, and a watermark that
-  // silently moves BACKWARDS re-arms an already-consumed credential.
-  bigint: 'BIGINT',
-  float: 'DOUBLE',
-  bool: 'BOOLEAN',
-  json: 'JSON',
-  timestamp: 'TIMESTAMP',
-  date: 'DATE',
-}
-
-/** Every column of the model, managed ones included, in declaration order. */
-export function modelColumns(m: ModelSpec): Record<string, ColumnSpec> {
-  const cols: Record<string, ColumnSpec> = { ...m.columns }
-  if (m.timestamps) {
-    cols.created_at = { kind: 'timestamp', default: 'now()' }
-    cols.updated_at = { kind: 'timestamp', default: 'now()' }
+/** An instant for a timestamptz write: ISO text passes through unchanged (precision kept); any
+ *  other date string JavaScript understands is converted; anything else throws. */
+export function toInstant(v: unknown): string {
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) throw new Error('invalid timestamp (Invalid Date)')
+    return v.toISOString()
   }
-  if (m.audit) {
-    cols.created_by = { kind: 'text', nullable: true }
-    cols.updated_by = { kind: 'text', nullable: true }
-  }
-  return cols
+  const s = String(v).trim()
+  if (ISO_TEXT.test(s)) return s
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) throw new Error(`invalid timestamp "${s}"`)
+  return d.toISOString()
 }
 
-/** Idempotent CREATE TABLE for the model - the baseline DDL schema.ts runs at boot. */
-export function createTableSql(m: ModelSpec): string {
-  const cols = modelColumns(m)
-  const lines = Object.entries(cols).map(([name, c]) => {
-    const notNull = m.pk.includes(name) || !c.nullable ? ' NOT NULL' : ''
-    const def = c.default !== undefined ? ` DEFAULT ${c.default}` : ''
-    return `        ${name} ${SQL_TYPE[c.kind]}${notNull}${def}`
-  })
-  lines.push(`        PRIMARY KEY (${m.pk.join(', ')})`)
-  return `CREATE TABLE IF NOT EXISTS ${m.table} (\n${lines.join(',\n')}\n      )`
+/** Microseconds since the epoch, for comparing instants written in different forms. */
+export function instantMicros(v: unknown): bigint {
+  const s = toInstant(v)
+  const m = ISO_TEXT.exec(s)
+  if (!m) return BigInt(Date.parse(s)) * 1000n
+  let off = (m[4] ?? 'Z').toUpperCase()
+  if (off !== 'Z') off = off.length === 3 ? `${off}:00` : off.includes(':') ? off : `${off.slice(0, 3)}:${off.slice(3)}`
+  const time = m[2] ? (m[2].length === 5 ? `${m[2]}:00` : m[2]) : '00:00:00'
+  const ms = Date.parse(`${m[1]}T${time}${off}`)
+  if (Number.isNaN(ms)) throw new Error(`invalid timestamp "${s}"`)
+  const micros = BigInt((m[3] ?? '').padEnd(6, '0').slice(0, 6))
+  return BigInt(ms) * 1000n + micros
 }
 
-/** SELECT list with JSON/TIMESTAMP columns CAST to VARCHAR so reads stay JSON-safe strings. */
+// --- columns ---------------------------------------------------------------------------------------
+
+/** The quoted SELECT list of every column. */
 export function selectCols(m: ModelSpec): string {
-  return Object.entries(modelColumns(m))
-    .map(([name, c]) =>
-      c.kind === 'json' || c.kind === 'timestamp' ? `CAST(${name} AS VARCHAR) AS ${name}` : name,
-    )
-    .join(', ')
+  return Object.keys(modelColumns(m)).map(quoteIdent).join(', ')
 }
 
-// --- row → domain mapping -------------------------------------------------------------------------
+// --- row -> domain mapping --------------------------------------------------------------------------
 
-const parseJson = <T>(json: string | null | undefined, fallback: T): T => {
-  if (json == null) return fallback
+const parseJson = (v: unknown): unknown => {
+  if (typeof v !== 'string') return v
   try {
-    return JSON.parse(json) as T
+    return JSON.parse(v)
   } catch {
-    return fallback
+    return null
   }
 }
 
-/** Map a raw (VARCHAR-cast) row to the domain shape: JSON parsed, timestamps → ISO-Z strings. */
+/** Map a row to the domain shape: JSON parsed, numbers as numbers, booleans as booleans. */
 export function rowToRecord<T>(m: ModelSpec, row: Record<string, unknown>): T {
   const out: Record<string, unknown> = {}
   for (const [name, c] of Object.entries(modelColumns(m))) {
@@ -132,10 +87,10 @@ export function rowToRecord<T>(m: ModelSpec, row: Record<string, unknown>): T {
       out[name] = null
       continue
     }
-    if (c.kind === 'json') out[name] = parseJson(v as string, null)
-    else if (c.kind === 'timestamp') out[name] = fromNaiveUtc(String(v))
+    if (c.kind === 'json') out[name] = parseJson(v)
     else if (c.kind === 'int' || c.kind === 'float') out[name] = Number(v)
     else if (c.kind === 'bool') out[name] = v === true || v === 'true'
+    else if (c.kind === 'vector') out[name] = typeof v === 'string' ? (JSON.parse(v) as number[]) : v
     else out[name] = v
   }
   return out as T
@@ -157,10 +112,8 @@ function stableJson(v: unknown): string {
 
 /**
  * Would writing `next` change what `prev` already says? Compared column by column over the model's
- * DECLARED columns only (managed timestamps/audit excluded), each at the precision the table stores
- * it: JSON by content not key order, timestamps at whole seconds (a DuckDB TIMESTAMP write drops the
- * milliseconds, so an ISO input with `.123Z` must not read as a change against its own stored
- * value), numbers as numbers.
+ * DECLARED columns only (managed timestamps/audit excluded): JSON by content not key order,
+ * timestamps as instants (`...+01:00` equals the same instant in `Z`), numbers as numbers.
  *
  * This exists for the machine writers: a nightly sync re-asserting unchanged data must NOT write,
  * because an upsert always restamps `updated_at` / `updated_by` - and a human's assignment stamped
@@ -177,10 +130,10 @@ export function sameRecord(m: ModelSpec, prev: object, next: object): boolean {
       continue
     }
     if (c.kind === 'json') {
-      if (stableJson(a) !== stableJson(b)) return false
+      if (stableJson(parseJson(a)) !== stableJson(parseJson(b))) return false
     } else if (c.kind === 'timestamp') {
-      if (toNaiveUtc(String(a)) !== toNaiveUtc(String(b))) return false
-    } else if (c.kind === 'int' || c.kind === 'float') {
+      if (instantMicros(a) !== instantMicros(b)) return false
+    } else if (c.kind === 'int' || c.kind === 'float' || c.kind === 'bigint') {
       if (Number(a) !== Number(b)) return false
     } else if (c.kind === 'bool') {
       if ((a === true || a === 'true') !== (b === true || b === 'true')) return false
@@ -189,7 +142,7 @@ export function sameRecord(m: ModelSpec, prev: object, next: object): boolean {
   return true
 }
 
-// --- validation -----------------------------------------------------------------------------------
+// --- validation -------------------------------------------------------------------------------------
 
 /** App-level CHECK constraint: reject values outside a column's declared enum. */
 export function validateEnums(m: ModelSpec, values: Record<string, unknown>): void {
@@ -203,26 +156,34 @@ export function validateEnums(m: ModelSpec, values: Record<string, unknown>): vo
   }
 }
 
-// --- CRUD -----------------------------------------------------------------------------------------
+// --- CRUD -------------------------------------------------------------------------------------------
 
 export interface ReadOptions {
+  /** A condition with `$n` placeholders numbered from 1, matching `params`. */
   where?: string
-  params?: DuckDBValue[]
+  params?: readonly unknown[]
+  /** Spliced verbatim: code-owned column lists only, never input. */
   orderBy?: string
+  limit?: number
+}
+
+function selectSql(m: ModelSpec, opts: ReadOptions): string {
+  if (opts.limit !== undefined && !(Number.isInteger(opts.limit) && opts.limit >= 0)) throw new Error(`invalid limit ${opts.limit}`)
+  return `select ${selectCols(m)} from ${table(m)}${opts.where ? ` where ${opts.where}` : ''}${
+    opts.orderBy ? ` order by ${opts.orderBy}` : ''
+  }${opts.limit !== undefined ? ` limit ${opts.limit}` : ''}`
 }
 
 export async function readRecords<T>(m: ModelSpec, opts: ReadOptions = {}): Promise<T[]> {
-  await ensureSchema()
-  const sql = `SELECT ${selectCols(m)} FROM ${m.table}${opts.where ? ` WHERE ${opts.where}` : ''}${
-    opts.orderBy ? ` ORDER BY ${opts.orderBy}` : ''
-  }`
-  const rows = await withRead<Record<string, unknown>>(sql, opts.params)
+  const rows = await withRead<Record<string, unknown>>(selectSql(m, opts), opts.params, { reach: reachOf(m) })
   return rows.map((r) => rowToRecord<T>(m, r))
 }
 
-export async function readRecord<T>(m: ModelSpec, pk: Record<string, DuckDBValue>): Promise<T | null> {
-  const where = m.pk.map((c) => `${c} = ?`).join(' AND ')
-  const rows = await readRecords<T>(m, { where, params: m.pk.map((c) => pk[c] ?? null) })
+const pkWhere = (m: ModelSpec, from = 1) => m.pk.map((c, i) => `${quoteIdent(c)} = $${i + from}`).join(' and ')
+const pkValues = (m: ModelSpec, pk: Record<string, unknown>) => m.pk.map((c) => pk[c] ?? null)
+
+export async function readRecord<T>(m: ModelSpec, pk: Record<string, unknown>): Promise<T | null> {
+  const rows = await readRecords<T>(m, { where: pkWhere(m), params: pkValues(m, pk) })
   return rows[0] ?? null
 }
 
@@ -231,27 +192,44 @@ export type UpsertInput = Record<string, unknown> & { actor?: string }
 
 export interface UpsertOptions {
   /** The previous row, when the caller already read it for its own merge decisions - skips the
-   *  internal read. Pass `null` for a known-absent row. (Typed `object` so domain records assign
-   *  without an index signature; the layer only reads columns declared in the model.) */
+   *  internal read. Pass `null` for a known-absent row. The caller is then responsible for having
+   *  read it in the same transaction (with FOR UPDATE) when concurrent writers matter. */
   prev?: object | null
+  /** Columns this write may not touch (not inserted, not updated). */
+  omit?: readonly string[]
+  /** Refuse instead of inserting when the row (locked in this transaction) is gone: an update of
+   *  an existing row must never fall back to column defaults. */
+  mustExist?: boolean
+  /** Create only: a plain INSERT; a row already under the key refuses (never turned into an update). */
+  createOnly?: boolean
+  /** The caller ran `assertKnownActor` on `input.actor` before opening its own transaction: needed
+   *  when this upsert runs inside a feature write, where the check (core.users on box_core) cannot. */
+  actorChecked?: boolean
 }
 
-const toDbValue = (c: ColumnSpec, v: unknown): DuckDBValue => {
+/** A value as a query parameter for a column of `kind`. */
+export function toParam(c: ColumnSpec, v: unknown): unknown {
   if (v == null) return null
   if (c.kind === 'json') return JSON.stringify(v)
-  if (c.kind === 'timestamp') return toNaiveUtc(String(v))
+  if (c.kind === 'timestamp') return toInstant(v)
   if (c.kind === 'bool') return v === true || v === 'true'
-  return v as DuckDBValue
+  if (c.kind === 'vector') return vectorLiteral(v)
+  return v
+}
+
+/** pgvector's text form `[x,y,...]` of a number list; refuses anything else. */
+export function vectorLiteral(v: unknown): string {
+  if (!Array.isArray(v) || !v.every((x) => typeof x === 'number' && Number.isFinite(x))) throw new Error('a vector value must be a list of finite numbers')
+  return `[${v.join(',')}]`
 }
 
 /**
- * Partial UPSERT: reads the previous row, merges (input keys - including explicit nulls - override;
- * absent keys keep previous values or fall to defaults), validates enums, stamps timestamps + audit,
- * writes INSERT … ON CONFLICT DO UPDATE, and returns the mapped row. Domain modules that need a
- * non-shallow merge (e.g. a feature's metadata deep-merge) resolve it BEFORE calling this.
+ * Partial UPSERT in one transaction: locks and reads the previous row, merges (input keys -
+ * including explicit nulls - override; absent keys keep previous values or fall to defaults),
+ * validates enums, stamps timestamps + audit, writes INSERT ... ON CONFLICT DO UPDATE, and returns
+ * the written row. Domain modules that need a non-shallow merge resolve it BEFORE calling this.
  */
 export async function upsertRecord<T>(m: ModelSpec, input: UpsertInput, opts: UpsertOptions = {}): Promise<T> {
-  await ensureSchema()
   const { actor: rawActor, ...fields } = input
   // An empty/blank actor is "nobody said" - stamping '' would be a third value beside a real id and
   // NULL that nothing downstream distinguishes.
@@ -259,59 +237,96 @@ export async function upsertRecord<T>(m: ModelSpec, input: UpsertInput, opts: Up
   for (const c of m.pk) {
     if (fields[c] == null || fields[c] === '') throw new Error(`${m.table}: upsert needs "${c}"`)
   }
+  validateEnums(m, fields)
   // The audit stamp is validated here rather than per domain module: this is the only place an
   // `actor` becomes created_by/updated_by, and created_by is unrewritable through the tool surface,
-  // so a bad id is permanent. Lazily imported - users/state.ts is built on this module.
-  if (m.audit && actor) {
+  // so a bad id is permanent. It reads core.users on box_core, so it runs before the write opens
+  // (a feature write runs on the role login; the executor refuses a second login inside it).
+  // Lazily imported - users/state.ts is built on this module.
+  if (m.audit && actor && !opts.actorChecked) {
     const { assertKnownActor } = await import('../users/state.js')
     await assertKnownActor(actor)
   }
-  const prev = (
-    opts.prev !== undefined
-      ? opts.prev
-      : await readRecord<Record<string, unknown>>(
-          m,
-          Object.fromEntries(m.pk.map((c) => [c, fields[c] as DuckDBValue])),
-        )
-  ) as Record<string, unknown> | null
-  validateEnums(m, fields)
-
-  const now = new Date().toISOString()
-  const merged: Record<string, unknown> = {}
-  for (const name of Object.keys(m.columns)) {
-    merged[name] = name in fields ? fields[name] : (prev?.[name] ?? null)
-  }
-  if (m.timestamps) {
-    merged.created_at = prev?.created_at ?? now
-    merged.updated_at = now
-  }
-  if (m.audit) {
-    merged.created_by = prev ? (prev.created_by ?? null) : (actor ?? null)
-    merged.updated_by = actor ?? (prev?.updated_by ?? null)
-  }
-
   const cols = modelColumns(m)
-  const names = Object.keys(cols)
-  const updates = names
-    .filter((n) => !m.pk.includes(n) && n !== 'created_at' && n !== 'created_by')
-    .map((n) => `${n} = excluded.${n}`)
-  await withWrite(async (conn) => {
-    await conn.run(
-      `INSERT INTO ${m.table} (${names.join(', ')})
-       VALUES (${names.map((n) => (cols[n].kind === 'json' ? '?::JSON' : '?')).join(', ')})
-       ON CONFLICT (${m.pk.join(', ')}) DO UPDATE SET ${updates.join(', ')}`,
-      names.map((n) => toDbValue(cols[n], merged[n])),
+  // `omit`: columns this path may not write (a user's role is the policy service's): neither
+  // inserted (a new row takes the default) nor updated.
+  const names = Object.keys(cols).filter((n) => !opts.omit?.includes(n) && !cols[n]!.policy)
+  const pk = Object.fromEntries(m.pk.map((c) => [c, fields[c]]))
+
+  const row = await withWrite(async (tx) => {
+    const prev = (opts.prev !== undefined ? opts.prev : await lockedRow(tx, m, pk)) as Record<string, unknown> | null
+    if (opts.mustExist && !prev) throw new Error(`${m.table}: ${JSON.stringify(pk)} no longer exists`)
+    const now = new Date().toISOString()
+    const merged: Record<string, unknown> = {}
+    for (const name of Object.keys(m.columns)) merged[name] = name in fields ? fields[name] : (prev?.[name] ?? null)
+    if (m.timestamps) {
+      merged.created_at = prev?.created_at ?? now
+      merged.updated_at = now
+    }
+    if (m.audit) {
+      merged.created_by = prev ? (prev.created_by ?? null) : (actor ?? null)
+      merged.updated_by = actor ?? (prev?.updated_by ?? null)
+    }
+    const updates = names
+      .filter((n) => !m.pk.includes(n) && n !== 'created_at' && n !== 'created_by')
+      .map((n) => `${quoteIdent(n)} = excluded.${quoteIdent(n)}`)
+    // A new row takes a column's declared default when neither the input nor a previous row says.
+    const params: unknown[] = []
+    const values = names.map((n) => {
+      const c = cols[n]!
+      if (!prev && merged[n] == null && !(n in fields) && c.default !== undefined) return 'default'
+      params.push(toParam(c, merged[n]))
+      return c.kind === 'json' ? `$${params.length}::jsonb` : c.kind === 'vector' ? `$${params.length}::${columnType(n, c)}` : `$${params.length}`
+    })
+    const rows = await tx.query<Record<string, unknown>>(
+      `insert into ${table(m)} (${names.map(quoteIdent).join(', ')})
+       values (${values.join(', ')})
+       ${opts.createOnly ? `on conflict (${m.pk.map(quoteIdent).join(', ')}) do nothing` : `on conflict (${m.pk.map(quoteIdent).join(', ')}) ${updates.length ? `do update set ${updates.join(', ')}` : 'do nothing'}`}
+       returning ${selectCols(m)}`,
+      params,
     )
-  })
-  emitChange(`table:${m.table}`)
-  return (await readRecord<T>(m, Object.fromEntries(m.pk.map((c) => [c, fields[c] as DuckDBValue]))))!
+    if (opts.createOnly && !rows[0]) throw new RecordExistsError(m.table, pk)
+    const col = areaColumn(m)
+    changed(m, col ? [prev?.[col], rows[0]?.[col] ?? merged[col]] : [])
+    return rows[0] ?? (await tx.query<Record<string, unknown>>(`select ${selectCols(m)} from ${table(m)} where ${pkWhere(m)}`, pkValues(m, pk)))[0]
+  }, { reach: reachOf(m) })
+  return rowToRecord<T>(m, row!)
 }
 
-export async function deleteRecord(m: ModelSpec, pk: Record<string, DuckDBValue>): Promise<void> {
-  await ensureSchema()
-  const where = m.pk.map((c) => `${c} = ?`).join(' AND ')
-  await withWrite(async (conn) => {
-    await conn.run(`DELETE FROM ${m.table} WHERE ${where}`, m.pk.map((c) => pk[c] ?? null))
-  })
-  emitChange(`table:${m.table}`)
+/** A create-only write found a row already under its key. */
+export class RecordExistsError extends Error {
+  constructor(readonly table: string, readonly pk: Record<string, unknown>) {
+    super(`${table}: ${JSON.stringify(pk)} already exists`)
+    this.name = 'RecordExistsError'
+  }
+}
+
+/** The current row by primary key, locked FOR UPDATE until the transaction ends. */
+export async function lockedRow<T = Record<string, unknown>>(tx: Tx, m: ModelSpec, pk: Record<string, unknown>): Promise<T | null> {
+  const rows = await tx.query<Record<string, unknown>>(`select ${selectCols(m)} from ${table(m)} where ${pkWhere(m)} for update`, pkValues(m, pk))
+  return rows[0] ? rowToRecord<T>(m, rows[0]) : null
+}
+
+export async function deleteRecord(m: ModelSpec, pk: Record<string, unknown>): Promise<void> {
+  await withWrite(async (tx) => {
+    const col = areaColumn(m)
+    const gone = await tx.query<Record<string, unknown>>(`delete from ${table(m)} where ${pkWhere(m)} returning ${col ? quoteIdent(col) : '1'}`, pkValues(m, pk))
+    changed(m, col ? gone.map((r) => r[col]) : [])
+  }, { reach: reachOf(m) })
+}
+
+/** The column holding a row's owning area (`area`) or areas (`areas`, events), if any. */
+function areaColumn(m: ModelSpec): 'area' | 'areas' | null {
+  if (m.columns.area?.kind === 'text') return 'area'
+  return m.columns.areas?.kind === 'text[]' ? 'areas' : null
+}
+
+/**
+ * Announce a write: a table whose rows carry owning areas announces the areas of the rows it
+ * touched (change-access.ts delivers them to those areas' readers), any other its scope.
+ */
+function changed(m: ModelSpec, values: unknown[]): void {
+  if (!areaColumn(m)) return emitChange(`table:${m.table}`)
+  const areas = values.flatMap((v) => (Array.isArray(v) ? v : [v])).filter((a): a is string => typeof a === 'string')
+  emitAreaChange(`table:${m.table}`, areas)
 }

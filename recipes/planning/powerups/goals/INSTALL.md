@@ -79,8 +79,8 @@ None.
    its ledger), one table-altering statement each:
 
    ```ts
-   { name: '<nnn>-initiatives-goal-ids', statements: [`ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS goal_ids JSON DEFAULT '[]'`] },
-   { name: '<nnn+1>-initiatives-goal-ids-not-null', statements: ['ALTER TABLE initiatives ALTER COLUMN goal_ids SET NOT NULL'] },
+   { name: '<nnn>-initiatives-goal-ids', statements: [`ALTER TABLE planning.initiatives ADD COLUMN IF NOT EXISTS goal_ids jsonb DEFAULT '[]'`] },
+   { name: '<nnn+1>-initiatives-goal-ids-not-null', statements: ['ALTER TABLE planning.initiatives ALTER COLUMN goal_ids SET NOT NULL'] },
    ```
 
    Back up first (`box db backup`) and rehearse on a restored backup in a scratch checkout
@@ -97,7 +97,7 @@ None.
    it (the initiative page's Goals checklist), and check the goal card shows a health reading and
    names the initiative.
 2. Create a qualitative goal (no target): it shows "No target" and no health. Bind a third goal to
-   `planning.tasks_done` (`goal-upsert` with `measure_key`), finish a task and check its value
+   `planning.tasks_done` (`goal-upsert` with `tracker_key`), finish a task and check its value
    moves.
 3. Create a cycle, put a goal in it, move the cycle to `review`, and carry the goal forward into a
    second cycle: the new goal exists, the initiative contributes to it, the old one is closed.
@@ -114,6 +114,6 @@ types, `health.ts` and `HealthChip.tsx` when the milestones powerup stays), and 
 `recipes.planning.powerups`. Ask the owner what to do with existing goals and cycles, their docs
 under `data/docs/goals/` and `data/docs/cycles/`, and the goals' own signals (`goal.<id>`, kept by
 core's signals until deleted there). Then drop what is unused with new migrations (back up first):
-`ALTER TABLE initiatives DROP COLUMN goal_ids`, and, if the owner lets the rows go, `DROP TABLE
-goals` and `DROP TABLE cycles` with `goals` and `cycles` added to the manifest's `retiredTables` so
+`ALTER TABLE planning.initiatives DROP COLUMN goal_ids`, and, if the owner lets the rows go, `DROP TABLE
+planning.goals` and `DROP TABLE planning.cycles` with `goals` and `cycles` added to the manifest's `retiredTables` so
 the ownership check counts them as planning's. Run `box verify` and load `/initiatives`.

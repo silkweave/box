@@ -60,11 +60,11 @@ test('box:json writes the defaults on a fresh checkout only, and the written fil
     assert.deepEqual(readBoxJsonFile(first.file), defaultBoxJson())
     assert.equal(initBoxJson(root).outcome, 'present')
     rmSync(first.file)
-    mkdirSync(join(root, 'data'), { recursive: true })
-    writeFileSync(join(root, 'data', 'data.db'), 'an existing warehouse')
+    mkdirSync(join(root, 'data', 'db'), { recursive: true })
+    writeFileSync(join(root, 'data', 'db', 'active.json'), '{}')
     const deferred = initBoxJson(root)
     assert.equal(deferred.outcome, 'deferred')
-    assert.match(deferred.why, /data\/data\.db/)
+    assert.match(deferred.why, /data\/db/)
     assert.equal(existsSync(deferred.file), false) // the identity is the boot's to move or refuse, never prepare's to choose
   } finally {
     rmSync(root, { recursive: true, force: true })

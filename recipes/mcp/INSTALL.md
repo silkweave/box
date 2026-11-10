@@ -14,8 +14,9 @@ so the documents and the code come from the same version.
   hook (SPEC.md, "Decision"). An older core is upgraded with `$upgrade` first.
 - `server.dashboardUrl` set to the address administrators use, over https, before any OAuth
   connection: it is the redirect URI's origin (GOTCHAS.md).
-- Packages: `@modelcontextprotocol/sdk` in the root workspace package (the MCP client and its OAuth
-  helpers); `zod` is already there.
+- Packages in the root workspace package: `@modelcontextprotocol/client` (the MCP client and its
+  OAuth helpers), `@modelcontextprotocol/server` and `@modelcontextprotocol/node` (the connection
+  endpoint); `zod` is already there.
 - The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes and state in `_docs/INTEGRATION.md`.
 - A disposable instance for build, typecheck, tests, schema checks and boot verification, with
@@ -75,6 +76,9 @@ OAuth; real upstreams are verified on the target Box by the owner.
 2. Tool levels: a held tool is absent from `tools/list` for everyone; `admins` shows only to an
    administrator; `on` shows to a member in the audience and not to one outside it. An agent
    principal sees no passthrough tool on `/mcp`.
+   Marks: with a custom role at `mcp: read`, only tools marked Reads are listed and callable; an
+   unmarked tool answers "can change data"; the same holds in a session whose toolset grants the
+   connection.
 3. `box <connection>-<tool>` calls the stub; `box mcp-calls` shows the row with the principal,
    surface `cli` and outcome `ok`. The 61st call in a minute answers `rate_limited`.
 4. OAuth against the stub: Connect, sign in, return to Settings with `connected`; expire the access

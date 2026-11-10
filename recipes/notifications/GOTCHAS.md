@@ -22,11 +22,11 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 - **Never add a field to `NotificationDelivery` that could carry a URL or a filename.** The preview
   is 120 chars of `message.body` and nothing else, on purpose: a pushed payload renders on lock
   screens far outside the tailnet and outlives the notification. Attachments have no field here.
-- **Do not `ATTACH` chat.db from the warehouse** to "just join" the bell's two strata. Both reads
-  are capped at 30 rows and merged in memory precisely so the interactive bell never sits behind
-  DuckDB's single-writer lock.
-- **Marking the bell seen must never write `room_members.last_read_at`.** Two pointers, two
-  questions; wiring them together makes the sidebar badge lie.
+- **Do not join chat's tables with the alerts** to "just join" the bell's two strata. They are two
+  areas, each read authorized for its own (a caller without chat gets the alerts alone); both reads
+  are capped at 30 rows and merged in memory.
+- **Marking the bell seen must never write a read pointer** (`chat_read_pointers`). Two pointers,
+  two questions; wiring them together makes the sidebar badge lie.
 - **Alert read-state uses `alertSeenKey`, not `event_at`.** A future-dated `event_at` against a
   `Date.now()` watermark is permanently unseen and permanently un-clearable, and the bell's
   mark-on-open then loops against the reload - it did, unattended, on 2026-09-10. The `stuck` guard

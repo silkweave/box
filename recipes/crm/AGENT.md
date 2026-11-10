@@ -14,36 +14,20 @@ Copy or adapt `<fetched recipe>/features/crm/` into the Box's `features/crm/{cor
 
 No shipped migrations currently. A fresh Box gets every table from the ModelSpecs. A future schema change must be a new migration. Back up data before applying any migration, stage its runner and registration first, and verify migration completion and boot compatibility on a disposable restored instance before continuing.
 
-### Moving the pipeline onto deals
+### The pipeline lives on deals
 
-Until 2026-09-28 the account WAS the deal: `crm_accounts.status` carried the pre-sale ladder, and
-`close_probability` and `loss_reason` sat on the account. The reference now keeps the pipeline in
-`crm_deals` and the relationship on the account. A Box whose warehouse predates that has account
-rows with pipeline statuses (`stale`, `meeting_requested`, `meeting_booked`, `demo`, `proposal`,
-`confirmed`, `revisit`) and no `crm_deals` rows. The reference ships no migration for this because
-every Box's book differs; the adapting agent writes one in the Box's `features/crm/core`, named for
-the Box (for example `crm:001-deals-from-accounts`), after a warehouse backup and a rehearsal on a
-restored copy. The shape that preserves everything:
+The account carries the relationship (`crm_accounts.status`: lead, customer, churned, lost and the
+other values in SPEC.md) and never a pre-sale stage. The pipeline is `crm_deals`: one row per
+attempt to sell to an account, with its own `stage`, `mrr_usd`, `close_probability`,
+`expected_close_at` and `loss_reason`. `close_probability` and `loss_reason` belong to the deal, not
+the account. `crm_deals` and its stage history come from the ModelSpecs on a fresh Box.
 
-1. `crm_deals` is created by the baseline (`CREATE TABLE IF NOT EXISTS`) on the first boot of the
-   new code, so the migration only moves data.
-2. For every account whose status is a pipeline stage, or `lost` with a `loss_reason`, insert one
-   deal: `id` `<account-id>-<something stable>`, `account_id`, a `name` the team recognises,
-   `stage` = the old status (a `lost` account gives a `lost` deal), `mrr_usd`,
-   `close_probability`, `loss_reason` and `owner` from the account, `expected_close_at` from
-   `next_action_at` for `revisit`, `closed_at` from `updated_at` for a lost one.
-3. Then set those accounts' status to the relationship: pipeline stages become `lead`; `lost`
-   stays `lost` unless the team wants to keep pursuing them. Paying statuses are untouched. Decide
-   per team whether a paying account with an open expansion gets a deal too, and whether the
-   account's `mrr_usd` of a lead (a pipeline estimate until now) is cleared once its deal holds it.
-4. Leave `crm_accounts.close_probability` and `loss_reason` in place. The ModelSpec no longer
-   declares them, so nothing reads or writes them; dropping them is a later, separate migration if
-   ever. Never edit a shipped migration to do this.
-5. Saved views repair themselves on read: a stored status filter that named pipeline stages becomes
-   a `stage` filter, and the `value` column becomes `pipeline` (`lib/crmView.ts`).
-
-Rehearse against a restored backup, count accounts per status before and after, count deals per
-stage after, and boot the Box on the migrated copy before touching the live instance.
+When a Box brings its own accounts or pipeline data into the recipe, import each open opportunity
+as a deal whose account is a `lead` (or a `customer` with an expansion), and keep `lost` for
+accounts the team has stopped pursuing. Like any data move, it is a migration in the Box's
+`features/crm/core`, named for the Box (for example `crm:001-deals-from-<source>`), written after a
+warehouse backup and rehearsed on a restored copy: count accounts per status and deals per stage
+before and after, then boot the Box on the migrated copy before touching the live instance.
 
 ## 2. Customise for the team
 
@@ -141,6 +125,12 @@ Twenty-two tools in total (every procedure except `crmDocRegionsSave`, which is 
 region autosave and deliberately has no MCP name). Remember what comes back: `crm-accounts` returns
 real people's names and emails. They must never land in a public-facing draft.
 
+Trackers: call `trackers-list` (MCP) and check `crm.deals_reached_stage`, `crm.deals_won_value` and
+`crm.activities_by_type` are listed; bind one to a test signal with `signal-upsert`, change a deal,
+and the signal's points follow without a derive. A team whose stages differ from the shipped ladder
+needs no tracker change (the stage param reads `CRM_DEAL_STAGES`). A further CRM number follows the
+`$add-tracker` skill.
+
 ## 4. Adapt or remove
 
 To update this feature, compare the target Box with the version recorded in the `recipes` ledger of `box.json` (fetch it with `box recipe fetch crm --version <that version>`), preserve local customizations, and apply the relevant source changes manually. Record the result in `docs/UPSTREAM.md` and `_docs/INTEGRATION.md`, including unresolved work and rollback details.
@@ -210,14 +200,12 @@ show in a browser.
    it on that row's next edit until the value is fixed. A fresh Box gets the columns from the
    baseline; **a Box that already has `crm_deals` does not** - the baseline is `CREATE TABLE IF
    NOT EXISTS` - so also append the feature's first migration to `manifest.ts`
-   (`{ name: '001-deal-shape', statements: ['ALTER TABLE crm_deals ADD COLUMN IF NOT EXISTS product TEXT DEFAULT \'platform\'', ...] }`,
-   one ALTER per column). Two DuckDB facts shape that statement, both measured on 2026-09-14: `IF
-   NOT EXISTS` is honoured, so the same ALTER is safe to re-run; and `ADD COLUMN` refuses a
-   constraint ("Adding columns with constraints not yet supported"), so write `DEFAULT` without
-   `NOT NULL` - the NOT NULL in the ModelSpec holds on fresh Boxes, and on older ones the record
-   layer writes every column explicitly anyway, so a null never lands. `bun run schema:check` (a
-   diagnostic; run it yourself, `verify` does not) proves the migration applies fresh, on reboot,
-   and onto a Box that enabled `crm` later, and warns if it touches a table outside `crm_*`.
+   (`{ name: '001-deal-shape', statements: ['ALTER TABLE crm.crm_deals ADD COLUMN IF NOT EXISTS product text NOT NULL DEFAULT \'platform\'', ...] }`,
+   schema-qualified, matching the ModelSpec). `IF NOT EXISTS` makes the same ALTER safe to re-run,
+   and the `DEFAULT` fills every existing row, so the column can carry the ModelSpec's `NOT NULL`
+   on an upgraded Box as on a fresh one. `bun run schema:check` (part of `box verify`) proves the
+   migration applies fresh, on reboot, and onto a Box that enabled `crm` later, and warns if it
+   names a table crm does not own or one that is not schema-qualified.
 3. **The resolve-before-write block** - `deals.ts`, `upsertCrmDeal`, at the comment that names
    itself as the seam. Resolve each new column the way the others are resolved
    (`input.x !== undefined ? input.x : (prev?.x ?? default)`), refuse a plan whose product is not

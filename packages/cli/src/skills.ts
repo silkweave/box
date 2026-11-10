@@ -60,7 +60,7 @@ const codexDir = join(root, '.agents', 'skills')
  * particular feature does is not a concierge. It degrades instead: it reads the installed set and
  * routes only to flows this Box actually has.
  */
-const CORE_SKILLS = new Set(['setup-box', 'consult', 'adapt', 'upgrade', 'verify'])
+const CORE_SKILLS = new Set(['setup-box', 'consult', 'adapt', 'upgrade', 'verify', 'add-tracker'])
 
 const check = process.argv.includes('--check')
 

@@ -29,29 +29,26 @@ None. `models: []`, `migrations: []` - the core manifest is four lines.
 
 Its state lives in three places it does not own:
 
-- **`chat.db`** (chat's feature-private SQLite store, chat's own migration chain, § 3.6):
-  `notification_reads` (the per-user alert watermark, chat `002-mentions`),
-  `notification_dismissals` (per-item tombstones, chat `003-notification-dismissals`),
-  `push_subscriptions` (chat `004-push-subscriptions`) and `device_tokens` (chat
-  `005-device-tokens`). Chat wrote those migrations with this feature in mind - `004`'s comment
-  says outright that "a native app brings its own table and its own transport". Read state for an
-  interactive bell is a small hot per-user write, which is the shape DuckDB's ephemeral
-  single-writer design is wrong for; chat.db is the instance's store for exactly that, and is only
-  called "chat" because chat got there first.
-- **The DuckDB warehouse**, via the alerts powerup: the `alerts` table is read through `listAlerts` and never
+- **Chat's tables** (schema `chat`, through `chatStore()`): `chat_notification_reads` (the
+  per-user alert watermark), `chat_notification_dismissals` (per-item tombstones),
+  `chat_push_subscriptions` and `chat_device_tokens`. These are the bell's own per-user state:
+  the store writes them as named system work for the caller's own id (the controller passes its
+  principal), so the bell works for a person without chat access too; the push transports read and
+  stamp them the same way. Mentions and recent messages are read on the caller's login and only
+  when the caller has chat read.
+- **The Box database**, via the alerts powerup: the `alerts` table is read through `listAlerts` and never
   written here.
 - **`box.local.json credentials`** under the `push.*` channel: the VAPID pair and the
   FCM service account. Secrets go in credentials, in `box.local.json` (see Configuration below).
 
-There is **no join between the two engines**, on purpose. Both reads are capped at `FEED_LIMIT`
-(30) and merged in memory on `at`; a DuckDB `ATTACH` of chat.db would put the interactive bell
-behind the warehouse's single-writer lock, which is the coupling chat.db exists to avoid.
+There is **no join between chat's and the alerts' tables**, on purpose: they are two areas, each read
+authorized for its own. Both reads are capped at `FEED_LIMIT` (30) and merged in memory on `at`.
 
 ## What it registers where
 
 Two ports, both filled from `NotificationsModule.onModuleInit`
 (`features/notifications/server/notifications/notifications.module.ts`), which owns no
-providers at all - the chat SQLite handle belongs to `ChatModule`:
+providers at all:
 
 | Registration | Into | Effect |
 |---|---|---|
@@ -164,10 +161,10 @@ not tRPC: `GET /api/push/sw.js` (`@Public`) and `GET /api/push/avatar/:id` (`@Us
 the SW's credentialed avatar proxy).
 
 Three read models, three different answers to "have I seen it?", and that is not drift: a mention
-is `mentions.seen_at` (per row, individually dismissable), a message is `room_members.last_read_at`
-(the pointer the sidebar already owns - inventing a second one would let the two disagree), and an
-alert is a per-user watermark in `notification_reads`. Marking the bell seen **never** writes
-`room_members.last_read_at`: clearing the bell is not reading your rooms.
+is `chat_mentions.seen_at` (per row, individually dismissable), a message is
+`chat_read_pointers.last_read_at` (the pointer the sidebar already owns - inventing a second one would
+let the two disagree), and an alert is a per-user watermark in `chat_notification_reads`. Marking the
+bell seen **never** writes a read pointer: clearing the bell is not reading your rooms.
 
 `alertSeenKey(eventAtMs, createdAt)` clamps an alert's seen-time to when the row was recorded. A
 future-dated `event_at` from a skewed upstream clock would otherwise be permanently unseen against
@@ -202,7 +199,7 @@ transports a delivery routes through.
   from looping when the server hands the badge straight back.
 - Live refresh comes from two signals: `registerStoreReloads(['table:alerts'])` on the changes bus
   for the warehouse half, and three chat frame types (`mention.created`, `message.created`,
-  `message.deleted`) for the chat half, since chat.db writes emit nothing on the changes bus.
+  `message.deleted`) for the chat half, since chat writes emit nothing on the changes bus.
 
 ## What a team customises
 

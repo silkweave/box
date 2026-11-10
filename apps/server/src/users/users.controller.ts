@@ -1,15 +1,16 @@
 import { mkdirSync } from 'node:fs'
 import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpException, Post, Req, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
-import { IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-validator'
+import { IsIn, IsInt, IsOptional, IsString, Matches, MaxLength } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
 import { WORK_FS } from '../agent/work-session.js'
 import { z } from 'zod/v4'
-import { AgentFileError, createAgent, isConfiguredAgent, type PrincipalCredential, boxBrand, systemUserId, USER_ROLES, assertNotLastAdmin, deleteUser, parseSidebarLayout, readSidebarLayout, writeSidebarLayout, issuePrincipalToken, issueSigninLink, readUser, readUsers, normalizePhone, revealPrincipalToken, revokePrincipalToken, sameEmail, setPrincipalRole, upsertUser, type User, type UserRole, workFolderCreateProblem, workFolderProblem, workFolderSuggestions, type WorkAccess } from '@silkweave/box-core'
+import { AgentFileError, createAgent, isConfiguredAgent, type PrincipalCredential, boxBrand, systemUserId, ROLE_ID, assertNotLastAdmin, deleteUser, parseSidebarLayout, readSidebarLayout, writeSidebarLayout, issuePrincipalToken, issueSigninLink, readUser, readUsers, normalizePhone, revealPrincipalToken, revokePrincipalToken, sameEmail, setPrincipalRole, upsertUser, type User, type UserRole, workFolderCreateProblem, workFolderProblem, workFolderSuggestions, type WorkAccess } from '@silkweave/box-core'
 import { revokeAgentControl } from '../agent/agent-control.js'
 import { AuthGuard } from '../auth/auth.guard.js'
-import { Admin } from '../auth/auth.decorators.js'
+import { Admin, Authenticated, Read } from '../auth/auth.decorators.js'
 import { appUrl, signinLinkUrl } from '../auth/app-url.js'
+import { inputError } from '../auth/input-error.js'
 
 /** Whether a typed phone names the stored one (an invalid typed form never does). */
 function samePhone(typed: string, stored: string | null): boolean {
@@ -29,8 +30,8 @@ const userOutput = z.object({
   phone: z.string().nullable(),
   image: z.string().nullable(),
   color: z.string().nullable(),
-  status: z.enum(['invited', 'active', 'revoked']),
-  role: z.enum(['admin', 'member']),
+  status: z.enum(['pending', 'invited', 'active', 'revoked']),
+  role: z.string(),
   kind: z.enum(['human', 'agent']),
   tailscale_login: z.string().nullable(),
   channels: z.record(z.string(), z.string()),
@@ -62,7 +63,7 @@ class UserDto {
   @ApiProperty({ required: false, nullable: true }) color!: string | null
   @ApiProperty({ description: 'Access lifecycle: active | invited | revoked' })
   status!: string
-  @ApiProperty({ enum: USER_ROLES, description: 'Trust tier: admin | member (docs/core/AUTH.md § 3)' })
+  @ApiProperty({ description: 'Role: admin, member or a custom role id (docs/AUTH.md "Roles and areas")' })
   role!: string
   @ApiProperty({ enum: ['human', 'agent'], description: 'human | agent: agents come from box.json agent and data/config/agents/<id>.md' })
   kind!: string
@@ -109,8 +110,10 @@ class UpsertUserDto {
 }
 class SetRoleDto {
   @ApiProperty() @IsString() id!: string
-  @ApiProperty({ enum: USER_ROLES, description: 'admin grants the credential and service surfaces; member is everything else' })
-  @IsIn(USER_ROLES) role!: UserRole
+  @ApiProperty({ description: 'admin (every area plus administration), member (every area) or a custom role id (roles-list)' })
+  @IsString() @Matches(ROLE_ID) role!: UserRole
+  @ApiProperty({ required: false, description: 'The revision of the coverage preview being confirmed (required with confirm)' }) @IsOptional() @IsInt() revision?: number
+  @ApiProperty({ required: false, enum: ['remove-members'], description: 'Also remove the room members the coverage preview listed' }) @IsOptional() @IsIn(['remove-members']) confirm?: 'remove-members'
 }
 class IdDto {
   @ApiProperty() @IsString() id!: string
@@ -171,7 +174,7 @@ interface PrincipalRequest {
 class AgentCreateDto {
   @ApiProperty({ description: 'The agent id: a lowercase slug (a-z, 0-9, -), new to this Box' }) @IsString() @MaxLength(63) id!: string
   @ApiProperty({ description: 'Display name' }) @IsString() @MaxLength(64) name!: string
-  @ApiProperty({ enum: USER_ROLES, description: 'admin or member, as for a person' }) @IsIn(USER_ROLES) role!: UserRole
+  @ApiProperty({ description: 'admin, member or a custom role id, as for a person' }) @IsString() @Matches(ROLE_ID) role!: UserRole
   @ApiProperty({ required: false, description: 'Instructions appended to the engine system prompt at each session start' })
   @IsOptional() @IsString() @MaxLength(20_000) instructions?: string
 }
@@ -208,6 +211,8 @@ export class UsersController {
   @ApiOkResponse({ type: UsersDto })
   @Trpc({ output: usersOutput })
   @Mcp({ name: 'users-list' })
+  @Authenticated()
+  @Read()
   async list(): Promise<UsersDto> {
     return { generatedAt: new Date().toISOString(), users: (await readUsers()) as UserDto[] }
   }
@@ -217,6 +222,8 @@ export class UsersController {
   @ApiOkResponse({ type: UserDto })
   @Trpc({ output: userOutput })
   @Mcp({ name: 'user-get' })
+  @Authenticated()
+  @Read()
   async get(@Body() body: IdDto): Promise<UserDto> {
     const user = await readUser(body.id)
     if (!user) throw new BadRequestException(`unknown user "${body.id}" - users-list names every user`)
@@ -236,6 +243,7 @@ export class UsersController {
   @ApiOkResponse({ type: UserDto })
   @Trpc({ kind: 'mutation', output: userOutput })
   @Mcp({ name: 'user-upsert' })
+  @Authenticated()
   async upsert(@Body() body: UpsertUserDto, @Req() req: PrincipalRequest): Promise<UserDto> {
     const isAdmin = req.principal?.role === 'admin'
     if (!isAdmin) {
@@ -282,7 +290,7 @@ export class UsersController {
       return (await upsertUser({ ...body, channels, work })) as User as UserDto
     } catch (e) {
       // Domain refusals (a taken email or tailscale login, an invalid id) are the caller's to fix.
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -296,6 +304,7 @@ export class UsersController {
   @ApiOkResponse({ type: WorkFoldersDto })
   @Admin()
   @Trpc({ output: workFoldersOutput })
+  @Read()
   workFolders(@Body() body: WorkFolderQueryDto): WorkFoldersDto {
     return workFolderSuggestions(body.query, WORK_FS)
   }
@@ -338,7 +347,7 @@ export class UsersController {
       return this.buildInvite(token, (await readUser(body.id))!)
     } catch (e) {
       if (e instanceof HttpException) throw e
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -406,11 +415,11 @@ export class UsersController {
   @Mcp({ name: 'user-set-role' })
   async setRole(@Body() body: SetRoleDto, @Req() req: PrincipalRequest): Promise<UserDto> {
     try {
-      await setPrincipalRole(body.id, body.role, req.principal?.id)
+      await setPrincipalRole(body.id, body.role, req.principal?.id, { revision: body.revision, confirm: body.confirm })
       if (body.role !== 'admin') revokeAgentControl(body.id)
     } catch (e) {
       if (e instanceof HttpException) throw e
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return (await readUser(body.id)) as User as UserDto
   }
@@ -479,7 +488,7 @@ export class UsersController {
       return { url, expiresAt, message, user: user as UserDto }
     } catch (e) {
       if (e instanceof HttpException) throw e
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
   }
 
@@ -515,6 +524,8 @@ export class UsersController {
   @Get('sidebar')
   @ApiOkResponse({ type: SidebarDto })
   @Trpc({ output: sidebarOutput })
+  @Authenticated()
+  @Read()
   async sidebar(@Req() req: PrincipalRequest): Promise<SidebarDto> {
     if (!req.principal) throw new ForbiddenException('a signed-in principal is required')
     return { layout: await readSidebarLayout(req.principal.id) }
@@ -524,13 +535,14 @@ export class UsersController {
   @Post('sidebar-save')
   @ApiOkResponse({ type: SidebarDto })
   @Trpc({ kind: 'mutation', output: sidebarOutput })
+  @Authenticated()
   async sidebarSave(@Body() body: SidebarSaveDto, @Req() req: PrincipalRequest): Promise<SidebarDto> {
     if (!req.principal) throw new ForbiddenException('a signed-in principal is required')
     let layout = null
     try {
       layout = body.layout ? parseSidebarLayout(JSON.parse(body.layout)) : null
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return { layout: await writeSidebarLayout(req.principal.id, layout) }
   }
@@ -548,7 +560,7 @@ export class UsersController {
       revokeAgentControl(body.id)
     } catch (e) {
       if (e instanceof HttpException) throw e
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return this.list()
   }

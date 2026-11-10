@@ -4,8 +4,11 @@
 // status, the has_token derivation (the public User shape never exposes token columns), and the
 // cascade-delete / reorder paths as raw SQL.
 
-import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
-import { readRecord, readRecords, upsertRecord } from '../warehouse/model.js'
+import { emitChange } from '../changes.js'
+import { withWrite } from '../warehouse/db.js'
+import { db } from '../warehouse/core-db.js'
+import { sql } from '../warehouse/kysely.js'
+import { readRecord, upsertRecord } from '../warehouse/model.js'
 import { USERS } from '../warehouse/core-models.js'
 import { type User, type UserInput, type UserKind, type UserRole, type UserStatus } from './types.js'
 import { systemUserId, agentIdentity } from '../box-config.js'
@@ -14,6 +17,7 @@ import { runUserCleanups } from './cleanup.js'
 import { agentProfileMapFor } from '../agent-profiles.js'
 import { rememberAgentDefault, forgetAgentDefault } from '../agent-defaults.js'
 import { normalizeWorkAccess } from '../work-access.js'
+import { roleExists } from '../auth/roles.js'
 
 // Re-export the lazy identity lookup for existing user-directory consumers.
 export { systemUserId } from '../box-config.js'
@@ -77,7 +81,7 @@ function toUser(r: UserRecord): User {
     image: r.image,
     color: r.color,
     status: (r.status || 'active') as UserStatus,
-    role: r.id === systemUserId() ? agentIdentity().role : (kind === 'agent' && configuredRole(r.id)) || (r.role === 'admin' ? 'admin' : 'member'),
+    role: r.id === systemUserId() ? agentIdentity().role : (kind === 'agent' && configuredRole(r.id)) || r.role || 'member',
     kind,
     tailscale_login: r.tailscale_login,
     channels: r.channels ?? {}, // malformed JSON degrades to no handles (the layer parses to null)
@@ -98,11 +102,34 @@ export function userSlug(nickname: string): string {
   return nickname.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
 }
 
+const CORE = { reach: 'core' } as const
+
+/** The identity columns two users may not share, by the unique index that enforces each. */
+export const USER_UNIQUE_INDEXES = {
+  users_tailscale_login_key: 'tailscale_login',
+  users_email_key: 'email',
+  users_phone_key: 'phone',
+} as const
+
+/** A unique-index violation on an identity column as the message the pre-check gives. */
+function uniqueClash(e: unknown, values: Record<string, string | null>): Error | null {
+  const err = e as { code?: string; constraint?: string }
+  if (err?.code !== '23505' || !err.constraint) return null
+  const column = USER_UNIQUE_INDEXES[err.constraint as keyof typeof USER_UNIQUE_INDEXES]
+  if (!column) return null
+  const label = column === 'tailscale_login' ? 'tailscale login' : column
+  return new Error(`${label} "${values[column] ?? ''}" already belongs to another user`)
+}
+
 // --- reads ---------------------------------------------------------------------------------------
+
+/** `lower(trim(email))`: the email as an identity (normalizeEmail), for case-insensitive lookups. */
+// A function: built when used, not at module load (core's import cycle through kysely.ts).
+const lowerEmail = () => sql<string>`lower(trim(${sql.ref('email')}))`
 
 /** Every user, ordered for display. Every row is internal, so there is nothing to filter. */
 export async function readUsers(): Promise<User[]> {
-  const rows = await readRecords<UserRecord>(USERS, { orderBy: 'sort, created_at' })
+  const rows = (await db.selectFrom('users').selectAll().orderBy('sort').orderBy('created_at').execute()) as UserRecord[]
   const users = rows.map(toUser)
   for (const user of users) rememberAgentDefault(user.id, user.agent_profile)
   return users
@@ -158,7 +185,7 @@ export async function readUserByPhone(phone: string): Promise<User | null> {
     return null
   }
   if (!value) return null
-  const rows = await withRead<{ id: string }>(`SELECT id FROM users WHERE phone = ? LIMIT 1`, [value])
+  const rows = await db.selectFrom('users').select('id').where('phone', '=', value).limit(1).execute()
   return rows[0] ? readUser(rows[0].id) : null
 }
 
@@ -177,9 +204,23 @@ export function sameEmail(a: string | null | undefined, b: string | null | undef
 export async function readUserByEmail(email: string): Promise<User | null> {
   const value = normalizeEmail(email)
   if (!value) return null
-  const rows = await withRead<{ id: string }>(`SELECT id FROM users WHERE lower(trim(email)) = ? LIMIT 1`, [value])
+  const rows = await db.selectFrom('users').select('id').where(lowerEmail(), '=', value).limit(1).execute()
   return rows[0] ? readUser(rows[0].id) : null
 }
+
+let provisioningHold: ((id: string) => Promise<void>) | null = null
+let beforeWriteHold: ((id: string) => Promise<void>) | null = null
+/** Test seam: run between a new row's insert and its activation (PHASE1 W8 P finding 4 tests). */
+export function setProvisioningHoldForTests(fn: ((id: string) => Promise<void>) | null): void {
+  provisioningHold = fn
+}
+/** Test seam: run after upsertUser read the row (or found it absent) and before its first write. */
+export function setBeforeWriteHoldForTests(fn: ((id: string) => Promise<void>) | null): void {
+  beforeWriteHold = fn
+}
+
+/** The fields that decide who a person is elsewhere (a sign-in identity, a messaging number). */
+const IDENTITY_FIELDS = ['email', 'phone', 'tailscale_login'] as const
 
 /**
  * `opts.kind` is boot reconciliation's alone (auth/bootstrap.ts): no request reaches it, so a row's
@@ -203,6 +244,11 @@ export async function upsertUser(input: UserInput, opts: { kind?: UserKind } = {
     const configured = configuredRole(input.id)
     if (input.role !== configured) throw new Error(`the role of agent "${input.id}" is controlled by data/config/agents/${input.id}.md`)
   }
+  // A person's role must name a role. (Assignment races with a role delete are closed by the
+  // policy service, which serializes every policy change.)
+  if (kind === 'human' && input.role !== undefined && input.role !== prevUser?.role && !(await roleExists(input.role))) {
+    throw new Error(`no role "${input.role}"`)
+  }
   const channels =
     input.channels !== undefined
       ? Object.fromEntries(Object.entries(input.channels).filter(([, v]) => v.trim()))
@@ -218,13 +264,10 @@ export async function upsertUser(input: UserInput, opts: { kind?: UserKind } = {
   }
   const tailscaleLogin =
     input.tailscale_login !== undefined ? input.tailscale_login?.trim() || null : (prevUser?.tailscale_login ?? null)
-  // Uniqueness by a read before the write, like the slug check: DuckDB cannot ALTER a UNIQUE
-  // constraint in, and two users mapped to one tailscale login would make the exchange ambiguous.
+  // Two users mapped to one tailscale login would make the exchange ambiguous. The unique index
+  // (CORE_BASELINE) is the guarantee; these reads only name the clash for the common case.
   if (tailscaleLogin && tailscaleLogin !== prevUser?.tailscale_login) {
-    const clash = await withRead<{ id: string }>(`SELECT id FROM users WHERE tailscale_login = ? AND id <> ? LIMIT 1`, [
-      tailscaleLogin,
-      input.id,
-    ])
+    const clash = await db.selectFrom('users').select('id').where('tailscale_login', '=', tailscaleLogin).where('id', '<>', input.id).limit(1).execute()
     if (clash[0]) throw new Error(`tailscale login "${tailscaleLogin}" already belongs to user "${clash[0].id}"`)
   }
   const email = input.email !== undefined ? input.email?.trim() || null : (prevUser?.email ?? null)
@@ -232,15 +275,12 @@ export async function upsertUser(input: UserInput, opts: { kind?: UserKind } = {
   // case-insensitively. Checked on change only, so a Box that already holds a duplicate still saves
   // unrelated profile edits.
   if (email && !sameEmail(email, prevUser?.email)) {
-    const clash = await withRead<{ id: string }>(`SELECT id FROM users WHERE lower(trim(email)) = ? AND id <> ? LIMIT 1`, [
-      normalizeEmail(email),
-      input.id,
-    ])
+    const clash = await db.selectFrom('users').select('id').where(lowerEmail(), '=', normalizeEmail(email)!).where('id', '<>', input.id).limit(1).execute()
     if (clash[0]) throw new Error(`email "${email}" already belongs to user "${clash[0].id}"`)
   }
   const phone = input.phone !== undefined ? normalizePhone(input.phone) : (prevUser?.phone ?? null)
   if (phone && phone !== prevUser?.phone) {
-    const clash = await withRead<{ id: string }>(`SELECT id FROM users WHERE phone = ? AND id <> ? LIMIT 1`, [phone, input.id])
+    const clash = await db.selectFrom('users').select('id').where('phone', '=', phone).where('id', '<>', input.id).limit(1).execute()
     if (clash[0]) throw new Error(`phone "${phone}" already belongs to user "${clash[0].id}"`)
   }
   // A partial `work` merges over the stored value and is stored complete, so a later reader never
@@ -248,28 +288,70 @@ export async function upsertUser(input: UserInput, opts: { kind?: UserKind } = {
   const work = input.work !== undefined
     ? normalizeWorkAccess({ ...prevUser?.work, ...input.work })
     : (prev?.work ?? null)
+  // An existing row's role change is its own policy command, run first: if it is refused, nothing
+  // of this edit is applied. A role change and an identity change (email, phone, tailscale login)
+  // are never one request: the second could fail after the first committed, leaving an identity
+  // with authority the request did not get. They are refused together, before either write. An
+  // explicit role is also what activates a row left pending by a failed create.
+  const { writePrincipalRole } = await import('../auth/principal.js')
+  // The stored row, not the User view (an agent's view carries its config role).
+  await beforeWriteHold?.(input.id)
+  const roleChange = !!prev && input.role !== undefined && (input.role !== prev.role || prev.status === 'pending')
+  if (roleChange) {
+    // Categorical, and before the role write: a role request carries no identity value at all, so
+    // nothing it writes afterwards can put back an identity changed meanwhile (or clash on one).
+    const supplied = IDENTITY_FIELDS.filter((f) => input[f] !== undefined)
+    if (supplied.length) throw new Error(`change the role and ${supplied.join(', ')} separately: a role change cannot ride with an identity value`)
+    await writePrincipalRole(input.id, input.role!, undefined)
+  }
+  const record: Record<string, unknown> = {
+    id: input.id,
+    first_name: input.first_name ?? prevUser?.first_name ?? '',
+    last_name: input.last_name ?? prevUser?.last_name ?? '',
+    nickname: input.nickname ?? prevUser?.nickname ?? input.id,
+    email,
+    phone,
+    image: input.image !== undefined ? input.image : (prevUser?.image ?? null),
+    color: input.color !== undefined ? input.color : (prevUser?.color ?? null),
+    channels,
+    // A new row starts `pending` (not authenticatable, auth/principal.ts) and is activated with
+    // its role in one policy transaction below: never a moment as a default member. An existing
+    // row's status is not this write's: it is merged from the row locked in the write's own
+    // transaction, so an activation or a revoke committed meanwhile is never undone.
+    ...(prev ? {} : { status: 'pending' }),
+    tailscale_login: tailscaleLogin,
+    agent_profile: agentProfile,
+    work,
+    kind,
+    sort: input.sort ?? prevUser?.sort ?? 0,
+  }
+  // An existing row gets only what the caller supplied: every other column is merged from the row
+  // locked in the write's own transaction, never copied from this call's earlier read (a value
+  // changed meanwhile, an identity above all, is never put back).
+  if (prev) {
+    for (const key of Object.keys(record)) {
+      if (key === 'id') continue
+      const given = key === 'kind' ? opts.kind !== undefined : (input as unknown as Record<string, unknown>)[key] !== undefined
+      if (!given) delete record[key]
+    }
+  }
   const rec = await upsertRecord<UserRecord>(
     USERS,
-    {
-      id: input.id,
-      first_name: input.first_name ?? prevUser?.first_name ?? '',
-      last_name: input.last_name ?? prevUser?.last_name ?? '',
-      nickname: input.nickname ?? prevUser?.nickname ?? input.id,
-      email,
-      phone,
-      image: input.image !== undefined ? input.image : (prevUser?.image ?? null),
-      color: input.color !== undefined ? input.color : (prevUser?.color ?? null),
-      channels,
-      status: prevUser?.status ?? 'active',
-      role: input.role ?? prevUser?.role ?? 'member',
-      tailscale_login: tailscaleLogin,
-      agent_profile: agentProfile,
-      work,
-      kind,
-      sort: input.sort ?? prevUser?.sort ?? 0,
-    },
-    { prev },
-  )
+    record,
+    // A user's role is a policy row: written only by the policy service, never here.
+    // A create is insert-only: an id taken meanwhile refuses, never updates the row it found.
+    prev ? { mustExist: true } : { prev: null, createOnly: true },
+  ).catch((e: unknown) => {
+    throw uniqueClash(e, { tailscale_login: tailscaleLogin, email, phone }) ?? e
+  })
+  if (!prev) {
+    // A new row: inserted pending, activated with its role in one policy command.
+    const role = input.role ?? 'member'
+    await provisioningHold?.(rec.id)
+    await writePrincipalRole(rec.id, role, undefined, { create: true })
+    rec.role = role
+    rec.status = 'active'
+  }
   rememberAgentDefault(rec.id, rec.agent_profile ?? null)
   return toUser(rec)
 }
@@ -283,7 +365,6 @@ export async function upsertUser(input: UserInput, opts: { kind?: UserKind } = {
  */
 export async function deleteUser(id: string): Promise<void> {
   if (id === systemUserId()) throw new Error('the configured system principal cannot be deleted')
-  await ensureSchema()
   // An agent row is never deleted, retired included: it stays as the author of its messages and
   // runs, and keeps its id from being reused by someone else. Retire an agent by deleting its file.
   const row = await readRecord<UserRecord>(USERS, { id })
@@ -291,20 +372,31 @@ export async function deleteUser(id: string): Promise<void> {
     throw new Error(`"${id}" is an agent; agents are retired by deleting data/config/agents/${id}.md, never deleted`)
   }
   await runUserCleanups(id)
-  await withWrite(async (conn) => {
-    await conn.run(`DELETE FROM users WHERE id = ?`, [id])
+  // The cleanups run first, each on its own feature's login (they are not one transaction with
+  // this delete: a role login cannot open inside box_core's). A failing cleanup aborts the delete.
+  // The delete itself is a policy command: the last-admin rule is decided under the policy lock
+  // and the generation moves, so a frame resolved before it is refused at its next transaction.
+  const { lockTargetNotLastAdmin } = await import('../auth/principal.js')
+  const { policyCommand } = await import('../warehouse/pg/boot.js')
+  await policyCommand(`delete user ${id}`, async (tx) => {
+    const target = await lockTargetNotLastAdmin(tx, id, 'deleting them')
+    if (!target) return
+    if (kindOf(target.kind) === 'agent') throw new Error(`"${id}" is an agent; agents are retired by deleting data/config/agents/${id}.md, never deleted`)
+    // On the policy command's own transaction (maintenance client), so it stays a `tx` statement.
+    await tx.run(`delete from core.users where id = $1`, [id])
   })
+  emitChange('table:users')
   forgetAgentDefault(id)
 }
 
 /** Assign sequential `sort` to users in the given id order (drag reorder). */
 export async function reorderUsers(ids: string[]): Promise<void> {
-  await ensureSchema()
-  await withWrite(async (conn) => {
-    for (let i = 0; i < ids.length; i++) {
-      await conn.run(`UPDATE users SET sort = ?, updated_at = now() WHERE id = ?`, [i, ids[i]])
-    }
-  })
+  await withWrite(async () => {
+    // Raw sql: UPDATE ... FROM unnest(...) WITH ORDINALITY has no builder form.
+    await sql`update ${sql.table('users')} u set sort = o.n - 1, updated_at = now()
+         from unnest(${ids}::text[]) with ordinality as o(id, n) where u.id = o.id`.execute(db)
+    emitChange('table:users')
+  }, CORE)
 }
 
 /** Guard a write that names a user (owner, assignee): the id must be an existing users.id. */

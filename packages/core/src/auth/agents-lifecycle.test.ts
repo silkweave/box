@@ -1,18 +1,13 @@
-// Agent principals against a real warehouse: core:007 on a populated table, boot reconciliation
+// Agent principals against a real database: boot reconciliation
 // (create, human-id refusal, retire, restore), the eligibility predicate in authentication and
-// session tokens, the invariants keyed on `kind = 'agent'`, and agent files in backup and restore.
+// session tokens, and the invariants keyed on `kind = 'agent'`. Agent files in backup and restore:
+// db/switch.test.ts.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { DuckDBInstance } from '@duckdb/node-api'
-import { applySchema, type MigrationConn } from '../warehouse/schema.js'
-import { CORE_MODELS } from '../warehouse/core-models.js'
-import { createTableSql } from '../warehouse/model.js'
-import { ensureSchema, withRead } from '../warehouse/db.js'
-import { backupWarehouse, restoreWarehouse } from '../warehouse/backup.js'
-import { captureAgentFiles } from '../warehouse/agent-snapshot.js'
+import { withRead } from '../warehouse/db.js'
 import { SESSION_COOKIE, mintSession } from './session.js'
 import { mintSigninGrant } from './link.js'
 import { agentsDir } from '../agents.js'
@@ -42,43 +37,18 @@ const agentFile = (id: string, name: string, role: 'admin' | 'member', body = ''
 const removeAgentFile = (id: string): void => rmSync(join(agentsDir(), `${id}.md`), { force: true })
 const row = async (id: string) =>
   (await withRead<{ kind: string; status: string; role: string; token_ciphertext: string | null; sort: number }>(
-    `SELECT kind, status, role, token_ciphertext, sort FROM users WHERE id = ?`,
+    `select kind, status, role, token_ciphertext, sort from core.users where id = $1`,
     [id],
   ))[0]
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-agent-lifecycle-'))
   setInstanceDir(dir)
-  await ensureSchema()
 })
 
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true })
   resetInstanceDir()
-})
-
-describe('core:007-users-kind on a POPULATED users table', () => {
-  it('adds kind = human to every row and marks only the locked system id an agent', async () => {
-    const file = join(dir, 'upgrade.db')
-    const instance = await DuckDBInstance.create(file)
-    const conn = await instance.connect()
-    const spec = CORE_MODELS.find((m) => m.table === 'users')!
-    const legacy = { ...spec, columns: Object.fromEntries(Object.entries(spec.columns).filter(([name]) => name !== 'kind')) }
-    await conn.run(createTableSql(legacy))
-    for (const id of ['alice', 'nova', 'stella']) {
-      await conn.run(`INSERT INTO users (id, first_name, last_name, nickname) VALUES (?, '', '', ?)`, [id, id])
-    }
-    await applySchema(conn as unknown as MigrationConn, [])
-    const rows = (await conn.runAndReadAll(`SELECT id, kind FROM users ORDER BY id`)).getRowObjectsJson()
-    expect(rows).toEqual([
-      { id: 'alice', kind: 'human' },
-      { id: 'nova', kind: 'agent' },
-      // An existing account is never converted by the migration, whatever files exist later.
-      { id: 'stella', kind: 'human' },
-    ])
-    conn.disconnectSync()
-    instance.closeSync()
-  })
 })
 
 describe('boot reconciliation', () => {
@@ -240,58 +210,6 @@ describe('invariants keyed on kind = agent', () => {
     for (const id of ['chief', 'nova']) {
       expect(await consumeSigninGrant(mintSigninGrant(id).grant)).toEqual({ ok: false, reason: 'revoked' })
     }
-  })
-})
-
-describe('backup and restore carry the agent files', () => {
-  it('snapshots data/config/agents/ beside the restore point and puts it back on restore', async () => {
-    const backup = await backupWarehouse({ label: 'manual', remote: false })
-    const snapshot = backup.local!.path.replace(/\.db$/, '.agents.json')
-    expect(existsSync(snapshot)).toBe(true)
-    const names = Object.keys((JSON.parse(readFileSync(snapshot, 'utf8')) as { files: object }).files).sort()
-    expect(names).toEqual(['chief.md', 'echo.md', 'scribe.md', 'stella.md'])
-
-    removeAgentFile('chief')
-    agentFile('intruder', 'Intruder', 'admin')
-    const restored = await restoreWarehouse(backup.local!.name)
-    expect(restored.summary).toMatch(/agents\/ restored \(4 files\)/)
-    expect(existsSync(join(agentsDir(), 'chief.md'))).toBe(true)
-    expect(existsSync(join(agentsDir(), 'intruder.md'))).toBe(false)
-    // The parked state carries the files as they were before the restore.
-    const parked = JSON.parse(readFileSync(restored.parked!.replace(/\.db$/, '.agents.json'), 'utf8')) as { files: object }
-    expect(Object.keys(parked.files).sort()).toEqual(['echo.md', 'intruder.md', 'scribe.md', 'stella.md'])
-  })
-
-  it('refuses a damaged sidecar before touching the warehouse or the files', async () => {
-    const backup = await backupWarehouse({ label: 'manual', remote: false })
-    const sidecar = backup.local!.path.replace(/\.db$/, '.agents.json')
-    await upsertUser({ id: 'marker', nickname: 'marker' })
-    const before = Object.keys(captureAgentFiles()).sort()
-    for (const bad of ['{"format":"box-agent-files/1","files":{"x', '[]', 'null', '{"format":"box-agent-files/1","files":{"../evil.md":"x"}}', '{"stella.md":"x"}']) {
-      writeFileSync(sidecar, bad)
-      await expect(restoreWarehouse(backup.local!.name)).rejects.toThrow(/agents\.json/)
-      expect(await readUser('marker')).not.toBeNull()
-      expect(Object.keys(captureAgentFiles()).sort()).toEqual(before)
-    }
-  })
-
-  it('refuses to boot after a restore died between the file swap and the database swap, until restored again', async () => {
-    const backup = await backupWarehouse({ label: 'manual', remote: false })
-    // What a process that died after swapping the files leaves behind.
-    writeFileSync(join(agentsDir(), '..', 'agents.restore-in-progress.json'), JSON.stringify({ restorePoint: backup.local!.name, previous: null }))
-    await expect(ensureAgentPrincipals()).rejects.toThrow(/restore was interrupted/)
-    await restoreWarehouse(backup.local!.name)
-    await expect(ensureAgentPrincipals()).resolves.toBeDefined()
-  })
-
-  it('refuses a backup without agent files unless told to keep the live ones', async () => {
-    const backup = await backupWarehouse({ label: 'manual', remote: false })
-    rmSync(backup.local!.path.replace(/\.db$/, '.agents.json'))
-    await expect(restoreWarehouse(backup.local!.name)).rejects.toThrow(/--keep-agent-files/)
-    const before = captureAgentFiles()
-    const restored = await restoreWarehouse(backup.local!.name, { keepAgentFiles: true })
-    expect(restored.summary).toMatch(/carries no agent files/)
-    expect(captureAgentFiles()).toEqual(before)
   })
 })
 

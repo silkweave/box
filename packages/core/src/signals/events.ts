@@ -11,12 +11,12 @@
 
 import { onChange } from '../changes.js'
 import { recordEvent, type EventInput } from '../events.js'
-import { readSignalDefinitions } from './definitions.js'
+import { readSignalDefinitions, signalAreaClosure } from './definitions.js'
 import { deriveSignalIncrements, readSignalPoints, SIGNAL_INCREMENT_KIND } from './points.js'
 import type { SignalDefinition } from './types.js'
 
 /** Change scopes that can move a signal's latest buckets (`warehouse` is a write from another process). */
-const SIGNAL_SCOPES = new Set(['table:signal_points', 'table:snapshots', 'table:signals', 'warehouse'])
+const SIGNAL_SCOPES = new Set(['table:signal_points', 'table:snapshots', 'table:signals'])
 
 let dirty = true
 let watching: (() => void) | null = null
@@ -35,11 +35,15 @@ export function watchSignalWrites(): () => void {
   return watching
 }
 
-/** The events one signal's latest two buckets hold (pure). `latest` and `prior` are newest first. */
+/**
+ * The events one signal's latest two buckets hold (pure). `latest` and `prior` are newest first;
+ * `areas` is what a reader needs (signalAreaClosure: the signal's area and a formula's inputs').
+ */
 export function signalEventsFor(
   def: Pick<SignalDefinition, 'id' | 'label' | 'unit' | 'channel' | 'thresholds'>,
   latest: { date: string; value: number },
   prior: { date: string; value: number } | undefined,
+  areas: readonly string[],
 ): EventInput[] {
   const fields: Record<string, string> = {
     signal_id: def.id,
@@ -58,6 +62,7 @@ export function signalEventsFor(
     source: 'funnel',
     subject: def.id,
     fields: { ...fields, ...extra },
+    areas,
   })
   const out: EventInput[] = []
   if (prior && latest.value > prior.value) out.push(event('signal.increase', `${def.id}:${latest.date}`))
@@ -79,11 +84,13 @@ export async function evaluateSignalEvents(opts: { force?: boolean } = {}): Prom
   dirty = false
   try {
     let recorded = 0
-    for (const def of await readSignalDefinitions()) {
+    const defs = await readSignalDefinitions()
+    const byId = new Map(defs.map((d) => [d.id, d]))
+    for (const def of defs) {
       const points = await readSignalPoints(def.id)
       const [latest, prior] = points.slice(-2).reverse().map((p) => ({ date: p.bucket.slice(0, 10), value: p.value }))
       if (!latest) continue
-      for (const e of signalEventsFor(def, latest, prior)) if (await recordEvent(e)) recorded++
+      for (const e of signalEventsFor(def, latest, prior, signalAreaClosure(def, byId))) if (await recordEvent(e)) recorded++
     }
     return { recorded }
   } catch (err) {

@@ -56,7 +56,7 @@ export function formatDateTime(ts: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-/** Parse a server timestamp - DuckDB CASTs come as "YYYY-MM-DD HH:MM:SS[.fff]" (Safari needs the T). */
+/** Parse a server timestamp, ISO or "YYYY-MM-DD HH:MM:SS[.fff]" (Safari needs the T). */
 export function parseTimestamp(ts: string): Date {
   return new Date(ts.includes('T') || !ts.includes(' ') ? ts : ts.replace(' ', 'T'))
 }

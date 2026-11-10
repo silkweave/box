@@ -5,7 +5,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { ensureSchema } from '../warehouse/db.js'
 import { readUser, upsertUser } from './state.js'
 import { parseSidebarLayout, readSidebarLayout, writeSidebarLayout } from './sidebar.js'
 import { resetInstanceDir, setInstanceDir } from '../testing.js'
@@ -15,7 +14,6 @@ let dir: string
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-sidebar-'))
   setInstanceDir(dir)
-  await ensureSchema()
   await upsertUser({ id: 'alice', nickname: 'Alice' })
   await upsertUser({ id: 'bob', nickname: 'Bob' })
 })

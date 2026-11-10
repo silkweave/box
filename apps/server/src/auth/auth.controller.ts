@@ -4,7 +4,11 @@ import { IsString } from 'class-validator'
 import { Trpc } from '@silkweave/nestjs'
 import { z } from 'zod/v4'
 import {
+  asSystem,
+  accessOf,
   activeAgentPrincipals,
+  describeAccess,
+  type AccessSummary,
   authenticatePrincipal,
   agentIdentity,
   teamTimeZone,
@@ -42,7 +46,7 @@ class LinkDto {
 class PrincipalDto {
   @ApiProperty() id!: string
   @ApiProperty() display!: string
-  @ApiProperty({ enum: ['admin', 'member'] }) role!: Principal['role']
+  @ApiProperty({ description: 'admin, member or a custom role id' }) role!: Principal['role']
   @ApiProperty({ enum: ['human', 'agent'] }) kind!: Principal['kind']
 }
 class AgentRefDto {
@@ -51,7 +55,9 @@ class AgentRefDto {
 }
 class MeDto {
   @ApiProperty({ required: false, nullable: true, type: PrincipalDto }) principal!: PrincipalDto | null
-  @ApiProperty({ type: Object }) agent!: { id: string; name: string; role: 'admin' | 'member' }
+  @ApiProperty({ type: Object }) agent!: { id: string; name: string; role: string }
+  @ApiProperty({ type: Object, required: false, nullable: true, description: 'The signed-in principal\'s access: a level per area, admin authority, the policy revision. Null when signed out.' })
+  access!: AccessSummary | null
   @ApiProperty({ type: [AgentRefDto], description: 'The active agents, system principal first; empty when signed out.' }) agents!: AgentRefDto[]
   @ApiProperty({ description: 'True until the host creates the first human owner.' }) needsOwner!: boolean
   @ApiProperty({ description: 'The team time zone (box.json timeZone, IANA): the clock "today" is read on.' }) timeZone!: string
@@ -123,17 +129,21 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @ApiOkResponse({ type: MeDto })
   @Trpc({ output: z.object({
-    principal: z.object({ id: z.string(), display: z.string(), role: z.enum(['admin', 'member']), kind: z.enum(['human', 'agent']) }).nullable(),
-    agent: z.object({ id: z.string(), name: z.string(), role: z.enum(['admin', 'member']) }),
+    principal: z.object({ id: z.string(), display: z.string(), role: z.string(), kind: z.enum(['human', 'agent']) }).nullable(),
+    agent: z.object({ id: z.string(), name: z.string(), role: z.string() }),
+    access: z.object({ role: z.string(), label: z.string(), admin: z.boolean(), revision: z.number(), areas: z.record(z.string(), z.enum(['none', 'read', 'write'])) }).nullable(),
     agents: z.array(z.object({ id: z.string(), name: z.string() })),
     needsOwner: z.boolean(),
     timeZone: z.string(),
   }) })
   async me(@Req() req: PrincipalRequest): Promise<MeDto> {
-    const users = await readUsers()
+    // The first-run probe answers anonymous callers too, so it reads users as named system work.
+    const users = await asSystem('auth: first-run probe', () => readUsers())
     return {
       principal: req.principal ?? null,
       agent: agentIdentity(),
+      // What the clients build their navigation, routes and edit affordances from (docs/AUTH.md).
+      access: req.principal ? await describeAccess(await accessOf(req.principal)) : null,
       // The active agents (system principal first), for mention autocomplete. Only to a signed-in
       // principal: the roster is no business of an anonymous probe.
       agents: req.principal ? (await activeAgentPrincipals()).map(({ id, display }) => ({ id, name: display })) : [],

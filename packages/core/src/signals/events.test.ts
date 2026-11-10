@@ -36,9 +36,9 @@ afterAll(() => {
 describe('signalEventsFor', () => {
   const def = { id: 'mrr', label: 'MRR', unit: 'USD', channel: 'stripe', thresholds: [5000] }
   it('fires a threshold on first sight and an increase only against a prior bucket', () => {
-    expect(signalEventsFor(def, { date: '2026-10-02', value: 6000 }, undefined).map((e) => e.kind)).toEqual(['signal.threshold'])
-    expect(signalEventsFor(def, { date: '2026-10-02', value: 6000 }, { date: '2026-10-01', value: 5000 }).map((e) => e.kind)).toEqual(['signal.increase'])
-    expect(signalEventsFor(def, { date: '2026-10-02', value: 4000 }, { date: '2026-10-01', value: 6000 })).toEqual([])
+    expect(signalEventsFor(def, { date: '2026-10-02', value: 6000 }, undefined, ['signals']).map((e) => e.kind)).toEqual(['signal.threshold'])
+    expect(signalEventsFor(def, { date: '2026-10-02', value: 6000 }, { date: '2026-10-01', value: 5000 }, ['signals']).map((e) => e.kind)).toEqual(['signal.increase'])
+    expect(signalEventsFor(def, { date: '2026-10-02', value: 4000 }, { date: '2026-10-01', value: 6000 }, ['signals'])).toEqual([])
   })
 })
 

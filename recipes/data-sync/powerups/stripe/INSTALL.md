@@ -21,7 +21,7 @@ Ask these together:
 2. **Currencies**: nothing to choose. Amounts are reported in USD; activity in any other currency
    converts at the ECB rate of its day (docs/SIGNALS.md "Currencies").
 3. **History window**: days rebuilt on every sync (default 90, up to 1095).
-4. **Which measures to bind** as signals: gross volume, net volume, refunds, MRR, active
+4. **Which trackers to bind** as signals: gross volume, net volume, refunds, MRR, active
    subscriptions.
 
 ## Owner-only steps
@@ -44,7 +44,7 @@ Ask these together:
    ```json
    { "credentials": { "stripe": { "<source id>": { "STRIPE_API_KEY": "rk_live_..." } } } }
    ```
-4. **Bind signals.** Create a signal per chosen measure from the source's measure list (the signal
+4. **Bind signals.** Create a signal per chosen tracker from the source's tracker list (the signal
    dialog prefills label, interval and accumulation). Set the unit to `USD` if wanted.
 5. **Record** the powerup, with the fetched version and sha256, in the `recipes` ledger of `box.json`, the session in
    `_docs/INTEGRATION.md`. No key goes in either.

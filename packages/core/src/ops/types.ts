@@ -58,6 +58,13 @@ export interface ActionInfo {
 /** A runnable action a feature contributes to the funnel. */
 export interface ActionSpec extends ActionInfo {
   run: (opts: ActionRunOpts) => AsyncGenerator<IngestProgress>
+  /**
+   * Core actions only: the owning area of the action's runs when it is not `ops`, because its
+   * log and error text carry that area's data (the source syncs: `signals`). A run's row and its
+   * `run.error` event are readable with this area (PERMISSIONS 8.1, 8.3). Feature actions are owned
+   * by their feature and may not set it.
+   */
+  area?: string
 }
 
 /** @deprecated name kept for the server/web DTOs; it is ActionInfo. */
@@ -93,6 +100,8 @@ export interface AutomationRun {
   event_id: string | null
   /** users.id that clicked Run Now, or null (scheduled / unattributed agent runs). */
   triggered_by: string | null
+  /** An agent job's principal (`run_as`); null for action runs. */
+  acts_as: string | null
   status: RunStatus
   started_at: string
   finished_at: string | null

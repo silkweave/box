@@ -12,21 +12,28 @@
 // setter cannot leak in from a shell, and it holds the same ordering guarantee, because every
 // instance read in this codebase happens inside a function, never at import.
 //
-//   holdWarehouseOpen(on) keep one DuckDB instance per database file open (the setup files turn it
-//                         on); a test that replaces or deletes the file, or checks the per-call
-//                         open path, turns it off
-//   releaseWarehouse()    close the held instances; switching the instance directory does it too
+// The database seams (PHASE1.md choice 11): `useTestDatabase(inject('boxDb'))` points the process
+// executor at a fresh clone of the run's migrated template (the setup files do it per test file),
+// and `setFramelessScopeForTests` makes code with no context frame run as system work, so test
+// bodies can call core functions directly. Denial tests set their frames explicitly
+// (`withoutContext`, `runInRequest` + `fillRequest`).
 import { resetInstanceDir as resetDir, setInstanceDir as setDir } from './io.js'
-import { releaseWarehouse } from './warehouse/hold.js'
 
-export { holdWarehouseOpen, releaseWarehouse } from './warehouse/hold.js'
+import type { TemplateInfo, TestDatabase } from './warehouse/pg/testing.js'
+
+export { setFramelessScopeForTests } from './frameless.js'
+export type { TemplateInfo, TestDatabase } from './warehouse/pg/testing.js'
+
+/** A fresh clone of the run's template with the process executor pointed at it. Loaded lazily, so
+ *  importing this seam does not load the feature registry before a test file mocks it. */
+export async function useTestDatabase(info: TemplateInfo): Promise<TestDatabase> {
+  return (await import('./warehouse/pg/testing.js')).useTestDatabase(info)
+}
 
 export function setInstanceDir(dir: string): void {
-  releaseWarehouse()
   setDir(dir)
 }
 
 export function resetInstanceDir(): void {
-  releaseWarehouse()
   resetDir()
 }

@@ -46,6 +46,10 @@ Exercise the agent path once in a fresh agent session (tools are listed when a s
 ask the agent to log a ticket from a short call summary and check that it found the existing
 requester instead of creating a second one.
 
+Tracker: `trackers-list` shows `support.tickets_resolved`; bind a test signal to it, close a ticket
+and the signal follows. Add a ticket type and the tracker's `type` param picks it up. A further
+support number follows the `$add-tracker` skill.
+
 ## 4. Adapt or remove
 
 - **Removing a powerup** follows its INSTALL.md "Remove". Its tables stay.

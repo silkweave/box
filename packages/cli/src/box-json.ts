@@ -16,8 +16,8 @@ export type BoxJsonInit = 'written' | 'present' | 'deferred'
 export function initBoxJson(root: string = repoRoot): { outcome: BoxJsonInit; file: string; why: string } {
   const file = join(root, 'box.json')
   if (existsSync(file)) return { outcome: 'present', file, why: 'already there' }
-  if (existsSync(join(root, 'data', 'data.db'))) {
-    return { outcome: 'deferred', file, why: 'existing data/data.db requires explicit configuration' }
+  if (existsSync(join(root, 'data', 'db', 'active.json'))) {
+    return { outcome: 'deferred', file, why: 'an existing database (data/db) requires explicit configuration' }
   }
   writeBoxJsonIfAbsent(file)
   return { outcome: 'written', file, why: 'fresh checkout' }

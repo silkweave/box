@@ -14,7 +14,7 @@ import {
   readBoxConfig,
   type BoxJson,
 } from './box-json.js'
-import { configPath, configRoot, warehousePath } from './io.js'
+import { configPath, configRoot, dataPath } from './io.js'
 import { dayInZone } from './team-day.js'
 import type { UserRole } from './users/types.js'
 
@@ -71,8 +71,15 @@ export function boxJson(): BoxJson {
  * lock. The lock makes changing IDs fail across restarts too.
  */
 export function agentIdentity(): AgentIdentity {
-  const file = boxJsonPath()
-  const lock = lockPath()
+  return agentIdentityFrom({ root: boxJsonPath(), local: localBoxJsonPath(), lock: lockPath() })
+}
+
+/** The system agent named by the configuration files at these paths (merged and validated exactly
+ *  as at startup, identity lock included). A restore checks the configuration it is about to put back. */
+export function agentIdentityFrom(paths: { root: string; local: string; lock: string }): AgentIdentity {
+  const file = paths.root
+  const lock = paths.lock
+  const localBoxJsonPath = () => paths.local
   const source = existsSync(file) || existsSync(localBoxJsonPath()) ? file : null
   if (!source && existsSync(lock)) throw new Error('box.json is missing; restore it before using this Box')
   let agent: AgentIdentity
@@ -85,7 +92,7 @@ export function agentIdentity(): AgentIdentity {
       : isRecord(localRaw) && localRaw.agent !== undefined ? { ...(isRecord(rootRaw) ? rootRaw : {}), agent: localRaw.agent } : rootRaw
     // A file that exists chose its identity there; an absent block is not a request for the default.
     if (!isRecord(raw) || raw['agent'] === undefined) {
-      throw new Error(`box.json: requires agent: { id: lowercase slug, name: nonempty display name, role: "admin" or "member" }`)
+      throw new Error(`box.json: requires agent: { id: lowercase slug, name: nonempty display name, role: "admin", "member" or a custom role id }`)
     }
     agent = parseBoxAgent(raw.agent, 'box.json')
   } else {
@@ -111,15 +118,16 @@ export function teamTimeZone(): string { return boxJson().timeZone }
 export function teamDay(at: Date | string | number = new Date()): string { return dayInZone(teamTimeZone(), at) }
 
 /**
- * Persist defaults and bind the ID before opening the warehouse.
+ * Persist defaults and bind the ID before opening the database.
  */
 export function ensureBoxConfig(): void {
   const file = boxJsonPath()
-  const fresh = !existsSync(warehousePath())
+  // Fresh: no database cluster yet (db/index.ts initializes one at the first start).
+  const fresh = !existsSync(dataPath('db', 'active.json'))
   if (existsSync(file)) {
     // configured
   } else {
-    if (!fresh) throw new Error('existing warehouse has no box.json; explicitly configure its existing agent identity and role before upgrading')
+    if (!fresh) throw new Error('existing database has no box.json; explicitly configure its existing agent identity and role before upgrading')
     writeBoxJsonIfAbsent(file)
   }
   if (!existsSync(file)) writeBoxJsonIfAbsent(file)
@@ -133,8 +141,8 @@ export function bindAgentIdentity(): void {
   const agent = agentIdentity()
   const lock = lockPath()
   // `data/config/` is not a given any more: box.json lives above it, so a fresh Box has no reason
-  // to have created it yet. (An ENOENT here also spells "lock", which db.ts's retry mistook for a
-  // DuckDB file lock, so the first boot hung instead of failing - found by the core tests.)
+  // to have created it yet. (An ENOENT on the lock write would otherwise
+  // read as lock contention instead of a missing directory.)
   mkdirSync(dirname(lock), { recursive: true })
   try { writeFileSync(lock, `${JSON.stringify({ id: agent.id })}\n`, { flag: 'wx' }) }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }

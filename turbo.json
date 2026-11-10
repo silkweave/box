@@ -29,6 +29,7 @@
     "test": {
       "dependsOn": ["^build"],
       "outputs": [],
+      "env": ["BOX_TEST_ENGINE"],
       "passThroughEnv": ["*"]
     },
     "clean": {

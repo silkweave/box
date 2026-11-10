@@ -7,7 +7,7 @@ Box and what to change afterwards.
 
 The recipe documents ship with core at `recipes/planning/`; the reference implementation is fetched from the recipe registry as `features/planning/`. Read [SPEC.md](./SPEC.md), [INSTALL.md](./INSTALL.md), and [GOTCHAS.md](./GOTCHAS.md) before changing a Box, and fetch the implementation with `box recipe fetch planning`.
 
-**Builds on:** core only (its signals, measures and saved views). Resolve imports from the Box's source tree and root workspace dependencies.
+**Builds on:** core only (its signals, trackers and saved views). Resolve imports from the Box's source tree and root workspace dependencies.
 
 **Powerups.** The base is initiatives and their nested tasks. Ask the owner which powerups to add
 now; each can be added later from its own folder:
@@ -67,12 +67,12 @@ statement each. The powerups add their own vocabulary; each POWERUP.md says wher
    hours shows beside it.
 5. **Nav and settings** - `features/planning/web/index.tsx`: labels, icons and order
    (band 200-299). Retitle "Initiatives" to whatever this team calls a body of work.
-6. **Measures** - `planning.tasks_done { kind?, initiative?, since? }` in
-   `features/planning/core/measures.ts` is planning's in-Box measure (registered by
+6. **Trackers** - `planning.tasks_done { kind?, initiative?, since? }` in
+   `features/planning/core/trackers.ts` is planning's Box tracker (registered by
    `PlanningModule`). A team counts its own kind of finished work by binding a signal to it with a
    `kind` or `initiative` param, not by editing code. A team that wants another calculation
-   registers its own measure from its own feature (`registerMeasure`, see docs/SIGNALS.md, "In-Box
-   measures").
+   registers its own tracker from its own feature (`registerTracker`, see docs/SIGNALS.md, "Box
+   trackers").
 
 There is no `env` to set.
 
@@ -117,7 +117,7 @@ bun run cli doc-save
 bun run cli initiative-kinds
 ```
 
-Core's `measures-list` lists `planning.tasks_done`. See SPEC.md for the full list, and each
+Core's `trackers-list` lists `planning.tasks_done`. See SPEC.md for the full list, and each
 powerup's POWERUP.md for the tools it adds.
 
 ## 4. Adapt or remove

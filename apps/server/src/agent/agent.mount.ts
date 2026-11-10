@@ -7,6 +7,7 @@ import { relayReadOnly } from './session-relay.js'
 import { applyBuilderSessionPolicy, BuilderSessionPolicyError } from './builder-session-policy.js'
 import { applyWorkSessionPolicy, WorkSessionError } from './work-session.js'
 import { trackAgentControl } from './agent-control.js'
+import { verifyLoopback } from './loopback-guard.js'
 import { repoRoot } from '@silkweave/box-core'
 
 /**
@@ -300,7 +301,12 @@ export function createAgentMount(): AgentMount | undefined {
       await applyBuilderSessionPolicy(body, principal, engine, repoRoot())
       // A member's Work session: sandbox cwd, Box tools per their settings, the guard's grant
       // stamped on meta (work-session.ts). An admin's is left as Builder policy pinned it.
-      await applyWorkSessionPolicy(body, principal, engine)
+      const grant = await applyWorkSessionPolicy(body, principal, engine)
+      if (grant?.data) {
+        // The runner gets `box` on 127.0.0.1 (work-session.ts): only when that address is this server.
+        const loopback = await verifyLoopback()
+        if (!loopback.ours) throw new WorkSessionError(503, 'work_box_unreachable', `the Box tools cannot be attached: ${loopback.detail}`)
+      }
     } catch (error) {
       if (error instanceof BuilderSessionPolicyError) {
         respond(res, error.status, { error: error.message })

@@ -1,7 +1,7 @@
 // Core's signal tables: raw snapshots, the signal set (definitions, points) and the
 // data-source registry. Declared with CORE_MODELS (warehouse/core-models.ts).
 
-import type { ModelSpec } from '../warehouse/model.js'
+import { defineModel } from '../warehouse/model-spec.js'
 import {
   SIGNAL_ACCUMULATIONS,
   SIGNAL_DIRECTIONS,
@@ -12,7 +12,7 @@ import {
 import { DATA_SOURCE_STATUSES, SYNC_STATUSES } from './sources/types.js'
 
 /** Raw verbatim pulls - one row per (channel, date), payload kept as-is. */
-export const SNAPSHOTS: ModelSpec = {
+export const SNAPSHOTS = defineModel({
   table: 'snapshots',
   pk: ['channel', 'snapshot_date'],
   columns: {
@@ -20,8 +20,10 @@ export const SNAPSHOTS: ModelSpec = {
     snapshot_date: { kind: 'date' },
     fetched_at: { kind: 'timestamp' },
     payload: { kind: 'json' },
+    /** The writer's area: `signals` for a provider sync, the feature for its own pulls. */
+    area: { kind: 'text', check: "area <> ''" },
   },
-}
+})
 
 /**
  * The signal registry - one row per signal (signals/types.ts). Identity and curation live here,
@@ -29,7 +31,7 @@ export const SNAPSHOTS: ModelSpec = {
  * existing row); manual signals are created by admins and can exist with no data at all. What a
  * number should reach, and by when, is a planning goal, not a column here.
  */
-export const SIGNAL_DEFINITIONS: ModelSpec = {
+export const SIGNAL_DEFINITIONS = defineModel({
   table: 'signals',
   pk: ['id'],
   columns: {
@@ -45,14 +47,19 @@ export const SIGNAL_DEFINITIONS: ModelSpec = {
     owner: { kind: 'text', nullable: true },
     description: { kind: 'text', default: "''" },
     depends_on: { kind: 'json', default: "'[]'" },
+    // The owning area (PERMISSIONS 8.1): a Box tracker's feature, `signals` for data-source,
+    // manual and formula signals, the writing feature for derived rows (crm, content, data-sync)
+    // and `planning` for goal signals; `admin` when nothing classifies it. Set by every write
+    // path; RLS and the accessors read it. A formula is readable only when every input is (code).
+    area: { kind: 'text', check: "area <> ''" },
     sort: { kind: 'int', default: '0' },
-    // The binding, enforced in upsertSignalDefinition. `data_source_id` + `measure_key` is a
-    // provider measure (connectedness IS `data_source_id != null`); `measure_key` alone is an
-    // in-Box measure from the measures registry (signals/measures.ts), whose parameters are
-    // `measure_params`. A data source without a measure is refused.
+    // The binding, enforced in upsertSignalDefinition. `data_source_id` + `tracker_key` is a
+    // provider tracker (connectedness IS `data_source_id != null`); `tracker_key` alone is a
+    // Box tracker from the trackers registry (signals/trackers.ts), whose parameters are
+    // `tracker_params`. A data source without a tracker is refused.
     data_source_id: { kind: 'text', nullable: true },
-    measure_key: { kind: 'text', nullable: true },
-    measure_params: { kind: 'json', default: "'{}'" },
+    tracker_key: { kind: 'text', nullable: true },
+    tracker_params: { kind: 'json', default: "'{}'" },
     // A formula signal's expression (signals/formula.ts); null for an ordinary signal.
     formula: { kind: 'text', nullable: true },
     // Levels worth an event when the signal reaches or crosses them upward (`signal.threshold`),
@@ -62,9 +69,11 @@ export const SIGNAL_DEFINITIONS: ModelSpec = {
     // signal lists and pickers unless asked for; their definition and points stay readable.
     archived_at: { kind: 'timestamp', nullable: true },
   },
+  // The target of signal_points' (signal_id, area) foreign key.
+  unique: [['id', 'area']],
   timestamps: true,
   audit: true,
-}
+})
 
 /**
  * A user-created, user-named INSTANCE of a provider ("Mailer EU" and "Mailer US" are two rows
@@ -82,7 +91,7 @@ export const SIGNAL_DEFINITIONS: ModelSpec = {
  * recoverable from `automation_runs`, which records one row per action run while the umbrella
  * sync action covers N sources.
  */
-export const DATA_SOURCES: ModelSpec = {
+export const DATA_SOURCES = defineModel({
   table: 'data_sources',
   pk: ['id'],
   columns: {
@@ -102,7 +111,7 @@ export const DATA_SOURCES: ModelSpec = {
   },
   timestamps: true,
   audit: true,
-}
+})
 
 /**
  * Every signal's history, at the signal's own grain (`signals.interval`): `bucket` is the
@@ -110,24 +119,30 @@ export const DATA_SOURCES: ModelSpec = {
  * floorSignalBucket - ISO weeks, Monday start). `source` is part of the PK so live, backfill and
  * manual rows never overwrite each other; reads pick one per bucket (live > backfill > manual), so
  * a shadowed manual point resurfaces if the machine rows retreat.
+ *
+ * `area` is the signal's, copied for same-row RLS (storage phase 1 W8 R3): the foreign key on
+ * (signal_id, area) makes a point name its signal's current area, cascades a rebind and a rename,
+ * and deletes the points with their signal. Writers take the area from the signal row.
  */
-export const SIGNAL_POINTS: ModelSpec = {
+export const SIGNAL_POINTS = defineModel({
   table: 'signal_points',
   pk: ['signal_id', 'bucket', 'source'],
   columns: {
     signal_id: { kind: 'text' },
+    area: { kind: 'text' },
     bucket: { kind: 'timestamp' },
     value: { kind: 'float' },
     source: { kind: 'text', default: "'manual'", enum: SIGNAL_POINT_SOURCES },
     note: { kind: 'text', nullable: true },
   },
+  foreignKeys: [{ columns: ['signal_id', 'area'], table: 'signals', references: ['id', 'area'] }],
   timestamps: true,
   audit: true,
-}
+})
 
-export const SIGNAL_MODELS: readonly ModelSpec[] = [
+export const SIGNAL_MODELS = [
   SNAPSHOTS,
   SIGNAL_DEFINITIONS,
   SIGNAL_POINTS,
   DATA_SOURCES,
-]
+] as const

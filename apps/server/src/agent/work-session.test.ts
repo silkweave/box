@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Principal, User, WorkFs } from '@silkweave/box-core'
-import { applyWorkSessionPolicy, createWorkToolGuard, workGrantOf, workRunnerConfig, WorkSessionError } from './work-session.js'
+import { admitSessionCredential, verifySessionCredential, type OpenSessionInput } from '@silkweave/box-core'
+import {
+  applyWorkSessionPolicy,
+  closeWorkCredential,
+  createWorkToolGuard,
+  WORK_CREDENTIAL_ENV,
+  workGrantOf,
+  workRunnerConfig,
+  WorkSessionError,
+} from './work-session.js'
 
 const sandbox = '/box/data/work/mia'
 const projects = '/srv/projects'
@@ -95,5 +104,102 @@ describe('workRunnerConfig', () => {
     const extra = built.extraOptions as { hooks: { PreToolUse: unknown[] }; additionalDirectories: string[] }
     expect(extra.hooks.PreToolUse).toHaveLength(1)
     expect(extra.additionalDirectories).toEqual([projects])
+  })
+})
+
+describe('workRunnerConfig: the box server', () => {
+  const grant = { user: 'mia', roots: [sandbox], data: true }
+  const fakeOpen = () => {
+    const opened: OpenSessionInput[] = []
+    let n = 0
+    const open = (input: OpenSessionInput) => {
+      opened.push(input)
+      n += 1
+      return { sid: `sid-${n}`, credential: `bx-session-secret-${n}`, exp: Date.now() + 1000 }
+    }
+    return { opened, open }
+  }
+
+  it('injects box with a fresh credential in env only, replacing a profile entry of that name', () => {
+    const { opened, open } = fakeOpen()
+    const req = {
+      cwd: sandbox,
+      env: { PATH: '/bin' },
+      mcpServers: { box: { type: 'http' as const, url: 'http://evil.example/mcp' }, other: { type: 'http' as const, url: 'http://x/mcp' } },
+      disallowedTools: ['WebSearch'],
+      meta: { user: 'mia', work: grant },
+    }
+    const built = workRunnerConfig(req, {}, { open, port: () => 8291 }) as typeof req & { env: Record<string, string>; meta: { work: { sid?: string } } }
+    expect(opened).toHaveLength(1)
+    expect(opened[0]).toMatchObject({ sub: 'mia', kind: 'work', scope: 'work:mia', toolset: null })
+    expect(built.mcpServers.box).toEqual({
+      type: 'http',
+      url: 'http://127.0.0.1:8291/mcp?passthrough=0',
+      headers: { Authorization: `Bearer \${${WORK_CREDENTIAL_ENV}}` },
+    })
+    expect(built.mcpServers.other).toEqual(req.mcpServers.other)
+    expect(built.env[WORK_CREDENTIAL_ENV]).toBe('bx-session-secret-1')
+    expect(built.env.PATH).toBe('/bin')
+    expect(built.disallowedTools).toEqual(expect.arrayContaining(['WebSearch', 'mcp__box__ServiceRestart', 'mcp__box__UserSetRole']))
+    expect((built as { allowedTools?: string[] }).allowedTools).toEqual(['mcp__box'])
+    expect(built.meta.work.sid).toBe('sid-1')
+    // What WorkerDeck persists (the create request, env and hooks stripped) never holds the credential.
+    const { env: _env, extraOptions: _extra, instructions: _i, ...persisted } = built as Record<string, unknown>
+    expect(JSON.stringify(persisted)).not.toContain('bx-session-secret')
+    expect(req.env).toEqual({ PATH: '/bin' })
+  })
+
+  it('mints a new credential on every build (a woken session) and none with data off', () => {
+    const { opened, open } = fakeOpen()
+    const first = workRunnerConfig({ cwd: sandbox, meta: { work: grant } }, {}, { open, port: () => 1 })
+    const woken = workRunnerConfig({ cwd: sandbox, meta: first.meta }, {}, { open, port: () => 1 }) as { meta: { work: { sid?: string } } }
+    expect(woken.meta.work.sid).toBe('sid-2')
+    const off = workRunnerConfig({ cwd: sandbox, meta: { work: { ...grant, data: false, sid: 'stale' } } }, {}, { open, port: () => 1 }) as Record<string, unknown>
+    expect(opened).toHaveLength(2)
+    expect(off.mcpServers).toBeUndefined()
+    expect((off.meta as { work: { sid?: string } }).work.sid).toBeUndefined()
+  })
+
+  it('rechecks against the live settings: revoked, Work off or data off end the credential', async () => {
+    const { opened, open } = fakeOpen()
+    let row: User | null = person()
+    workRunnerConfig({ cwd: sandbox, meta: { work: grant } }, {}, { open, port: () => 1, readUser: async () => row })
+    const recheck = opened[0]!.recheck!
+    expect(await recheck()).toBeNull()
+    row = person({ data: false })
+    expect(await recheck()).toMatch(/data and modules/)
+    row = person({ enabled: false })
+    expect(await recheck()).toMatch(/turned off/)
+    row = person({}, 'revoked')
+    expect(await recheck()).toMatch(/no longer/)
+    row = null
+    expect(await recheck()).toMatch(/no longer/)
+  })
+
+  it('a session woken after Work or data was turned off gets a credential that admits nothing', async () => {
+    // The saved config still says data on; the person's current row says off.
+    let row: User = person({ data: false })
+    const built = workRunnerConfig({ cwd: sandbox, env: {}, meta: { work: grant } }, {}, { port: () => 1, readUser: async () => row }) as { env: Record<string, string>; meta: unknown }
+    const credential = built.env[WORK_CREDENTIAL_ENV]!
+    const sid = verifySessionCredential(credential)!.sid
+    expect(await admitSessionCredential(sid)).toBe(false)
+    expect(verifySessionCredential(credential)).toBeNull()
+    // With Work and data on, the same path admits.
+    row = person()
+    const ok = workRunnerConfig({ cwd: sandbox, env: {}, meta: { work: grant } }, {}, { port: () => 1, readUser: async () => row }) as { env: Record<string, string>; meta: unknown }
+    const okSid = verifySessionCredential(ok.env[WORK_CREDENTIAL_ENV]!)!.sid
+    expect(await admitSessionCredential(okSid)).toBe(true)
+    row = person({ enabled: false })
+    expect(await admitSessionCredential(okSid)).toBe(false)
+  })
+
+  it('closes the real credential when the runner ends', () => {
+    const built = workRunnerConfig({ cwd: sandbox, env: {}, meta: { work: grant } }, {}, { port: () => 1 }) as { env: Record<string, string>; meta: unknown }
+    const credential = built.env[WORK_CREDENTIAL_ENV]!
+    expect(verifySessionCredential(credential)).toMatchObject({ sub: 'mia', kind: 'work', scope: 'work:mia' })
+    closeWorkCredential(built.meta)
+    expect(verifySessionCredential(credential)).toBeNull()
+    closeWorkCredential(built.meta)
+    closeWorkCredential({ work: { user: 'mia', roots: [], data: false } })
   })
 })

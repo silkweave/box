@@ -9,10 +9,12 @@
 // docs/SIGNALS.md "Currencies".
 
 import type { FxRate, FxRates } from '@silkweave/box-provider-kit'
-import type { ModelSpec } from '../warehouse/model.js'
-import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
+import { defineModel } from '../warehouse/model-spec.js'
+import { withWrite } from '../warehouse/db.js'
+import { db } from '../warehouse/core-db.js'
+import { now } from '../warehouse/kysely.js'
 
-export const FX_RATES: ModelSpec = {
+export const FX_RATES = defineModel({
   table: 'fx_rates',
   pk: ['currency', 'day'],
   columns: {
@@ -27,7 +29,7 @@ export const FX_RATES: ModelSpec = {
     source: { kind: 'text', default: "'ecb'" },
     fetched_at: { kind: 'timestamp', default: 'now()' },
   },
-}
+})
 
 const ECB_URL = 'https://api.frankfurter.dev/v1'
 /** How far before the first wanted day to look for a published rate (covers long holidays). */
@@ -85,12 +87,10 @@ export function createFxRates(publishedRates: PublishedRates = ecbPublishedRates
       }
       if (wanted.length === 0) return out
 
-      await ensureSchema()
-      const stored = await withRead<{ day: string; usd_rate: number; rate_date: string; source: string }>(
-        `SELECT CAST(day AS VARCHAR) AS day, usd_rate, CAST(rate_date AS VARCHAR) AS rate_date, source FROM fx_rates
-          WHERE currency = ? AND day BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)`,
-        [currency, wanted[0]!, wanted[wanted.length - 1]!],
-      )
+      const stored = await db.selectFrom('fx_rates').select(['day', 'usd_rate', 'rate_date', 'source'])
+        .where('currency', '=', currency)
+        .where('day', '>=', wanted[0]!).where('day', '<=', wanted[wanted.length - 1]!)
+        .execute()
       for (const r of stored) out.set(r.day, { rate: Number(r.usd_rate), rateDate: r.rate_date, source: r.source })
 
       const missing = wanted.filter((d) => !out.has(d))
@@ -102,15 +102,12 @@ export function createFxRates(publishedRates: PublishedRates = ecbPublishedRates
         const resolved = resolveDays(missing, published)
         const finals = [...resolved].filter(([, r]) => r.final)
         if (finals.length > 0) {
-          await withWrite(async (conn) => {
-            for (const [day, r] of finals) {
-              await conn.run(
-                `INSERT INTO fx_rates (currency, day, usd_rate, rate_date, source, fetched_at)
-                 VALUES (?, CAST(? AS DATE), ?, CAST(? AS DATE), ?, now()) ON CONFLICT DO NOTHING`,
-                [currency, day, r.rate, r.rateDate, r.source],
-              )
-            }
-          })
+          await withWrite(async () => {
+            await db.insertInto('fx_rates')
+              .values(finals.map(([day, r]) => ({ currency, day, usd_rate: r.rate, rate_date: r.rateDate, source: r.source, fetched_at: now() })))
+              .onConflict((oc) => oc.doNothing())
+              .execute()
+          }, { reach: 'core' })
         }
         for (const [day, r] of resolved) out.set(day, { rate: r.rate, rateDate: r.rateDate, source: r.source })
         const unresolved = missing.filter((d) => !out.has(d))

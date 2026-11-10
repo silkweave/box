@@ -1,9 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, test } from 'vitest'
+import { testEnginesDir } from '@silkweave/box-core/db/testing'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const flags = ['--no-env-file', '--conditions=@silkweave/box-source']
@@ -11,8 +12,13 @@ const flags = ['--no-env-file', '--conditions=@silkweave/box-source']
 // one /tmp path per Bun version, and another user's copy is unusable), so spawn Bun explicitly.
 const bun = process.versions.bun ? process.execPath : 'bun'
 
+// Each spawned script opens the throwaway Box's database itself (owning the cluster while it runs,
+// as a CLI script does when no supervisor runs). The engine comes from the test engine cache, so
+// nothing is downloaded into the throwaway data/.
 function fixture(run: (box: ReturnType<typeof commands>) => void): void {
   const data = mkdtempSync(join(tmpdir(), 'box-auth-create-'))
+  mkdirSync(join(data, 'config'), { recursive: true })
+  symlinkSync(testEnginesDir(), join(data, 'engines'))
   try { run(commands(data)) } finally { rmSync(data, { recursive: true, force: true }) }
 }
 
@@ -45,15 +51,16 @@ function commands(data: string) {
   // Return a digest, never a permanent credential, from the separate warehouse reader.
   const state = (id: string, revoke = false) => {
     const result = node(['--input-type=module', '-e', `
-      import { ensureSchema, readUser, upsertUser, revealPrincipalToken, authenticatePrincipal } from './packages/core/src/index.ts';
+      import { asSystem, withDatabase, readUser, upsertUser, revealPrincipalToken, authenticatePrincipal } from './packages/core/src/index.ts';
       import { createHash } from 'node:crypto';
-      await ensureSchema();
-      const id = ${JSON.stringify(id)};
-      if (${revoke}) await upsertUser({ id, status: 'revoked' });
-      const user = await readUser(id);
-      const token = await revealPrincipalToken(id);
-      const principal = token ? await authenticatePrincipal(token) : null;
-      console.log(JSON.stringify({ user, authenticatedRole: principal?.role, authenticatedName: principal?.display, tokenHash: token ? createHash('sha256').update(token).digest('hex') : null }));
+      await asSystem('test: state', () => withDatabase(async () => {
+        const id = ${JSON.stringify(id)};
+        if (${revoke}) await upsertUser({ id, status: 'revoked' });
+        const user = await readUser(id);
+        const token = await revealPrincipalToken(id);
+        const principal = token ? await authenticatePrincipal(token) : null;
+        console.log(JSON.stringify({ user, authenticatedRole: principal?.role, authenticatedName: principal?.display, tokenHash: token ? createHash('sha256').update(token).digest('hex') : null }));
+      }));
       process.exit(0);
     `])
     expect(result.status, result.stderr).toBe(0)

@@ -13,10 +13,10 @@ and leave current operation state in `_docs/INTEGRATION.md`.
   first ticket.
 - **Working days follow the team time zone.** A Box whose team time zone is unset counts days in
   UTC, and tickets logged in the evening age a day early. Set it in core before adapting.
-- **Uniqueness lives in the write path, not in indexes.** DuckDB refuses an `ON CONFLICT DO UPDATE`
-  on a table with a secondary unique index even when the indexed column did not change, so the
-  one-per-email, one-per-phone and one-per-`source_ref` rules are checked in `core/lock.ts`'s queue.
-  Do not add a unique index to "make sure"; it breaks every later edit of the row.
+- **Uniqueness has two layers.** The write path checks one requester per email and per phone and
+  one ticket per `(source, source_ref)` first, for a message naming the holder; partial unique
+  indexes in `SUPPORT_BASELINE` back them. A Box upgrading from data written before the indexes
+  must merge duplicate requesters and clear duplicate `source_ref`s first, or the baseline fails.
 - **Powerups own link tables, not base columns.** Do not add `crm_activity_id` or `article_id` to
   `support_tickets` to save a join: the base model must be the same in every Box, and a column that
   only exists when a powerup is present breaks `schema:check`'s enabled-later pass.

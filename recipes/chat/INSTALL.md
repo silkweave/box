@@ -10,7 +10,7 @@ so the documents and the code come from the same version.
 
 - Existing Box backup and a recorded restore path for both data and matching application source.
 - Core, plus every recipe this one builds on already adapted and registered in the target Box. Builds on: **none, core only**.
-- Feature-specific package imports include: `better-sqlite3` and `@types/better-sqlite3` (core), `@workerdeck/client` and `@workerdeck/protocol` (server), and `@tiptap/core`, `@tiptap/extensions`, `@tiptap/markdown`, `@tiptap/pm`, `@tiptap/react`, `@tiptap/starter-kit`, `react-markdown`, and `remark-gfm` (web). Install latest into the root workspace package; record any necessary compatibility pin and its reason in the Box gotchas. Also declare shared framework/UI packages imported directly by this feature: dependencies declared only under apps/server or apps/web do not resolve from the shared feature tree.
+- Feature-specific package imports include: `@workerdeck/client` and `@workerdeck/protocol` (server), and `@tiptap/core`, `@tiptap/extensions`, `@tiptap/markdown`, `@tiptap/pm`, `@tiptap/react`, `@tiptap/starter-kit`, `react-markdown`, and `remark-gfm` (web). Install latest into the root workspace package; record any necessary compatibility pin and its reason in the Box gotchas. Also declare shared framework/UI packages imported directly by this feature: dependencies declared only under apps/server or apps/web do not resolve from the shared feature tree.
 - The source version to fetch (for an update, the one in the `recipes` ledger of `box.json`), and an integration entry with scope, target version,
   intended changes, and state in _docs/INTEGRATION.md.
 - A disposable instance for build, typecheck, tests, schema checks, and boot verification.
@@ -31,7 +31,7 @@ ledgers before replaying an operation.
    target Box as part of the adaptation.
 3. Preserve local customizations and write durable findings to the Box's docs/GOTCHAS.md. Record
    path mappings and skipped changes; update _docs/INTEGRATION.md as each step completes. Record the fetched version and sha256 in the `recipes` ledger of `box.json` only after the full validation and boot pass.
-4. Chat has a private SQLite migration ledger keyed by migration object name, with no checksum. Preserve every shipped name, body, order, and runner.
+4. Chat's tables are models in the `chat` schema and its migrations run on the common runner (`chat:<name>`, checksummed in `core.schema_migrations`). Preserve every shipped name, body and order.
 5. For migrations, stage the runner, registration, and minimum code first. Test against a restored
    backup in isolation, confirm completion and boot compatibility, then continue with unrelated
    changes. Never edit or rename an applied migration.
@@ -46,7 +46,9 @@ The chat agent reaches the Box through its own MCP surface, as the agent princip
   `settings.json`. A `box` entry there is replaced for chat sessions; drop it rather than keep a
   second copy of the agent's token.
 - **Codex profile:** Codex takes per-session MCP servers too, so the session brings `box` and the
-  floor as it does for Claude, and the profile's `config.toml` needs no `box`. Only a worker older
+  floor as it does for Claude, and the profile's `config.toml` needs no `box`. It does need
+  `[features] mcp_2026_07_28 = true`: the Box speaks MCP protocol 2026-07-28 only, and without the
+  switch Codex lists no Box tools. Only a worker older
   than WorkerDeck 3.12 (where Codex reports `sessionMcpServers: false`) needs it declared there,
   with the same floor as `CHAT_AGENT_BOX_MCP_FLOOR`:
   ```toml

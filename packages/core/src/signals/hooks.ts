@@ -6,6 +6,20 @@
 
 import type { SignalRow } from './write.js'
 
+/** One object that uses a signal, as a feature reports it (the `references` hook). */
+export interface SignalReference {
+  /** What it is, singular and lowercase: `goal`, `task`, `trigger`. */
+  kind: string
+  /** Its id in the owning feature. */
+  id: string
+  /** What a person calls it (a goal's title, a trigger's name). */
+  label: string
+  /** How it uses the signal: `goal measure`, `milestone measure`, `trigger filter`. */
+  via: string
+  /** Where to open it, an app URL (`/goals/pipeline-q4`), or null when it has no page. */
+  href: string | null
+}
+
 export interface SignalHooks {
   /** The registering feature, for error messages. */
   id: string
@@ -17,8 +31,8 @@ export interface SignalHooks {
   derive?: () => Promise<number>
   /** A signal id was renamed - re-point every reference you hold. Runs inside renameSignal. */
   onRename?: (oldId: string, newId: string, actor?: string) => Promise<void>
-  /** Ids of your objects that still reference this signal (for the delete report). */
-  references?: (signalId: string) => Promise<string[]>
+  /** Your objects that use this signal, labelled (the signal's "used by" list and the delete report). */
+  references?: (signalId: string) => Promise<SignalReference[]>
 }
 
 const hooks: SignalHooks[] = []
@@ -44,5 +58,12 @@ export async function contributedChannelRows(channel: string): Promise<SignalRow
     const fn = h.channelRows?.[channel]
     if (fn) out.push(...(await fn()))
   }
+  return out
+}
+
+/** Every object that uses a signal, from every registered feature, in registration order. */
+export async function signalReferences(signalId: string): Promise<SignalReference[]> {
+  const out: SignalReference[] = []
+  for (const h of hooks) out.push(...((await h.references?.(signalId)) ?? []))
   return out
 }

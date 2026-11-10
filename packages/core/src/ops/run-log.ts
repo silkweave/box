@@ -8,6 +8,9 @@
 // ask for "after seq N" and never see a line twice. Stored rows without `seq` read as their index.
 
 import { withWrite } from '../warehouse/db.js'
+import { db } from '../warehouse/core-db.js'
+import { json } from '../warehouse/kysely.js'
+import { asSystem } from '../request-context.js'
 import type { RunLogLine } from './types.js'
 
 /** Keep the last N lines per run (backfills can stream thousands). */
@@ -77,10 +80,12 @@ async function flush(runId: string): Promise<void> {
   const log = live.get(runId)
   if (!log) return
   log.timer = null
-  const lines = JSON.stringify(log.lines)
-  const write = withWrite(async (conn) => {
-    await conn.run(`UPDATE automation_runs SET log = ?::JSON WHERE id = ? AND status IN ('queued', 'running')`, [lines, runId])
-  }).catch((err: unknown) => {
+  const lines = json(log.lines)
+  // The funnel's bookkeeping on its own row, as system work (runs.ts markRunning): the timer runs in
+  // whatever frame scheduled it, and a downgraded caller must not stop its run's log.
+  const write = asSystem('run record: log', () => withWrite(async () => {
+    await db.updateTable('automation_runs').set({ log: lines }).where('id', '=', runId).where('status', 'in', ['queued', 'running']).execute()
+  }, { reach: 'core' })).catch((err: unknown) => {
     console.error(`[ops] run log flush failed for ${runId}: ${String((err as Error)?.message ?? err)}`)
   })
   log.flushing = write

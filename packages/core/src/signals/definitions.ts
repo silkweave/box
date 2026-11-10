@@ -12,18 +12,23 @@
 // never deletes (a definition whose signal disappears stays - curation is durable; cleanup is a
 // human decision via signal-delete).
 
-import { emitChange } from '../changes.js'
-import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
-import type { SignalRow } from './write.js'
-import { deleteRecord, readRecord, readRecords, upsertRecord } from '../warehouse/model.js'
+import { emitAreaChange } from '../changes.js'
+import { withWrite } from '../warehouse/db.js'
+import { db } from '../warehouse/core-db.js'
+import { anyOf, json, now } from '../warehouse/kysely.js'
+import { pointWrite, type SignalRow } from './write.js'
+import { coreCommand } from '../warehouse/core-command.js'
+import { readRecord, upsertRecord } from '../warehouse/model.js'
 import { SIGNAL_DEFINITIONS } from './models.js'
-import { findProvider, findMeasure } from './sources/registry.js'
-import { requireMeasure, validateMeasureParams } from './measures.js'
+import { findProvider, findProviderTracker } from './sources/registry.js'
+import { requireTracker, validateTrackerParams } from './trackers.js'
 import { readDataSource } from './sources/state.js'
 import { assertKnownActor, assertKnownUser } from '../users/state.js'
 import { readSignalOwnersFile, resolveSignalOwner, writeSignalOwnersFile } from './owners.js'
 import { pruneBoardRef, renameBoardRef } from './board-kinds.js'
-import { signalHooks } from './hooks.js'
+import { signalHooks, signalReferences } from './hooks.js'
+import { ADMIN_AREA, storedArea, trackerArea } from '../auth/owning-area.js'
+import { asSystem, canReachAreas, requireReachArea } from '../request-context.js'
 import { FormulaError, formulaRefs, formulaRefsOf, parseFormula, renameFormulaRef } from './formula.js'
 import {
   MANUAL_SIGNAL_CHANNEL,
@@ -50,15 +55,45 @@ const params = (v: unknown): Record<string, string> =>
 const norm = (d: SignalDefinition): SignalDefinition => ({
   ...d,
   depends_on: list(d.depends_on),
-  measure_params: params(d.measure_params),
+  tracker_params: params(d.tracker_params),
   formula: d.formula ?? null,
   thresholds: numbers(d.thresholds),
   archived_at: d.archived_at ?? null,
 })
 
-/** Bound to an in-Box measure: a measure key and no data source. */
-export const isInBoxMeasureSignal = (d: Pick<SignalDefinition, 'measure_key' | 'data_source_id'>): boolean =>
-  Boolean(d.measure_key) && !d.data_source_id
+/** Bound to a Box tracker: a tracker key and no data source. */
+export const isBoxTrackerSignal = (d: Pick<SignalDefinition, 'tracker_key' | 'data_source_id'>): boolean =>
+  Boolean(d.tracker_key) && !d.data_source_id
+
+/**
+ * Every area a reader of `def`'s values needs: its own area plus, for a formula, every input's,
+ * transitively (PERMISSIONS 8.3: labels follow every sensitive input). An input that no longer
+ * exists, and a formula that does not parse, count as `admin`; cycles end at the first repeat. `byId` holds every definition.
+ */
+export function signalAreaClosure(
+  def: Pick<SignalDefinition, 'id' | 'area' | 'formula'>,
+  byId: ReadonlyMap<string, Pick<SignalDefinition, 'id' | 'area' | 'formula'>>,
+): string[] {
+  const out = new Set<string>()
+  const seen = new Set<string>()
+  const stack = [def]
+  while (stack.length > 0) {
+    const d = stack.pop()!
+    if (seen.has(d.id)) continue
+    seen.add(d.id)
+    out.add(d.area || ADMIN_AREA)
+    if (!d.formula) continue
+    const refs = formulaRefsOf(d.formula)
+    // A stored formula that does not parse has an unknown input set: nothing classifies it.
+    if (refs.length === 0) out.add(ADMIN_AREA)
+    for (const ref of refs) {
+      const input = byId.get(ref)
+      if (input) stack.push(input)
+      else out.add(ADMIN_AREA)
+    }
+  }
+  return [...out].sort()
+}
 
 /** Thresholds as stored: finite, ascending, unique. Anything else is refused, not dropped. */
 function normalizeThresholds(id: string, raw: unknown[]): number[] {
@@ -73,8 +108,23 @@ function normalizeThresholds(id: string, raw: unknown[]): number[] {
  * signal; the list endpoints behind the pickers and the Signals page pass `false` by default.
  */
 export async function readSignalDefinitions(opts: { includeArchived?: boolean } = {}): Promise<SignalDefinition[]> {
-  const all = (await readRecords<SignalDefinition>(SIGNAL_DEFINITIONS, { orderBy: 'sort, id' })).map(norm)
+  const all = readable(await readStoredDefinitions())
   return opts.includeArchived === false ? all.filter((d) => !d.archived_at) : all
+}
+
+/** Every definition the database lets this frame see (row security: its own area readable). */
+async function readStoredDefinitions(): Promise<SignalDefinition[]> {
+  return ((await db.selectFrom('signals').selectAll().orderBy('sort').orderBy('id').execute()) as SignalDefinition[]).map(norm)
+}
+
+/**
+ * The definitions a reader may see (PERMISSIONS 8.3): every area of a signal's closure readable,
+ * so a formula whose input is hidden is hidden too (the missing input counts as admin). `visible`
+ * is what row security returned; system work sees everything.
+ */
+function readable(visible: SignalDefinition[]): SignalDefinition[] {
+  const byId = new Map(visible.map((d) => [d.id, d]))
+  return visible.filter((d) => canReachAreas(signalAreaClosure(d, byId), 'read'))
 }
 
 /**
@@ -94,41 +144,38 @@ export async function setSignalArchived(id: string, archived: boolean, actor?: s
   return norm(saved)
 }
 
-/** One definition, or null. */
+/** One definition, or null when there is none or the frame may not read it (as readSignalDefinitions). */
 export async function readSignalDefinition(id: string): Promise<SignalDefinition | null> {
   const d = await readRecord<SignalDefinition>(SIGNAL_DEFINITIONS, { id })
-  return d ? norm(d) : null
+  if (!d) return null
+  const def = norm(d)
+  if (!def.formula) return canReachAreas([def.area], 'read') ? def : null
+  return readable(await readStoredDefinitions()).find((x) => x.id === id) ?? null
 }
 
 // --- the dependency graph ------------------------------------------------------------------------
 
 /** Every definition's `depends_on` edge list, as stored. */
 async function readDependsEdges(): Promise<Map<string, string[]>> {
-  await ensureSchema()
-  const rows = await withRead<{ id: string; depends_on: string | null }>(
-    `SELECT id, CAST(depends_on AS VARCHAR) AS depends_on FROM signals`,
-  )
-  return new Map(
-    rows.map((r) => {
-      try {
-        const parsed: unknown = r.depends_on ? JSON.parse(r.depends_on) : []
-        return [r.id, Array.isArray(parsed) ? (parsed as string[]) : []]
-      } catch {
-        return [r.id, []]
-      }
-    }),
-  )
+  const rows = await db.selectFrom('signals').select(['id', 'depends_on']).execute()
+  return new Map(rows.map((r) => [r.id, Array.isArray(r.depends_on) ? (r.depends_on as string[]) : []]))
 }
+
+/** The owning areas of the given signals (system transactions: every area). */
+async function areasOf(ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return []
+  return (await db.selectFrom('signals').select('area').distinct().where('id', '=', anyOf(ids)).execute()).map((r) => r.area)
+}
+
+/** The `updated_at` stamp of a fixup that bypasses the upsert path; `updated_by` changes only when an actor is given. */
+const stamp = (actor?: string) => ({ updated_at: now(), ...(actor != null ? { updated_by: actor } : {}) })
 
 /** Persist one row's edge list (used by the rename/delete fixups, which bypass the upsert path). */
 async function writeDependsOn(id: string, deps: string[], actor?: string): Promise<void> {
-  await withWrite(async (conn) => {
-    await conn.run(
-      `UPDATE signals SET depends_on = ?::JSON, updated_at = now(),
-              updated_by = COALESCE(?, updated_by) WHERE id = ?`,
-      [JSON.stringify(deps), actor ?? null, id],
-    )
-  })
+  await db.updateTable('signals')
+    .set({ depends_on: json(deps), ...stamp(actor) })
+    .where('id', '=', id)
+    .execute()
 }
 
 /**
@@ -139,9 +186,12 @@ async function writeDependsOn(id: string, deps: string[], actor?: string): Promi
 async function normalizeDependsOn(id: string, raw: string[]): Promise<string[]> {
   const deps = [...new Set(raw.map((s) => s.trim()).filter(Boolean))].filter((d) => d !== id)
   if (deps.length === 0) return deps
-  const edges = await readDependsEdges()
-  const unknown = deps.filter((d) => !edges.has(d))
+  // Only signals the writer can read count as known (a hidden id reads as unknown); the cycle walk
+  // needs every edge, hidden ones included, and names nothing it found there.
+  const known = new Set((await readSignalDefinitions()).map((d) => d.id))
+  const unknown = deps.filter((d) => !known.has(d))
   if (unknown.length > 0) throw new Error(`signal ${id}: depends_on references unknown signal(s) ${unknown.join(', ')}`)
+  const edges = await asSystem('signals: dependency check', () => readDependsEdges())
 
   edges.set(id, deps)
   const seen = new Set<string>()
@@ -160,44 +210,44 @@ async function normalizeDependsOn(id: string, raw: string[]): Promise<string[]> 
 
 interface Binding {
   data_source_id: string | null
-  measure_key: string | null
-  measure_params: Record<string, string>
+  tracker_key: string | null
+  tracker_params: Record<string, string>
 }
 
 /**
  * Validate a proposed binding. Three shapes, and why each rule exists:
  *
- *   • `data_source_id` + `measure_key` - a PROVIDER measure. The source and the provider's measure
+ *   • `data_source_id` + `tracker_key` - a PROVIDER tracker. The source and the provider's tracker
  *     must exist (refused with the valid list), and a `source: 'derived'` signal may never carry
- *     one: a deriver already owns its rows. Its `measure_params` are always `{}`.
- *   • `measure_key` alone - an IN-BOX measure from the measures registry (signals/measures.ts).
- *     Unknown keys are refused with the registered list, `measure_params` are validated against
- *     the measure's declared params, and the signal becomes `source: 'derived'` (the caller sets
- *     it): the measure computes its live points.
- *   • neither - unbound. A `data_source_id` without a measure is refused: the sync would find a
+ *     one: a deriver already owns its rows. Its `tracker_params` are always `{}`.
+ *   • `tracker_key` alone - a BOX tracker from the trackers registry (signals/trackers.ts).
+ *     Unknown keys are refused with the registered list, `tracker_params` are validated against
+ *     the tracker's declared params, and the signal becomes `source: 'derived'` (the caller sets
+ *     it): the tracker computes its live points.
+ *   • neither - unbound. A `data_source_id` without a tracker is refused: the sync would find a
  *     subscriber it cannot resolve to a feed.
  *
- * Two signals binding the same measure is deliberately ALLOWED - points are keyed per signal id.
+ * Two signals binding the same tracker is deliberately ALLOWED - points are keyed per signal id.
  */
 async function normalizeBinding(
   id: string,
   effectiveSource: SignalSource,
-  next: { data_source_id: string | null; measure_key: string | null; measure_params: Record<string, unknown> },
+  next: { data_source_id: string | null; tracker_key: string | null; tracker_params: Record<string, unknown> },
 ): Promise<Binding> {
   const sourceId = next.data_source_id?.trim() || null
-  const measureKey = next.measure_key?.trim() || null
-  if (!sourceId && !measureKey) return { data_source_id: null, measure_key: null, measure_params: {} }
-  if (!measureKey) {
+  const trackerKey = next.tracker_key?.trim() || null
+  if (!sourceId && !trackerKey) return { data_source_id: null, tracker_key: null, tracker_params: {} }
+  if (!trackerKey) {
     throw new Error(
-      `signal ${id}: a data_source_id needs a measure_key - a half-bound signal has a subscriber the sync cannot resolve`,
+      `signal ${id}: a data_source_id needs a tracker_key - a half-bound signal has a subscriber the sync cannot resolve`,
     )
   }
   if (!sourceId) {
-    const measure = requireMeasure(measureKey)
+    const tracker = requireTracker(trackerKey)
     return {
       data_source_id: null,
-      measure_key: measureKey,
-      measure_params: await validateMeasureParams(measure, next.measure_params ?? {}, assertKnownUser),
+      tracker_key: trackerKey,
+      tracker_params: await validateTrackerParams(tracker, next.tracker_params ?? {}, assertKnownUser),
     }
   }
   if (effectiveSource === 'derived') {
@@ -211,18 +261,18 @@ async function normalizeBinding(
   if (!provider) {
     throw new Error(`signal ${id}: data source ${sourceId} names provider "${source.provider}", which is not registered in this build`)
   }
-  if (!findMeasure(provider, measureKey)) {
+  if (!findProviderTracker(provider, trackerKey)) {
     throw new Error(
-      `signal ${id}: provider ${provider.id} offers no measure "${measureKey}" - valid: ${provider.measures.map((s) => s.key).join(', ')}`,
+      `signal ${id}: provider ${provider.id} offers no tracker "${trackerKey}" - valid: ${provider.trackers.map((s) => s.key).join(', ')}`,
     )
   }
-  return { data_source_id: sourceId, measure_key: measureKey, measure_params: {} }
+  return { data_source_id: sourceId, tracker_key: trackerKey, tracker_params: {} }
 }
 
 /** Every formula signal's (id, formula), for the rename rewrite and the delete refusal. */
 async function readFormulas(): Promise<{ id: string; formula: string }[]> {
-  await ensureSchema()
-  return withRead<{ id: string; formula: string }>(`SELECT id, formula FROM signals WHERE formula IS NOT NULL ORDER BY id`)
+  const rows = await db.selectFrom('signals').select(['id', 'formula']).where('formula', 'is not', null).orderBy('id').execute()
+  return rows as { id: string; formula: string }[]
 }
 
 /**
@@ -271,19 +321,28 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
   if (!SIGNAL_ID.test(input.id)) {
     throw new Error(`invalid signal id "${input.id}" (lowercase; a-z 0-9 . _ @ / - ; must start alphanumeric)`)
   }
+  // A row the frame cannot read (its area, or a formula's hidden input) is refused as not found
+  // instead of being overwritten by an insert that collides with it.
+  const stored = await readRecord<SignalDefinition>(SIGNAL_DEFINITIONS, { id: input.id })
   const prev = await readSignalDefinition(input.id)
+  if (stored && !prev) throw new Error(`signal ${input.id} not found`)
+  // A create under an id that exists but is hidden: the primary key would refuse it anyway, so say
+  // the id is taken without saying more (and never turn the insert into an update of that row).
+  if (!stored && (await asSystem('signals: id taken check', () => readRecord<SignalDefinition>(SIGNAL_DEFINITIONS, { id: input.id })))) {
+    throw new Error(`signal id ${input.id} is not available`)
+  }
   if (input.owner != null) await assertKnownUser(input.owner)
   const sourceId = input.data_source_id !== undefined ? input.data_source_id : (prev?.data_source_id ?? null)
-  const measureKey = input.measure_key !== undefined ? input.measure_key : (prev?.measure_key ?? null)
-  const inBox = Boolean(measureKey?.trim()) && !sourceId?.trim()
-  const wasInBox = prev ? isInBoxMeasureSignal(prev) : false
-  // An in-Box measure signal is derived (the measure owns its live points); leaving that binding
+  const trackerKey = input.tracker_key !== undefined ? input.tracker_key : (prev?.tracker_key ?? null)
+  const inBox = Boolean(trackerKey?.trim()) && !sourceId?.trim()
+  const wasInBox = prev ? isBoxTrackerSignal(prev) : false
+  // A Box tracker signal is derived (the tracker owns its live points); leaving that binding
   // makes it an ordinary manual signal again unless the caller says otherwise.
   const source: SignalSource = inBox ? 'derived' : (input.source ?? (wasInBox ? 'manual' : (prev?.source ?? 'manual')))
   const binding = await normalizeBinding(input.id, source, {
     data_source_id: sourceId,
-    measure_key: measureKey,
-    measure_params: input.measure_params ?? (inBox && prev && prev.measure_key === measureKey?.trim() ? prev.measure_params : {}),
+    tracker_key: trackerKey,
+    tracker_params: input.tracker_params ?? (inBox && prev && prev.tracker_key === trackerKey?.trim() ? prev.tracker_params : {}),
   })
   // A formula's depends_on is DERIVED from its refs (any depends_on passed alongside is replaced);
   // clearing the formula keeps the edges as they are unless depends_on is passed too.
@@ -291,6 +350,16 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
     source,
     data_source_id: binding.data_source_id,
   })
+  // The owning area follows the data: a Box tracker's feature, `signals` for a provider feed;
+  // otherwise the caller's declaration, then the stored area unless a binding was just dropped.
+  const area = inBox
+    ? trackerArea(binding.tracker_key!)
+    : binding.data_source_id
+      ? 'signals'
+      : storedArea(input.area ?? (prev && !wasInBox && !prev.data_source_id ? prev.area : 'signals'))
+  // Write on the row's current area and on the one it moves to (row security refuses it too).
+  if (prev) requireReachArea(prev.area, 'write')
+  requireReachArea(area, 'write')
   const dependsOn = formula
     ? await normalizeDependsOn(input.id, formula.refs)
     : input.depends_on !== undefined
@@ -312,6 +381,7 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
         owner: input.owner !== undefined ? input.owner : (prev?.owner ?? null),
         description: input.description ?? prev?.description ?? '',
         depends_on: dependsOn,
+        area,
         ...binding,
         formula: formula?.formula ?? null,
         thresholds: input.thresholds !== undefined ? normalizeThresholds(input.id, input.thresholds) : numbers(prev?.thresholds),
@@ -321,30 +391,30 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
       { prev },
     ),
   )
-  const measureDerive = await import('./measure-derive.js')
+  const trackerDerive = await import('./tracker-derive.js')
   if (inBox) {
     // A bind, a re-bind or a parameter change: compute the points now rather than at the next
     // warehouse-derive. A failing compute leaves the definition saved and says so in the log.
     const changed =
       !wasInBox ||
-      prev?.measure_key !== saved.measure_key ||
-      JSON.stringify(prev?.measure_params ?? {}) !== JSON.stringify(saved.measure_params) ||
+      prev?.tracker_key !== saved.tracker_key ||
+      JSON.stringify(prev?.tracker_params ?? {}) !== JSON.stringify(saved.tracker_params) ||
       prev?.interval !== saved.interval ||
       prev?.accumulation !== saved.accumulation
     if (changed) {
       try {
-        await measureDerive.deriveMeasureSignal(saved.id)
+        await trackerDerive.deriveTrackerSignal(saved.id)
       } catch (err) {
-        console.warn(`[measures] ${saved.id}: ${err instanceof Error ? err.message : String(err)}`)
+        console.warn(`[trackers] ${saved.id}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
   } else if (wasInBox) {
-    // Unbinding an in-Box measure takes its computed points with it: they were never observations,
+    // Unbinding a Box tracker takes its computed points with it: they were never observations,
     // and left behind they would shadow every manual point entered from here on.
-    await withWrite(async (conn) => {
-      await conn.run(`DELETE FROM signal_points WHERE signal_id = ? AND source = 'live'`, [saved.id])
+    await pointWrite([saved], async () => {
+      await db.deleteFrom('signal_points').where('signal_id', '=', saved.id).where('source', '=', 'live').execute()
+      emitAreaChange('table:signal_points', [saved.area])
     })
-    emitChange('table:signal_points')
   }
   return saved
 }
@@ -358,7 +428,6 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
  * next pull would re-register the old id and strand the rename. Curate the label instead.
  */
 export async function renameSignalDefinition(oldId: string, newId: string, actor?: string): Promise<SignalDefinition> {
-  await ensureSchema()
   if (actor) await assertKnownActor(actor)
   const def = await readSignalDefinition(oldId)
   if (!def) throw new Error(`signal ${oldId} not found`)
@@ -366,45 +435,48 @@ export async function renameSignalDefinition(oldId: string, newId: string, actor
   if (!SIGNAL_ID.test(newId)) {
     throw new Error(`invalid signal id "${newId}" (lowercase; a-z 0-9 . _ @ / - ; must start alphanumeric)`)
   }
-  // An in-Box measure signal is derived, but its id was chosen by a person, not generated.
-  if (def.source === 'derived' && !isInBoxMeasureSignal(def)) {
+  // A Box tracker signal is derived, but its id was chosen by a person, not generated.
+  if (def.source === 'derived' && !isBoxTrackerSignal(def)) {
     throw new Error(
       `cannot rename derived signal ${oldId}: its id is generated by deriver code and the next pull would re-register the old id. Edit the label instead (curation wins over the deriver's strings).`,
     )
   }
-  if (await readSignalDefinition(newId)) throw new Error(`cannot rename to ${newId}: a signal with that id already exists`)
-  // Rows already under the new id would collide with the moved rows on the PK.
-  const clash = await withRead<{ n: number }>(`SELECT count(*) AS n FROM signal_points WHERE signal_id = ?`, [newId])
-  if (Number(clash[0]?.n ?? 0) > 0) {
-    throw new Error(`cannot rename to ${newId}: point rows already exist under that id`)
-  }
-
-  await withWrite(async (conn) => {
-    await conn.run(
-      `UPDATE signals SET id = ?, updated_at = now(), updated_by = COALESCE(?, updated_by) WHERE id = ?`,
-      [newId, actor ?? null, oldId],
-    )
-    // The signal's whole history moves with it, in the same transaction as the id change.
-    await conn.run(`UPDATE signal_points SET signal_id = ? WHERE signal_id = ?`, [newId, oldId])
-  })
-
-  for (const [otherId, deps] of await readDependsEdges()) {
-    if (deps.includes(oldId)) {
-      await writeDependsOn(otherId, [...new Set(deps.map((d) => (d === oldId ? newId : d)))], actor)
+  // A fixed core command (BOX-Review W8 finding 7): write on the area is authorized in the request
+  // (again if the policy moves before admission), then one system transaction moves the id (the
+  // points follow by foreign key), and every depends_on edge and formula naming it, in every area.
+  // The old row is locked and rechecked (still there, still in the authorized area); a definition
+  // already under the new id refuses.
+  await coreCommand('signals: rename cascade', () => requireReachArea(def.area, 'write'), async () => {
+    const locked = await db.selectFrom('signals').select('area').where('id', '=', oldId).forUpdate().execute()
+    if (!locked.length || locked[0]!.area !== def.area) throw new Error(`signal ${oldId} not found`)
+    if ((await db.selectFrom('signals').select('id').where('id', '=', newId).execute()).length) throw new Error(`cannot rename to ${newId}: a signal with that id already exists`)
+    // The signal's whole history moves with it: signal_points' foreign key cascades the id.
+    await db.updateTable('signals')
+      .set({ id: newId, ...stamp(actor) })
+      .where('id', '=', oldId)
+      .execute()
+    const touched = [newId]
+    for (const [otherId, deps] of await readDependsEdges()) {
+      if (deps.includes(oldId)) {
+        await writeDependsOn(otherId, [...new Set(deps.map((d) => (d === oldId ? newId : d)))], actor)
+        touched.push(otherId)
+      }
     }
-  }
-  // Formulas name their inputs by id: rewrite them token by token (never a string replace - `mrr`
-  // must not touch `churned-mrr`). depends_on was re-pointed just above.
-  for (const f of await readFormulas()) {
-    if (!formulaRefsOf(f.formula).includes(oldId)) continue
-    const next = renameFormulaRef(f.formula, oldId, newId)
-    await withWrite(async (conn) => {
-      await conn.run(
-        `UPDATE signals SET formula = ?, updated_at = now(), updated_by = COALESCE(?, updated_by) WHERE id = ?`,
-        [next, actor ?? null, f.id],
-      )
-    })
-  }
+    // Formulas name their inputs by id: rewrite them token by token (never a string replace - `mrr`
+    // must not touch `churned-mrr`). depends_on was re-pointed just above.
+    for (const f of await readFormulas()) {
+      if (!formulaRefsOf(f.formula).includes(oldId)) continue
+      await db.updateTable('signals')
+        .set({ formula: renameFormulaRef(f.formula, oldId, newId), ...stamp(actor) })
+        .where('id', '=', f.id)
+        .execute()
+      touched.push(f.id)
+    }
+    emitAreaChange('table:signals', await areasOf(touched))
+    emitAreaChange('table:signal_points', [def.area])
+  })
+  // Outside the signals data, each owner re-points in its own area (a board, a goal, a trigger
+  // filter run on their own logins): these follow the committed rename and are not part of it.
   // Circuit-board placements are keyed by signal id too - a board left holding the old id would
   // silently drop the node at render (the same class of bug `signal_points` hit on 2026-08-10).
   // The board store port reaches a board recipe when the Box has one, and does nothing otherwise.
@@ -419,9 +491,6 @@ export async function renameSignalDefinition(oldId: string, newId: string, actor
     writeSignalOwnersFile(owners)
   }
 
-  emitChange('table:signals')
-  emitChange('table:signals')
-  emitChange('table:signal_points')
   return (await readSignalDefinition(newId))!
 }
 
@@ -440,69 +509,69 @@ export interface SignalDeleteReport {
 }
 
 /**
- * Delete a signal definition. Prunes the id from every other definition's `depends_on`; initiative
- * bindings are reported, not touched (a visible dead binding beats a silently narrowed initiative).
- * Points are kept by default: for a derived signal the deriver owns them (and the next
- * derive would re-register the definition while the signal lives - deletion is for retired
- * signal); for a manual one, removing curation should not destroy observations. `withPoints` is
- * for a signal another object owns outright (a planning goal's own signal), whose history has no
- * meaning without its owner.
+ * Delete a signal definition and its points (BOX-Review W8 finding 6: points never outlive their
+ * signal, since a point under no signal is unreachable). Prunes the id from every other
+ * definition's `depends_on`; initiative bindings are reported, not touched (a visible dead binding
+ * beats a silently narrowed initiative). A formula reading the signal refuses the delete.
+ *
+ * A fixed core command (coreCommand): write on the signal's area is checked in the request, then
+ * one system transaction locks and rechecks the row and prunes edges in every area. A refusal names only the
+ * formulas the caller can read and counts the rest.
  */
-export async function deleteSignalDefinition(
-  id: string,
-  actor?: string,
-  opts: { withPoints?: boolean } = {},
-): Promise<SignalDeleteReport> {
-  await ensureSchema()
+export async function deleteSignalDefinition(id: string, actor?: string): Promise<SignalDeleteReport> {
   if (actor) await assertKnownActor(actor)
   const def = await readSignalDefinition(id)
   if (!def) throw new Error(`signal ${id} not found`)
-  // A formula reading this signal would silently go blank - refuse, naming the formulas.
-  const readers = (await readFormulas()).filter((f) => f.id !== id && formulaRefsOf(f.formula).includes(id)).map((f) => f.id)
-  if (readers.length > 0) {
-    throw new Error(`cannot delete ${id}: formula signal(s) ${readers.join(', ')} read it - edit or clear those formulas first`)
+  let visible = new Set<string>()
+  const refuse = (readers: string[]): never => {
+    const named = readers.filter((r) => visible.has(r))
+    const hidden = readers.length - named.length
+    const parts = [...(named.length ? [`formula signal(s) ${named.join(', ')}`] : []), ...(hidden ? [`${hidden} formula signal(s) you cannot see`] : [])]
+    throw new Error(`cannot delete ${id}: ${parts.join(' and ')} read it - edit or clear those formulas first`)
   }
 
   const pruned: string[] = []
-  for (const [otherId, deps] of await readDependsEdges()) {
-    if (otherId !== id && deps.includes(id)) {
-      await writeDependsOn(otherId, deps.filter((d) => d !== id), actor)
-      pruned.push(otherId)
-    }
+  const authorize = async () => {
+    requireReachArea(def.area, 'write')
+    visible = new Set((await readSignalDefinitions()).map((d) => d.id))
   }
+  await coreCommand('signals: delete cascade', authorize, async () => {
+    const locked = await db.selectFrom('signals').select('area').where('id', '=', id).forUpdate().execute()
+    if (!locked.length || locked[0]!.area !== def.area) throw new Error(`signal ${id} not found`)
+    const readers = (await readFormulas()).filter((f) => f.id !== id && formulaRefsOf(f.formula).includes(id)).map((f) => f.id)
+    if (readers.length > 0) refuse(readers)
+    for (const [otherId, deps] of await readDependsEdges()) {
+      if (otherId !== id && deps.includes(id)) {
+        await writeDependsOn(otherId, deps.filter((d) => d !== id), actor)
+        pruned.push(otherId)
+      }
+    }
+    // The points go with it (signal_points' foreign key cascades the delete).
+    const areas = [def.area, ...(await areasOf(pruned))]
+    await db.deleteFrom('signals').where('id', '=', id).execute()
+    emitAreaChange('table:signals', areas)
+    emitAreaChange('table:signal_points', [def.area])
+  })
   const prunedBoards = await pruneBoardRef('signal', id, actor)
-  await deleteRecord(SIGNAL_DEFINITIONS, { id })
 
-  const bound: string[] = []
-  for (const h of signalHooks()) bound.push(...(await h.references?.(id) ?? []))
+  const bound = (await signalReferences(id)).map((r) => `${r.kind}:${r.id}`)
 
   const warnings: string[] = []
   if (bound.length > 0) {
     warnings.push(`${bound.join(', ')} still reference ${id} - re-point or clear them`)
   }
-  // A signal another object owns outright (a goal's own signal) goes with its history.
-  if (opts.withPoints) {
-    await withWrite(async (conn) => {
-      await conn.run(`DELETE FROM signal_points WHERE signal_id = ?`, [id])
-    })
-    emitChange('table:signal_points')
+  if (def.source === 'derived' && !isBoxTrackerSignal(def)) {
+    warnings.push(`the deriver still writes ${id} - the next derive re-registers the definition`)
   }
-  const pts = await withRead<{ n: number }>(`SELECT count(*) AS n FROM signal_points WHERE signal_id = ?`, [id])
-  const np = Number(pts[0]?.n ?? 0)
-  if (np > 0) {
-    warnings.push(
-      def.source === 'derived'
-        ? `${np} point row(s) remain and the deriver still writes this signal - the next derive re-registers the definition`
-        : `${np} point row(s) under ${id} were left in place - they are invisible without a definition; re-creating ${id} resurfaces them`,
-    )
-  }
-  return { id, pruned_from: pruned, pruned_from_boards: prunedBoards, bound_initiatives: bound, warnings }
+  // pruned_from names only definitions the caller can read.
+  return { id, pruned_from: pruned.filter((p) => visible.has(p)), pruned_from_boards: prunedBoards, bound_initiatives: bound, warnings }
 }
 
 // --- auto-registration ---------------------------------------------------------------------------
 
 /**
- * Ensure a definition exists for every signal id in `rows` - called by the row writers
+ * Ensure a definition exists for every signal id in `rows`, owned by the writing feature's `area`
+ * (`crm`, `support`, `data-sync`) - called by the row writers
  * (signals/write.ts) before they write. Cheap on the
  * hot path: one SELECT of existing ids; no writes at all in the common nothing-missing case. New
  * definitions are `source: 'derived'`, identity strings from the rows, day-grain snapshot, with
@@ -512,30 +581,31 @@ export async function deleteSignalDefinition(
  * edit cannot be clobbered even if it lands between the existence check and the insert. Never
  * deletes - a definition whose signal stops arriving simply stays.
  */
-export async function autoRegisterDefinitions(rows: SignalRow[]): Promise<number> {
+export async function autoRegisterDefinitions(rows: SignalRow[], area: string): Promise<number> {
+  storedArea(area)
   if (rows.length === 0) return 0
   // The first row of a signal carries the same identity strings as every other (denormalized).
   const bySignal = new Map<string, SignalRow>()
   for (const r of rows) if (!bySignal.has(r.signal_id)) bySignal.set(r.signal_id, r)
 
-  await ensureSchema()
-  const existing = new Set((await withRead<{ id: string }>(`SELECT id FROM signals`)).map((r) => r.id))
+  const existing = new Set((await db.selectFrom('signals').select('id').execute()).map((r) => r.id))
   const missing = [...bySignal.values()].filter((r) => !existing.has(r.signal_id))
   if (missing.length === 0) return 0
 
   const owners = readSignalOwnersFile()
-  await withWrite(async (conn) => {
+  await withWrite(async () => {
     for (const r of missing) {
-      await conn.run(
-        `INSERT INTO signals
-           (id, label, signal_group, unit, channel, source, interval, accumulation, direction,
-            owner, description, depends_on, sort, created_at, updated_at, created_by, updated_by)
-         VALUES (?, ?, ?, ?, ?, 'derived', 'day', 'snapshot', 'up', ?, '', '[]'::JSON, 0, now(), now(), NULL, NULL)
-         ON CONFLICT (id) DO NOTHING`,
-        [r.signal_id, r.label, r.signal_group, r.unit, r.channel, resolveSignalOwner(owners, r.channel, r.signal_id)],
-      )
+      await db.insertInto('signals')
+        .values({
+          id: r.signal_id, label: r.label, signal_group: r.signal_group, unit: r.unit, channel: r.channel,
+          source: 'derived', interval: 'day', accumulation: 'snapshot', direction: 'up',
+          owner: resolveSignalOwner(owners, r.channel, r.signal_id), description: '', depends_on: '[]', area,
+          sort: 0, created_at: now(), updated_at: now(), created_by: null, updated_by: null,
+        })
+        .onConflict((oc) => oc.column('id').doNothing())
+        .execute()
     }
-  })
-  emitChange('table:signals')
+    emitAreaChange('table:signals', [area])
+  }, { reach: 'core' })
   return missing.length
 }

@@ -45,8 +45,8 @@ page in a browser: the path mount and the sign-in return are not covered by type
 ## 4. Adapt or remove
 
 Removing it: revoke every public copy, unregister the feature from the four registration files and
-the web nav, delete `features/artifacts/`. The tables, `data/artifacts.db` and `data/artifacts/` stay
-until removed by hand.
+the web nav, delete `features/artifacts/`. The tables and `data/artifacts/` stay until removed
+by hand.
 
 ## Gotchas
 

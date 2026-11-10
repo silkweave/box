@@ -8,7 +8,9 @@
 // an entry re-enabled finds its place again; a new one simply takes its default position. NULL is
 // the Box's default layout, which is also what "Reset" stores.
 
-import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
+import { withWrite } from '../warehouse/db.js'
+import { db } from '../warehouse/core-db.js'
+import { json } from '../warehouse/kysely.js'
 
 export interface SidebarLayout {
   /** Section headings, in the person's order. */
@@ -53,8 +55,7 @@ function storedLayout(raw: unknown): SidebarLayout | null {
 
 /** The person's layout, or null for the Box's default. */
 export async function readSidebarLayout(userId: string): Promise<SidebarLayout | null> {
-  await ensureSchema()
-  const [row] = await withRead<{ sidebar: unknown }>(`SELECT sidebar FROM users WHERE id = ?`, [userId])
+  const row = await db.selectFrom('users').select('sidebar').where('id', '=', userId).executeTakeFirst()
   return row ? storedLayout(row.sidebar) : null
 }
 
@@ -65,9 +66,8 @@ export async function readSidebarLayout(userId: string): Promise<SidebarLayout |
  */
 export async function writeSidebarLayout(userId: string, layout: SidebarLayout | null): Promise<SidebarLayout | null> {
   const value = layout ? parseSidebarLayout(layout) : null
-  await ensureSchema()
-  await withWrite(async (conn) => {
-    await conn.run(`UPDATE users SET sidebar = ? WHERE id = ?`, [value ? JSON.stringify(value) : null, userId])
-  })
+  await withWrite(async () => {
+    await db.updateTable('users').set({ sidebar: value ? json(value) : null }).where('id', '=', userId).execute()
+  }, { reach: 'core' })
   return value
 }

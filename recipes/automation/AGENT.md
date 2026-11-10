@@ -13,16 +13,11 @@ Copy or adapt `<fetched recipe>/features/automation/` into the Box's `features/a
 
 The recipe has two powerups: Alerts (`recipes/automation/powerups/alerts/`, delivery for event triggers) and Webhook relay (`recipes/automation/powerups/relay/`). Ask the owner which to add now. The Stack's tree carries the Alerts source (`core/alerts/`, `server/alerts/`, `web/alerts/`) and its wiring lines; leave both out of the base adaptation unless the owner picks the powerup, then follow its INSTALL.md.
 
-Migrations: `automation:001-import-schedules` (imports `features.automation.schedules` from
-`box.json` / `box.local.json` as time triggers), `automation:002-trigger-permission-mode` (adds the
-nullable `triggers.permission_mode` column), `automation:003-trigger-toolset` and
-`automation:004-trigger-groups` (the `trigger_groups` table's Default row and `triggers.group_id`,
-so every trigger is in a folder), `automation:005-trigger-concurrency-key` (the nullable
-`triggers.concurrency_key` column) plus core's `004-runs-trigger-id` and
-`005-runs-event-id`, which arrive with core. Back up the warehouse first, then boot a restored copy
-and confirm every configured schedule is a trigger (`triggers-list`) before the live Box takes it.
-After the live boot, remove `features.automation.schedules` from the config files: it is no longer
-read, and the boot log warns while it is present.
+Migration: `automation:001-default-trigger-group` (inserts the `default` row of `trigger_groups`, so
+every trigger is in a folder); the tables and columns come from the baseline. Back up the warehouse
+first, then boot a restored copy and confirm `triggers-list` answers before the live Box takes it.
+`features.automation.schedules` in the config files is not read: remove it, since the boot log warns
+while it is present.
 
 ## 2. Customise for the team
 

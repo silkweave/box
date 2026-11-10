@@ -50,7 +50,7 @@ export function PresetPicker<S extends BaseViewState>({
   /** What this module calls its rows ("accounts", "initiatives", "posts"). */
   noun: string
 }) {
-  const { presets, selected, dirty, select, save, reset, error } = v
+  const { presets, selected, dirty, select, save, reset, error, canWrite } = v
   const [manage, setManage] = useState<'closed' | 'manage' | 'create'>('closed')
   // The select is controlled only so the gear can close it on its way to the dialog: a dropdown left
   // open behind a modal is a second focus trap fighting the first.
@@ -127,7 +127,7 @@ export function PresetPicker<S extends BaseViewState>({
                       className={cn(HEADER_ACTION, 'text-muted-foreground hover:text-text')}>
                       <RotateCcw className='size-3.5' />
                     </button>
-                    {selected && (
+                    {selected && canWrite && (
                       <button
                         type='button'
                         // The preset's icon rides along explicitly - `save` writes the whole record,
@@ -145,6 +145,7 @@ export function PresetPicker<S extends BaseViewState>({
                         <Save className='size-3.5' />
                       </button>
                     )}
+                    {canWrite && (
                     <button
                       type='button'
                       onClick={() => openManager('create')}
@@ -154,11 +155,15 @@ export function PresetPicker<S extends BaseViewState>({
                       className={cn(HEADER_ACTION, 'text-muted-foreground hover:text-text')}>
                       <Plus className='size-3.5' />
                     </button>
+                    )}
                     {/* A hairline between "what to do with your changes" and "manage the list" - four
                         undifferentiated icons read as one toolbar of equals, and the gear is not. */}
-                    <span className='mx-0.5 h-4 w-px bg-border' />
+                    {canWrite && <span className='mx-0.5 h-4 w-px bg-border' />}
                   </>
                 )}
+                {/* Managing the list (rename, reorder, delete, restore) is a write: a reader of the
+                    module selects presets and resets, nothing else. */}
+                {canWrite && (
                 <button
                   type='button'
                   onClick={() => openManager('manage')}
@@ -168,6 +173,7 @@ export function PresetPicker<S extends BaseViewState>({
                   className={cn(HEADER_ACTION, 'text-muted-foreground hover:text-text')}>
                   <Settings2 className='size-3.5' />
                 </button>
+                )}
               </div>
             </div>
             {presets.map((s) => {
@@ -194,6 +200,7 @@ export function PresetPicker<S extends BaseViewState>({
           looks like it worked until the next reload. */}
       {error && <span className='text-label text-danger'>{error}</span>}
 
+      {canWrite && (
       <PresetManagerDialog
         view={v}
         savesHint={savesHint}
@@ -202,6 +209,7 @@ export function PresetPicker<S extends BaseViewState>({
         open={manage !== 'closed'}
         onOpenChange={(open) => !open && setManage('closed')}
       />
+      )}
     </div>
   )
 }

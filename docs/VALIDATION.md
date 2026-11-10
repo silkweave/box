@@ -10,6 +10,10 @@ includes full child output. A failed check does not stop independent checks, and
 tests replay cached results when their inputs are unchanged; `box verify --force` re-executes
 everything. See [CLI.md](CLI.md) for progress, dependencies, caching, warnings and log locations.
 
+The database tests run on one engine per run: pgrust by default, native PostgreSQL with
+`box verify --engine native` (needs PostgreSQL 18 and pgvector on the host). A change to core, the
+executor, the schema or a store is verified on both engines; record both results.
+
 Use focused checks during development, then run the complete chain before calling work complete.
 A passing exit status with warning output is not a warning-free run. Record the actual revision,
 commands, counts, warnings, failures and untested scope in local `_docs/VALIDATION.md`.

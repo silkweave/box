@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { ensureSchema, withRead } from '../warehouse/db.js'
+import { withRead } from '../warehouse/db.js'
 import { upsertUser } from '../users/state.js'
 import { ensureAgentPrincipals } from './bootstrap.js'
 import { authenticatePrincipal, issuePrincipalToken, resolvePrincipalById, revokePrincipalToken, sessionPrincipalToken } from './principal.js'
@@ -18,7 +18,6 @@ let dir: string
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-session-token-'))
   setInstanceDir(dir)
-  await ensureSchema()
   await ensureAgentPrincipals()
 })
 
@@ -48,7 +47,7 @@ describe('sessionPrincipalToken', () => {
     await revokePrincipalToken('gail')
     await expect(sessionPrincipalToken('gail')).rejects.toThrow(/revoked/)
     expect(await resolvePrincipalById('gail')).toBeNull()
-    const rows = await withRead<{ status: string }>(`SELECT status FROM users WHERE id = ?`, ['gail'])
+    const rows = await withRead<{ status: string }>(`select status from core.users where id = $1`, ['gail'])
     expect(rows[0]?.status).toBe('revoked')
   })
 

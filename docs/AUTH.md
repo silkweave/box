@@ -79,8 +79,8 @@ this an anonymous client could enumerate every tool.
 
 ## The two tiers
 
-`users.role` is `'admin' | 'member'`. The line between them is one sentence,
-applied by every feature:
+`users.role` names a role: the built-in `admin` or `member`, or a custom role ("Roles and areas"
+below). Between the two built-ins the line is one sentence, applied by every feature:
 
 > **An operation is admin-only when its blast radius is another person's identity or credential,
 > the service itself, or configuration wired to credentials.**
@@ -99,10 +99,11 @@ signs people in by their email, or a phone number (a messaging channel treats a 
 is a user's phone as a team member). Emails are unique across users, case-insensitively, and phones are
 unique in E.164 (`upsertUser`, which normalizes a typed number such as `0043 660 ...`).
 
-**In core's signals** (`apps/server/src/signals/`): `signal-upsert`, `signal-rename`,
-`signal-delete`, `signal-owner-set`, `data-source-upsert` and `data-source-delete`. Signal
-definitions and owners are configuration, and a data source is configuration wired to credentials;
-manual point entry is a member's ([SIGNALS.md](SIGNALS.md#procedures-and-tools)).
+**In core's signals** (`apps/server/src/signals/`): `signal-rename`, `signal-delete`,
+`signal-archive`, `signal-unarchive`, `signal-owner-set`, `data-source-upsert` and
+`data-source-delete`. Re-keying, removing and owning signals is configuration, and a data source is
+configuration wired to credentials; creating or editing a definition (`signal-upsert`) and manual
+point entry are a member's ([SIGNALS.md](SIGNALS.md#procedures-and-tools)).
 
 **In features**, by the same rule and listed in each recipe's `recipes/<id>/SPEC.md`: automation's triggers and restart, planning's initiative
 kinds and chat's `moderate` flag on `chat-message-delete` - the last
@@ -123,17 +124,28 @@ Builder's do. A member's is guarded, and the guard is a check, not a prompt:
   a `kind: builder` session to a non-admin), not only hidden in the UI.
 
 The capabilities are per user, admin-set in Settings > Users (the edit dialog's Work section) and
-stored on the row (`users.work`, migration `core:009-users-work`):
+stored on the row (`users.work`):
 
 | Checkbox | Default | Effect |
 |---|---|---|
 | Work sessions allowed | on | off refuses a new session (`work_disabled`) and every tool call in a running one |
-| Work with all data and modules | on | off refuses every MCP tool call in the session apart from WorkerDeck's own peer server. The Box's tools come from the person's profile config under whatever name they gave the server, so the Box cannot single its own out by name |
+| Work with all data and modules | on | on gives the session the Box's own `box` MCP server (Box tools, no passthrough) acting as the person; off refuses every MCP tool call in the session apart from WorkerDeck's own peer server |
 | Work in their sandbox folder | on | `data/work/<id>/` is a granted folder |
 | Work in selected folders | off | the listed absolute host folders are granted; each must exist and lie outside the checkout and `data/`. The picker completes a typed path from the directories that pass the same check (`usersWorkFolders`) and can create one missing folder whose parent exists (`usersWorkFolderCreate`), both admin-only; Save re-checks every path |
 
 The settings are read when the session starts and again on every guarded tool call, so a change
-applies to a running session on its next call. Agents (`kind = 'agent'`) are not users here: their
+applies to a running session on its next call.
+
+With data on, the server injects `box` (this Box's `/mcp?passthrough=0` on 127.0.0.1) each time
+the session's runner is built, a woken session included, with a fresh session credential for the
+person (see "Session credentials" below). The persisted session record holds only the header
+`Bearer ${BOX_SESSION_CREDENTIAL}`; the credential itself is in the runner's environment, which
+Claude Code expands into the header and WorkerDeck never writes to disk. A `box` entry in the
+person's own profile config is replaced for the session; their other MCP servers stay. The
+credential ends with the runner, on a restart, after 12 hours, and as soon as a policy revision or
+any request with it finds the person revoked or their Work or data turned off (so a session woken
+from its saved config after such a change holds a credential that admits nothing). A new session first checks that 127.0.0.1 is
+this server (`work_box_unreachable` otherwise). Agents (`kind = 'agent'`) are not users here: their
 sessions keep their own rules. The guard is a Claude Agent SDK hook, so a member's Work session
 runs on a Claude profile only; a Codex profile is refused (`work_engine_unsupported`) rather than
 run unguarded.
@@ -172,6 +184,26 @@ Three refusals live in core (`packages/core/src/auth/principal.ts`), because the
   is the thing the tier exists to prevent.
 - **Host config owns the system principal role.** User-management calls cannot override it.
 
+**Policy changes are serialized and take effect at the next transaction.** Role rows, a user's
+role, a user's activation, revocation and deletion, and an observed agent retirement each run as
+one policy command (`policyCommand`, `packages/core/src/warehouse/pg/boot.ts`): the policy lock
+first, so these changes and the last-admin rule never race, then the rows, the role logins, the
+committed policy revision and its announcement, in one transaction. Within a process, policy
+commands take turns before they connect (one policy session, a bounded queue; a command inside
+another is refused), apart from the ordinary connection budget. Every process runs on one
+published snapshot of that revision (routing and role definitions together); every database
+transaction first compares the committed revision with the snapshot and with the revision the
+request's access was resolved at, and a newer one re-resolves the request's identity and access
+before any work (a principal that no longer resolves is refused). Changes that live in files
+(toolsets, connection tool levels, agent reconciliation) commit a revision bump before they report.
+
+**A new user is `pending` until it holds its role.** The row is created insert-only (an id taken
+meanwhile refuses) and activated with its role in one policy command; a pending row cannot sign in
+or be given a credential, and only an explicit role activates it. A role change never rides with
+an identity change: a save that changes the role and names an email, phone or tailscale login is
+refused, and a save writes only the fields it was given. Display fields saved with a role change
+are not atomic with it.
+
 ### Agent identity and role
 
 The system principal is the `agent` block of `box.json`, the one file a Box is configured in
@@ -192,7 +224,9 @@ with instance backups.
 
 **Changing an agent's id is a replacement**, never an in-place rename, because every feature's history
 points at the id. On a stopped Box, after `box db backup`, run
-`box auth replace <old> <new> [--name "Name"]`. The new agent takes over the old one's configuration:
+`box auth replace <old> <new> [--name "Name"]`. It records its progress in
+`data/config/agent-replace.json`; if it is interrupted, boot, backups and restores refuse until the
+same command is run again, which completes it. The new agent takes over the old one's configuration:
 the system principal in `box.json` and the identity lock (or its agent file), its instructions file,
 and its `agentProfiles` and `browsers.users` entries. The old agent is retired like a removed file:
 its token stops and its row stays as the author of its messages and runs. The command lists the
@@ -201,7 +235,7 @@ trigger's `run_as`, for example) can be moved deliberately. Then mint the new ag
 update every client that used the old one.
 Display name and role come from config; boot reconciles those fields in the directory without
 replacing credentials or other profile fields. Role changes apply on the next authenticated
-request, including an already-issued token. Set `agent.role` to `member` to restrict its admin tools.
+request, including an already-issued token. Set `agent.role` to `member` or a custom role to restrict it.
 The last-admin guard counts humans, so the system account cannot be used to remove the last human
 admin. The system account still has no sign-in links and cannot be disabled through user management.
 
@@ -234,8 +268,10 @@ role: member
 You are Stella, the team's research agent.
 ```
 
-`name` and `role` (`admin` or `member`) are required and are the only keys; any other key is refused
-with its name. The system principal stays in `box.json`; a `data/config/agents/<system-id>.md` may
+`name` and `role` (`admin`, `member` or a custom role id) are required and are the only keys; any other key is refused
+with its name. An admin changes an agent's role in Settings -> Users (`agent-set-role`), which
+previews coverage and rewrites the file through the policy journal ("Agents and coverage"). The
+system principal stays in `box.json`; a `data/config/agents/<system-id>.md` may
 exist for its instructions only, and setting `name` or `role` there is refused. Engine and model
 come from the agent's default profile (`agentProfiles` in `box.json`), as for a person. An agent is
 added by its file: on the host, or with Settings -> Users -> New agent, which writes the file and
@@ -279,6 +315,197 @@ first.
 
 Backups carry the files: every warehouse backup writes them beside the restore point and a restore
 puts them back ([WAREHOUSE](WAREHOUSE.md#the-commands)).
+
+## Roles and areas
+
+An **area** is every installed feature id plus two core areas: `signals` (signals no feature owns,
+data sources, providers) and `ops` (actions no feature owns). A role grants each area `none`,
+`read` or `write`.
+
+- `admin`: every area at write, plus admin authority (`@Admin()`). Built in, never stored.
+- `member`: every area at write, no admin authority. Built in, never stored.
+- A custom role (core table `roles`): `{ id, label, description, default, areas }`. `default`
+  covers every area the role does not name, including areas installed later. Managed with
+  `roles-list`, `role-upsert`, `role-delete` (admin) and explained with `access-explain` (yourself,
+  or anyone for an admin).
+
+A role id that names nothing (deleted, hand-edited) grants no area and no admin authority. A role
+is assigned with `user-set-role` and only when it exists; it cannot be deleted while a person or an
+agent config names it. Agent config (`box.json` `agent.role`, `data/config/agents/<id>.md`) may name
+a custom role, and boot refuses one that does not exist. `/api/auth/me` returns the caller's
+`access`: the level per area, admin authority and the policy revision, which moves on every role,
+user-role or agent change. The web app keeps it in `apps/web/src/lib/access.ts` (`canAccessArea`,
+`useAccess`): only features whose area the principal reads contribute navigation, settings
+sections, top-bar controls, slots and `onSession` starters, and a starter that loads another
+area's data checks that area first.
+
+**Delivered copies.** What leaves a store for a person is checked against that person's access
+when it is delivered, not against the job that produced it: chat push needs the recipient to read
+`chat`; an alert carries its source event's areas and reaches a route only when every reader of
+the target reads all of them, and the bell and Alerts history show it only to such readers
+(recipes/automation/powerups/alerts/POWERUP.md).
+
+**Handlers.** Every REST route, tRPC procedure and MCP tool is classified, and boot refuses one that
+is not (`apps/server/src/auth/handler-map.ts`, built from the module that declares each controller
+or provider):
+
+| Category | Rule |
+|---|---|
+| Feature handler | its feature's area: `read` reaches it with `@Read()`, every other one needs `write` |
+| `@Resource(kind)` (core) | passes the guard; the handler authorizes the actual resource |
+| `@Authenticated()` (core) | any signed-in principal; the handler applies its own rule (`me`, own profile, directory, roles list) |
+| `@Area('signals' \| 'ops')` (core) | decided like a feature handler |
+| `@Admin()` / `@Public()` | as before |
+
+`@Read()` marks a handler that changes nothing shared, judged by its code, never by its HTTP verb or
+tRPC kind; a GET route and a tRPC query must carry it. Two narrow cases are reads with a written
+reason: updating only the caller's own state (a read pointer, their push subscription), commented
+above the decorator, and `@Read({ upkeep })`, housekeeping no caller input steers (expiring stale
+approvals, refreshing a cached upstream list). A refusal, by the guard or by a core
+accessor inside the handler, is 403 `{ error: 'area_access', area, needed }` on REST, `FORBIDDEN` on
+tRPC, and an MCP tool error with `code: 'area_access'` (MCP tool errors carry no HTTP status), with
+no record names. A handler's catch-all that turns domain failures into 400s throws
+`inputError(e)` (`apps/server/src/auth/input-error.ts`) so a refusal passes through.
+
+`AuthGuard` decides every transport from the same map, and `/mcp` lists only the tools the caller's
+role reaches (`apps/server/src/agent/mcp-passthrough.ts`); a missing or invalid bearer lists
+nothing, and outside connections' tools need `mcp` read for tools an administrator marked Reads
+and `mcp` write for every other tool, on `/mcp`, `/mcp/connections/<id>` and in sessions alike
+(recipes/mcp/SPEC.md).
+
+**Request context.** Core carries who the current code runs for in one AsyncLocalStorage
+(`packages/core/src/request-context.ts`). The transport opens an empty holder (the first Express
+middleware per HTTP request, and one per tRPC or MCP action call, because a tRPC batch runs several
+calls in one request and WebSocket messages arrive outside Express) and `AuthGuard` fills it. A
+stream is rebound on every step. No frame, or an unfilled one, reaches no area. Boot, jobs and other
+system work enter `asSystem(reason, fn)` explicitly; authentication runs in a narrow bootstrap
+scope. A request that needs fixed system SQL after authorizing (a signal rename or delete
+cascading into other areas) uses `coreCommand(reason, authorize, fn)`: the system transaction
+carries the requester, and a policy change committed after `authorize` ran makes it authorize
+again on re-resolved access (docs/WAREHOUSE.md "Owning areas and row security"). A read that must
+see rows the caller's frame cannot and filter them by the caller's access (the bell's alerts) uses
+`coreRead(reason, authorize, fn)` the same way. Every kind of entry is listed in
+`system-entries.test.ts`.
+
+**Recipients.** Delivery to someone other than the caller (an alert's room readers or DM peer, a
+push) judges each recipient right before it dispatches, never from a cache: identities come with
+the committed policy revision they were read at and roles are read at exactly that revision
+(`auth/recipients.ts`: `recipientById`, `activeRecipients`), so nobody is judged as a new role with
+that role's old grants. The check is the recipient read made just before the transport is
+called; the transport's own preparation (resolving the sender, opening a DM) can still run between
+that check and the post, the accepted point-in-time boundary. A message already sent is not
+recalled. Each entry point that runs outside a request (boot step, CLI script, scheduler, relay,
+maintenance pass, event or job listener, timer) names its own scope, `'<area>: <job>'`, and
+nothing inherits a process-wide system scope, so a forgotten frame fails with `NO_CONTEXT` instead
+of running with every area. The reason goes into each transaction as `box.principal`
+(`system:<reason>`). In tests, code with no frame runs as system (`setFramelessScopeForTests`, test
+setup only) so test bodies can seed and assert directly; tests of a runner start its lifecycle
+hooks and deliver its job events inside `withoutContext`, so the runner must open its own scope.
+
+**Session credentials.** Every server-owned agent session (chat room and DM agents, a
+feature's own agent jobs, automation agent triggers) reaches the Box with `bx-session-<jws>`
+(`packages/core/src/auth/session-credential.ts`), never a reusable token. It is signed with a key
+made at boot (a restart ends every one), names what the session serves (`scope`: `room:<id>` or
+`job:<app>:<id>`) and its toolset, and is valid only while its session is live in the server's
+registry. It resolves to its principal's own access, re-read per request, and reaches only the Box
+MCP tools of its toolset, on REST and tRPC too. `apps/server/src/agent/box-mcp.ts` opens it with
+the session (a revoked principal is refused), and the caller closes it when the session ends: a
+chat session when it is dropped, a job when it completes, fails, is cancelled or is lost. It
+also ends at its lifetime bound (12 h for a chat session, which is retired between turns before
+that; a job's stall limit plus a margin), and on any policy revision whose recheck refuses it: its
+principal revoked or gone, or its toolset changed or removed since the session started.
+
+The scope binds job and room controls: a session credential reports or files only for what it
+serves (`sessionServes`). The tools through which a job reports its answer or files its work
+(and only for the conversation or record its current run serves) are refused for any other job,
+even one of the same agent.
+A session never starts sessions, with one opening for chat. Handlers marked `@StartsJob()`
+(automation's `TriggerRun` and the agent jobs a feature offers) are refused to session credentials
+by `refusalFor`, on every transport, and left out of a session's MCP list.
+`@StartsJob({ fromChat: true })` admits a chat serving session (`kind: 'serving'`,
+`scope: room:<id>`): a room or DM agent may hand a question or material to the feature's own job.
+The job runs as the feature's configured principal with its own `job:` credential, which starts
+nothing, so delegation is one level deep. Work sessions and job sessions stay refused, and
+`TriggerRun` is refused to every session credential. The chat agent still needs the handler's
+area level and its toolset's list, and it is a relay (see "Agents and coverage"). Chat
+posting is not bound to the session's room (an agent may be asked to post elsewhere); the
+double-post guard counts only the room the session serves. A caller without a session credential
+keeps the handler's own rules (the job's run-as principal, admin authority).
+
+A session may also carry an admission check run on every request with its credential
+(`admitSessionCredential`, called from `authenticatePrincipal`); a refusal ends the session. A
+registry entry is dropped once its newest credential has expired, whether or not it was ever used.
+
+A member's Work session gets one too (`kind: 'work'`, `scope: work:<user>`, no toolset: their
+role's full Box surface, nothing more). See "Work sessions".
+
+## Agents and coverage
+
+An agent's output is shown only to readers who **cover** the agent (`packages/core/src/auth/covers.ts`):
+
+- on every area, the reader's level is at least the agent's. Where the destination is read by an
+  area's readers (artifacts, a feature's file tree), that area itself
+  compares at read: everyone who reads the area covers an agent that writes there. Every other
+  area the agent reaches compares exactly, so an agent that writes artifacts and also reads `crm`
+  needs every artifacts reader to read `crm`;
+- an agent with admin authority is read by admins only;
+- for every outside MCP connection the agent can use there (its toolset's), the reader is in that
+  connection's audience.
+
+| Destination | Readers |
+|---|---|
+| A members room | its members with `chat` read |
+| An open room | everyone with `chat` read; no coverage check (it trusts its seated agents, below) |
+| A DM with an agent, or with an agent guest | the people in it |
+| Artifacts, a feature's file tree | everyone with read on the area (area destinations, `registerAreaDestination`) |
+| A tool's answer that returns to the caller alone (`answersCaller`) | the asker |
+
+**Rooms.** A named room is `open` (every active person with `chat` read) or `members` (its member
+list). An agent answers in a room only from a **seat** (`chat.chat_room_agents`). An open room
+trusts the agents seated in it: it is no coverage destination, so everyone with `chat` read sees
+what they write there, whatever they reach (an admin agent included). In exchange, only an admin
+seats or enables an agent in an open room, or opens a room that has enabled seats. In a members
+room, a seat a policy change or the boot check found uncovered is disabled with its reason until an
+admin enables it.
+Removing a seat never opens a room; opening a room drops its member rows. Admins and the room's
+creator manage mode, members and seats in the room's settings (`chat-room-access`,
+`chat-room-access-set`); the member picker greys out people who would not cover a seated agent,
+with the reason. A member removed from a room gets `room.left` on their feed.
+
+**The policy service** (`packages/core/src/auth/policy-service.ts`) applies every change that can
+move coverage, serialized on the `box_policy` lane: roles, user roles, new and reactivated users (issuing a token to a revoked user; seats they do not cover are disabled and reported), agent roles,
+toolsets and room access. It judges the destinations as they would be after the change, and reports
+only the violations the change adds ("Dita (viewer) lacks crm write held by Scout in #pipeline").
+With none the change applies. A violation at a members room can be confirmed: the second call
+repeats the preview's `revision` with `confirm: 'remove-members'` and also removes those members,
+and is refused when the policy moved since the preview. A violation at an area destination, or by a
+person being added, cannot be removed that way: the change is refused (409 `coverage`) with the
+options to cancel or change the grants. `policy-preview` (admin) previews a role edit, a user's role or an agent's
+role; Settings > Roles and the role picker in Settings > Users show it before saving. Agent role and
+toolset changes rewrite files through the policy journal (docs/WAREHOUSE.md "The policy journal")
+and end the live sessions of the changed agents and toolsets; new session requests wait at the
+policy gate meanwhile. At boot, `checkCoverageAtBoot` disables seats whose readers no longer cover
+their agent (a hand-edited agent file) and logs the rest.
+
+**Write-time checks.** A serving session's output is checked where it lands, whatever its scope:
+`AuthGuard` checks an agent principal's write handler in an area destination against every reader of
+the area (403 `{ error: 'coverage', area, message }`), except a job whose output returns to the
+caller only (`@StartsJob({ answersCaller: true })`, `WikiAsk`: its answer is judged where it is
+read); a room post or agent turn checks the room's
+seat and readers (`roomWriteProblem`), and a live `room:` session ends on the policy revision that
+breaks it; an answer that returns to the caller alone is refused when the asker no longer covers the job's agent, and
+withheld when they fetch it.
+
+**Relays.** An agent that reads another agent's output passes it on to its own readers, so it must
+cover that agent itself (`relayCoverageProblem`): a room agent calling `WikiAsk` must cover the ask
+job's agent (checked before the job starts, on the answer and on each fetch, the waiting `WikiAsk`
+response included), and one calling `WikiUpdate` must cover the upkeep agent (checked on submit and
+again for whoever reads the record with `WikiUpdateGet` or `WikiUpdates`). Everyone who covers the
+room agent then covers the source on areas. A delegated job adds no connection reach: its toolset's
+connections must all be in the relaying session's toolset, which is the room's and is judged
+against every reader of the room (`delegatedOutputProblem`); a person reading an answer directly
+must be in each connection's audience. A withheld record keeps only status metadata: the answer,
+summary, pages, questions, progress, failure text, warnings and log are all removed.
 
 ## First run and the commands that exist
 
@@ -398,8 +625,8 @@ the table identifies operations available only through tRPC:
 ## Secrets
 
 `auth.sessionSecret` signs the cookie; `auth.tokenSecret` encrypts stored access tokens. Keep both
-in gitignored `box.local.json`; the Box creates them when absent. No warehouse copy may ever include that file (`box db backup` and
-`box db snapshot` copy `data.db` and nothing else): a backup carrying
+in gitignored `box.local.json`; the Box creates them when absent. No database restore point may ever include that file (`box db backup` and
+`box db snapshot` hold the database dump and the agent files, nothing else): a backup carrying
 the key that decrypts the tokens inside it is not a backup, it is a second copy of the credential.
 
 Secrets must be at least 32 characters and must not use placeholder values. Invalid secrets are

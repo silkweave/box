@@ -22,7 +22,7 @@ you are the one shaping it. Do not dump a wall of commands and walk away.
 Read `README.md` and `../../../docs/RECIPES.md` before you start so you can answer questions. The short
 version, which you may paraphrase:
 
-- A **core** (DuckDB warehouse, auth and users, the events spine, the ops kernel, the app shell)
+- A **core** (PostgreSQL-compatible warehouse, auth and users, the events spine, the ops kernel, the app shell)
   plus **recipes**: capabilities the Stack offers, such as Planning, CRM or Chat.
 - A default consumer clone starts with core only. The open recipes' documentation ships in
   `recipes/<id>/`, and the Recipe Gallery adds whatever the recipe registry offers this Box. The
@@ -46,11 +46,11 @@ bun --version       # must be 1.4.2 or newer; CI pins 1.4.2
 ```
 
 - **Bun 1.4.2+** is the runtime and package manager (`engines` and `packageManager` in root `package.json`).
-- **Nothing else is required.** DuckDB is in-process (`@duckdb/node-api`) - no database to install,
-  no connection string.
+- **Nothing else is required to start.** The warehouse is one PostgreSQL-compatible database per Box
+  (`pgrust` by default, native PostgreSQL 18 as the alternative); `box setup` prepares the engine and
+  asks before installing any host package. There is no connection string to configure.
 
-Optional, only if they later want the feature that needs it: the `gh` CLI (GitHub signal pulls),
-`uv`/`uvx` (the warehouse MCP server).
+Optional, only if they later want the feature that needs it: the `gh` CLI (GitHub signal pulls).
 
 If Bun is older than 1.4.2, update it first. Everything downstream fails confusingly.
 
@@ -77,7 +77,7 @@ run inside a checkout still select that checkout. `box where` explains the selec
 
 ## 3. Run guided first setup
 
-Before opening the warehouse, review the machine principal in `box.json`. Its default is Nova
+Before first boot, review the machine principal in `box.json`. Its default is Nova
 (`nova`), admin. The ID cannot be renamed after initialization. Then run:
 
 ```bash
@@ -190,8 +190,7 @@ the same token:
 box auth reveal <owner-id>
 ```
 
-Set the HTTP Authorization bearer header to that token. The optional warehouse entry needs
-`uvx` and the absolute database path. Reconnect and confirm the Box tools respond. A 401 means the
+Set the HTTP Authorization bearer header to that token. Reconnect and confirm the Box tools respond. A 401 means the
 principal token is missing, invalid or revoked.
 
 ## 8. Seed THEIR starting state - this is the part that matters

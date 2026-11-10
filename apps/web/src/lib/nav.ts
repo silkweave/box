@@ -2,7 +2,8 @@ import { LayoutDashboard } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import type { GroupNav } from '@silkweave/box-ui'
 import { WORKSPACE_SECTION, type NavEntry } from '../feature.ts'
-import { ALL_WEB_FEATURES } from '../web-features.ts'
+import { readableWebFeatures } from '../web-features.ts'
+import { accessKey } from './access.ts'
 import { byNavOrder, sidebarGroups } from './navSections.ts'
 import { useSidebarCustomization } from './sidebarLayout.ts'
 
@@ -22,10 +23,11 @@ const DASHBOARD: NavEntry = {
  * view (view -> nav.ts -> generated/features -> feature index -> view), which is safe only as long
  * as nothing here touches WEB_FEATURES while the cycle is still loading.
  */
-let cached: NavEntry[] | undefined
+let cached: { key: string; entries: NavEntry[] } | undefined
 export function navEntries(): NavEntry[] {
-  cached ??= [DASHBOARD, ...ALL_WEB_FEATURES.flatMap((f) => f.nav ?? [])].sort(byNavOrder)
-  return cached
+  // Only areas the principal reads (lib/access.ts); rebuilt when access changes.
+  if (cached?.key !== accessKey()) cached = { key: accessKey(), entries: [DASHBOARD, ...readableWebFeatures().flatMap((f) => f.nav ?? [])].sort(byNavOrder) }
+  return cached.entries
 }
 
 /** GroupNav for the active view - group selection navigates between the top-level routes. */

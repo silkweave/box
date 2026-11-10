@@ -23,7 +23,8 @@ the transition in INSTALL.md first.
    exactly that step.
 3. **Review the tools.** Every tool starts held. Turn on what the team needs, set write tools to
    `admins` or leave them off, and read each description: it is text the upstream wrote and agents
-   will follow.
+   will follow. Mark a tool Reads only when it changes nothing upstream; an unmarked tool is a
+   write and needs write access to the `mcp` area.
 4. **Choose the audience.** `admins` until the team has seen the tool list; then `everyone` or a
    list of people.
 5. **Grant agents** by adding the connection to a toolset (Settings > Agent tools), with `allow`

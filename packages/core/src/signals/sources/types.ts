@@ -60,8 +60,8 @@ export interface DataSourceView extends DataSource {
   credentials: Record<string, boolean>
   /** Signal ids bound to this source - the subscription set the next sync will pull. */
   bound_signals: string[]
-  /** Bindings naming a measure this provider no longer offers: flagged, never auto-unbound. */
-  dead_measures: { signal_id: string; measure_key: string }[]
+  /** Bindings naming a tracker this provider no longer offers: flagged, never auto-unbound. */
+  dead_trackers: { signal_id: string; tracker_key: string }[]
 }
 
 /** What a delete leaves behind. Bindings are NOT cleared - a visible dead binding beats a
@@ -76,10 +76,10 @@ export interface DataSourceDeleteReport {
 /** The per-source outcome of one sync attempt, as the run log and the action summary report it. */
 export interface SyncResult {
   source_id: string
-  /** Signals whose live rows were replaced (bound AND naming a measure the provider still offers). */
+  /** Signals whose live rows were replaced (bound AND naming a tracker the provider still offers). */
   signals: number
   /** `signal_points` rows written. */
   points: number
-  /** Non-fatal problems: dead measures, subscribed-but-unfetched keys. */
+  /** Non-fatal problems: dead trackers, subscribed-but-unfetched keys. */
   warnings: string[]
 }

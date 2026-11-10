@@ -14,6 +14,14 @@ import { SignalsModule } from './signals/signals.module.js'
 import { RecipesModule } from './recipes/recipes.module.js'
 import { filterMcpActions } from './agent/mcp-passthrough.js'
 import { trpcWithSocket } from './trpc/trpc-socket.js'
+import { withCallContexts } from './auth/call-context.js'
+import { setHandlerRoots } from './auth/handler-map.js'
+
+/** Core's own modules: what every Box has. Their handlers are owned by `core`. */
+const CORE_MODULES = [AuthModule, UsersModule, ChangesModule, OpsModule, AgentModule, SignalsModule, RecipesModule]
+
+// Who owns which handler (auth/handler-map.ts): core's modules, then each feature's root module.
+setHandlerRoots([...CORE_MODULES.map((module) => ({ owner: 'core', module })), ...SERVER_FEATURE_LIST.map((f) => ({ owner: f.id, module: f.module }))])
 
 /** The tRPC transports: HTTP under /trpc, plus the live-feed WebSocket that main.ts upgrades on the same path. */
 export const trpcTransport = trpcWithSocket({ basePath: '/trpc' })
@@ -23,13 +31,7 @@ export const trpcTransport = trpcWithSocket({ basePath: '/trpc' })
     // The SPA is not a module: main.ts serves the promoted release (and, in dev, proxies Vite) as
     // plain middleware ahead of Nest's router. See web/web-release.ts.
     // Core: what every Box has. Everything else arrives through the feature registry below.
-    AuthModule,
-    UsersModule,
-    ChangesModule,
-    OpsModule,
-    AgentModule,
-    SignalsModule,
-    RecipesModule,
+    ...CORE_MODULES,
     ...SERVER_FEATURE_LIST.map((f) => f.module),
     SilkweaveModule.forRoot({
       // Evaluated when this module is imported (Nest module metadata is static), which main.ts
@@ -45,7 +47,7 @@ export const trpcTransport = trpcWithSocket({ basePath: '/trpc' })
         // anonymous client could enumerate every tool the app has. `filterActions` is the passthrough
         // hook (agent/mcp-passthrough.ts): a registered source (the mcp recipe) adds the outside MCP
         // servers' tools the caller may use; without one the list is the Box's own.
-        mcp({
+        withCallContexts(mcp({
           basePath: '/mcp',
           filterActions: filterMcpActions,
           auth: {
@@ -55,7 +57,7 @@ export const trpcTransport = trpcWithSocket({ basePath: '/trpc' })
               return p ? { token, sub: p.id } : undefined
             },
           },
-        }),
+        })),
         // … and the tRPC AppRouter type is emitted into the web app on every boot.
         // Emit as .d.ts so the consuming app's skipLibCheck ignores typegen's always-on
         // import list (avoids noUnusedLocals on TRPCMutation/Subscription for a query-only router).

@@ -96,11 +96,11 @@ after validation passes.
 Shipped migrations are append-only: never edit, rename or renumber one this Box applied. The
 warehouse ledger keys by `<feature>:<name>` with a digest; chat's private ledger keys by object name
 without one. On boot the Box refuses when an applied migration is missing from the installed code
-or its digest changed. Find out before booting: a dry run against a copy of `data/data.db` is
-always possible (a scratch copy of the file, a throwaway script that calls the Box's own
-`applySchema` with `FEATURE_LIST` from `packages/core/src/generated/features.ts`).
+or its digest changed. Find out before booting: take a restore point (`box db backup`), restore it
+in a scratch checkout of the upgraded tree (`box db restore <name>`, see docs/WAREHOUSE.md "Working
+rules") and boot that; the boot runs the real schema runner against a copy of the data.
 
-- **Pending migrations** apply on boot after an automatic pre-migration snapshot. Nothing to do.
+- **Pending migrations** apply on boot after an automatic pre-migration restore point. Nothing to do.
 - **A recipe squashed or rewrote its migration history** (its manifest ships fewer or renamed
   migrations than the ledger records). The recipe's data usually also needs a one-off transition
   (id changes, moved columns, preset files). Use the transition its maintainer published when the
@@ -117,9 +117,9 @@ always possible (a scratch copy of the file, a throwaway script that calls the B
 - Presets and other files under `data/config` are not migrated by migrations; a transition that
   changes ids or filter shapes must rewrite them too.
 
-DuckDB allows one writer at a time across processes. The running application opens short
-connections and retries on a lock, so a short transition can run while it is up in maintenance;
-anything long runs while the application is down. Never point a second server at this `data/`.
+Run a transition with the application stopped (a CLI script then starts the database for itself
+and stops it on exit), or as a short CLI script while the supervisor runs, which it joins without
+taking over the cluster. Never point a second server at this `data/`.
 
 ## 6. Verify, restart, record
 

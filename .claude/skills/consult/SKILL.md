@@ -16,7 +16,7 @@ Map any intent onto the right Box flow, grounded in live state. This skill exist
 was next, or where things go. `/consult` is the answer to every "where / how / what now" question -
 for a CEO as much as a developer.
 
-**Hard rule: consult is read-only.** Query the warehouse, read docs and config *shapes* (never
+**Hard rule: consult is read-only.** Read the Box through its read tools, read docs and config *shapes* (never
 secret values), and explain. Do not upsert, ingest, draft, verify, publish, send, or move anything.
 When the answer is "run flow X", OFFER to kick it off and wait for an explicit yes - then invoke the
 skill (which has its own guardrails) rather than doing the work inline.
@@ -25,10 +25,10 @@ skill (which has its own guardrails) rather than doing the work inline.
 
 Decide where you are running before anything else. **Local** = the CWD is the Box checkout
 (`data/docs/` exists on disk): follow the steps as written. **Remote** = this skill was installed on
-a machine with no checkout: the repo, `bun run cli`, and the read-only `warehouse` MCP do not exist
+a machine with no checkout: the repo and `bun run cli` do not exist
 here. Work over the `mcp__box__*` tools (`https://box.example.ts.net` over the tailnet, authed by
 your `mcp.token` from `box.local.json`): ground state via each installed feature's list and get tools (`initiatives-get`,
-`support-tickets`, ...) instead of SQL, docs via `doc-read`. Dashboard links are ALWAYS
+`support-tickets`, ...), docs via `doc-read`. Dashboard links are ALWAYS
 `https://box.example.ts.net/<path>` - plain paths (e.g. `/sink/<file>`); the SPA moved off
 hash routes on 2026-09-14, and an old `/#/<path>` link still lands right but do not write new
 ones. Works from anywhere on the tailnet - Tailscale must be connected;
@@ -45,8 +45,8 @@ their in-flight work and the one next action for each.
 
 The answer's shape depends on the operator:
 
-- Resolve the acting user (the session's principal; if genuinely unclear, ask). Query
-  `SELECT id, name, role FROM users` (read-only `warehouse` MCP) for context.
+- Resolve the acting user (the session's principal; if genuinely unclear, ask). Call
+  `users-list` (id, name, role) for context.
 - **Calibrate the register by ROLE, not by name.** For an `admin` who works in the checkout: file
   paths, CLI and internals are fine. For everyone else: dashboard-first, plain language, the three
   verbs (**pick / answer / approve**), zero repo internals unless they ask. A non-dev should never
@@ -145,14 +145,13 @@ machine - does `<checkout>/data/docs/` exist?
   answers `Marketplace '<box>' not found. Available marketplaces:` - that is **correct output where
   the checkout is, not a fault**. Never "fix" it by installing the plugin: that shadows the
   unprefixed skills with duplicate `/<box>:*` copies of the same thing.
-- **Data access is `bun run cli <tool>`** plus the read-only `warehouse` MCP from the repo's
-  `.mcp.json`. **`mcp__box__*` is OPTIONAL here** - some teammates carry a personal entry in
+- **Data access is `bun run cli <tool>`**. **`mcp__box__*` is OPTIONAL here** - some teammates carry a personal entry in
   `~/<user>/.claude.json`, some do not. Its absence on a machine with the checkout is **not** a
   fault to fix, because every skill's Local mode runs on `bun run cli`.
 - A failing `bun run cli` here has **three** causes, and only one is the service:
   1. **The harness permission fence** (most confusing, found 2026-07-29). A Claude session whose CWD
      is a *different* repo has **Bash** against the checkout path denied by the auto-mode
-     classifier, so `bun run cli` and direct DuckDB reads all refuse. The fence is **tool-shaped, not
+     classifier, so `bun run cli` refuses. The fence is **tool-shaped, not
      path-shaped**: `Read` and `Edit` work fine on those same paths, which makes it look arbitrary
      from inside. **Match on the denial text - it names the classifier, not a connection error.**
      Fix: start the session inside the checkout.
@@ -180,12 +179,10 @@ every write attribute to them), and changing the env var needs a **session resta
 
 Never answer "where are you" from memory. For anything about the asker's work in flight:
 
-```sql
-SELECT id, status, kind FROM initiatives WHERE owner = '<user>' AND status IN ('planned','active');
-SELECT id, status, title FROM tasks WHERE assignee = '<user>' AND status NOT IN ('done','dropped');
-```
+- `initiatives-get`: keep the asker's initiatives (`owner` = the user) whose status is `planned` or `active`.
+- `tasks-get`: keep the asker's tasks (`assignee` = the user) whose status is not `done` or `dropped`.
 
-Adapt as needed, and add the tables of other installed features the question touches. For setup
+Adapt as needed, and add the read tools of other installed features the question touches. For setup
 questions, run the read-only parts of the relevant flow's preflight (user row status, credentials.json
 **key shape only** - never print values) so the
 answer includes real blockers, not guesses.

@@ -74,6 +74,7 @@ export interface CoreFeature {
   migrations: readonly Migration[]    // append-only, one ledger row each, keyed `${id}:${name}`
   actions?: readonly ActionSpec[]     // runnable ops contributed to core's run funnel
   presetModules?: readonly string[]   // preset module ids of the boards this feature draws with a view bar
+  docSections?: readonly string[]     // data/docs/<section> directories it writes (change feed: readers of its area)
   background?: Readonly<Record<string, string>> // capability key -> what it arms: box.json `background.features.<id>.<key>`
 }
 
@@ -200,44 +201,46 @@ explains how an agent updates the list during integration.
 
 ## 3. Schema: baseline + per-feature ledgers
 
-`warehouse/schema.ts` has no global list of anything. `applySchema(conn, features)` orders the
-feature registry, baselines every ModelSpec with `CREATE TABLE IF NOT EXISTS`, runs each feature's
-`baseline` DDL, then applies each feature's append-only migrations once each, atomically with their
-ledger row. The step-by-step mechanics, the DuckDB constraints that shaped them and the working
-rules for changing a schema are [WAREHOUSE](../WAREHOUSE.md)'s; this section is the design.
+The schema runner (`warehouse/pg/migrate.ts`, owners from `warehouse/schema.ts`) has no global
+list of anything. It orders the feature registry, baselines every ModelSpec with `CREATE TABLE IF
+NOT EXISTS` in its owner's schema, runs each feature's `baseline` DDL, then applies each feature's
+append-only migrations once each, atomically with their ledger row (a `concurrent` migration,
+which cannot run in a transaction, records its row after its statements). The step-by-step mechanics and
+the working rules for changing a schema are [WAREHOUSE](../WAREHOUSE.md)'s; this section is the
+design.
 
 ### 3.1 Ledger key and table
 
 ```sql
-CREATE TABLE IF NOT EXISTS schema_migrations (
-  name       VARCHAR   NOT NULL PRIMARY KEY,   -- '<feature>:<name>', e.g. 'planning:001-sprint-tasks'
-  feature    VARCHAR   NOT NULL DEFAULT 'core',
-  applied_at TIMESTAMP NOT NULL DEFAULT now(),
-  checksum   VARCHAR                            -- name + evaluated SQL + a hash of run.toString()
+create table if not exists core.schema_migrations (
+  name       text primary key check (position(':' in name) > 1),  -- '<feature>:<name>', e.g. 'planning:001-sprint-tasks'
+  feature    text not null,
+  checksum   text not null,          -- SHA-256: name, statements, run revision, bound data, mode
+  applied_at timestamptz not null default now()
 )
 ```
 
 The author writes `name: '001-sprint-tasks'`; the runner stores `planning:001-sprint-tasks`.
 Uniqueness across features is by prefix; uniqueness within a feature is asserted before anything
-runs. Core's own migrations (`warehouse/core-migrations.ts`) are keyed `core:<name>` and run first.
-The ledger travels inside the `.db` file, so a restored older backup upgrades itself on its first
-boot. `applySchema` refuses a ledger row with no prefix: that file is not a Box warehouse.
+runs. Core's own migrations (`CORE_MIGRATIONS` in `warehouse/schema.ts`) are keyed `core:<name>`
+and run first. The ledger travels inside the database, so a restored older restore point upgrades
+itself on its first boot. The table refuses a key with no prefix.
 
 ### 3.2 Run order
 
-`orderFeatures` returns core first, then features in dependency order, ties broken by id, so two
+`orderOwners` returns core first, then features in dependency order, ties broken by id, so two
 Boxes with the same directories apply the same sequence whatever order the registry listed them in.
 It throws on a cycle, naming the trail, and on a `dependsOn` naming an absent feature.
-`assertOwnership` then refuses a table declared by two features and a migration name declared
-twice in one feature. Both are pure and unit-tested (`warehouse/schema.test.ts`).
+It then refuses a table declared by two features and a migration name declared twice in one
+feature. Both checks are pure and unit-tested.
 
 Within a feature, order is **array position**; the `NNN` prefix is a reading aid. Two features'
 `001`s have no relationship, and the runner never interleaves by number. The only cross-feature
 guarantee is that a dependency's tables and migrations are complete before a dependent's migration
 runs, which is all a read-only dependency needs.
 
-Before any pending migration writes to an existing warehouse, `ensureSchema` takes a `pre-migrate`
-snapshot under the same write connection; a snapshot failure stops the migration. Two guards run
+Before anything pending changes an existing database, the runner takes a `pre-migrate` restore
+point while it holds the schema lock; a failed dump stops the boot. Two guards run
 before that and refuse to boot, because in both cases the code on disk no longer describes the
 database on disk: an applied migration that is missing from the installed code, and one whose
 checksum no longer matches. Neither is a compliance rule; a team that means to rewrite its history
@@ -248,18 +251,20 @@ says so to the database
 
 A Box has run `planning` and `sink` since January; in July the team integrates `crm`. Boot:
 
-1. `orderFeatures` places core first and crm by its dependencies, ties broken by id. `assertOwnership` passes.
-2. Baseline creates `crm_accounts` and the rest at the CURRENT ModelSpec shape, empty.
+1. `orderOwners` places core first and crm by its dependencies, ties broken by id. The ownership
+   checks pass.
+2. Baseline creates the `crm` schema, `crm.crm_accounts` and the rest at the CURRENT ModelSpec
+   shape, empty.
 3. crm's migrations have never been applied here, so every one of them runs, in order, against
    tables that are already at the shape the last one produces.
 
-That is the fresh-warehouse path, and it is universal: **every migration must be a safe no-op when
+That is the fresh-database path, and it is universal: **every migration must be a safe no-op when
 its table is already in the post-migration shape.** DDL uses `ADD COLUMN IF NOT EXISTS`,
-`DROP COLUMN IF EXISTS`, `ALTER TABLE IF EXISTS` (core's own `core:001-users-role` is the shape); a
+`DROP COLUMN IF EXISTS`, `ALTER TABLE IF EXISTS` (the guard makes a rerun harmless); a
 bare `DROP COLUMN old` fails at step 3 because the baseline never created `old`, the boot aborts
 with `migration crm:004-drop-old failed`, nothing is half-applied, and the fix is the guard. A
 backfill `UPDATE` must be correct on zero rows. A `run` hook that reasons about shape checks
-`duckdb_columns()` / `duckdb_tables()` first, and one that copies rows out of an old table must
+`information_schema.columns` / `to_regclass()` first, and one that copies rows out of an old table must
 guard on the OLD table existing, because on this path only the new one does.
 
 This path adds a failure mode the fresh path never had: **the row population of OTHER features'
@@ -281,7 +286,8 @@ current code, never through hand-written SQL against the dependency's columns.
 - A migration in feature B may **never write** (ALTER, UPDATE, DELETE, INSERT, DROP) a table it does
   not own. Feature A owns its tables' history; if B needs a column on A's table, that is a change
   to A: A gets the ModelSpec column and the migration, and B's `dependsOn` already covers the order.
-- Enforcement is layered, and only the first layer is proof. `assertOwnership` proves declarations.
+- Enforcement is layered, and only the first layer is proof. The runner's ownership check proves
+  declarations.
   `bun run schema:check` runs a conservative regex over each migration's static SQL against the tables
   the feature owns (`warehouse/migration-ownership.ts`) and reports a hit as a **warning**: on the
   maintainer checkout, where apps stay separable, a warning is something to fix; on a team's Box
@@ -296,9 +302,9 @@ current code, never through hand-written SQL against the dependency's columns.
 
 ### 3.5 What `bun run schema:check` proves, and what it cannot
 
-`packages/core/scripts/schema-check.ts` runs as **part of `box verify`**. On
-throwaway DuckDB files it proves the fresh and reboot paths (apply twice on one file; every declared
-table exists) and, for each feature F, the enabled-later path of § 3.3 (apply without F and its
+`packages/core/scripts/schema-check.ts` runs as **part of `box verify`**. On a throwaway cluster,
+one database per pass, it proves the fresh and reboot paths (apply twice on one database; every
+declared table exists in its owner's schema) and, for each feature F, the enabled-later path of § 3.3 (apply without F and its
 dependents, then apply everything). That second pass is the one that catches an undeclared
 dependency: a view or migration reaching for a table its feature never listed in `dependsOn` works
 on a full Box and fails on the Box without that neighbour, and unit tests cannot see it. Ownership
@@ -311,13 +317,13 @@ changing a model, a baseline or a migration; the full verification chain also ru
 
 ### 3.6 Feature-private stores
 
-`CoreFeature.migrations` is for the DuckDB warehouse only. A feature whose access pattern the
-single-writer warehouse is wrong for (many tiny interactive writes plus point reads) may own a file
-of its own, entirely inside its directories: its own path under the instance dir through core's
-`dataPath()`, its own ledger, its own migration chain, and `manifest.models` lists only what it
-puts in the warehouse. The `chat` feature is the one that does this, with `chat.db` on
-SQLite and `models: []`. The consequence to know: core's backups and pre-migration snapshots cover
-the warehouse, not a feature's private file; the feature owns that too.
+`CoreFeature.migrations` is for the Box database only. A feature may own a store of its own,
+entirely inside its directories: its own path under the instance dir through core's `dataPath()`,
+its own ledger, its own migration chain, and `manifest.models` lists only what it puts in the
+database. No feature ships one today: chat and artifacts keep their rows in the database
+and only their files (uploads, artifact trees) under `data/`. The consequence to know:
+core's restore points and pre-migration restore points cover the database, not a feature's files;
+the feature owns those files' backups.
 
 ---
 
@@ -376,7 +382,8 @@ Core-owned, filled at runtime from a server module's `onModuleInit`, unregistere
 
 Core's signals add ports of the same shape ([SIGNALS.md](../SIGNALS.md)): `registerSignalHooks`
 (planning and automation register into it), `registerBoardNodeKind` (planning's
-cycle-board powerup, and a recipe that draws boards), `registerBoardStore` (the recipe that draws
+cycle-board powerup, and a recipe that draws boards; a kind whose objects all live in one area
+declares `area`), `registerBoardStore` (the recipe that draws
 boards; core's signal rename and delete and planning's cycle-board powerup report through it, and
 that powerup seeds through it),
 `registerProvider` and `registerPlatformClient` (the Data Sync recipe's powerups) and

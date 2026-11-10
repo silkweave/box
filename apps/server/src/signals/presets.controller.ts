@@ -2,9 +2,11 @@ import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsArray, IsIn, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
-import { deletePreset, readPresetsFile, reorderPresets, savePreset, seedPresets, updatePreset, type PresetRecord } from '@silkweave/box-core'
+import { deletePreset, readReadablePresets, reorderPresets, savePreset, seedPresets, updatePreset, type PresetRecord } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import type { PrincipalRequest } from '../auth/auth.decorators.js'
+import { Read, Resource } from '../auth/auth.decorators.js'
+import { inputError } from '../auth/input-error.js'
 
 // Presets - the team's named lenses on the boards features register (`presetModules`). One list per module, shared
 // by everyone, editable by anyone internal. There is no such thing as a private preset and no such
@@ -28,6 +30,11 @@ class PresetsDto {
     description: 'Modules whose defaults have been seeded. The SPA reads this to know whether to send its seed.',
   })
   seeded!: string[]
+  @ApiProperty({
+    type: [String],
+    description: 'Modules the caller may write. The SPA offers saving, managing and seeding presets only there.',
+  })
+  writable!: string[]
   @ApiProperty({
     type: Object,
     description:
@@ -128,6 +135,7 @@ function parseState(raw: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
+@Resource('preset')
 @Controller('presets')
 @UseGuards(AuthGuard)
 export class PresetsController {
@@ -141,9 +149,10 @@ export class PresetsController {
   @ApiOkResponse({ type: PresetsDto })
   @Trpc()
   @Mcp({ name: 'presets' })
+  @Read()
   list(): PresetsDto {
-    const file = readPresetsFile()
-    return { generatedAt: new Date().toISOString(), seeded: file.seeded, modules: file.modules }
+    const file = readReadablePresets()
+    return { generatedAt: new Date().toISOString(), seeded: file.seeded, writable: file.writable, modules: file.modules }
   }
 
   /**
@@ -165,7 +174,7 @@ export class PresetsController {
         body.description,
       )
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return this.list()
   }
@@ -196,7 +205,7 @@ export class PresetsController {
         body.actor ?? req.principal?.id,
       )
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return this.list()
   }
@@ -213,7 +222,7 @@ export class PresetsController {
     try {
       reorderPresets(body.module, body.names)
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return this.list()
   }
@@ -230,7 +239,7 @@ export class PresetsController {
     try {
       deletePreset(body.module, body.name)
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return this.list()
   }
@@ -274,7 +283,7 @@ export class PresetsController {
         body.actor ?? req.principal?.id,
       )
     } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : String(e))
+      throw inputError(e)
     }
     return this.list()
   }

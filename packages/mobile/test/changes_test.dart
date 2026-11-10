@@ -40,11 +40,9 @@ class _Feed {
 }
 
 void main() {
-  test('scope matching: exact, and warehouse invalidates every table', () {
+  test('scope matching is exact', () {
     expect(BoxChanges.matches('table:tasks', 'table:tasks'), isTrue);
     expect(BoxChanges.matches('table:tasks', 'table:initiatives'), isFalse);
-    expect(BoxChanges.matches('table:tasks', 'warehouse'), isTrue);
-    expect(BoxChanges.matches('docs:initiatives', 'warehouse'), isFalse);
   });
 
   test('a matching event calls the listener once per debounce window', () async {

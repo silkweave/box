@@ -4,23 +4,28 @@
 // Boot reconciliation only writes rows: it upserts every configured agent, retires agent rows whose
 // file is gone and restores the ones whose file came back. Whether an agent may act is decided at
 // call time by the eligibility predicate, so deleting a file takes effect before the next boot.
-import { ensureSchema, withRead, withWrite } from '../warehouse/db.js'
+import { db } from './db.js'
+import { now } from '../warehouse/kysely.js'
 import { readUser, upsertUser } from '../users/state.js'
-import { agentIdentity, bindAgentIdentity, isMaintenanceBoot, systemUserId } from '../box-config.js'
+import { agentIdentity, bindAgentIdentity, ensureBoxConfig, isMaintenanceBoot, systemUserId } from '../box-config.js'
 import { rmSync } from 'node:fs'
 import { AgentFileError, agentFileProblems, configuredAgents, writeNewAgentFile, type NewAgentFile } from '../agents.js'
 import type { User } from '../users/types.js'
 import { revokePrincipalToken } from './principal.js'
-import { interruptedAgentRestore } from '../warehouse/agent-snapshot.js'
+import { interruptedAgentChange } from '../warehouse/agent-snapshot.js'
+import { withAgentsLock } from '../warehouse/pg/boot.js'
+import { roleExists } from './roles.js'
+import { bumpPolicyRevision } from './access.js'
 
 /** Whether any person exists. Agents do not count, even when configured as admins. */
 export async function hasHumanUsers(): Promise<boolean> {
-  await ensureSchema()
-  const rows = await withRead<{ n: number }>(
-    `SELECT count(*) AS n FROM users WHERE coalesce(kind, 'human') <> 'agent' AND id <> ?`,
-    [systemUserId()],
-  )
-  return Number(rows[0]?.n ?? 0) > 0
+  const { n } = await db
+    .selectFrom('users')
+    .select((eb) => eb.fn.countAll<number>().as('n'))
+    .where((eb) => eb(eb.fn.coalesce('kind', eb.val('human')), '<>', 'agent'))
+    .where('id', '<>', systemUserId())
+    .executeTakeFirstOrThrow()
+  return Number(n) > 0
 }
 
 export interface AgentReconciliation {
@@ -41,18 +46,24 @@ export interface AgentReconciliation {
  * A maintenance boot skips retirement: a restore may be staged and the files not back yet.
  */
 export async function ensureAgentPrincipals(): Promise<AgentReconciliation> {
-  await ensureSchema()
-  const interrupted = interruptedAgentRestore()
+  // The configuration exists (and is valid) before the identity lock is bound to it.
+  ensureBoxConfig()
+  const interrupted = interruptedAgentChange()
   if (interrupted) throw new Error(interrupted)
   const problems = agentFileProblems()
   if (problems.length) throw new Error(`agent files do not parse; fix them before booting:\n  ${problems.join('\n  ')}`)
   const system = agentIdentity()
   const agents = configuredAgents()
+  // An agent's role is config's, and config may name a custom role: it must exist, or the agent
+  // would boot with nothing it could do and nobody would see why.
+  const unknownRoles: string[] = []
+  for (const agent of agents) if (!(await roleExists(agent.role))) unknownRoles.push(`${agent.system ? 'box.json agent' : `data/config/agents/${agent.id}.md`}: no role "${agent.role}"`)
+  if (unknownRoles.length) throw new Error(`agent config names roles that do not exist; create them (Settings > Roles) or change the config:\n  ${unknownRoles.join('\n  ')}`)
   const existing = await readUser(system.id)
   if (!existing && await hasHumanUsers()) {
     throw new Error('configured agent does not exist in this populated Box; restore its original agent.id before booting')
   }
-  const rows = await withRead<{ id: string; kind: string | null; status: string }>(`SELECT id, kind, status FROM users`)
+  const rows = await db.selectFrom('users').select(['id', 'kind', 'status']).execute()
   const byId = new Map(rows.map((r) => [r.id, r]))
   const clash = agents.filter((a) => !a.system && byId.has(a.id) && byId.get(a.id)!.kind !== 'agent')
   if (clash.length) {
@@ -74,12 +85,11 @@ export async function ensureAgentPrincipals(): Promise<AgentReconciliation> {
     else if (!agent.system && prev.status === 'revoked') {
       // The retirement this reconciliation set (an agent cannot be disabled any other way): clear
       // it, and drop the old token with it so a copy that leaked while retired stays dead.
-      await withWrite(async (conn) => {
-        await conn.run(
-          `UPDATE users SET status = 'active', token_revoked_at = NULL, token_ciphertext = NULL, updated_at = now() WHERE id = ?`,
-          [agent.id],
-        )
-      })
+      await db
+        .updateTable('users')
+        .set({ status: 'active', token_revoked_at: null, token_ciphertext: null, updated_at: now() })
+        .where('id', '=', agent.id)
+        .execute()
       result.restored.push(agent.id)
     }
   }
@@ -91,6 +101,8 @@ export async function ensureAgentPrincipals(): Promise<AgentReconciliation> {
       result.retired.push(row.id)
     }
   }
+  // Agent config is policy: a created, restored or re-roled agent changes who may reach what.
+  await bumpPolicyRevision('agent principals reconciled')
   if (result.created.length) console.info(`agents: created ${result.created.join(', ')}`)
   if (result.restored.length) console.info(`agents: restored ${result.restored.join(', ')} (file is back)`)
   if (result.retired.length) console.info(`agents: retired ${result.retired.join(', ')} (no file in data/config/agents/)`)
@@ -104,6 +116,10 @@ export async function ensureAgentPrincipals(): Promise<AgentReconciliation> {
  * reconciles exactly like a boot; a reconciliation that fails removes the file again.
  */
 export async function createAgent(input: NewAgentFile): Promise<User> {
+  return withAgentsLock(() => createAgentLocked(input))
+}
+
+async function createAgentLocked(input: NewAgentFile): Promise<User> {
   const prev = await readUser(input.id)
   if (prev && prev.kind !== 'agent') throw new AgentFileError(`data/config/agents/${input.id}.md`, `"${input.id}" is a person's id; an agent id must be new`)
   if (prev && prev.status !== 'revoked') throw new AgentFileError(`data/config/agents/${input.id}.md`, `agent "${input.id}" exists already`)

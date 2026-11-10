@@ -60,29 +60,23 @@ Box"), never stored half-working.
 `created_by` / `updated_by` record the principal that made the change. When an agent acts for an
 admin, `owner` is the admin and `created_by` is the agent.
 
-**Migration `automation:001-import-schedules`** (a `run` hook): Boxes before triggers configured
-schedules in `box.json` / `box.local.json` `features.automation.schedules`. On the first boot with
-this feature it inserts each well-formed entry as a time trigger that runs its action, keeping the
-id (so `trigger_id` of old runs, backfilled from `schedule_id`, points at it), `enabled` and
-`description`, with `name = id` and no owner. Existing ids are left alone. After it runs, the key is
-not read; the scheduler logs a warning at boot while it is still present, and the owner removes it.
+Triggers are configured only in the `triggers` table. `features.automation.schedules` in
+`box.json` / `box.local.json` is not read; the scheduler logs a warning at boot while it is still
+present, and the owner removes it.
 
-**Migration `automation:002-trigger-permission-mode`** adds `permission_mode` (nullable, no
-constraint: an ALTER cannot carry one, so the value is checked on write). Existing triggers keep
-null, the unattended mode.
+`permission_mode` is nullable with no constraint, so the value is checked on write; null is the
+unattended mode.
 
 **`trigger_groups`** (owned, `timestamps`, `audit`): the folders of the Triggers list. `id` is a
 slug derived from the first name and frozen; `name` is unique (case-insensitive) and may change.
 The `default` group ("Default") always exists and cannot be deleted; any other group is deleted
 only once it holds no trigger.
 
-**Migration `automation:004-trigger-groups`** adds `triggers.group_id` (`DEFAULT 'default'`),
-backfills it, and inserts the `default` group (the table is baselined before any migration runs).
+`triggers.group_id` defaults to `'default'`. **Migration `automation:001-default-trigger-group`**
+inserts the `default` group (the table is baselined before any migration runs).
 
-**Runs** are core's `automation_runs`. Core migrations `core:004-runs-trigger-id` (adds
-`trigger_id`, backfilled from the legacy `schedule_id`) and `core:005-runs-event-id` link a run to
-the trigger and event that started it. `trigger` is `time | event | webhook | manual`; old rows keep
-`schedule`. For action triggers the scheduler never writes a row itself: it drains
+**Runs** are core's `automation_runs`. `trigger_id` and `event_id` link a run to
+the trigger and event that started it. `trigger` is `time | event | webhook | manual`. For action triggers the scheduler never writes a row itself: it drains
 `executeRecorded()` and calls core's `insertSkippedRun()` / `markOrphanedRuns()`. Agent runs are the
 exception, below: their rows have `action_id = agent`.
 
@@ -97,7 +91,7 @@ restart. `setTimeout` clamps to a 32-bit signed int, so a far-future delay is ca
 
 Three of core's run semantics make a trigger safe to point at any action (`packages/core/src/ops/run.ts`):
 
-- **The queue is in-process FIFO with concurrency 1**, because the warehouse is single-writer. Two
+- **The queue is in-process FIFO with concurrency 1**, so runs execute in order and heavy pulls never overlap. Two
   triggers firing in the same minute serialize.
 - **A time fire whose action is already queued or running records a `skipped` row** rather than
   queueing (`isActionBusy()` -> `insertSkippedRun()`). Manual runs always queue.
@@ -140,7 +134,7 @@ fresh event runs through every candidate trigger's guards, cheapest first:
 5. **Busy**: an agent trigger whose previous run is in flight, or an action trigger whose action is
    queued or running, records a `skipped` row. An action trigger therefore never fires on an event
    its own action records while it runs. An agent event trigger with a **concurrency key**
-   (`concurrency_key`, migration `automation:005-trigger-concurrency-key`: a template rendered from
+   (`concurrency_key`: a template rendered from
    the event, such as `{{fields.conversation_id}}`) is busy per rendered key instead: another key
    runs beside it, and a fire while its key runs waits and starts once that run ends (the trigger
    re-read then). One fire waits per key; a newer one replaces it and the replaced one records a
@@ -407,9 +401,10 @@ too, named explicitly in `run_as` and shown beside the owner ("runs as Dan, owne
 
 **The Box MCP server in a job.** A job on an engine that takes per-session MCP servers (Claude,
 Codex) gets `box`, this Box's `/mcp` authenticated as the trigger's `run_as` user, so a run as toby uses
-the Box as toby. The token is that user's existing one, revealed rather than rotated (issued only
-when they have none, atomically, and never for a revoked user), so it is readable by any shell
-command the job may run. `mcp__box` is
+the Box as toby. The bearer is a session credential for that user scoped to the run
+(`job:box-trigger:<runId>`; docs/AUTH.md "Session credentials"), never their reusable token, and is
+closed when the run settles; a revoked user gets none. It is still readable by any shell command
+the job may run, for as long as the run lasts. `mcp__box` is
 auto-approved; the floor `ServiceRestart`, `UserDelete`, `UserSetRole`, `UserAccessRevoke` is
 disallowed (the same floor as the chat agent, `apps/server/src/agent/box-mcp.ts`). A `box` entry in
 the person's own profile config is replaced for the job, not run beside it. Codex honours only the
@@ -418,8 +413,8 @@ Codex (docs/AGENT-TOOLS.md "Engines"). The token goes to `127.0.0.1` only after 
 server (checked again before a gated job's main phase). A revoked `run_as`, a toolset the engine
 cannot enforce or a failed loopback check refuses the run.
 
-**The trigger's toolset.** An agent trigger may name a toolset (`toolset`, migration
-`automation:003-trigger-toolset`; [docs/AGENT-TOOLS.md](../../docs/AGENT-TOOLS.md)): its servers,
+**The trigger's toolset.** An agent trigger may name a toolset (`toolset`;
+[docs/AGENT-TOOLS.md](../../docs/AGENT-TOOLS.md)): its servers,
 `allow` and `deny` are added beside `box` for the gate and the main job. Saving refuses an id that is
 not configured and a toolset on a trigger that does not run an agent; starting refuses a toolset on
 a profile without session servers. Null gives the job the Box's tools only. A built-in toolset (one

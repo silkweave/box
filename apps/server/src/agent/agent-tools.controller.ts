@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Post, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, ForbiddenException, Get, Post, Req, UseGuards } from '@nestjs/common'
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsArray, IsOptional, IsString } from 'class-validator'
 import { Trpc } from '@silkweave/nestjs'
 import { deleteAgentToolset, readAgentTools, saveAgentToolset, type AgentToolsSettings } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
-import { Admin, type PrincipalRequest } from '../auth/auth.decorators.js'
+import { Admin, type PrincipalRequest, Read } from '../auth/auth.decorators.js'
+import { inputError } from '../auth/input-error.js'
 
 // Agent tools (core agent-tools.ts): the toolsets that chat rooms and agent triggers grant to their
 // sessions, and the connections (the mcp recipe's) a toolset can attach. tRPC only, never MCP, and refused for the agent principal:
@@ -27,11 +28,11 @@ function humanOnly(req: PrincipalRequest): void {
   if (req.principal?.kind !== 'human') throw new ForbiddenException('agent tools are set by a person, not by an agent')
 }
 
-function attempt<T>(work: () => T): T {
+async function attempt<T>(work: () => T | Promise<T>): Promise<T> {
   try {
-    return work()
+    return await work()
   } catch (error) {
-    throw new BadRequestException(error instanceof Error ? error.message : String(error))
+    throw inputError(error)
   }
 }
 
@@ -42,6 +43,7 @@ export class AgentToolsController {
   @ApiOkResponse()
   @Trpc()
   @Admin()
+  @Read()
   list(): AgentToolsSettings {
     return readAgentTools()
   }
@@ -49,18 +51,18 @@ export class AgentToolsController {
   @Post('toolset')
   @Trpc({ kind: 'mutation' })
   @Admin()
-  toolsetSave(@Body() body: AgentToolsetInputDto, @Req() req: PrincipalRequest): AgentToolsSettings {
+  async toolsetSave(@Body() body: AgentToolsetInputDto, @Req() req: PrincipalRequest): Promise<AgentToolsSettings> {
     humanOnly(req)
-    attempt(() => saveAgentToolset(body))
+    await attempt(() => saveAgentToolset(body))
     return readAgentTools()
   }
 
   @Post('toolset-delete')
   @Trpc({ kind: 'mutation' })
   @Admin()
-  toolsetDelete(@Body() body: AgentToolsIdDto, @Req() req: PrincipalRequest): AgentToolsSettings {
+  async toolsetDelete(@Body() body: AgentToolsIdDto, @Req() req: PrincipalRequest): Promise<AgentToolsSettings> {
     humanOnly(req)
-    attempt(() => deleteAgentToolset(body.id))
+    await attempt(() => deleteAgentToolset(body.id))
     return readAgentTools()
   }
 }

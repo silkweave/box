@@ -6,7 +6,7 @@
 //
 //   box auth reveal <user-id>
 
-import { ensureSchema, ensureAgentPrincipals, resolvePrincipalById, revealPrincipalToken } from '@silkweave/box-core'
+import { asSystem, withDatabase, ensureAgentPrincipals, resolvePrincipalById, revealPrincipalToken } from '@silkweave/box-core'
 import { appUrl } from '../src/auth/app-url.js'
 import { commandError, commandHeader, commandLine, commandValue, commandWarning } from '../../../packages/cli/src/command-ui.js'
 
@@ -16,7 +16,6 @@ async function main(): Promise<void> {
     commandError('Usage: box auth reveal <user-id>')
     process.exit(1)
   }
-  await ensureSchema()
   await ensureAgentPrincipals()
   const principal = await resolvePrincipalById(id)
   if (!principal) {
@@ -36,7 +35,8 @@ async function main(): Promise<void> {
   commandLine(`Browser sign-in: box auth login ${id}`, 'muted')
 }
 
-main()
+// A CLI script: adopts the running Box's database (or owns it while it runs), as named system work.
+asSystem('cli: auth reveal', () => withDatabase(main))
   .then(() => process.exit(0))
   .catch((err) => {
     commandError(err instanceof Error ? err.message : String(err))

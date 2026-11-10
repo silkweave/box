@@ -9,7 +9,7 @@ import { agentProfileMapFor, agentSessionAccess, repoRoot, resolvePrincipalById 
 import { DEFAULT_QUEUE, parkedDir, readWorkerdeckConfig, workerdeckProfileInfo, type UnattendedPermissionMode, type WorkerdeckConfig, type WorkerdeckProfile } from './workerdeck.config.js'
 import { revokeAgentControl, trackAgentControl } from './agent-control.js'
 import { NO_SESSION_TOOLS, sessionToolCapsOf, type SessionToolCaps } from './box-mcp.js'
-import { workRunnerConfig } from './work-session.js'
+import { closeWorkCredential, workGrantOf, workRunnerConfig } from './work-session.js'
 
 /**
  * Boots workerdeck INSIDE this server's process (see docs/SERVER.md).
@@ -447,8 +447,9 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
       const settingSources =
         req.settingSources ?? (profile?.engine === 'claude' && !createdByOperator ? (['user', 'project'] as const) : undefined)
       // A member's Work session (meta.work, stamped by the mount's gateCreate) gets its priming
-      // text and the PreToolUse guard here: instructions and SDK hooks are host-only runner
-      // config, refused on the wire and settable only from this hook (work-session.ts).
+      // text, the PreToolUse guard and, with data on, the `box` server with a fresh session
+      // credential here: instructions, SDK hooks and env are host-only runner config, refused on
+      // the wire and settable only from this hook (work-session.ts).
       return workRunnerConfig({ ...req, env, ...(settingSources ? { settingSources: [...settingSources] } : {}) }) as ReturnType<
         NonNullable<WorkerServerOptions['buildRunnerConfig']>
       >
@@ -456,6 +457,26 @@ export async function bootWorkerdeck(): Promise<WorkerdeckHost | undefined> {
   }
 
   const worker = createWorkerServer(options)
+
+  // A member's Work runner holds a session credential for the injected `box` server
+  // (work-session.ts): it ends with the runner, whether it closes, fails or is evicted.
+  worker.registry.observe((runner) => {
+    const meta = runner.info().meta
+    if (!workGrantOf(meta)?.sid) return
+    let closed = false
+    const close = (): void => {
+      if (closed) return
+      closed = true
+      clearInterval(timer)
+      closeWorkCredential(meta)
+    }
+    const timer = setInterval(() => {
+      const status = runner.info().status
+      if (status === 'closed' || status === 'failed') close()
+    }, 5_000)
+    timer.unref()
+    return close
+  })
 
   worker.registry.observe((runner) => {
     const info = runner.info()

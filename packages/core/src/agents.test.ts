@@ -53,7 +53,7 @@ describe('parseAgentFile', () => {
 
   it('refuses a missing name, a bad role, a missing block and an unclosed block', () => {
     expect(() => parseAgentFile('x', '---\nrole: member\n---\n', { system: false })).toThrow(/name is required/)
-    expect(() => parseAgentFile('x', '---\nname: X\nrole: owner\n---\n', { system: false })).toThrow(/role is required/)
+    expect(() => parseAgentFile('x', '---\nname: X\nrole: Owner!\n---\n', { system: false })).toThrow(/role is required/)
     expect(() => parseAgentFile('x', 'just instructions', { system: false })).toThrow(/needs front matter/)
     expect(() => parseAgentFile('x', '---\nname: X\nrole: member\n', { system: false })).toThrow(/not closed/)
     expect(() => parseAgentFile('x', '---\nname X\n---\n', { system: false })).toThrow(/not "key: value"/)
@@ -118,7 +118,7 @@ describe('agentRowProblem (the eligibility predicate)', () => {
     expect(agentRowProblem({ id: 'stella', kind: 'agent', status: 'active' })).toBeNull()
     expect(agentRowProblem({ id: 'stella', kind: 'agent', status: 'revoked' })).toMatch(/retired/)
     expect(agentRowProblem({ id: 'stella', kind: 'agent', status: 'active', token_revoked_at: '2026-10-11 00:00:00' })).toMatch(/retired/)
-    write('stella', '---\nname: Stella\nrole: boss\n---\n')
+    write('stella', '---\nname: Stella\nrole: Boss Man\n---\n')
     expect(agentRowProblem({ id: 'stella', kind: 'agent', status: 'active' })).toMatch(/inactive/)
     rmSync(join(agentsDir(), 'stella.md'))
     expect(agentRowProblem({ id: 'stella', kind: 'agent', status: 'active' })).toMatch(/does not exist/)

@@ -23,7 +23,7 @@ export function SignalOwnersView() {
     trpc.signalsOwners
       .query({})
       .then((d) => setOwners(d as unknown as OwnersFile))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
   const save = async (channel: string, owner: string | null) => {

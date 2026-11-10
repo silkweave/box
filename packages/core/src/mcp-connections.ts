@@ -44,6 +44,13 @@ export interface McpConnectionDirectory {
    * person gets beside its toolset's. None for an agent principal: its toolset is its whole grant.
    */
   personal(principalId: string): Promise<string[]>
+  /**
+   * Whether a person is in a connection's audience (who may use it on `/mcp`), judged with the
+   * given admin authority (a preview judges a role not yet assigned). False for an unknown
+   * connection and for agent principals. Coverage (auth/covers.ts) asks it for every reader of a
+   * destination whose agent can use the connection.
+   */
+  inAudience(id: string, viewer: { id: string; kind: string; admin: boolean }): boolean
   /** Serve `POST /mcp/connections/<id>` (the session endpoint) for an authenticated principal. */
   serve(request: McpConnectionRequest): Promise<void>
 }
@@ -68,6 +75,19 @@ export function mcpConnections(): McpConnectionDirectory | null {
 /** The configured connections, or none without the recipe. */
 export function mcpConnectionList(): McpConnectionEntry[] {
   return directory ? directory.port.list() : []
+}
+
+/**
+ * Whether `viewer` is in connection `id`'s audience. Fails closed: without the recipe (no directory)
+ * or for a connection it does not know, nobody is.
+ */
+export function mcpConnectionAudienceIncludes(id: string, viewer: { id: string; kind: string; admin: boolean }): boolean {
+  if (!directory) return false
+  try {
+    return directory.port.inAudience(id, viewer)
+  } catch {
+    return false
+  }
 }
 
 /** The header a session's toolset-granted connection carries (box-mcp.ts sets it). */

@@ -4,8 +4,7 @@ The pipeline, worked one company at a time. An **account** is a company, and its
 the RELATIONSHIP, so Lead, Customer and Churned are three values of one column rather than three
 tables. A **deal** is one attempt to sell to an account - a pilot, a renewal, an upsell, a second
 try after a loss - with its own stage, value, odds and close date, so the pipeline board is a board
-of deals and closing one never rewrites another's history (split out of the account on 2026-09-28;
-until then the account was the deal). Around them sit the **contacts** (the humans at that company), the **meetings** (future appointments with an outcome),
+of deals and closing one never rewrites another's history. Around them sit the **contacts** (the humans at that company), the **meetings** (future appointments with an outcome),
 the **revenue events** (invoices and payments, at the grain of the invoice) and the **activities**
 (messages exchanged, append-only). Two write paths run side by side: a human one that physically
 cannot express a provider-owned column, and a machine one (`import.ts`, `upsertImportedMeeting`,
@@ -64,9 +63,7 @@ row (`from_stage` = `to_stage` = its first stage), so a deal created straight in
 `won` still dates its entry into that stage. Each later `upsertCrmDeal` that changes a deal's stage
 appends a move: deal, account, from and to stage, the owner, `changed_at` and the audit
 `created_by`. A move never has from = to (`isCreationRow`), so move counts and the deal history
-skip creation rows ("Created as <stage>"). A write that keeps the stage records nothing. Deals that
-predate creation rows get one from migration `crm:001-stage-change-creation-backfill`, dated
-`closed_at` for won or lost deals, else `created_at`. Deleting a deal deletes its rows (a deal
+skip creation rows ("Created as <stage>"). A write that keeps the stage records nothing. Deleting a deal deletes its rows (a deal
 deleted as a mistake must not count as pipeline work), and deleting an account deletes its deals'
 rows. The table and column names are fixed, so a Box that already carries this history keeps it.
 **New MRR signed is a derived signal** (`new-mrr.ts`, registered as the CRM signal `derive` in
@@ -74,19 +71,27 @@ rows. The table and column names are fixed, so a Box that already carries this h
 team week (Monday start, box.json `timeZone`), the `mrr_usd` of each deal in the week of its first
 entry into `confirmed`, or into `won` (dated by `closed_at`) when it never passed `confirmed`. Every
 week from the first signed one to the current one gets a point, zeros included.
-**Deals entering a stage is an in-Box measure** (`core/measures.ts`, registered with
-`registerMeasure` in `crm.module.ts`; docs/SIGNALS.md, "In-Box measures"). `crm.deals_entered
-{ stage, owner? }` counts, per team day, the stage-history rows whose `to_stage` is the stage
-(creation rows included, so a deal created in the stage counts), optionally only one owner's. A
-signal or a planning goal binds it with `measure_key` and `measure_params`; deal writes and deletes
-refresh the bound signals, and `warehouse-derive` recomputes them.
+**The CRM registers three Box trackers** (`core/trackers.ts`, registered with `registerTracker` in
+`crm.module.ts`; docs/SIGNALS.md, "Box trackers"). A signal or a planning goal binds one with
+`tracker_key` and `tracker_params`; each declares what it watches, so a write to those tables
+recomputes the bound signals, and `warehouse-derive` recomputes them too.
 
-A new table needs no migration: `ensureSchema()` creates it from its `ModelSpec` on the next boot.
+- `crm.deals_reached_stage { stage, owner? }` counts deals that reached a stage, one point per team
+  day, on the day each deal FIRST reached it (the stage history, `table:crm_deal_stage_changes`). A
+  creation row counts, so a deal created in the stage reached it; a deal that leaves the stage and
+  returns counts once. `owner` keeps one pipeline owner's moves (the owner at the time of the move).
+- `crm.deals_won_value { owner? }` sums `mrr_usd` of deals in `won` per team day of `closed_at`
+  (`table:crm_deals`), an increment in USD. A deal moved out of `won` stops counting; a deal with no
+  `mrr_usd` adds zero. An estimate, never a finance number.
+- `crm.activities_by_type { channel?, direction? }` counts contact messages (`crm_activities`) per
+  team day of `occurred_at`, optionally one channel and one direction (`table:crm_activities`).
 
-**Baseline DDL: none.** The tables are created from the `ModelSpec`s by `ensureSchema()`; the one
-migration (`001-stage-change-creation-backfill`) is data only, and there is no bootstrap SQL, no index declaration and no DDL
-foreign key (the warehouse has none anywhere; `account_id` integrity is enforced in the domain, in
-`upsertCrmContact` / `upsertCrmMeeting`).
+A new table needs no migration: the schema baseline creates it from its `ModelSpec` on the next boot.
+
+**Baseline DDL** (`CRM_BASELINE` in `core/models.ts`): partial unique indexes on the three account
+links (`stripe_customer_id`, `supabase_space_id`, `whatsapp_group_jid`); the write path checks first
+and both refusals name the holding account. No migrations and no DDL foreign key: `account_id`
+integrity is enforced in the domain, in `upsertCrmContact` / `upsertCrmMeeting`.
 
 ## Files on disk
 
@@ -243,7 +248,7 @@ event-driven.
   options, owner a person (Me, No owner, people), the next action a date (forward windows or a
   range; churned, lost and archived accounts are never overdue) and MRR a number (`> 0` paying,
   `= 0` billing nothing by decision, Empty never set). Its `stage` filter reads "has a deal at this
-  stage". Each view pins Owner and Account status to the bar by default. Saved views stored before deals existed are repaired on read
+  stage". Each view pins Owner and Account status to the bar by default. A saved view whose stored filters no longer fit the current fields is repaired on read
   (`normalizeCrmFilters`).
 - **Deals** (`dealsView.ts`) is every deal with its account, as a stage board (`CrmKanban` over the
   UI library's `BoardKanban`, one card per deal, dragged between stages) or a list (stage and

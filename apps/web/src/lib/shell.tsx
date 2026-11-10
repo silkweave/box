@@ -4,7 +4,8 @@ import { useSettingsDialog } from './settingsDialog.ts'
 import { Button } from '@silkweave/box-ui'
 import { Link } from '@tanstack/react-router'
 import { ShellExtensionsProvider, type HomeLinkProps, type ShellExtensions } from '@silkweave/box-ui'
-import { ALL_WEB_FEATURES } from '../web-features.ts'
+import { readableWebFeatures } from '../web-features.ts'
+import { accessKey } from './access.ts'
 import { AgentSidebar, AgentToggle, useAgentFullscreen } from '../components/agent/AgentSidebar.tsx'
 import { useAgent } from './agentStore.ts'
 import { APP_STORAGE_PREFIX } from './storage.ts'
@@ -27,12 +28,18 @@ import { isBuilderPreview } from './builderPreview.ts'
  * bf5a3f2 until this seam, and what `box verify` cannot see because it has no runtime step.
  * `lib/nav.ts` and `lib/slots.ts` dodge the same hazard the same way.
  */
-let cachedTopbar: ComponentType[] | undefined
+let cachedTopbar: { key: string; list: ComponentType[] } | undefined
 function topbarComponents(): ComponentType[] {
-  cachedTopbar ??= ALL_WEB_FEATURES.flatMap((f) => f.shell?.topbar ?? [])
-    .sort((a, b) => a.order - b.order)
-    .map((slot) => slot.component)
-  return cachedTopbar
+  // Only areas the principal reads (lib/access.ts); rebuilt when access changes.
+  if (cachedTopbar?.key !== accessKey()) {
+    cachedTopbar = {
+      key: accessKey(),
+      list: readableWebFeatures().flatMap((f) => f.shell?.topbar ?? [])
+        .sort((a, b) => a.order - b.order)
+        .map((slot) => slot.component),
+    }
+  }
+  return cachedTopbar.list
 }
 
 // The wordmark normally uses TanStack's <Link> so app route changes preserve live subscriptions.

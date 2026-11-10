@@ -44,6 +44,8 @@ export interface BuilderBackupManifest {
   files: BuilderBackupFile[]
   /** Root checkout configuration, currently box.json and optional box.local.json. */
   config?: BuilderBackupConfig
+  /** The database restore point (`root-database/`: box.dump, agents.json, manifest.json). */
+  database?: BuilderBackupConfig
 }
 
 export interface BuilderBackupSummary {
@@ -70,8 +72,24 @@ export interface BuilderControlState {
 
 export type WithAppStopped = <T>(operation: () => Promise<T> | T) => Promise<T>
 
+/** One file set a restore commit replaces (core's db/switch.ts FileSwap, structurally). */
+export interface BuilderFileSwap { live: string; staged: string; parked: string; hadLive: boolean }
+
+/**
+ * The database side of Builder backups, supplied by the supervisor that owns the cluster (this
+ * module stays free of database imports). `dump` writes a database restore point into `dir`;
+ * `restore` builds a fresh cluster from one and commits it together with the staged file sets
+ * under one operation journal, so a crash anywhere settles forward or back as a whole.
+ */
+export interface BuilderDatabasePort {
+  dump(dir: string): Promise<void>
+  restore(input: { point: string; engine: 'pgrust' | 'native'; stageFiles: (id: string) => BuilderFileSwap[] }): Promise<void>
+}
+
 export interface BuilderOperationOptions {
   paths: BuilderLifecyclePaths
+  /** Present in the supervisor: Builder backups carry the database and restores go through it. */
+  database?: BuilderDatabasePort
   withAppStopped?: WithAppStopped
   /** Explicit fixture/host contract for callers that have already stopped the app. */
   offline?: true
@@ -115,7 +133,9 @@ const GIT_TIMEOUT_MS = 15_000
 const MAX_BACKUPS_IN_STATE = 32
 /** Builder backups copy the whole instance (hundreds of MB each), so disk keeps the newest few per reason. */
 const BACKUPS_KEPT_PER_REASON = 3
-const EXCLUDED_TOP_LEVEL = new Set(['backups', 'seeds', 'builder'])
+/** `db` holds the live database clusters (the supervisor keeps them running while the app is
+ *  stopped) and `engines` the disposable pgrust unpack: neither is ever copied or deleted as files. */
+const EXCLUDED_TOP_LEVEL = new Set(['backups', 'seeds', 'builder', 'db', 'engines'])
 
 let mutexTail: Promise<void> = Promise.resolve()
 
@@ -390,7 +410,7 @@ const assertNoSymlinkAncestors = (root: string, candidate: string): void => {
 const shouldExclude = (relativePath: string): boolean => {
   const normalized = relativePath.replaceAll('\\', '/')
   const first = normalized.split('/')[0]
-  return EXCLUDED_TOP_LEVEL.has(first) || first.startsWith('data.db.restoring-')
+  return EXCLUDED_TOP_LEVEL.has(first) || first.startsWith('.builder-')
 }
 
 const collectFiles = (root: string, current = root): string[] => {
@@ -424,26 +444,30 @@ const validateManifestShape = (manifest: unknown, expectedId?: string): BuilderB
   if (!isRecord(manifest) || manifest.version !== 1 || !isSafeId(manifest.id) || (expectedId && manifest.id !== expectedId) ||
       typeof manifest.createdAt !== 'string' || typeof manifest.reason !== 'string' || !isSha(manifest.codebaseSHA) ||
       (manifest.branch !== null && typeof manifest.branch !== 'string') || !Array.isArray(manifest.files) ||
-      (manifest.config !== undefined && (!isRecord(manifest.config) || !Array.isArray(manifest.config.files)))) {
+      (manifest.config !== undefined && (!isRecord(manifest.config) || !Array.isArray(manifest.config.files))) ||
+      (manifest.database !== undefined && (!isRecord(manifest.database) || !Array.isArray(manifest.database.files)))) {
     throw new BuilderLifecycleError(503, 'Builder backup manifest is invalid')
   }
   const files = manifest.files as unknown[]
   const configFiles = manifest.config && isRecord(manifest.config) ? manifest.config.files as unknown[] : []
+  const databaseFiles = manifest.database && isRecord(manifest.database) ? manifest.database.files as unknown[] : []
   const seen = new Set<string>()
-  const validateEntries = (entries: unknown[], namespace: 'instance' | 'config'): void => {
+  const validateEntries = (entries: unknown[], namespace: 'instance' | 'config' | 'database'): void => {
     for (const entry of entries) {
       const pathKey = `${namespace}:${isRecord(entry) ? String(entry.path) : ''}`
       if (!isRecord(entry) || !isRelativeFile(entry.path) || seen.has(pathKey) ||
           (namespace === 'config' && entry.path !== 'box.json' && entry.path !== 'box.local.json') ||
+          (namespace === 'database' && !['box.dump', 'agents.json', 'manifest.json'].includes(String(entry.path))) ||
           typeof entry.bytes !== 'number' || entry.bytes < 0 || !Number.isSafeInteger(entry.bytes) || !isSha(entry.sha256) || typeof entry.mode !== 'number' || !Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o777) {
         throw new BuilderLifecycleError(503, 'Builder backup manifest contains an invalid file entry')
       }
-      if (shouldExclude(entry.path)) throw new BuilderLifecycleError(503, 'Builder backup manifest includes a control-plane path')
+      if (namespace === 'instance' && shouldExclude(entry.path)) throw new BuilderLifecycleError(503, 'Builder backup manifest includes a control-plane path')
       seen.add(pathKey)
     }
   }
   validateEntries(files, 'instance')
   validateEntries(configFiles, 'config')
+  validateEntries(databaseFiles, 'database')
   return manifest as unknown as BuilderBackupManifest
 }
 
@@ -469,10 +493,12 @@ const readManifest = (paths: BuilderLifecyclePaths, id: string): { manifest: Bui
       assertNoSymlinkAncestors(directory, source)
       if (relative(directory, source).startsWith(`..${sep}`) || !existsSync(source) || !lstatSync(source).isFile()) throw new BuilderLifecycleError(503, `Builder backup file is missing: ${entry.path}`)
     }
-    for (const entry of manifest.config?.files ?? []) {
-      const source = resolve(directory, 'root-config', entry.path)
-      assertNoSymlinkAncestors(directory, source)
-      if (relative(directory, source).startsWith(`..${sep}`) || !existsSync(source) || !lstatSync(source).isFile()) throw new BuilderLifecycleError(503, `Builder backup config file is missing: ${entry.path}`)
+    for (const [sub, entries] of [['root-config', manifest.config?.files ?? []], ['root-database', manifest.database?.files ?? []]] as const) {
+      for (const entry of entries) {
+        const source = resolve(directory, sub, entry.path)
+        assertNoSymlinkAncestors(directory, source)
+        if (relative(directory, source).startsWith(`..${sep}`) || !existsSync(source) || !lstatSync(source).isFile()) throw new BuilderLifecycleError(503, `Builder backup ${sub} file is missing: ${entry.path}`)
+      }
     }
     return { manifest, directory }
   } catch (error) {
@@ -487,10 +513,12 @@ const validateBackupFiles = async (manifest: BuilderBackupManifest, directory: s
     const stat = statSync(path)
     if (stat.size !== entry.bytes || await sha256File(path) !== entry.sha256) throw new BuilderLifecycleError(503, `Builder backup failed validation: ${entry.path}`)
   }
-  for (const entry of manifest.config?.files ?? []) {
-    const path = resolve(directory, 'root-config', entry.path)
-    const stat = statSync(path)
-    if (stat.size !== entry.bytes || await sha256File(path) !== entry.sha256) throw new BuilderLifecycleError(503, `Builder backup config failed validation: ${entry.path}`)
+  for (const [sub, entries] of [['root-config', manifest.config?.files ?? []], ['root-database', manifest.database?.files ?? []]] as const) {
+    for (const entry of entries) {
+      const path = resolve(directory, sub, entry.path)
+      const stat = statSync(path)
+      if (stat.size !== entry.bytes || await sha256File(path) !== entry.sha256) throw new BuilderLifecycleError(503, `Builder backup ${sub} failed validation: ${entry.path}`)
+    }
   }
 }
 
@@ -504,7 +532,12 @@ const createBackup = async (options: BuilderOperationOptions, reason: string): P
   try {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const files: BuilderBackupFile[] = []
-    for (const source of collectFiles(paths.instanceDir)) {
+    const instanceFiles = collectFiles(paths.instanceDir)
+    // The app is stopped, so every SQLite store is closed: a non-empty WAL means a writer is still
+    // open (or died) and a file copy would miss its commits.
+    const openWal = instanceFiles.filter((file) => file.endsWith('-wal') && statSync(file).size > 0)
+    if (openWal.length) throw new BuilderLifecycleError(409, `Builder backup refused: SQLite stores still open (${openWal.map((file) => relative(paths.instanceDir, file)).join(', ')})`)
+    for (const source of instanceFiles) {
       const rel = relativeSafe(paths.instanceDir, source)
       const destination = resolve(directory, rel)
       mkdirSync(resolve(destination, '..'), { recursive: true })
@@ -525,7 +558,13 @@ const createBackup = async (options: BuilderOperationOptions, reason: string): P
       configFiles.push(await fileEntry(paths.repoRoot, source))
     }
     configFiles.sort((a, b) => a.path.localeCompare(b.path))
-    const manifest: BuilderBackupManifest = { version: 1, id, createdAt, reason, codebaseSHA, branch, files, config: { files: configFiles } }
+    let database: BuilderBackupConfig | undefined
+    if (options.database) {
+      const dumpDir = resolve(directory, 'root-database')
+      await options.database.dump(dumpDir)
+      database = { files: await Promise.all(['box.dump', 'agents.json', 'manifest.json'].map((name) => fileEntry(dumpDir, join(dumpDir, name)))) }
+    }
+    const manifest: BuilderBackupManifest = { version: 1, id, createdAt, reason, codebaseSHA, branch, files, config: { files: configFiles }, ...(database ? { database } : {}) }
     writeFileSync(join(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
     await validateBackupFiles(manifest, directory)
     return manifest
@@ -676,6 +715,60 @@ const applyBackup = async (paths: BuilderLifecyclePaths, manifest: BuilderBackup
   }
 }
 
+/** The engine a Builder backup's configuration names (box.local.json over box.json; pgrust by default). */
+const backupEngine = (directory: string, manifest: BuilderBackupManifest): 'pgrust' | 'native' => {
+  let engine: unknown = 'pgrust'
+  for (const name of ['box.json', 'box.local.json']) {
+    if (!manifest.config?.files.some((file) => file.path === name)) continue
+    try {
+      const raw = JSON.parse(readFileSync(resolve(directory, 'root-config', name), 'utf8')) as { database?: { engine?: unknown } }
+      if (raw.database?.engine !== undefined) engine = raw.database.engine
+    } catch { /* validated by the restored boot */ }
+  }
+  if (engine !== 'pgrust' && engine !== 'native') throw new BuilderLifecycleError(503, `Builder backup names an unknown database engine ${String(engine)}`)
+  return engine
+}
+
+/**
+ * Stage every file set the restore commit replaces, beside the live ones (same filesystems, so each
+ * swap is a rename): each top-level instance entry Builder manages, and box.json / box.local.json.
+ * Nothing live changes here; the database port's journal applies or undoes the swaps.
+ */
+const stageBuilderFiles = (paths: BuilderLifecyclePaths, manifest: BuilderBackupManifest, directory: string, id: string): BuilderFileSwap[] => {
+  const stageRoot = resolve(paths.instanceDir, `.builder-restore-${id}`)
+  const parkRoot = resolve(paths.instanceDir, `.builder-parked-${id}`)
+  rmSync(stageRoot, { recursive: true, force: true })
+  mkdirSync(stageRoot, { recursive: true, mode: 0o700 })
+  mkdirSync(parkRoot, { recursive: true, mode: 0o700 })
+  for (const entry of manifest.files) {
+    const source = resolve(directory, entry.path)
+    const destination = resolve(stageRoot, entry.path)
+    assertNoSymlinkAncestors(directory, source)
+    mkdirSync(resolve(destination, '..'), { recursive: true })
+    copyFileSync(source, destination)
+    chmodSync(destination, entry.mode)
+  }
+  const top = new Set<string>()
+  for (const entry of manifest.files) top.add(entry.path.replaceAll('\\', '/').split('/')[0]!)
+  for (const name of existsSync(paths.instanceDir) ? readdirSync(paths.instanceDir) : []) if (!shouldExclude(name)) top.add(name)
+  const swaps: BuilderFileSwap[] = [...top].sort().map((name) => ({
+    live: resolve(paths.instanceDir, name), staged: resolve(stageRoot, name), parked: resolve(parkRoot, name), hadLive: existsSync(resolve(paths.instanceDir, name)),
+  }))
+  for (const name of ['box.json', 'box.local.json']) {
+    const live = join(paths.repoRoot, name)
+    assertNoSymlinkAncestors(paths.repoRoot, live)
+    const staged = join(paths.repoRoot, `.builder-restore-${id}-${name}`)
+    rmSync(staged, { force: true })
+    const entry = manifest.config?.files.find((file) => file.path === name)
+    if (entry) {
+      copyFileSync(resolve(directory, 'root-config', name), staged)
+      chmodSync(staged, entry.mode)
+    }
+    swaps.push({ live, staged, parked: join(paths.repoRoot, `.builder-parked-${id}-${name}`), hadLive: existsSync(live) })
+  }
+  return swaps
+}
+
 /** Restore a validated Builder backup. The current instance is first captured as a safety backup. */
 export async function restoreBuilder(id: string, options: BuilderOperationOptions & { allowCodebaseMismatch?: boolean }): Promise<BuilderRestoreResult> {
   return withBuilderMutex(async () => {
@@ -684,6 +777,33 @@ export async function restoreBuilder(id: string, options: BuilderOperationOption
     ensureClean(options.paths)
     if (!options.allowCodebaseMismatch && gitSHA(options.paths) !== source.manifest.codebaseSHA) {
       throw new BuilderLifecycleError(409, `Builder backup codebase ${source.manifest.codebaseSHA.slice(0, 12)} does not match the live checkout; restore the matching source revision first`)
+    }
+    if (options.database) {
+      if (!source.manifest.database) throw new BuilderLifecycleError(409, 'This Builder backup carries no database (taken before backups included it); it cannot be restored')
+      const database = options.database
+      const safetyBackup = await withOfflineApp(options, async () => {
+        const safety = await createBackup(options, 'pre-restore')
+        writeBuilderControl(options.paths, appendBackup(readBuilderControl(options.paths), safety, nowIso(options)))
+        try {
+          await database.restore({
+            point: resolve(source.directory, 'root-database'),
+            engine: backupEngine(source.directory, source.manifest),
+            stageFiles: (stageId) => stageBuilderFiles(options.paths, source.manifest, source.directory, stageId),
+          })
+        } finally {
+          // Staging is removed only once the database journal is gone: while data/db/switch.json
+          // exists (a rollback that failed), it may name these paths as the only copy of the
+          // previous or restored files, and the next start settles it. Without a journal nothing
+          // references them (the Builder mutex and the maintenance gate exclude a concurrent run).
+          if (!existsSync(join(options.paths.instanceDir, 'db', 'switch.json'))) {
+            for (const root of [options.paths.instanceDir, options.paths.repoRoot]) {
+              for (const name of readdirSync(root)) if (/^\.builder-(restore|parked)-/.test(name)) rmSync(join(root, name), { recursive: true, force: true })
+            }
+          }
+        }
+        return safety
+      })
+      return { state: readBuilderControl(options.paths), restored: source.manifest, safetyBackup }
     }
     const safetyBackup = await withOfflineApp(options, async () => {
       const safety = await createBackup(options, 'pre-restore')

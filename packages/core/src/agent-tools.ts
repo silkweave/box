@@ -180,6 +180,16 @@ export function toolsetProblem(id: string | null): string | null {
 }
 
 /**
+ * The outside MCP connections a toolset attaches (coverage judges readers against their
+ * audiences, auth/covers.ts). None for no toolset; a toolset that is not configured attaches none
+ * (a session naming it is refused anyway, toolsetProblem).
+ */
+export function toolsetConnections(id: string | null | undefined): string[] {
+  if (!id) return []
+  return [...(agentToolset(id)?.servers ?? [])]
+}
+
+/**
  * What a toolset adds to a session: the connections it attaches, its allow list, its deny list.
  * Throws when the toolset is unknown or names a connection that does not exist.
  */
@@ -210,8 +220,34 @@ export function toolsetsAttaching(connection: string): string[] {
   return read().toolsets.filter((t) => t.servers.includes(connection)).map((t) => t.id)
 }
 
-/** Create or replace a toolset. Refuses one that does not parse, before writing. */
-export function saveAgentToolset(input: AgentToolsetInput): AgentToolset {
+/** A configured toolset's stored entry (box.local.json `agentMcp.toolsets`), or null. */
+export function toolsetEntry(id: string): Record<string, unknown> | null {
+  const raw = section().toolsets[id]
+  return isRecord(raw) ? { ...raw } : null
+}
+
+/** Write (or with null, remove) a toolset's stored entry. The policy service's journal step only. */
+export function writeToolsetEntry(id: string, entry: Record<string, unknown> | null): void {
+  writeAgentMcp({ toolsets: { [id]: entry } })
+}
+
+/** The servers a stored toolset entry attaches (a planned entry, before it is written). */
+export function toolsetEntryServers(entry: Record<string, unknown> | null): string[] {
+  return entry ? strings(entry.servers) : []
+}
+
+/** Options a toolset change goes through the policy service with (a coverage preview, PERMISSIONS 7.2). */
+export interface ToolsetChangeOptions {
+  revision?: number
+  confirm?: 'remove-members'
+}
+
+/**
+ * Create or replace a toolset. Refuses one that does not parse, before writing. Goes through the
+ * policy service: the rooms whose agents get its connections are checked for coverage (each reader
+ * in each connection's audience), and the file is written from the policy journal.
+ */
+export async function saveAgentToolset(input: AgentToolsetInput, opts: ToolsetChangeOptions = {}): Promise<AgentToolset> {
   if (builtins.has(input.id)) throw new Error(`toolset "${input.id}" is built in and cannot be edited`)
   const entry = {
     label: text(input.label) || null,
@@ -222,12 +258,15 @@ export function saveAgentToolset(input: AgentToolsetInput): AgentToolset {
   }
   const parsed = parseToolset(input.id, { ...entry, label: entry.label ?? undefined, description: entry.description ?? undefined }, new Set(mcpConnectionList().map((c) => c.id)))
   if (typeof parsed === 'string') throw new Error(parsed)
-  writeAgentMcp({ toolsets: { [input.id]: entry } })
+  // Live sessions under this toolset are ended by the journal step (a changed grant).
+  const { applyPolicyChange } = await import('./auth/policy-service.js')
+  await applyPolicyChange({ reason: `toolset saved ${input.id}`, toolsets: { [input.id]: { ...entry } } }, opts)
   return parsed
 }
 
 /** Remove a toolset. Sessions that name it start with the Box's tools only and say why. */
-export function deleteAgentToolset(id: string): void {
+export async function deleteAgentToolset(id: string): Promise<void> {
   if (builtins.has(id)) throw new Error(`toolset "${id}" is built in and cannot be removed`)
-  writeAgentMcp({ toolsets: { [id]: null } })
+  const { applyPolicyChange } = await import('./auth/policy-service.js')
+  await applyPolicyChange({ reason: `toolset deleted ${id}`, toolsets: { [id]: null } })
 }

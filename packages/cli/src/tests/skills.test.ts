@@ -23,7 +23,7 @@ function fixture(run: (harness: Harness) => void): void {
   const link = (path: string, target: string): void => { mkdirSync(dirname(join(root, path)), { recursive: true }); symlinkSync(target, join(root, path)) }
   write('packages/cli/src/skills.ts')
   for (const file of ['skills.ts', 'repo.ts']) copyFileSync(new URL(`../${file}`, import.meta.url), join(root, 'packages/cli/src', file))
-  for (const core of ['setup-box', 'consult', 'adapt', 'upgrade', 'verify']) write(`.claude/skills/${core}/SKILL.md`)
+  for (const core of ['setup-box', 'consult', 'adapt', 'upgrade', 'verify', 'add-tracker']) write(`.claude/skills/${core}/SKILL.md`)
   write('features/demo/skills/draft/SKILL.md', '---\nname: draft\nrequires: [demo]\n---\nRecipe')
   write('features/demo/skills/draft/support.md', 'support')
   write('features/demo/core/manifest.ts')

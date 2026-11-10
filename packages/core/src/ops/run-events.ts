@@ -1,7 +1,11 @@
 // The run funnel's own event: a failed run records `run.error` on the spine (deduped per run, since
-// each failure is real), so a trigger can act on it. Registered by core's OpsModule.
+// each failure is real), so a trigger can act on it. Registered by core's OpsModule. The event is
+// labelled with the run's own area (actionOwner) because it repeats the run row's error text: whoever
+// may read the run may read the event, and an action whose errors carry another area's data
+// declares that area (core-actions.ts).
 
 import { recordEvent } from '../events.js'
+import { actionOwner } from './registry.js'
 import type { RunOutcome } from './run.js'
 
 /** Record `run.error` for a failed run. Best-effort: never throws. */
@@ -21,6 +25,7 @@ export async function recordRunError(outcome: RunOutcome): Promise<void> {
         trigger: outcome.trigger,
         trigger_id: outcome.triggerId ?? '',
       },
+      areas: [actionOwner(outcome.actionId)],
     })
   } catch (err) {
     console.error(`[ops] run.error for ${outcome.runId} not recorded: ${String((err as Error)?.message ?? err)}`)
