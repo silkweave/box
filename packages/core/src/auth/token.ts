@@ -8,8 +8,8 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEq
 
 const ALGO = 'aes-256-gcm'
 
-/** Derive a stable 32-byte key from AUTH_TOKEN_SECRET - env, else this Box's generated secrets file
- *  (auth/secrets.ts, which also refuses placeholders and short values). The legacy PODS_TOKEN_SECRET
+/** Derive a stable 32-byte key from `auth.tokenSecret` in box.json / box.local.json (auth/secrets.ts,
+ *  which generates it into box.local.json on first use and refuses placeholders and short values). The legacy PODS_TOKEN_SECRET
  *  fallback went on 2026-09-13 with its session counterpart. Rotating this makes every stored token
  *  unreadable, which is why it is generated once and kept. */
 function key(): Buffer {

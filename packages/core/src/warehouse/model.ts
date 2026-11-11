@@ -111,6 +111,38 @@ function stableJson(v: unknown): string {
 }
 
 /**
+ * The fields of an update that change the row as it was read, with its key and the actor. An update
+ * sends only these and upsertRecord merges every other column from the row it locks in its own
+ * write: carrying a column forward from an unlocked read would write a stale value back over a
+ * concurrent writer's change (a lost update). A value that does not compare equal is sent. `prev`
+ * is the row as stored (the column representation sameRecord compares).
+ *
+ * `groups` names columns the caller derives together (a status and its completion stamp, a sprint
+ * and its day slot): when any column of a group changes, the whole group is sent. Without it a
+ * derived clear that equals the read (done_at already null when reopening) is dropped, and the
+ * merge keeps a concurrent writer's value beside this write's status: a row neither write asked for.
+ */
+export function changedColumns(
+  m: ModelSpec,
+  prev: object,
+  next: Record<string, unknown>,
+  groups: readonly (readonly string[])[] = [],
+): Record<string, unknown> {
+  const changed = new Set(
+    Object.entries(next)
+      .filter(([k, v]) => {
+        const c = m.columns[k]
+        return !c || m.pk.includes(k) || !sameRecord({ ...m, columns: { [k]: c } }, prev, { [k]: v })
+      })
+      .map(([k]) => k),
+  )
+  for (const group of groups) {
+    if (group.some((k) => changed.has(k))) for (const k of group) if (k in next) changed.add(k)
+  }
+  return Object.fromEntries(Object.entries(next).filter(([k]) => changed.has(k)))
+}
+
+/**
  * Would writing `next` change what `prev` already says? Compared column by column over the model's
  * DECLARED columns only (managed timestamps/audit excluded): JSON by content not key order,
  * timestamps as instants (`...+01:00` equals the same instant in `Z`), numbers as numbers.

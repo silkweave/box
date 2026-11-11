@@ -43,7 +43,7 @@ export interface LoopbackVerdict {
 let cached: { at: number; verdict: LoopbackVerdict } | undefined
 
 /**
- * The port this process serves on when `PORT` says nothing. **8190** (2026-09-13), and the reason is
+ * The port this process serves on when `server.port` says nothing. **8190** (2026-09-13), and the reason is
  * the story above, one step on.
  *
  * It was 8080, then 8090, and is now 8190. Each move was the same lesson: a DEFAULT port that
@@ -55,8 +55,8 @@ let cached: { at: number; verdict: LoopbackVerdict } | undefined
  * The general rule, which is the part worth keeping: **a second Box must never be one default
  * away from the first.** Two Boxes on one machine sharing a default either collide loudly
  * (recoverable) or sit beside each other on different address families and get mistaken for one
- * another (not recoverable - that is the 2026-09-02 incident). Set `PORT` (and `BOX_VITE_PORT`)
- * explicitly for every Box after the first, and leave this guard on.
+ * another (not recoverable - that is the 2026-09-02 incident). Set `server.port` (and `server.vitePort`)
+ * in box.local.json explicitly for every Box after the first, and leave this guard on.
  *
  * `main.ts` imports this rather than spelling the number again - a listen port and the port the
  * loopback guard probes that disagree would make the guard answer about a process that isn't us.
@@ -67,7 +67,7 @@ let cached: { at: number; verdict: LoopbackVerdict } | undefined
  */
 export const DEFAULT_PORT: number = defaultBoxJson().server.port
 
-/** The port this process serves on: `PORT` in the environment, else `server.port` in box.json. */
+/** The port this process serves on: `server.port` in box.json / box.local.json. */
 export const servicePort = (): number => boxJson().server.port
 
 /**

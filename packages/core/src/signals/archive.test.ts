@@ -35,3 +35,16 @@ test('archive hides a signal from lists that exclude archived, keeps it readable
   expect((await readSignalDefinition('old-kpi'))?.archived_at).toBeNull()
   await expect(setSignalArchived('nope', true)).rejects.toThrow(/not found/)
 })
+
+test('concurrent partial edits and an archive all land', async () => {
+  await upsertSignalDefinition({ id: 'race', label: 'Race' })
+  await Promise.all([
+    upsertSignalDefinition({ id: 'race', label: 'Race, renamed' }),
+    upsertSignalDefinition({ id: 'race', description: 'Who is ahead' }),
+    upsertSignalDefinition({ id: 'race', unit: 'EUR' }),
+    setSignalArchived('race', true),
+  ])
+  const after = await readSignalDefinition('race')
+  expect(after).toMatchObject({ label: 'Race, renamed', description: 'Who is ahead', unit: 'EUR' })
+  expect(after?.archived_at).not.toBeNull()
+})

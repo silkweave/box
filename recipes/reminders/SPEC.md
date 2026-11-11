@@ -31,7 +31,8 @@ to-do, and `planning`'s `tasks` already owns that shape. There is no `status` en
 
 Every write goes through `warehouse/model.ts` (`upsertRecord` / `deleteRecord`), so the timestamp
 convention, the audit stamp, the enum validation and the `table:reminders` change-feed emit are
-core's, not this app's. `features/reminders/core/state.ts` contains no SQL.
+core's, not this app's. `features/reminders/core/state.ts` writes no SQL; its one raw fragment is
+the open-first ordering of the list read.
 
 ## Procedures and tools
 

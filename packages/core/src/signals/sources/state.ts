@@ -150,19 +150,23 @@ export async function upsertDataSource(input: DataSourceInput): Promise<DataSour
   requireProvider(providerId)
   const config = input.config !== undefined ? normalizeConfig(providerId, input.config) : bag(prev?.config)
 
-  const row = await upsertRecord<DataSource>(
-    DATA_SOURCES,
-    {
-      id: input.id,
-      provider: providerId,
-      label: input.label ?? prev?.label ?? input.id,
-      config,
-      status: input.status ?? prev?.status ?? 'disabled',
-      notes: input.notes ?? prev?.notes ?? '',
-      ...(input.actor ? { actor: input.actor } : {}),
-    },
-    { prev },
-  )
+  const record: Record<string, unknown> = {
+    id: input.id,
+    provider: providerId,
+    label: input.label ?? prev?.label ?? input.id,
+    config,
+    status: input.status ?? prev?.status ?? 'disabled',
+    notes: input.notes ?? prev?.notes ?? '',
+    ...(input.actor ? { actor: input.actor } : {}),
+  }
+  // An update sends only what the caller supplied: every other column (a status armed meanwhile,
+  // a sync stamp) is merged from the row the record layer locks, never copied from the read above.
+  if (prev) {
+    for (const key of ['provider', 'label', 'config', 'status', 'notes'] as const) {
+      if (input[key] === undefined) delete record[key]
+    }
+  }
+  const row = await upsertRecord<DataSource>(DATA_SOURCES, record, prev ? { mustExist: true } : {})
   return norm(row)
 }
 

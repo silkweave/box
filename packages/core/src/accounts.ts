@@ -72,7 +72,7 @@ export function splitChannel(channel: string): { base: string; account: string |
   return at === -1 ? { base: channel, account: null } : { base: channel.slice(0, at), account: channel.slice(at + 1) }
 }
 
-/** The users.id bound to an @-suffixed channel via accounts.json, or null. */
+/** The users.id bound to an @-suffixed channel via the `accounts` section of box.json, or null. */
 export function channelAccountUser(channel: string): string | null {
   const { base, account } = splitChannel(channel)
   if (!account) return null
@@ -82,7 +82,7 @@ export function channelAccountUser(channel: string): string | null {
 /**
  * The identity PLATFORM behind a channel. `linkedin-article` (newsletter long-form) is a distinct
  * CONTENT channel - format, limits, and publish path all differ from `linkedin` posts - but the
- * platform is the same: one login, one `users.channels` handle, one credentials.json entry, one
+ * platform is the same: one login, one `users.channels` handle, one `credentials` entry, one
  * browser session. Anything keyed by identity (handles, credentials, browsers, verify strategies)
  * must key by platform, never by the content channel.
  */

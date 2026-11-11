@@ -18,7 +18,7 @@ import { db } from '../warehouse/core-db.js'
 import { anyOf, json, now } from '../warehouse/kysely.js'
 import { pointWrite, type SignalRow } from './write.js'
 import { coreCommand } from '../warehouse/core-command.js'
-import { readRecord, upsertRecord } from '../warehouse/model.js'
+import { changedColumns, readRecord, upsertRecord } from '../warehouse/model.js'
 import { SIGNAL_DEFINITIONS } from './models.js'
 import { findProvider, findProviderTracker } from './sources/registry.js'
 import { requireTracker, validateTrackerParams } from './trackers.js'
@@ -95,6 +95,10 @@ export function signalAreaClosure(
   return [...out].sort()
 }
 
+/** The binding (source, provider or Box tracker, formula and what it depends on, the owning area) is
+ *  enforced as a whole, so an update sends it whole when any part changes (changedColumns). */
+const BINDING_GROUPS = [['source', 'data_source_id', 'tracker_key', 'tracker_params', 'formula', 'depends_on', 'area', 'channel']]
+
 /** Thresholds as stored: finite, ascending, unique. Anything else is refused, not dropped. */
 function normalizeThresholds(id: string, raw: unknown[]): number[] {
   const bad = raw.filter((x) => typeof x !== 'number' || !Number.isFinite(x))
@@ -136,10 +140,12 @@ export async function setSignalArchived(id: string, archived: boolean, actor?: s
   const prev = await readSignalDefinition(id)
   if (!prev) throw new Error(`signal ${id} not found`)
   if (Boolean(prev.archived_at) === archived) return prev
+  // Only the stamp is sent: the record layer merges the rest from the row it locks, so an edit
+  // committed since the read above is not written back over.
   const saved = await upsertRecord<SignalDefinition>(
     SIGNAL_DEFINITIONS,
-    { ...prev, archived_at: archived ? new Date().toISOString() : null, ...(actor ? { actor } : {}) },
-    { prev },
+    { id, archived_at: archived ? new Date().toISOString() : null, ...(actor ? { actor } : {}) },
+    { mustExist: true },
   )
   return norm(saved)
 }
@@ -365,31 +371,33 @@ export async function upsertSignalDefinition(input: SignalDefinitionInput): Prom
     : input.depends_on !== undefined
       ? await normalizeDependsOn(input.id, input.depends_on)
       : list(prev?.depends_on)
+  const record: Record<string, unknown> = {
+    id: input.id,
+    label: input.label ?? prev?.label ?? input.id,
+    signal_group: input.signal_group ?? prev?.signal_group ?? '',
+    unit: input.unit !== undefined ? input.unit : (prev?.unit ?? null),
+    channel: input.channel ?? prev?.channel ?? MANUAL_SIGNAL_CHANNEL,
+    source,
+    interval: input.interval ?? prev?.interval ?? 'day',
+    accumulation: input.accumulation ?? prev?.accumulation ?? 'snapshot',
+    direction: input.direction ?? prev?.direction ?? 'up',
+    owner: input.owner !== undefined ? input.owner : (prev?.owner ?? null),
+    description: input.description ?? prev?.description ?? '',
+    depends_on: dependsOn,
+    area,
+    ...binding,
+    formula: formula?.formula ?? null,
+    thresholds: input.thresholds !== undefined ? normalizeThresholds(input.id, input.thresholds) : numbers(prev?.thresholds),
+    sort: input.sort ?? prev?.sort ?? 0,
+    ...(input.actor ? { actor: input.actor } : {}),
+  }
+  // An update sends only the columns it changes and the record layer merges the rest from the row
+  // it locks in its own write: writing back every column of the read above would undo an edit
+  // committed meanwhile (a lost update). A create is insert-only.
   const saved = norm(
-    await upsertRecord<SignalDefinition>(
-      SIGNAL_DEFINITIONS,
-      {
-        id: input.id,
-        label: input.label ?? prev?.label ?? input.id,
-        signal_group: input.signal_group ?? prev?.signal_group ?? '',
-        unit: input.unit !== undefined ? input.unit : (prev?.unit ?? null),
-        channel: input.channel ?? prev?.channel ?? MANUAL_SIGNAL_CHANNEL,
-        source,
-        interval: input.interval ?? prev?.interval ?? 'day',
-        accumulation: input.accumulation ?? prev?.accumulation ?? 'snapshot',
-        direction: input.direction ?? prev?.direction ?? 'up',
-        owner: input.owner !== undefined ? input.owner : (prev?.owner ?? null),
-        description: input.description ?? prev?.description ?? '',
-        depends_on: dependsOn,
-        area,
-        ...binding,
-        formula: formula?.formula ?? null,
-        thresholds: input.thresholds !== undefined ? normalizeThresholds(input.id, input.thresholds) : numbers(prev?.thresholds),
-        sort: input.sort ?? prev?.sort ?? 0,
-        ...(input.actor ? { actor: input.actor } : {}),
-      },
-      { prev },
-    ),
+    stored
+      ? await upsertRecord<SignalDefinition>(SIGNAL_DEFINITIONS, changedColumns(SIGNAL_DEFINITIONS, stored, record, BINDING_GROUPS), { mustExist: true })
+      : await upsertRecord<SignalDefinition>(SIGNAL_DEFINITIONS, record, { prev: null, createOnly: true }),
   )
   const trackerDerive = await import('./tracker-derive.js')
   if (inBox) {

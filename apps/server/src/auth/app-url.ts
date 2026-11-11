@@ -14,8 +14,8 @@
 import { boxJson } from '@silkweave/box-core'
 import { servicePort } from '../agent/loopback-guard.js'
 
-/** This Box's browser-facing origin, no trailing slash. `DASHBOARD_URL` in the environment wins,
- *  then `server.dashboardUrl` in box.json; otherwise localhost on the port this process
+/** This Box's browser-facing origin, no trailing slash. `server.dashboardUrl` in box.json / box.local.json;
+ *  otherwise localhost on the port this process
  *  actually serves. */
 export function appUrl(): string {
   return (boxJson().server.dashboardUrl ?? `http://localhost:${servicePort()}`).replace(/\/+$/, '')

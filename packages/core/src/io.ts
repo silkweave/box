@@ -99,7 +99,7 @@ export function instanceRelative(abs: string): string {
 /**
  * A `vscode://…` deep link that opens `abs` in VS Code from the dashboard. A Box usually runs on
  * another machine with the dashboard viewed remotely in a browser, so set `server.vscodeRemoteHost`
- * (or `VSCODE_REMOTE_HOST`) to an ssh host (e.g. `box`, or `you@box` if your ssh config needs the
+ * to an ssh host (e.g. `box`, or `you@box` if your ssh config needs the
  * user) to emit a Remote-SSH link that opens the file over that connection; unset, it falls back to
  * a local-file link. The trailing `:1:1` (line:col) is required - VS Code won't open the remote
  * target without a position fragment.

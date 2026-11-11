@@ -1,7 +1,7 @@
 // Who may reach a worker session through the /agent mount (chat Track 20, 2026-09-02; made a port
 // on 2026-09-13).
 //
-// Here for two reasons. @silkweave/box-core is the only package with tests, and this is an ACCESS
+// Here for two reasons. @silkweave/box-core carries the tests for access rules, and this is an ACCESS
 // rule - the one kind of rule where a mistake is an escalation rather than a bug. And it is CORE,
 // not chat's: the agent host is part of a blank Box, so it cannot import a feature. It used to -
 // `workerdeck.host.ts` imported `chatStore` for the room predicate, which meant `rm -rf` of the

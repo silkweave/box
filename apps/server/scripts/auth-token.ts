@@ -9,7 +9,7 @@
 // --create and defaults to member unless --admin is explicit. There is no network bootstrap window: a
 // process on the host writing to the warehouse, and the host was always the trust boundary.
 //
-// AUTH_TOKEN_SECRET need not be set: absent, the Box generates its own into
+// `auth.tokenSecret` need not be set: absent, the Box generates its own into
 // box.local.json on first use (auth/secrets.ts).
 //
 // A user has exactly ONE access token. Minting a new one OVERWRITES the old one, which stops working

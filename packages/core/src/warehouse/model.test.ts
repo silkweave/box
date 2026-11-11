@@ -10,7 +10,7 @@ import { fillRequest, runInRequest } from '../request-context.js'
 import { USERS, KV_STATE } from './core-models.js'
 import { getKvState, setKvState, withRead, withWrite } from './db.js'
 import { ExecutorError } from './executor.js'
-import { instantMicros, readRecord, readRecords, rowToRecord, sameRecord, toInstant, toParam, upsertRecord, type ModelSpec } from './model.js'
+import { changedColumns, instantMicros, readRecord, readRecords, rowToRecord, sameRecord, toInstant, toParam, upsertRecord, type ModelSpec } from './model.js'
 import { createTableSql } from './pg/ddl.js'
 import { reachOf, table } from './tables.js'
 
@@ -20,6 +20,25 @@ const asMember = <T>(fn: () => Promise<T>): Promise<T> =>
     fillRequest({ principal: { id: 'mia', display: 'Mia', role: 'member', kind: 'human' } as Principal, access })
     return fn()
   })
+
+describe('changedColumns', () => {
+  const m = {
+    table: 't', pk: ['id'],
+    columns: { id: { kind: 'text' }, title: { kind: 'text' }, status: { kind: 'text' }, done_at: { kind: 'timestamp', nullable: true } },
+  } as unknown as ModelSpec
+  const prev = { id: 'a', title: 'A', status: 'active', done_at: null }
+
+  it('sends the key, the actor and what changed, nothing equal to the read', () => {
+    expect(changedColumns(m, prev, { id: 'a', title: 'B', status: 'active', done_at: null, actor: 'mia' })).toEqual({ id: 'a', title: 'B', actor: 'mia' })
+  })
+
+  it('sends a whole group when one of its columns changes, including a clear equal to the read', () => {
+    const next = { id: 'a', title: 'A', status: 'planned', done_at: null }
+    expect(changedColumns(m, prev, next)).toEqual({ id: 'a', status: 'planned' })
+    expect(changedColumns(m, prev, next, [['status', 'done_at']])).toEqual({ id: 'a', status: 'planned', done_at: null })
+    expect(changedColumns(m, prev, { ...next, status: 'active', title: 'C' }, [['status', 'done_at']])).toEqual({ id: 'a', title: 'C' })
+  })
+})
 
 describe('instants', () => {
   it('passes ISO text through and converts other date strings', () => {

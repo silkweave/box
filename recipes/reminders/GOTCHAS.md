@@ -10,9 +10,14 @@ docs/GOTCHAS.md and leave current operation state in _docs/INTEGRATION.md.
 
 ## Recipe-specific operational details
 
-- **`state.ts` has no SQL, and should not gain any.** The record layer owns the naive-UTC ↔ ISO-Z
+- **`state.ts` writes no SQL, and should not start.** The record layer owns the naive-UTC ↔ ISO-Z
   convention, the audit stamp and the `table:reminders` change-feed emit. A hand-written `INSERT`
-  here would silently drop all three, and the dashboard would stop updating itself.
+  here would silently drop all three, and the dashboard would stop updating itself. The one raw
+  fragment is the open-first `ORDER BY` in `listReminders`, a read.
+- **Do not pass a row read outside the write as `prev`.** `upsertRecord`'s `prev` skips its locked
+  read, so a partial update merges against whatever the caller read earlier and silently undoes a
+  concurrent write. `upsertReminder` lets the record layer read and lock (`mustExist` for updates,
+  `createOnly` for creates).
 - **`done_at` is the status.** Do not add a `status` enum beside it. Two columns for one fact
   disagree the first time one of them is set.
 - **`due_at` is required on create and merged on update.** `upsertRecord` keeps the previous value

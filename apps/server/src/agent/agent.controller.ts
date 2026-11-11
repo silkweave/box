@@ -24,7 +24,7 @@ class AgentWorkDto {
 }
 
 class AgentConfigDto {
-  @ApiProperty({ description: 'Whether the agent sidebar is available (AGENT_WORKER_URL configured).' })
+  @ApiProperty({ description: 'Whether the agent sidebar is available (`workerdeck` section of box.json configured).' })
   enabled!: boolean
   @ApiProperty({ type: AgentWorkDto, description: "This person's Work access (docs/AUTH.md § Work sessions)." })
   work!: AgentWorkDto

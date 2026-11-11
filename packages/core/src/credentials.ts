@@ -6,7 +6,7 @@ import { removeBoxLocal, writeBoxLocal } from './box-json.js'
 export type CredentialsFile = Record<string, Record<string, Record<string, string>>>
 
 /** Reserved pseudo-account for channel-scoped keys shared by every account. Can never collide
- *  with a real accounts.json id (those are slug-constrained). */
+ *  with a real `accounts` id (those are slug-constrained). */
 export const CHANNEL_SCOPE = '*'
 
 export function readCredentialsFile(): CredentialsFile {
@@ -44,7 +44,7 @@ export function requireCredentials<const N extends readonly string[]>(
 
 /**
  * Overwrite specific keys of ONE channel account, leaving every other channel, account and key in
- * the file untouched. The only writer of credentials.json in this repo, and it exists for exactly
+ * the file untouched. The only writer of the `credentials` section in this repo, and it exists for exactly
  * one situation: a secret that ROTATES on use, where the value we hold stops working the moment it
  * is spent (a rotating refresh token). Everything else is configured by hand, on purpose.
  *

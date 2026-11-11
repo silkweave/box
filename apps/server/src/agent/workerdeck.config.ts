@@ -8,10 +8,10 @@
 // and home directories into a public repo, and it put a per-Box fact outside the per-Box directory
 // that exists for exactly that. Two Boxes on one machine could not have different profiles.
 //
-// THE FILE IS THE SWITCH. Present and non-empty means the agent surface boots; absent means it does
+// THE SECTION IS THE SWITCH. A `workerdeck` section that declares profiles means the agent surface boots; a missing or empty section means it does
 // not, in one log line, with the rest of the Box unaffected. That is what makes "install the agent
 // assistant" a thing an operator (or an agent guiding one) DOES rather than an env var they learn:
-// writing this file and restarting is the whole install.
+// writing this section and restarting is the whole install.
 //
 // It is DATA, deliberately, and the trust logic is not here. Who may run as whom, and what a
 // session's environment contains, live in typed and tested TypeScript in `workerdeck.host.ts` and
@@ -288,7 +288,7 @@ export function parseWorkerdeckConfig(
 /**
  * Read box.json's `workerdeck` section, or null when the Box has not installed the agent surface.
  *
- * A file that exists but declares NO profiles reads as "not installed" too, rather than booting a
+ * A section that exists but declares NO profiles reads as "not installed" too, rather than booting a
  * worker nobody can create a session on: `createWorkerServer` with an empty profile list is a
  * surface that 400s every create, which is worse than an honest "off" in the log.
  */

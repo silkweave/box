@@ -2,7 +2,7 @@
 // (`crm.crm_deals`; no login has a search_path). Cross-feature reads belong in `run(tx)`, through a declared dependency's reader, so the dependency is visible in the
 // manifest rather than buried in a string.
 //
-// This is ADVICE, not a gate. `pnpm schema:check` reports it as a warning: a team that merges two
+// This is ADVICE, not a gate. `bun run schema:check` reports it as a warning: a team that merges two
 // adopted apps into one vocabulary is doing exactly what the model invites, and finding out from a
 // failing build would be the wrong answer. On the maintainer checkout, where apps are meant to stay
 // separable, treat a warning here as something to fix.

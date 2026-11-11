@@ -9,8 +9,8 @@
 //
 //  1. The silkweave adapters register in `SilkweaveModule.configure()` - the NestModule middleware
 //     hook - which Nest calls during `app.init()`. `listen()` is NOT needed, so nothing binds a
-//     port and nothing can collide with a running Box. (A second Box still needs PORT and
-//     BOX_VITE_PORT set explicitly - see apps/server/src/agent/loopback-guard.ts.)
+//     port and nothing can collide with a running Box. (A second Box still needs `server.port` and
+//     `server.vitePort` set explicitly - see apps/server/src/agent/loopback-guard.ts.)
 //  2. The typegen adapter's `register()` is FIRE-AND-FORGET: it kicks off an async import + write
 //     and returns immediately (see @silkweave/nestjs/build/typegen.mjs). So `init()` resolving does
 //     not mean the file is on disk - this script waits for the write itself, and fails loudly on a

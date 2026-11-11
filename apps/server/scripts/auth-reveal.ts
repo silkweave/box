@@ -2,7 +2,7 @@
 // `box auth token`: tokens are stored encrypted-at-rest (reversible) precisely so a lost token can
 // be re-read instead of reset. Nothing breaks - the same token keeps working everywhere it is
 // already pasted. Shell equivalent of the admin-only `UserInviteReveal` tRPC/MCP call and of
-// Settings -> Users -> ... -> View access token. Needs AUTH_TOKEN_SECRET set.
+// Settings -> Users -> ... -> View access token. Reads the Box's `auth.tokenSecret` (box.local.json).
 //
 //   box auth reveal <user-id>
 
