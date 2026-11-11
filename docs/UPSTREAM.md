@@ -11,11 +11,15 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `fcc4e5f5d20751b42ce0f8bc1aa018ed8f6697bc` (2026-11-11: the installer sets up the PostgreSQL 18 client tools and refuses root; partial
-updates merge onto the row locked in their own write, so concurrent edits no longer undo each
-other; comments and docs name the box.json keys the code reads. Since 5a736cf (2026-11-10):
-Silkweave 7.0.0; the warehouse on PostgreSQL (pgrust by default, native PostgreSQL 18 with
-pgvector as the second engine; `pg_dump`/`pg_restore` 18 required); roles and areas with row
+Latest core refresh: Stack commit `3b05aae867ab3300db442f32f7ff207fecdc0fe0` (2026-11-11: a fresh
+install runs the Box as a background service of its user (`box service`: systemd user unit with
+linger, launchd agent) and prints the sign-in link; the service log leaves out request traces and
+heartbeats; box and Bun reach non-interactive SSH shells; `box verify` in a Box runs its feature
+tests plus a core smoke set while core matches upstream; `box app restart` reports what the
+supervisor is busy with. Since fcc4e5f (2026-11-11): the installer sets up the PostgreSQL 18 client
+tools and refuses root; partial updates merge onto the row locked in their own write. Since 5a736cf
+(2026-11-10): Silkweave 7.0.0; the warehouse on PostgreSQL (pgrust by default, native PostgreSQL 18
+with pgvector as the second engine; `pg_dump`/`pg_restore` 18 required); roles and areas with row
 security and agent coverage; trackers with `watches` and the add-tracker core skill),
 materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted

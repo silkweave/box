@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describeFrontend, parseAppArgs, requestApplicationControl } from '../app-control.ts'
+import { ControlTimeout, describeFrontend, describeOperations, parseAppArgs, requestApplicationControl } from '../app-control.ts'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
@@ -68,4 +68,26 @@ describe('application control arguments and frontend report', () => {
     assert.match(down.lines[1]!, /failed: Vite exited with code 1\. Run box app restart --frontend/)
     assert.match(describeFrontend(undefined).lines[0]!, /predates frontend status/)
   })
+})
+
+test('a control that gets no answer times out instead of hanging', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'box-app-control-'))
+  roots.push(root)
+  const socket = join(root, 'control.sock')
+  const server = createServer(() => { /* never answers: a restart queued behind a stuck operation */ })
+  await new Promise<void>((resolve, reject) => server.once('error', reject).listen(socket, () => resolve()))
+  try {
+    await assert.rejects(requestApplicationControl(socket, 'restart', 200), (error: unknown) => error instanceof ControlTimeout)
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
+
+test('the supervisor queue is described only while it is busy', () => {
+  assert.equal(describeOperations(undefined), null)
+  assert.equal(describeOperations({ current: null, queued: [] }), null)
+  const since = '2026-11-11T02:41:29.000Z'
+  assert.equal(describeOperations({ current: { id: 4, label: 'Builder finish', since }, queued: ['app restart'] }, Date.parse(since) + 95_000),
+    'Supervisor busy: Builder finish for 95 s; waiting behind it: app restart')
 })

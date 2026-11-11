@@ -18,4 +18,9 @@ BOX_INVOKED_FROM=${BOX_INVOKED_FROM:-$PWD}
 export BOX_INVOKED_FROM
 
 cd "$root"
-exec bun --no-env-file --no-orphans packages/cli/src/index.ts "$@"
+# A shell whose profile lacks ~/.bun/bin still runs the Box with the Bun the installer put there.
+bun=bun
+if ! command -v bun >/dev/null 2>&1 && [ -x "${BUN_INSTALL:-$HOME/.bun}/bin/bun" ]; then
+  bun=${BUN_INSTALL:-$HOME/.bun}/bin/bun
+fi
+exec "$bun" --no-env-file --no-orphans packages/cli/src/index.ts "$@"

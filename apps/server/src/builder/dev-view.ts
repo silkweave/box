@@ -1,10 +1,10 @@
 import { basename } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { cleanText, screenFrame, span, type Row, type Tone } from '../../../../packages/cli/src/ui.js'
-import type { DiagnosticRecord } from '../diagnostics/runtime.js'
+import { diagnosticLevel, type DiagnosticLevel, type DiagnosticRecord } from '../diagnostics/runtime.js'
 import type { SupervisedApplicationStatus } from './supervised-application.js'
 
-export type DevLogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug'
+export type DevLogLevel = DiagnosticLevel
 type Entry = { at: Date; source: string; level: DevLogLevel; text: string }
 type Actions = { restart: () => Promise<unknown>; restartFrontend: () => Promise<unknown>; quit: () => Promise<unknown> }
 const levels: DevLogLevel[] = ['error', 'warn', 'info', 'verbose', 'debug']
@@ -20,14 +20,6 @@ export function parseDevLogLevel(argv: string[]): DevLogLevel {
   const value = inline ?? (at >= 0 ? argv[at + 1] : undefined) ?? 'info'
   if (!levels.includes(value as DevLogLevel)) throw new Error(`--log-level must be one of: ${levels.join(', ')}`)
   return value as DevLogLevel
-}
-
-function diagnosticLevel(record: DiagnosticRecord): DevLogLevel {
-  if (/(error|failed|timeout|refused)/.test(record.event)) return 'error'
-  if (/(unavailable|aborted|closed-before|signal)/.test(record.event)) return 'warn'
-  if (/^(http|proxy|ws)\.|heartbeat/.test(record.event)) return 'debug'
-  if (/^(operation|control)\.|readiness\.wait|child\./.test(record.event)) return 'verbose'
-  return 'info'
 }
 
 function rawLevel(line: string, fallback: 'info' | 'warn'): DevLogLevel {

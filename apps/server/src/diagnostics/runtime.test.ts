@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { addRouteRoots, errorKind, requestId, requestRoute, traceHttp } from './runtime.js'
+import { addRouteRoots, diagnosticLevel, errorKind, parseDiagnosticLine, requestId, requestRoute, traceHttp } from './runtime.js'
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
 
@@ -49,5 +49,21 @@ describe('runtime diagnostics', () => {
     res.emit('close')
     expect(requestId(req)).not.toBe(req.headers['x-box-request-id'])
     expect(output.mock.calls.map(([line]) => JSON.parse(line).event)).toEqual(['http.start', 'http.finish'])
+  })
+
+  it('keeps request traces and heartbeats at debug, but not server errors or stalls', () => {
+    const record = (event: string, fields = {}) => ({ time: '', pid: 1, component: 'app', event, ...fields })
+    expect(diagnosticLevel(record('http.start'))).toBe('debug')
+    expect(diagnosticLevel(record('http.finish', { status: 200 }))).toBe('debug')
+    expect(diagnosticLevel(record('http.open'))).toBe('debug')
+    expect(diagnosticLevel(record('process.heartbeat'))).toBe('debug')
+    expect(diagnosticLevel(record('http.finish', { status: 502 }))).toBe('warn')
+    expect(diagnosticLevel(record('http.closed-before-finish'))).toBe('warn')
+    expect(diagnosticLevel(record('http.wait'))).toBe('warn')
+    expect(diagnosticLevel(record('readiness.timeout'))).toBe('error')
+    expect(diagnosticLevel(record('process.start'))).toBe('info')
+    expect(parseDiagnosticLine(JSON.stringify(record('http.start')))?.event).toBe('http.start')
+    expect(parseDiagnosticLine('[Nest] 1 - LOG {"x":1}')).toBeNull()
+    expect(parseDiagnosticLine('{"not":"a record"}')).toBeNull()
   })
 })

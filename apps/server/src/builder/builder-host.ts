@@ -23,6 +23,9 @@ export const BUILDER_DEFAULT_MODEL: Record<string, string> = { codex: 'gpt-5.6-l
 export interface BuilderHostHooks {
   /** Each finished Builder turn (`turn_result`), for the per-turn git record of the session export. */
   onTurnEnd?: (sessionId: string, event: Extract<SessionEvent, { type: 'turn_result' }>) => void
+  /** A turn's first assistant message: the engine session is known by then. A turn that never ends
+   *  (the Box was killed mid-turn) is still recorded, so its session can be exported. */
+  onTurnStart?: (sessionId: string, event: SessionEvent) => void
 }
 
 export async function createBuilderHost(paths: BuilderLifecyclePaths, hooks: BuilderHostHooks = {}) {
@@ -111,10 +114,12 @@ export async function createBuilderHost(paths: BuilderLifecyclePaths, hooks: Bui
   // command (or create) subscribes again; the old runner's subscription goes with it.
   const turnWatchers = new Map<string, { runner: Runner; unsubscribe: () => void }>()
   function watchTurns(runner: Runner): void {
-    if (!hooks.onTurnEnd || turnWatchers.get(runner.id)?.runner === runner) return
+    if ((!hooks.onTurnEnd && !hooks.onTurnStart) || turnWatchers.get(runner.id)?.runner === runner) return
     turnWatchers.get(runner.id)?.unsubscribe()
+    let open = false
     const unsubscribe = runner.subscribe(event => {
-      if (event.type === 'turn_result') hooks.onTurnEnd!(runner.id, event)
+      if (event.type === 'assistant_message' && !open) { open = true; hooks.onTurnStart?.(runner.id, event) }
+      if (event.type === 'turn_result') { open = false; hooks.onTurnEnd?.(runner.id, event) }
       if (event.type === 'session_closed') { turnWatchers.get(runner.id)?.unsubscribe(); turnWatchers.delete(runner.id) }
     }, runner.info().lastSeq)
     turnWatchers.set(runner.id, { runner, unsubscribe })

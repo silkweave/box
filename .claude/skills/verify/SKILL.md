@@ -18,7 +18,12 @@ Check each adapted feature against its `recipes/<id>/SPEC.md` and `GOTCHAS.md`, 
 revision recorded for it in `docs/UPSTREAM.md` is the one whose implementation was read.
 
 Run the Box chain: build, typecheck, lint, meaningful tests, and `schema:check`. Include CLI tests
-and generated type work where the workspace provides them. `box verify` also runs
+and generated type work where the workspace provides them. While core and server sources match the
+Box's upstream, `box verify` runs the features' tests plus a core smoke set ("Feature tests and core
+smoke"); after a change to core or server code it runs every test, and `box verify --full` forces
+that. A timing failure in a core test you did not touch is load, not your change: rerun that file
+alone before rerunning the chain. If it fails alone too, report it as a core issue and stop there;
+never debug or edit core from a Box to make its chain pass. `box verify` also runs
 `bun run test:mobile` (Flutter analyze and test for `packages/mobile`, every `features/<id>/mobile`
 and `apps/mobile`); on a host without Flutter it reports a skip, which is not a pass for mobile
 changes. When modules changed, also run the app against the disposable Box (docs/MOBILE.md). Inspect server production output and web
@@ -28,8 +33,8 @@ The web registry has an import cycle, so a module-scope registry read can white-
 after static checks pass.
 
 For the live Builder Preview, activate verified backend, registration, configuration, and migration
-changes with `box app restart` before the runtime check. `box dev` is the stable supervisor that
-owns the Builder agent, so never stop, kill, replace, or relaunch it and never start a second Box
+changes with `box app restart` before the runtime check. The supervisor (`box dev`, `box start` or the
+background service) owns the Builder agent, so never stop, kill, replace, or relaunch it and never start a second Box
 against the same instance. `box app restart` restarts only the editable application and waits for
 health. Check `box app status` first: in dev mode the preview is served by Vite, and
 `box app restart --frontend` restarts only Vite when it is down or holds stale module state; in built

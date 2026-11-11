@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsArray, IsIn, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
+import { z } from 'zod/v4'
 import { deletePreset, readReadablePresets, reorderPresets, savePreset, seedPresets, updatePreset, type PresetRecord } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import type { PrincipalRequest } from '../auth/auth.decorators.js'
@@ -135,6 +136,16 @@ function parseState(raw: string): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
+// tRPC output type: reflection reads one level deep, so `modules` gets a Zod schema mirroring
+// PresetRecord (type-only; the response is not validated against it).
+const presetsOutput = z.object({
+  generatedAt: z.string(), seeded: z.array(z.string()), writable: z.array(z.string()),
+  modules: z.record(z.string(), z.array(z.object({
+    name: z.string(), description: z.string().nullable(), state: z.record(z.string(), z.unknown()), icon: z.string().nullable(),
+    order: z.number(), updated_at: z.string(), updated_by: z.string().nullable(),
+  }))),
+})
+
 @Resource('preset')
 @Controller('presets')
 @UseGuards(AuthGuard)
@@ -147,7 +158,7 @@ export class PresetsController {
    */
   @Get()
   @ApiOkResponse({ type: PresetsDto })
-  @Trpc()
+  @Trpc({ output: presetsOutput })
   @Mcp({ name: 'presets' })
   @Read()
   list(): PresetsDto {
@@ -161,7 +172,7 @@ export class PresetsController {
    */
   @Post()
   @ApiOkResponse({ type: PresetsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: presetsOutput, kind: 'mutation' })
   @Mcp({ name: 'preset-save' })
   save(@Body() body: SavePresetDto, @Req() req: PrincipalRequest): PresetsDto {
     try {
@@ -189,7 +200,7 @@ export class PresetsController {
    */
   @Post('update')
   @ApiOkResponse({ type: PresetsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: presetsOutput, kind: 'mutation' })
   @Mcp({ name: 'preset-update' })
   update(@Body() body: UpdatePresetDto, @Req() req: PrincipalRequest): PresetsDto {
     try {
@@ -216,7 +227,7 @@ export class PresetsController {
    */
   @Post('reorder')
   @ApiOkResponse({ type: PresetsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: presetsOutput, kind: 'mutation' })
   @Mcp({ name: 'preset-reorder' })
   reorder(@Body() body: ReorderPresetsDto): PresetsDto {
     try {
@@ -233,7 +244,7 @@ export class PresetsController {
    */
   @Post('delete')
   @ApiOkResponse({ type: PresetsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: presetsOutput, kind: 'mutation' })
   @Mcp({ name: 'preset-delete' })
   delete(@Body() body: DeletePresetDto): PresetsDto {
     try {
@@ -254,7 +265,7 @@ export class PresetsController {
    */
   @Post('seed')
   @ApiOkResponse({ type: PresetsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: presetsOutput, kind: 'mutation' })
   @Mcp({ name: 'preset-seed' })
   seed(@Body() body: SeedPresetsDto, @Req() req: PrincipalRequest): PresetsDto {
     let parsed: unknown

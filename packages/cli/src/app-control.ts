@@ -12,7 +12,8 @@ export type FrontendStatus =
       preview: { status: 'running' | 'stopped' | 'failed'; port: number; message?: string }
     }
 type WebRelease = { version: string; createdAt: string; sourceSha: string | null; dirty: boolean }
-type ControlResult = { ok?: boolean; message?: string; application?: ApplicationStatus; frontend?: FrontendStatus; release?: WebRelease }
+export type Operations = { current: { id: number; label: string; since: string } | null; queued: string[] }
+type ControlResult = { ok?: boolean; message?: string; application?: ApplicationStatus; frontend?: FrontendStatus; release?: WebRelease; operations?: Operations }
 export type ControlAction = 'status' | 'restart' | 'restart-frontend' | 'promote'
 
 const socketPath = join(repoRoot, 'data', 'builder', 'ui-refresh.sock')
@@ -24,10 +25,15 @@ const endpoints: Record<ControlAction, { method: 'GET' | 'POST'; path: string }>
 }
 const USAGE = 'Expected: box app status [--json], box app restart, box app restart --frontend, or box app promote'
 
-export function requestApplicationControl(socket: string, action: ControlAction): Promise<ControlResult> {
+/** How long a control waits before it reports what the supervisor is doing instead of hanging. */
+export const CONTROL_TIMEOUT_MS: Record<ControlAction, number> = { status: 10_000, restart: 180_000, 'restart-frontend': 120_000, promote: 900_000 }
+
+export class ControlTimeout extends Error {}
+
+export function requestApplicationControl(socket: string, action: ControlAction, timeoutMs = CONTROL_TIMEOUT_MS[action]): Promise<ControlResult> {
   const { method, path } = endpoints[action]
   return new Promise((resolve, reject) => {
-    const req = request({ socketPath: socket, method, path }, res => {
+    const req = request({ socketPath: socket, method, path, timeout: timeoutMs }, res => {
       let text = ''
       res.setEncoding('utf8')
       res.on('data', chunk => { text += chunk })
@@ -43,7 +49,11 @@ export function requestApplicationControl(socket: string, action: ControlAction)
         resolve(result)
       })
     })
-    req.on('error', () => reject(new Error('Cannot reach the stable Box supervisor. Do not start a second Box or stop box dev; ask the host operator to restore it.')))
+    let timedOut = false
+    req.on('timeout', () => { timedOut = true; req.destroy() })
+    req.on('error', () => reject(timedOut
+      ? new ControlTimeout(`No answer from the supervisor after ${Math.round(timeoutMs / 1000)} s`)
+      : new Error('Cannot reach the stable Box supervisor. Do not start a second Box or stop box dev; ask the host operator to restore it.')))
     req.end()
   })
 }
@@ -72,6 +82,14 @@ export function describeFrontend(frontend: FrontendStatus | undefined): { health
     return { healthy: frontend.preview.status !== 'failed', lines: [mode, `Frontend built ${frontend.builtAt ?? 'at an unknown time'}`, preview] }
   }
   return { healthy: false, lines: [mode, 'Frontend bundle is missing. Run box app promote', preview] }
+}
+
+/** One line on the supervisor's operation queue, or null when it is idle. */
+export function describeOperations(operations: Operations | undefined, now = Date.now()): string | null {
+  if (!operations?.current) return null
+  const seconds = Math.max(0, Math.round((now - Date.parse(operations.current.since)) / 1000))
+  const waiting = operations.queued.length ? `; waiting behind it: ${operations.queued.join(', ')}` : ''
+  return `Supervisor busy: ${operations.current.label} for ${seconds} s${waiting}`
 }
 
 export function parseAppArgs(args: string[]): { action: ControlAction; json: boolean } | undefined {
@@ -107,8 +125,18 @@ async function main(args: string[]): Promise<void> {
     const [mode, ...rest] = lines
     if (rest.length) commandLine(mode!, 'muted')
     for (const line of rest.length ? rest : lines) (healthy ? commandSuccess : commandWarning)(line)
+    const busy = describeOperations(result.operations)
+    if (busy) commandWarning(busy)
   } catch (error) {
     commandError(error instanceof Error ? error.message : 'Box application control failed')
+    if (error instanceof ControlTimeout) {
+      // The request stays queued in the supervisor; say what it is waiting for instead of hanging.
+      const state = await requestApplicationControl(socketPath, 'status').catch(() => undefined)
+      const busy = describeOperations(state?.operations)
+      if (busy) commandLine(busy, 'muted')
+      if (state?.application) commandLine(`Application: ${state.application.status}${state.application.message ? ` (${state.application.message})` : ''}`, 'muted')
+      commandLine('The request is still queued and runs when the supervisor gets to it. Check: box app status. Logs: box service logs, or the box dev view.', 'muted')
+    }
     process.exitCode = 1
   }
 }

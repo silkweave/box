@@ -18,7 +18,7 @@ import { createZip, type ZipEntry } from './zip.js'
  *   shortened), from WorkerDeck; `conversations/<n>.ndjson` for earlier conversations of the session
  * - `engine-transcript.jsonl`: the engine's own transcript (Claude or Codex), only when WorkerDeck no
  *   longer knows the session (it ended); transcript.md is then rendered from it
- * - `turns.ndjson`: HEAD, branch, `git status` and diff summary at the end of each turn
+ * - `turns.ndjson`: HEAD, branch, `git status` and diff summary at the start and end of each turn
  * - `journal.ndjson`: supervisor, lifecycle, build and application events from the session's window
  * - `verification.json`: the last Wrap Up verification
  * - `config/box.json` and `config/box.local.keys.json` (key names only, never values)
@@ -279,7 +279,7 @@ export function buildSessionExport(sources: ExportSources): SessionExport {
       engineSessionId,
       startedAt: started.toISOString(),
       conversation: info?.conversation ?? null,
-      numTurns: info?.numTurns ?? turns.length,
+      numTurns: info?.numTurns ?? turns.filter(turn => turn.outcome !== 'started').length,
       totalCostUsd: info?.totalCostUsd ?? null,
       title: info?.title ?? null,
     },
@@ -309,7 +309,7 @@ export function buildSessionExport(sources: ExportSources): SessionExport {
     '',
     'Contents: manifest.json (versions, session, recipes), transcript.md (readable conversation),',
     'transcript.ndjson (WorkerDeck events) or, for an ended session, engine-transcript.jsonl (the',
-    'Claude or Codex transcript), turns.ndjson (git state after each turn), journal.ndjson',
+    'Claude or Codex transcript), turns.ndjson (git state at the start and end of each turn), journal.ndjson',
     '(supervisor, build and application events from the session window), verification.json (last',
     'Wrap Up verification), config/ (box.json, and box.local.json key names without values),',
     'box/UPSTREAM.md (source ancestry).',
@@ -329,7 +329,7 @@ export function buildSessionExport(sources: ExportSources): SessionExport {
     const lines = ended.text.split('\n').filter(Boolean).map(line => { try { return JSON.stringify(clean(JSON.parse(line))) } catch { return JSON.stringify(clean(line)) } })
     add('engine-transcript.jsonl', `${lines.join('\n')}\n`, `${label} transcript of the ended session`)
   }
-  add('turns.ndjson', ndjson(turns), 'Git state at the end of each turn')
+  add('turns.ndjson', ndjson(turns), 'Git state at the start and end of each turn')
   add('journal.ndjson', ndjson(clean(journal)), 'Supervisor, build and application events')
   add('verification.json', `${JSON.stringify(clean(sources.verification ?? null), null, 2)}\n`, 'Last Wrap Up verification')
   add('config/box.json', `${JSON.stringify(redactor.value(boxJson), null, 2)}\n`, 'Shared Box settings')

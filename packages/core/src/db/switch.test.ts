@@ -80,7 +80,7 @@ afterAll(async () => {
   }
   rmSync(dir, { recursive: true, force: true })
   resetInstanceDir()
-})
+}, 120_000)
 
 describe('backup and restore', () => {
   let point = ''
@@ -268,7 +268,11 @@ describe('backup and restore', () => {
     expect(clusters()).toEqual(before)
   }, 120_000)
 
-  it('recovers from process death while the source runs under the maintenance HBA', async () => {
+  /** Restore in a child Bun that SIGKILLs itself in the park step, with or without Bun's
+   *  no-orphans mode. `box` runs everything under `--no-orphans`, which reaches child Bun processes
+   *  as BUN_FEATURE_FLAG_NO_ORPHANS; on Linux it then kills every descendant with the process,
+   *  the detached database server included. On macOS the server survives either way. */
+  function killInPark(noOrphans: boolean) {
     const src = (f: string) => JSON.stringify(fileURLToPath(new URL(`../${f}`, import.meta.url)))
     const script = join(dir, 'kill-in-park.ts')
     writeFileSync(script, [
@@ -278,18 +282,35 @@ describe('backup and restore', () => {
       `setInstanceDir(process.argv[2])`,
       `await restoreDatabase(process.argv[3], { point: process.argv[4], resolveEngine: testEngine, crashAfter: 'kill-in-park' })`,
     ].join('\n'))
-    const r = spawnSync(process.execPath, [script, dir, dbRoot(), point], { encoding: 'utf8', timeout: 120_000 })
+    const { BUN_FEATURE_FLAG_NO_ORPHANS: _inherited, ...env } = process.env
+    const r = spawnSync(process.execPath, [script, dir, dbRoot(), point], {
+      encoding: 'utf8', timeout: 120_000, env: noOrphans ? { ...env, BUN_FEATURE_FLAG_NO_ORPHANS: '1' } : env,
+    })
     expect(r.signal, r.stderr).toBe('SIGKILL')
-    const source = clusterOf(dbRoot(), readActive(dbRoot())!.cluster)
-    expect(postmasterPid(source)).not.toBeNull()
-    expect(existsSync(join(source.dir, 'maintenance_hba.conf'))).toBe(true)
+    return clusterOf(dbRoot(), readActive(dbRoot())!.cluster)
+  }
+
+  async function recoversAfterKill() {
     expect(readJournal(dbRoot())?.step).toBe('park')
     expect((await recoverMaintenance(dbRoot())).outcome).toBe('rolled-back')
-    // The next open restarts the server with the normal HBA; runtime logins work again.
+    // The next open (re)starts the server with the normal HBA; runtime logins work again.
     await boot()
-    expect(existsSync(join(source.dir, 'maintenance_hba.conf'))).toBe(false)
+    expect(existsSync(join(clusterOf(dbRoot(), readActive(dbRoot())!.cluster).dir, 'maintenance_hba.conf'))).toBe(false)
     expect(await readUser('alice')).not.toBeNull()
     await shutdown()
+  }
+
+  it('recovers from process death while the source runs under the maintenance HBA', async () => {
+    const source = killInPark(false)
+    expect(postmasterPid(source)).not.toBeNull()
+    expect(existsSync(join(source.dir, 'maintenance_hba.conf'))).toBe(true)
+    await recoversAfterKill()
+  }, 240_000)
+
+  it('recovers when the database server died with the process (no-orphans on Linux)', async () => {
+    const source = killInPark(true)
+    expect(existsSync(join(source.dir, 'maintenance_hba.conf'))).toBe(true)
+    await recoversAfterKill()
   }, 240_000)
 
   it('refuses tampered agent files before anything changes', async () => {

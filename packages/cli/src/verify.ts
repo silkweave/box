@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -51,7 +52,44 @@ export function verifyEvent(state: RunState, now = performance.now()): string {
 
 export type VerifyEngine = 'pgrust' | 'native'
 
-export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun', { force = false, engine = 'pgrust' as VerifyEngine } = {}): Task[] {
+/**
+ * Core and server tests: `full` runs them all; `box` runs the Box's feature tests plus a core smoke
+ * set (packages/core/vitest.scope.ts). The Stack is always `full`. A Box is `box` while its core and
+ * server sources match its upstream, the released core the Stack verified; any change there, or an
+ * upstream it cannot find, runs everything.
+ */
+export type TestScope = 'full' | 'box'
+
+/** Sources whose change makes a Box run the full core and server tests. */
+const CORE_TEST_INPUTS = ['packages/core', 'packages/provider-kit', 'apps/server']
+// Registration a recipe adaptation rewrites (AGENTS.md "Feature registration"); its features' own
+// tests cover it.
+const REGISTRATION = /(^|\/)generated\//
+
+type Git = (args: string[]) => string | null
+const runGit = (root: string): Git => args => {
+  const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+  return result.status === 0 ? result.stdout.trim() : null
+}
+
+export function testScope(root: string, git: Git = runGit(root)): { scope: TestScope; reason: string } {
+  let name: unknown
+  try { name = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name?: unknown }).name } catch { /* not a Box */ }
+  if (name !== 'silkweave-box') return { scope: 'full', reason: 'the Stack runs every test' }
+  const upstream = git(['rev-parse', '--abbrev-ref', 'origin/HEAD'])
+    ?? ['origin/master', 'origin/main', 'master', 'main'].find(ref => git(['rev-parse', '--verify', '--quiet', ref]) !== null)
+    ?? null
+  const base = upstream && git(['merge-base', 'HEAD', upstream])
+  if (!base) return { scope: 'full', reason: 'no upstream branch to compare core against' }
+  const changed = [
+    ...(git(['diff', '--name-only', base, '--', ...CORE_TEST_INPUTS]) ?? '').split('\n'),
+    ...(git(['ls-files', '--others', '--exclude-standard', '--', ...CORE_TEST_INPUTS]) ?? '').split('\n'),
+  ].filter(path => path !== '' && !REGISTRATION.test(path))
+  if (changed.length) return { scope: 'full', reason: `core changed since ${upstream} (${changed[0]}${changed.length > 1 ? ` and ${changed.length - 1} more` : ''})` }
+  return { scope: 'box', reason: `core matches ${upstream}` }
+}
+
+export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun', { force = false, engine = 'pgrust' as VerifyEngine, scope = 'full' as TestScope } = {}): Task[] {
   const definitions: [string, string, string, string[], string[]][] = [
     ['build', 'Build workspace', 'Build', ['build'], []],
     ['skills', 'Link skills', 'Prepare', ['skills'], ['build']],
@@ -85,10 +123,16 @@ export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun
     // `--engine native`. BOX_TEST_ENGINE is a Stack-maintainer switch read by the test harness only
     // (packages/core/vitest.db-setup.ts), never a Box setting; turbo.json hashes it, so the two
     // engines' results are cached apart.
-    const env = id === 'package-tests' && engine === 'native' ? { BOX_TEST_ENGINE: 'native' } : undefined
+    // BOX_TEST_SCOPE=box is the same kind of switch (packages/core/vitest.scope.ts).
+    const env: Record<string, string> = {}
+    if (id === 'package-tests' && engine === 'native') env.BOX_TEST_ENGINE = 'native'
+    if (id === 'package-tests' && scope === 'box') env.BOX_TEST_SCOPE = 'box'
+    const label = id !== 'package-tests' ? name
+      : `${scope === 'box' ? 'Feature tests and core smoke' : name}${engine === 'native' ? ' (native PostgreSQL)' : ''}`
+    const prefix = Object.entries(env).map(([k, v]) => `${k}=${v} `).join('')
     return {
-      id, name: env ? `${name} (native PostgreSQL)` : name, phase, needs, command: `${env ? 'BOX_TEST_ENGINE=native ' : ''}bun run ${forced.join(' ')}`,
-      executable: bun, args: ['--bun', '--no-env-file', 'run', ...args], ...(env ? { env } : {}),
+      id, name: label, phase, needs, command: `${prefix}bun run ${forced.join(' ')}`,
+      executable: bun, args: ['--bun', '--no-env-file', 'run', ...args], ...(prefix ? { env } : {}),
     }
   })
 }
@@ -97,18 +141,20 @@ export async function main(argv: string[]): Promise<number> {
   let values
   try {
     ({ values } = parseArgs({ args: argv, options: {
-      plain: { type: 'boolean' }, json: { type: 'boolean' }, list: { type: 'boolean' }, verbose: { type: 'boolean' }, force: { type: 'boolean' }, engine: { type: 'string' }, help: { type: 'boolean', short: 'h' },
+      plain: { type: 'boolean' }, json: { type: 'boolean' }, list: { type: 'boolean' }, verbose: { type: 'boolean' }, force: { type: 'boolean' }, full: { type: 'boolean' }, engine: { type: 'string' }, help: { type: 'boolean', short: 'h' },
     } }))
     if (values.engine !== undefined && values.engine !== 'pgrust' && values.engine !== 'native') throw new Error(`--engine must be pgrust or native, not "${values.engine}"`)
   } catch (error) { process.stderr.write(`${(error as Error).message}\nUse box verify --help for usage.\n`); return 2 }
   const engine: VerifyEngine = values.engine === 'native' ? 'native' : 'pgrust'
+  const scoped = values.full ? { scope: 'full' as const, reason: '--full' } : testScope(repoRoot)
+  const scope = scoped.scope
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core and server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck, tests and the mobile check instead of replaying cached results\n  box verify --engine native  Run the core and server tests on native PostgreSQL instead of pgrust\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core and server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck, tests and the mobile check instead of replaying cached results\n  box verify --full      In a Box, run every core and server test (a Box whose core matches its upstream runs its feature tests and a core smoke set)\n  box verify --engine native  Run the core and server tests on native PostgreSQL instead of pgrust\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   if (values.list) {
     const history = readHistory(repoRoot)
-    process.stdout.write(JSON.stringify(verifyTasks(undefined, { engine }).map(({ id, name, phase, command }) => ({ id, name, phase, command, expected: history[id]?.elapsed }))) + '\n')
+    process.stdout.write(JSON.stringify(verifyTasks(undefined, { engine, scope }).map(({ id, name, phase, command }) => ({ id, name, phase, command, expected: history[id]?.elapsed }))) + '\n')
     return 0
   }
   const out = process.stdout, input = process.stdin
@@ -152,8 +198,9 @@ export async function main(argv: string[]): Promise<number> {
       // A heartbeat keeps elapsed time moving through checks that print nothing for a while.
       timer = setInterval(() => { if (state && !state.finished) write(verifyEvent(state)) }, 1000)
     } else write(`silkweave / verify · ${target}\n`)
+    if (!live && !values.json && scope === 'box') write(`Core and server tests: feature tests and core smoke (${scoped.reason}); --full runs them all\n`)
     const history = readHistory(repoRoot)
-    const tasks = verifyTasks(undefined, { force: values.force, engine }).map(t => ({ ...t, expected: history[t.id] }))
+    const tasks = verifyTasks(undefined, { force: values.force, engine, scope }).map(t => ({ ...t, expected: history[t.id] }))
     let lastEvent = 0, lastShape = ''
     const result = await runTasks(tasks, {
       cwd: repoRoot, signal: controller.signal,

@@ -18,8 +18,10 @@ reads or prints provider credentials.
 
 Setup creates the first administrator only when no human exists, stores the new access token in
 mode-0600 `box.local.json` for the local MCP proxy, and issues a single-use sign-in link. In an
-interactive terminal it then runs `box dev` and opens that link in the browser as soon as the
-application and frontend are running; quitting the dev view ends setup. Re-running against a
+interactive terminal it then installs the Box as a user service (`box service install`), prints the
+link once the Box is ready, opens it in the browser and exits. Where no service manager is
+available it runs `box dev` instead and opens the link as soon as the application and frontend are
+running; quitting the dev view ends setup. Re-running against a
 populated Box refuses without rotating anything. For automation and tests, use `--owner`,
 `--name`, `--profiles codex,claude` (Box-only profiles; default Claude), `--existing-profiles
 codex,claude` (reuse this computer's login), `--no-profiles`, `--no-start` and `--yes` (which never
@@ -39,6 +41,14 @@ types. Each check starts as soon as its prerequisites pass, so the mobile app ru
 build and the other checks run concurrently after it. A failure does not stop the chain: independent checks still run, the receipt lists every failed check
 with its diagnostics, and checks whose prerequisites failed are reported as not run. The exit status
 is the first failed check's.
+
+Core and server tests are scoped. The Stack runs all of them. A Box runs all of them only when its
+core or server sources (`packages/core`, `packages/provider-kit`, `apps/server`, not counting the
+`generated/` registration files an adaptation rewrites) differ from the merge base with its upstream
+branch (`origin/HEAD`), or when it has no upstream to compare with. Otherwise it runs its features'
+core and server tests plus a small core smoke set (`packages/core/vitest.scope.ts`), and the check is
+named "Feature tests and core smoke": the released core was verified in the Stack, and every run still
+migrates a database with all registered features. `box verify --full` runs every test in a Box.
 
 The mobile app check (`bun run test:mobile`, `packages/cli/src/mobile-check.ts`) runs `flutter pub
 get`, `flutter analyze` and, where a `test/` directory exists, `flutter test` for the framework

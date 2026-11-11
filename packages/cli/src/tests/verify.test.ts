@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { runTasks, OutputLines, isWarning, readProgress, type Task, type TaskState, type RunState } from '../tasks.ts'
 import { cleanText, clip, screenFrame, span, widthOf } from '../ui.ts'
 import { taskReceipt, taskRows } from '../task-view.ts'
-import { verifyEvent, verifyTasks } from '../verify.ts'
+import { testScope, verifyEvent, verifyTasks } from '../verify.ts'
 
 const task = (id: string, code: string, phase = 'Build'): Task => ({
   id, name: id, phase, command: `node ${id}`, executable: process.execPath, args: ['-e', code],
@@ -26,6 +26,35 @@ test('verify keeps the ten-command order and package-manager entry point', () =>
   assert.deepEqual(forced.filter(t => t.command.endsWith('--force')).map(t => t.id), ['build', 'typecheck', 'package-tests', 'mobile'])
   assert.ok(tasks.every(t => t.executable === '/example/bun'))
   assert.deepEqual(tasks[0].args, ['--bun', '--no-env-file', 'run', 'build'])
+})
+
+test('a Box with core unchanged since its upstream runs feature tests and the core smoke set', () => {
+  const root = mkdtempSync(join(tmpdir(), 'verify-scope-'))
+  try {
+    const pkg = (name: string) => writeFileSync(join(root, 'package.json'), JSON.stringify({ name }))
+    const git = (diff: string, untracked = '', upstream: string | null = 'origin/master') => (args: string[]): string | null => {
+      if (args[0] === 'rev-parse') return args[1] === '--abbrev-ref' ? upstream : null
+      if (args[0] === 'merge-base') return 'abc123'
+      if (args[0] === 'diff') return diff
+      if (args[0] === 'ls-files') return untracked
+      return null
+    }
+    pkg('silkweave-stack')
+    assert.equal(testScope(root, git('')).scope, 'full')
+    pkg('silkweave-box')
+    assert.equal(testScope(root, git('')).scope, 'box')
+    // Registration rewritten by an adaptation does not count as a core change.
+    assert.equal(testScope(root, git('packages/core/src/generated/features.ts\napps/server/src/generated/features.ts')).scope, 'box')
+    const changed = testScope(root, git('packages/core/src/auth/session.ts'))
+    assert.equal(changed.scope, 'full')
+    assert.match(changed.reason, /packages\/core\/src\/auth\/session\.ts/)
+    assert.equal(testScope(root, git('', 'apps/server/src/new.ts')).scope, 'full')
+    assert.equal(testScope(root, git('', '', null)).scope, 'full')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+  const boxed = verifyTasks('/example/bun', { scope: 'box' }).find(t => t.id === 'package-tests')!
+  assert.deepEqual(boxed.env, { BOX_TEST_SCOPE: 'box' })
+  assert.equal(boxed.name, 'Feature tests and core smoke')
+  assert.equal(verifyTasks('/example/bun').find(t => t.id === 'package-tests')!.env, undefined)
 })
 
 test('runs in the requested checkout, retains complete output, and stops at a failing check', async () => {

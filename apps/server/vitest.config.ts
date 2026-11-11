@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { transform } from '@swc/core'
 import { featureFixtures } from '../../packages/core/vitest.features.ts'
+import { boxScope, SERVER_SMOKE } from '../../packages/core/vitest.scope.ts'
 
 // Every core import shares one source module instance, including the test instance override.
 const INCLUDE = ['src/**/*.test.ts', 'scripts/**/*.test.ts', '../../features/*/server/**/*.test.ts']
@@ -51,8 +52,15 @@ export default defineConfig({
   test: {
     // One database cluster per run with a migrated template; each test file clones it (core's
     // vitest.db-setup.ts, the same harness as core's tests).
-    setupFiles: ['./vitest.setup.ts'], globalSetup: ['../../packages/core/vitest.db-setup.ts'], maxWorkers: '50%',
-    projects: [
+    // Hooks get 30 s, as in core: setup and teardown boot apps and database servers.
+    setupFiles: ['./vitest.setup.ts'], globalSetup: ['../../packages/core/vitest.db-setup.ts'], maxWorkers: '50%', hookTimeout: 30_000,
+    // A Box with unchanged core runs its features' tests and the server smoke set (vitest.scope.ts).
+    projects: boxScope ? [
+      {
+        extends: true,
+        test: { name: 'unit', include: [...SERVER_SMOKE, '../../features/*/server/**/*.test.ts'], passWithNoTests: true, testTimeout: 10_000 },
+      },
+    ] : [
       {
         extends: true,
         test: { name: 'unit', include: INCLUDE, exclude: [...PROCESS_SUITES, '**/node_modules/**'], testTimeout: 10_000 },

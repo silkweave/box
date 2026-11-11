@@ -19,7 +19,7 @@ import { useSettingsDialog } from '../lib/settingsDialog.ts'
 import { RECIPES } from '../lib/recipes.ts'
 import { recipeBook } from '../lib/recipeLedger.ts'
 import { useAuth } from '../lib/useAuth.tsx'
-import { AGENT_ACCOUNTS_CHANGED } from '../lib/agentStore.ts'
+import { AGENT_ACCOUNTS_CHANGED, loadAgentAccounts, type AgentAccountProfile } from '../lib/agentStore.ts'
 import { slotComponents } from '../lib/slots.ts'
 import { RecommendedRecipes } from '../components/recipes/RecommendedRecipes.tsx'
 
@@ -56,14 +56,20 @@ function OnboardingView() {
 
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+  const [accounts, setAccounts] = useState<AgentAccountProfile[]>([])
+  const principalId = principal?.id
   const load = useCallback(async (): Promise<void> => {
     try {
-      const state = await loadBuilderControlState()
-      if (alive.current) { setBuilder(state); setBuilderError(undefined) }
+      // The application's verdicts are re-probed on connect; a failure only loses that freshness.
+      const [state, own] = await Promise.all([
+        loadBuilderControlState(),
+        principalId ? loadAgentAccounts(principalId).then((r) => r.profiles, () => []) : Promise.resolve([]),
+      ])
+      if (alive.current) { setBuilder(state); setAccounts(own); setBuilderError(undefined) }
     } catch (cause) {
       if (alive.current) setBuilderError(cause instanceof Error ? cause.message : 'Builder state is unavailable.')
     }
-  }, [])
+  }, [principalId])
 
   // Provider readiness is read from Builder, so re-read it whenever it may have changed: an account
   // connected in Settings (a dialog on this page, so the window never loses focus), the dialog
@@ -87,7 +93,7 @@ function OnboardingView() {
     wasSettingsOpen.current = settingsOpen
   }, [settingsOpen, isAdmin, load])
 
-  const readiness = builder ? builderReadiness(builder) : null
+  const readiness = builder ? builderReadiness(builder, accounts) : null
   const providerReady = readiness?.provider === 'ready'
   const featureReady = installed.length > 0
   const completeCount = 1 + Number(providerReady) + Number(featureReady)
@@ -198,7 +204,7 @@ function ProviderSetup() {
     <ol className='mt-2 list-decimal space-y-1.5 pl-5 text-muted-foreground'>
       <li>Sign in with <code>codex login</code> or start <code>claude</code> and complete its login.</li>
       <li>Add that provider profile under <code>workerdeck</code> in <code>box.local.json</code>, and map your user ID under <code>agentProfiles</code>.</li>
-      <li>Restart <code>box dev</code>, then return here. The status is read from Builder itself.</li>
+      <li>Restart the Box (<code>box service restart</code>, or stop and start <code>box dev</code>), then return here. The status is read from Builder itself.</li>
     </ol>
     <p className='mt-3 text-label text-fg-3'>Use <code>docs/examples/workerdeck.json</code> as the configuration template. Profile homes must be absolute paths to <code>.codex</code> or <code>.claude</code>.</p>
   </div>

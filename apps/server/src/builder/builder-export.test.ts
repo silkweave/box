@@ -181,6 +181,22 @@ describe('buildSessionExport', () => {
     expect([...files.values()].join('\n')).not.toContain('Zq8Lw3Nv5Tb7Yc2Md9Kf4Hg')
   })
 
+  it('exports a session killed mid-turn from the record written when its turn started', async () => {
+    const root = scratch()
+    const instance = join(root, 'data')
+    const home = join(root, 'claude-home')
+    execFileSync('git', ['init', '-q'], { cwd: root })
+    await recordTurn(root, instance, 'sess-cut', { seq: 3, subtype: 'started', durationMs: 0 }, { engine: 'claude', profile: 'toby:claude', model: 'opus', engineSessionId: 'eng-cut-1' })
+    expect(recordedSessions(instance).map(entry => entry.id)).toContain('sess-cut')
+    const project = join(home, 'projects', root.replace(/[^A-Za-z0-9]/g, '-'))
+    mkdirSync(project, { recursive: true })
+    writeFileSync(join(project, 'eng-cut-1.jsonl'), JSON.stringify({ type: 'user', timestamp: '2026-11-11T02:07:00.000Z', message: { role: 'user', content: 'Adapt artifacts' } }))
+    const exported = buildSessionExport({ root, instanceDir: instance, sessionId: 'sess-cut', info: null, events: null, conversations: [], verification: null, application: null, profileHome: home })
+    const files = unzip(exported.zip)
+    expect(files.get('transcript.md')).toContain('Adapt artifacts')
+    expect(JSON.parse(files.get('manifest.json')!).session.numTurns).toBe(0)
+  })
+
   it('exports an ended Codex session from its rollout file', async () => {
     const root = scratch()
     const instance = join(root, 'data')

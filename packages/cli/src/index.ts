@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { findBoxRoot, isBoxRoot, isMain, repoRoot } from './repo.ts'
 import { commandError, commandHeader, commandNotice } from './command-ui.ts'
+import { runningService } from './service.ts'
 
 const selfRoot = repoRoot
 
@@ -53,6 +54,8 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box builder browser --session <session-id> <operation> [JSON object]
   box builder export [--session <id>] [--out <file>]  zip of a Builder session for support
   box start                                  start the Box: promoted web release, Vite for Builder Preview
+  box service install|uninstall               run the Box in the background (systemd user unit, launchd agent)
+  box service start|stop|restart|status|logs  control that background Box; logs -f follows
   box start --prod                           start the production build
   box verify [--plain|--verbose]              run the complete visual validation chain
   box auth token <id> [--name "Full Name"] [--create] [--rotate] [--admin] [--quiet]
@@ -126,6 +129,13 @@ function main(argv: string[]): void {
 
   if (verb === 'app') runScript(root, 'packages/cli/src/app-control.ts', rest)
   if (verb === 'maintenance') runScript(root, 'packages/cli/src/maintenance.ts', rest)
+
+  if (verb === 'service') runScript(root, 'packages/cli/src/service.ts', rest)
+  // One Box server per checkout: the background service holds the ports and the database.
+  if ((verb === 'dev' || verb === 'start') && !rest.includes('--help') && !rest.includes('-h')) {
+    const service = runningService(root)
+    if (service) die(`This Box already runs in the background (${service.name}). Stop it first with: box service stop`)
+  }
 
   if (verb === 'verify') runScript(root, 'packages/cli/src/verify.ts', rest)
   if (verb === 'setup') runScript(root, 'apps/server/scripts/setup.ts', rest, true)

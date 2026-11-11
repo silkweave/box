@@ -204,10 +204,24 @@ export function stopBuilder(): Promise<void> {
   return request('/stop', { method: 'POST', body: '{}' }).then(() => undefined)
 }
 
-/** Derive provider readiness from the supervisor's actual WorkerDeck profile probe. */
-export function builderReadiness(state: BuilderControlState): BuilderReadiness {
+/**
+ * Derive provider readiness from the supervisor's WorkerDeck profile probe. The supervisor's worker
+ * re-checks credentials at most once a minute and is not told about account changes; the Box
+ * application's worker is re-probed on every connect and disconnect. So pass that worker's verdicts
+ * (`fresh`, by profile name, from loadAgentAccounts) and they win wherever they are known.
+ */
+export function builderReadiness(
+  state: BuilderControlState,
+  fresh: ReadonlyArray<{ name: string; available: boolean | null; unavailableReason: string | null }> = [],
+): BuilderReadiness {
   if (state.profiles.length === 0) return { provider: 'unknown', message: 'No Builder provider profile is available.' }
-  const profile = state.profiles.find((candidate) => candidate.available === true) ?? state.profiles[0]
+  const profiles = state.profiles.map((candidate) => {
+    const known = fresh.find((f) => f.name === candidate.name)
+    return typeof known?.available === 'boolean'
+      ? { ...candidate, available: known.available, unavailableReason: known.unavailableReason ?? candidate.unavailableReason }
+      : candidate
+  })
+  const profile = profiles.find((candidate) => candidate.available === true) ?? profiles[0]
   if (profile.available === true) return { provider: 'ready', message: `${profile.name} is ready on this Box host.` }
   const reason = profile.unavailableReason ?? 'The selected provider profile is not currently available.'
   const signedOut = reason.startsWith('codex is not logged in') || reason.startsWith('no usable Claude credentials')

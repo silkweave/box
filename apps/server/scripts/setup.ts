@@ -1,7 +1,6 @@
 // First-run setup for a fresh Box. This is deliberately a host command: it writes local
 // configuration and the warehouse directly, without opening a network signup endpoint.
 import { spawn, spawnSync } from 'node:child_process'
-import { request } from 'node:http'
 import { chmodSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -17,6 +16,7 @@ import { commandError, commandHeader, commandLine, commandSuccess, commandValue,
 import { isMain, repoRoot } from '../../../packages/cli/src/repo.js'
 import { readSecret, setRegistryKey } from '../../../packages/cli/src/recipe.js'
 import { ask, choose, confirm, explanation, type PromptOptions } from '../../../packages/cli/src/prompt.js'
+import { boxReady, installService, servicePlatform, waitForService } from '../../../packages/cli/src/service.js'
 
 export type ProviderEngine = 'codex' | 'claude'
 
@@ -360,6 +360,9 @@ async function run(argv: string[]): Promise<void> {
   }
   const args = parseArgs(argv)
   writeBoxJsonIfAbsent(join(repoRoot, 'box.json'))
+  // The gitignored home of the Box's own records (_docs/INTEGRATION.md, VALIDATION.md) that its
+  // docs and skills point agents at; present from the start, so a first look finds it.
+  mkdirSync(join(repoRoot, '_docs'), { recursive: true })
   const candidates = detectProviderProfiles()
 
   commandHeader('setup')
@@ -410,8 +413,8 @@ async function run(argv: string[]): Promise<void> {
   if (!startsDev(args)) {
     // Issued last, so its few minutes start when the instructions are printed.
     const { signIn, expires } = await issueOwnerSignIn(answers.ownerId)
-    commandLine('Start the Box:', 'muted')
-    commandValue('bun dev')
+    commandLine('Start the Box in the background (or in this terminal with bun dev):', 'muted')
+    commandValue(servicePlatform().platform ? 'box service install' : 'bun dev')
     commandLine('Then open this single-use sign-in link:', 'muted')
     commandValue(signIn)
     commandLine(`${expires} · reveal the permanent token later with: box auth reveal ${answers.ownerId}`, 'muted')
@@ -420,15 +423,26 @@ async function run(argv: string[]): Promise<void> {
   const connect = answers.profiles.filter(profile => profile.source === 'box').map(profile => ENGINE_LABEL[profile.engine])
   const home = homedir()
   const folder = repoRoot.startsWith(`${home}/`) ? `~${repoRoot.slice(home.length)}` : repoRoot
+  const next = () => {
+    commandLine('Next, in the Box:', 'text')
+    commandLine(connect.length
+      ? `  Connect ${connect.join(' and ')}: Settings › Profile › Connect`
+      : '  Connect Claude or Codex when you want Builder: Settings › Profile', 'muted')
+    commandLine('  Add your first feature: pick a recipe on the home page', 'muted')
+    commandLine('')
+  }
+  // A background service keeps the Box running when this window closes or an SSH session drops,
+  // and leaves the sign-in link on screen. Hosts without one (WSL without systemd) run box dev here.
+  const host = servicePlatform()
+  if (host.platform) {
+    commandLine('')
+    process.exitCode = await startServiceAndOpen(answers.ownerId, next)
+    return
+  }
   commandLine('')
   commandSuccess('Your Box is ready. It starts now and opens in your browser.')
   commandLine('')
-  commandLine('Next, in the Box:', 'text')
-  commandLine(connect.length
-    ? `  Connect ${connect.join(' and ')}: Settings › Profile › Connect`
-    : '  Connect Claude or Codex when you want Builder: Settings › Profile', 'muted')
-  commandLine('  Add your first feature: pick a recipe on the home page', 'muted')
-  commandLine('')
+  next()
   commandLine('Good to know:', 'text')
   commandLine('  The Box runs while this window stays open. Press q to stop it.', 'muted')
   commandLine(`  Start it again: cd ${folder} && bun dev`, 'muted')
@@ -436,6 +450,44 @@ async function run(argv: string[]): Promise<void> {
   commandLine('')
   await new Promise(done => setTimeout(done, 2_000))
   process.exitCode = await startDevAndOpen(answers.ownerId)
+}
+
+/**
+ * Install the Box as a user service, wait until the application and its web release are ready,
+ * then issue, open and print the owner's sign-in link and exit. The first start builds the web app.
+ */
+async function startServiceAndOpen(ownerId: string, next: () => void): Promise<number> {
+  const service = await installService(repoRoot, { interactive: true })
+  commandSuccess(service.platform === 'systemd' ? 'Installed the Box as a service (systemd, for your user)' : 'Installed the Box as a service (launchd, for your user)')
+  if (service.linger === 'failed') commandWarning(`The Box stops when you log out. To keep it running, run: sudo loginctl enable-linger ${userInfo().username}`)
+  const outcome = await waitForService(repoRoot, { label: 'Starting the Box (the first start builds the web app)' })
+  if (outcome !== 'ready') {
+    commandWarning(outcome === 'stopped' ? 'The Box stopped while starting.' : 'The Box is taking longer than expected to start.')
+    commandLine('See what it printed: box service logs. Then: box service restart', 'muted')
+    commandLine('A sign-in link once it runs: box auth login', 'muted')
+    return 1
+  }
+  const { signIn, expires } = await issueOwnerSignIn(ownerId)
+  openBrowser(signIn, { quiet: true })
+  commandSuccess('Your Box is running')
+  commandLine('')
+  commandLine('Sign in with this single-use link (it opens in your browser if it can):', 'text')
+  commandValue(signIn)
+  commandLine(expires, 'muted')
+  if (process.env.SSH_CONNECTION) {
+    const port = readBoxConfig(repoRoot).server.port
+    commandLine(`On this computer over SSH: forward the port first, ssh -L ${port}:localhost:${port} <this host>`, 'muted')
+  }
+  commandLine('')
+  next()
+  commandLine('Good to know:', 'text')
+  commandLine('  The Box keeps running in the background, also after you log out, and starts with the computer.', 'muted')
+  commandLine('  Stop, start or restart it: box service stop | start | restart', 'muted')
+  commandLine('  What it printed: box service logs', 'muted')
+  commandLine('  Develop with live reload: box service stop, then box dev', 'muted')
+  commandLine('  New sign-in link: box auth login', 'muted')
+  commandLine('')
+  return 0
 }
 
 /**
@@ -473,33 +525,12 @@ async function askRegistryKey(prompt: PromptOptions): Promise<void> {
   commandLine('Set the key later with: box registry key', 'muted')
 }
 
-/** Interactive setup hands straight over to `box dev`; automation keeps the printed instructions. */
+/** Interactive setup starts the Box (a service, else `box dev`); automation keeps the printed instructions. */
 export function startsDev(args: Pick<SetupArgs, 'yes' | 'noStart'>, tty = Boolean(process.stdin.isTTY && process.stdout.isTTY)): boolean {
   return tty && !args.yes && !args.noStart
 }
 
 const DEV_READY_TIMEOUT_MS = 10 * 60_000
-
-/** True once the supervisor reports both the application and the frontend running. */
-function devReady(socketPath: string): Promise<boolean> {
-  return new Promise(resolve => {
-    const req = request({ socketPath, method: 'GET', path: '/app-status', timeout: 2_000 }, res => {
-      let text = ''
-      res.setEncoding('utf8')
-      res.on('data', chunk => { text += chunk })
-      res.on('end', () => {
-        try {
-          const state = JSON.parse(text) as { application?: { status?: string }; frontend?: { mode?: string; status?: string } }
-          const frontend = state.frontend?.mode === 'dev' ? state.frontend.status === 'running' : state.frontend?.status === 'built'
-          resolve(res.statusCode === 200 && state.application?.status === 'running' && frontend)
-        } catch { resolve(false) }
-      })
-    })
-    req.on('timeout', () => req.destroy())
-    req.on('error', () => resolve(false))
-    req.end()
-  })
-}
 
 /**
  * Run the dev supervisor in the foreground, then issue and open the owner's sign-in link once both
@@ -525,7 +556,7 @@ async function startDevAndOpen(ownerId: string): Promise<number> {
   while (!exited && Date.now() < deadline) {
     await new Promise(next => setTimeout(next, 1_000))
     if (exited) break
-    if (await devReady(socket)) {
+    if (await boxReady(socket)) {
       const { signIn, expires } = await issueOwnerSignIn(ownerId)
       openBrowser(signIn, { quiet: true })
       commandLine('')

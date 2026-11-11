@@ -4,6 +4,7 @@ import { type PrincipalRequest, Admin, Read, Resource } from '../auth/auth.decor
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
+import { z } from 'zod/v4'
 import { assertKnownUser, computeSignalAggregates, trackerCatalogue, deleteSignalDefinition, deleteSignalPoint, floorSignalBucket, mergeSignalPoints, SIGNAL_ACCUMULATIONS, SIGNAL_DIRECTIONS, SIGNAL_INTERVALS, SIGNAL_SOURCES, readAllSignalPointRecords, readDataSources, readSignalDefinition, readSignalDefinitions, readSignalOwnersFile, readSignalPointRecords, readSignalPoints, recordSignalIncrement, signalReferences, setSignalArchived, resolveSignalHistory, renameSignalDefinition, resolveSignalOwner, serializeBucket, setSignalPoint, setSignalPoints, SUBDAILY_WINDOW_DAYS, upsertSignalDefinition, writeSignalOwnersFile, type SignalAccumulation, type SignalDefinition, type SignalDirection, type MergedSignalPoint, type SignalInterval, type SignalPointRecord, type SignalSource } from '@silkweave/box-core'
 import { inputError } from '../auth/input-error.js'
 
@@ -385,6 +386,63 @@ class SignalEventResultDto {
 }
 
 
+// tRPC output types: reflection reads one level deep, so responses with nested DTOs get a Zod
+// schema mirroring the DTOs below (type-only; the response is not validated against it).
+const signalDefinitionOutput = z.object({
+  id: z.string(), area: z.string(), label: z.string(), signal_group: z.string(), unit: z.string().nullable(),
+  channel: z.string(), source: z.string(), interval: z.string(), accumulation: z.string(), direction: z.string(),
+  owner: z.string().nullable(), description: z.string(), depends_on: z.array(z.string()),
+  data_source_id: z.string().nullable(), tracker_key: z.string().nullable(), tracker_params: z.record(z.string(), z.string()),
+  formula: z.string().nullable(), thresholds: z.array(z.number()), sort: z.number(), archived_at: z.string().nullable(),
+  created_at: z.string(), updated_at: z.string(), created_by: z.string().nullable(), updated_by: z.string().nullable(),
+})
+const signalsDataOutput = z.object({
+  generatedAt: z.string(), dates: z.array(z.string()), channels: z.array(z.string()),
+  signals: z.array(z.object({
+    id: z.string(), channel: z.string(), area: z.string(), label: z.string(), group: z.string(), unit: z.string().optional(),
+    owner: z.string().nullable(), interval: z.string(), accumulation: z.string(), source: z.string(), direction: z.string(),
+    description: z.string(), depends_on: z.array(z.string()), data_source_id: z.string().nullable(), tracker_key: z.string().nullable(),
+    tracker_params: z.record(z.string(), z.string()), formula: z.string().nullable(), thresholds: z.array(z.number()),
+    archived_at: z.string().nullable(),
+    aggregates: z.object({ all_time: z.number().nullable(), yesterday: z.number().nullable(), month_to_date: z.number().nullable(), last_7d: z.number().nullable() }),
+    points: z.array(z.object({ date: z.string(), value: z.number() })),
+  })),
+  sources: z.array(z.object({
+    id: z.string(), provider: z.string(), label: z.string(), status: z.string(),
+    last_sync_at: z.string().nullable(), last_sync_status: z.string().nullable(),
+  })),
+})
+const signalDefinitionsOutput = z.object({ generatedAt: z.string(), definitions: z.array(signalDefinitionOutput) })
+const trackersOutput = z.object({
+  generatedAt: z.string(),
+  trackers: z.array(z.object({
+    origin: z.enum(['box', 'source']), key: z.string(), label: z.string(), unit: z.string().nullable(), interval: z.string(),
+    accumulation: z.string(), direction: z.string(), group: z.string(), description: z.string(),
+    params: z.array(z.object({
+      key: z.string(), label: z.string(), kind: z.enum(['enum', 'text', 'date', 'user']),
+      options: z.array(z.object({ value: z.string(), label: z.string() })), required: z.boolean(), description: z.string(),
+    })),
+    data_source_id: z.string().nullable(), data_source_label: z.string().nullable(), provider: z.string().nullable(),
+  })),
+})
+const signalReferencesOutput = z.object({
+  id: z.string(),
+  references: z.array(z.object({ kind: z.string(), id: z.string(), label: z.string(), via: z.string(), href: z.string().nullable() })),
+})
+const ownersOutput = z.object({ channels: z.record(z.string(), z.string()), signals: z.record(z.string(), z.string().nullable()) })
+const signalSeriesOutput = z.object({
+  signal_id: z.string(), label: z.string(), channel: z.string(), interval: z.string(), accumulation: z.string(),
+  unit: z.string().nullable(), generatedAt: z.string(), count: z.number(),
+  points: z.array(z.object({ date: z.string(), value: z.number(), source: z.enum(['live', 'backfill', 'manual']), computed: z.boolean().optional() })),
+})
+const signalPointsOutput = z.object({
+  signal_id: z.string(), interval: z.string(), accumulation: z.string(), generatedAt: z.string(),
+  points: z.array(z.object({
+    bucket: z.string(), value: z.number(), note: z.string().nullable(), shadowed_by: z.number().nullable(),
+    overrides_computed: z.number().nullable(), updated_at: z.string(), created_by: z.string().nullable(), updated_by: z.string().nullable(),
+  })),
+})
+
 @Resource('signal')
 @Controller('signals')
 @UseGuards(AuthGuard)
@@ -400,7 +458,7 @@ export class SignalsController {
    */
   @Get()
   @ApiOkResponse({ type: SignalsDataDto })
-  @Trpc()
+  @Trpc({ output: signalsDataOutput })
   @Read()
   async data(@Query() query: SignalListQueryDto = {}): Promise<SignalsDataDto> {
     const [allDefinitions, pointRows, sourceRows] = await Promise.all([readSignalDefinitions(), readAllSignalPointRecords(), readDataSources()])
@@ -491,7 +549,7 @@ export class SignalsController {
    *  signals only with `include_archived`. */
   @Get('definitions')
   @ApiOkResponse({ type: SignalDefinitionsDto })
-  @Trpc()
+  @Trpc({ output: signalDefinitionsOutput })
   @Mcp({ name: 'signals-list' })
   @Read()
   async list(@Query() query: SignalListQueryDto = {}): Promise<SignalDefinitionsDto> {
@@ -507,7 +565,7 @@ export class SignalsController {
    */
   @Get('trackers')
   @ApiOkResponse({ type: TrackersDto })
-  @Trpc()
+  @Trpc({ output: trackersOutput })
   @Mcp({ name: 'trackers-list' })
   @Read()
   async trackers(): Promise<TrackersDto> {
@@ -521,7 +579,7 @@ export class SignalsController {
    */
   @Get('references')
   @ApiOkResponse({ type: SignalReferencesDto })
-  @Trpc()
+  @Trpc({ output: signalReferencesOutput })
   @Mcp({ name: 'signal-references' })
   @Read()
   async references(@Query() query: SignalReferencesQueryDto): Promise<SignalReferencesDto> {
@@ -536,7 +594,7 @@ export class SignalsController {
    */
   @Post('definition')
   @ApiOkResponse({ type: SignalDefinitionDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalDefinitionOutput, kind: 'mutation' })
   @Mcp({ name: 'signal-upsert' })
   async upsert(@Body() body: UpsertSignalDto, @Req() req: PrincipalRequest): Promise<SignalDefinitionDto> {
     body.actor ??= req.principal?.id
@@ -585,7 +643,7 @@ export class SignalsController {
    */
   @Post('definition/rename')
   @ApiOkResponse({ type: SignalDefinitionDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalDefinitionOutput, kind: 'mutation' })
   @Admin()
   @Mcp({ name: 'signal-rename' })
   async rename(@Body() body: RenameSignalDto, @Req() req: PrincipalRequest): Promise<SignalDefinitionDto> {
@@ -625,7 +683,7 @@ export class SignalsController {
    */
   @Post('definition/archive')
   @ApiOkResponse({ type: SignalDefinitionDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalDefinitionOutput, kind: 'mutation' })
   @Admin()
   @Mcp({ name: 'signal-archive' })
   async archive(@Body() body: ArchiveSignalDto, @Req() req: PrincipalRequest): Promise<SignalDefinitionDto> {
@@ -639,7 +697,7 @@ export class SignalsController {
   /** tRPC mutation `signalsUnarchive` / MCP `signal-unarchive` - bring an archived signal back into the lists. */
   @Post('definition/unarchive')
   @ApiOkResponse({ type: SignalDefinitionDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalDefinitionOutput, kind: 'mutation' })
   @Admin()
   @Mcp({ name: 'signal-unarchive' })
   async unarchive(@Body() body: ArchiveSignalDto, @Req() req: PrincipalRequest): Promise<SignalDefinitionDto> {
@@ -653,7 +711,7 @@ export class SignalsController {
   /** tRPC query `signalsOwners` / MCP `signal-owners` - the raw ownership mapping on disk. */
   @Get('owners')
   @ApiOkResponse({ type: OwnersDto })
-  @Trpc()
+  @Trpc({ output: ownersOutput })
   @Mcp({ name: 'signal-owners' })
   @Read()
   owners(): OwnersDto {
@@ -669,7 +727,7 @@ export class SignalsController {
    */
   @Post('owners')
   @ApiOkResponse({ type: OwnersDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: ownersOutput, kind: 'mutation' })
   @Admin()
   @Mcp({ name: 'signal-owner-set' })
   async ownersSave(@Body() body: SetOwnerDto, @Req() req: PrincipalRequest): Promise<OwnersDto> {
@@ -747,7 +805,7 @@ export class SignalsController {
    */
   @Post('series/list')
   @ApiOkResponse({ type: SignalSeriesDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalSeriesOutput, kind: 'mutation' })
   @Mcp({ name: 'signal-series' })
   @Read()
   async series(@Body() body: SignalSeriesListDto): Promise<SignalSeriesDto> {
@@ -785,7 +843,7 @@ export class SignalsController {
    */
   @Post('points/list')
   @ApiOkResponse({ type: SignalPointsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalPointsOutput, kind: 'mutation' })
   @Mcp({ name: 'signal-points' })
   @Read()
   async points(@Body() body: SignalPointsListDto): Promise<SignalPointsDto> {
@@ -798,7 +856,7 @@ export class SignalsController {
    */
   @Post('point')
   @ApiOkResponse({ type: SignalPointsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalPointsOutput, kind: 'mutation' })
   @Mcp({ name: 'signal-point-set' })
   async pointSet(@Body() body: SetSignalPointDto, @Req() req: PrincipalRequest): Promise<SignalPointsDto> {
     try {
@@ -819,7 +877,7 @@ export class SignalsController {
   /** tRPC mutation `signalsPointDelete` / MCP `signal-point-delete` - remove one manual point. */
   @Post('point/delete')
   @ApiOkResponse({ type: SignalPointsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalPointsOutput, kind: 'mutation' })
   @Mcp({ name: 'signal-point-delete' })
   async pointDelete(@Body() body: DeleteSignalPointDto): Promise<SignalPointsDto> {
     try {
@@ -838,7 +896,7 @@ export class SignalsController {
    */
   @Post('points')
   @ApiOkResponse({ type: SignalPointsDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: signalPointsOutput, kind: 'mutation' })
   @Mcp({ name: 'signal-points-set' })
   async pointsSet(@Body() body: SetSignalPointsDto, @Req() req: PrincipalRequest): Promise<SignalPointsDto> {
     let parsed: unknown

@@ -45,6 +45,8 @@ void main() {
     expect(BoxChanges.matches('table:tasks', 'table:initiatives'), isFalse);
   });
 
+  // Waits that expect a debounced call are generous: box verify runs this beside the whole test
+  // suite, and a 10 ms timer can fire tens of milliseconds late on a busy machine.
   test('a matching event calls the listener once per debounce window', () async {
     final feed = _Feed();
     final changes = BoxChanges(feed.api(), debounce: const Duration(milliseconds: 10));
@@ -59,11 +61,11 @@ void main() {
       ..emit('table:tasks')
       ..emit('table:tasks')
       ..emit('ping');
-    await Future<void>.delayed(const Duration(milliseconds: 40));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(tasks, 1);
     expect(docs, 0);
     feed.emit('docs:initiatives');
-    await Future<void>.delayed(const Duration(milliseconds: 40));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(docs, 1);
     changes.close();
   });
@@ -78,7 +80,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(n, 0);
     feed.emit('hello');
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(n, 1);
     changes.close();
   });

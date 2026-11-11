@@ -6,7 +6,7 @@ import { promisify } from 'node:util'
 const run = promisify(execFile)
 
 /**
- * What the checkout looked like when each Builder turn ended: HEAD, branch, `git status` and the
+ * What the checkout looked like when each Builder turn started (outcome `started`) and ended: HEAD, branch, `git status` and the
  * diff summary against HEAD. One line per turn in `data/builder/turns/<session>.ndjson`, read by the
  * session export so a supporter can see which turn changed what. Paths and counts only, never file
  * contents. Each line also names the engine session, so an ended session (which WorkerDeck no

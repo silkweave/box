@@ -8,7 +8,9 @@ see [MOBILE.md](MOBILE.md)). A skipped mobile check is not a mobile pass: record
 `box verify --plain` provides append-only output; `--verbose`
 includes full child output. A failed check does not stop independent checks, and core and server
 tests replay cached results when their inputs are unchanged; `box verify --force` re-executes
-everything. See [CLI.md](CLI.md) for progress, dependencies, caching, warnings and log locations.
+everything. In a Box whose core matches its upstream, core and server tests are the features' own
+tests plus a core smoke set; `box verify --full` runs them all (see [CLI.md](CLI.md)). See
+[CLI.md](CLI.md) for progress, dependencies, caching, warnings and log locations.
 
 The database tests run on one engine per run: pgrust by default, native PostgreSQL with
 `box verify --engine native` (needs PostgreSQL 18 and pgvector on the host). A change to core, the

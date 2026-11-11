@@ -25,6 +25,29 @@ export function diagnostic(component: string, event: string, fields: Fields = {}
   diagnosticTap?.(record)
 }
 
+export type DiagnosticLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug'
+
+/** Request traces and heartbeats are debug, so they stay off the service log (built mode). */
+export function diagnosticLevel(record: DiagnosticRecord): DiagnosticLevel {
+  if (/(error|failed|timeout|refused)/.test(record.event)) return 'error'
+  if (/(unavailable|aborted|closed-before|signal)/.test(record.event)) return 'warn'
+  if (record.event === 'http.finish' && typeof record.status === 'number' && record.status >= 500) return 'warn'
+  // No response headers after 10 s: a stall worth seeing, unlike a long-open stream (http.open).
+  if (record.event === 'http.wait') return 'warn'
+  if (/^(http|proxy|ws)\.|heartbeat/.test(record.event)) return 'debug'
+  if (/^(operation|control)\.|readiness\.wait|child\./.test(record.event)) return 'verbose'
+  return 'info'
+}
+
+/** A child's output line parsed as a diagnostic record, or null for ordinary output. */
+export function parseDiagnosticLine(line: string): DiagnosticRecord | null {
+  if (!line.startsWith('{')) return null
+  try {
+    const record = JSON.parse(line) as DiagnosticRecord
+    return record && typeof record.event === 'string' && typeof record.component === 'string' ? record : null
+  } catch { return null }
+}
+
 export function errorKind(error: unknown): string {
   const value = error as { code?: unknown; name?: unknown } | null
   const code = value?.code ?? value?.name

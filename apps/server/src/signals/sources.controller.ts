@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, Get, Post, Req, UseGuards } from
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger'
 import { IsIn, IsOptional, IsString } from 'class-validator'
 import { Mcp, Trpc } from '@silkweave/nestjs'
+import { z } from 'zod/v4'
 import { DATA_SOURCE_STATUSES, deleteDataSource, listProviders, readDataSourceViews, upsertDataSource, type DataSourceStatus, type DataSourceView } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
 import { type PrincipalRequest, Admin, Area, Read } from '../auth/auth.decorators.js'
@@ -112,6 +113,33 @@ class DataSourceDeleteReportDto {
   @ApiProperty({ type: [String] }) warnings!: string[]
 }
 
+// tRPC output types: reflection reads one level deep, so responses with nested DTOs get a Zod
+// schema mirroring the DTOs above (type-only; the response is not validated against it).
+const providersOutput = z.object({
+  generatedAt: z.string(),
+  providers: z.array(z.object({
+    id: z.string(), label: z.string(), description: z.string(),
+    config: z.array(z.object({ key: z.string(), label: z.string(), required: z.boolean(), help: z.string().optional() })),
+    credentials: z.array(z.string()),
+    trackers: z.array(z.object({
+      key: z.string(), label: z.string(), unit: z.string().nullable(), interval: z.string(), accumulation: z.string(),
+      direction: z.string(), group: z.string(), description: z.string(),
+    })),
+  })),
+})
+const dataSourcesOutput = z.object({
+  generatedAt: z.string(),
+  sources: z.array(z.object({
+    id: z.string(), provider: z.string(), provider_label: z.string().nullable(), label: z.string(),
+    config: z.record(z.string(), z.string()), status: z.enum(DATA_SOURCE_STATUSES), notes: z.string(),
+    credentials: z.record(z.string(), z.boolean()), bound_signals: z.array(z.string()),
+    dead_trackers: z.array(z.object({ signal_id: z.string(), tracker_key: z.string() })),
+    last_sync_at: z.string().nullable(), last_sync_status: z.string().nullable(), last_sync_error: z.string().nullable(),
+    last_sync_points: z.number().nullable(), created_at: z.string(), updated_at: z.string(),
+    created_by: z.string().nullable(), updated_by: z.string().nullable(),
+  })),
+})
+
 @Area('signals')
 @Controller('sources')
 @UseGuards(AuthGuard)
@@ -123,7 +151,7 @@ export class SourcesController {
    */
   @Get('providers')
   @ApiOkResponse({ type: ProvidersDto })
-  @Trpc()
+  @Trpc({ output: providersOutput })
   @Mcp({ name: 'providers-list' })
   @Read()
   providers(): ProvidersDto {
@@ -137,7 +165,7 @@ export class SourcesController {
    */
   @Get()
   @ApiOkResponse({ type: DataSourcesDto })
-  @Trpc()
+  @Trpc({ output: dataSourcesOutput })
   @Mcp({ name: 'data-sources' })
   @Read()
   async list(): Promise<DataSourcesDto> {
@@ -152,7 +180,7 @@ export class SourcesController {
    */
   @Post()
   @ApiOkResponse({ type: DataSourcesDto })
-  @Trpc({ kind: 'mutation' })
+  @Trpc({ output: dataSourcesOutput, kind: 'mutation' })
   @Admin()
   @Mcp({ name: 'data-source-upsert' })
   async upsert(@Body() body: UpsertDataSourceDto, @Req() req: PrincipalRequest): Promise<DataSourcesDto> {

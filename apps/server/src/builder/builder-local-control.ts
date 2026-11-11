@@ -9,6 +9,8 @@ export interface BuilderLocalControls {
   restart: () => Promise<SupervisedApplicationStatus>
   restartFrontend: () => Promise<SupervisedFrontendStatus>
   refresh: () => Promise<void>
+  /** The supervisor's serialized operation queue: what runs now and what waits behind it. */
+  operations?: () => { current: { id: number; label: string; since: string } | null; queued: string[] }
   /** Typecheck, build and publish the web release everyone outside Builder loads (built mode). */
   promote?: () => Promise<{ version: string; createdAt: string; sourceSha: string | null; dirty: boolean }>
   /** Maintenance mode and its public notice (`box maintenance`). */
@@ -38,9 +40,10 @@ export async function startBuilderLocalControl(instance: string, controls: Build
     res.setHeader('content-type', 'application/json')
     if (req.method === 'GET' && req.url === '/app-status') {
       const application = controls.status()
+      const operations = controls.operations?.()
       void controls.frontend().then(
-        frontend => res.end(JSON.stringify({ ok: true, application, frontend })),
-        () => res.end(JSON.stringify({ ok: true, application })),
+        frontend => res.end(JSON.stringify({ ok: true, application, frontend, operations })),
+        () => res.end(JSON.stringify({ ok: true, application, operations })),
       )
       return
     }

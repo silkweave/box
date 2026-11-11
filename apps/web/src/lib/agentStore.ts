@@ -202,6 +202,30 @@ export function notifyAgentAccountsChanged(): void {
   window.dispatchEvent(new Event(AGENT_ACCOUNTS_CHANGED))
 }
 
+/** One agent profile as the Box application's WorkerDeck worker sees it (GET /api/agent/accounts). */
+export interface AgentAccountProfile {
+  name: string
+  person: string
+  engine: 'claude' | 'codex'
+  description: string | null
+  connectable: boolean
+  account: { connectedAt: string; expiresAt: string } | null
+  available: boolean | null
+  unavailableReason: string | null
+}
+
+export interface AgentAccountsResponse {
+  enabled: boolean
+  profiles: AgentAccountProfile[]
+}
+
+/** One person's agent accounts. Connecting or disconnecting re-probes these right away. */
+export async function loadAgentAccounts(userId: string): Promise<AgentAccountsResponse> {
+  const res = await fetch(`/api/agent/accounts?user=${encodeURIComponent(userId)}`, { credentials: 'same-origin' })
+  if (!res.ok) throw new Error(`could not load agent accounts (${res.status})`)
+  return (await res.json()) as AgentAccountsResponse
+}
+
 /** Last permission mode chosen per engine, so the next session starts the way the last one ended up. */
 const storedPermissionModes = (): Record<string, string> =>
   readStored<Record<string, string>>(PERMISSION_KEY, {}, (v) => typeof v === 'object' && v !== null && !Array.isArray(v))

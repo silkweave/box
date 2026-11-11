@@ -114,8 +114,15 @@ and append each powerup id to `recipes.<recipe>.powerups` once its `## Verify` s
 pass. Keep the ledger in
 `box.json`, not `box.local.json`; it is a record, not an install mechanism.
 
-When working inside Builder, `box dev` is the stable supervisor that owns the current agent
-session. Never stop, kill, replace, or relaunch it, and never start a second Box against the same
+An adaptation never debugs or edits core. When a core or server test the adaptation did not touch
+fails, rerun that one file alone once. If it passes, it was load: carry on. If it fails again,
+report it as a core issue (test name, the error, "fails without this recipe's code paths" if you
+know) in `_docs/INTEGRATION.md` and to the owner, and finish the adaptation; Wrap Up records it.
+Never edit core files, swap registration back or blank features in the live Box to bisect; that
+work belongs in a scratch checkout, and only when the owner asks for it.
+
+When working inside Builder, the supervisor (`box dev`, `box start` or the background service)
+owns the current agent session. Never stop, kill, replace, or relaunch it, and never start a second Box against the same
 instance. After the validation chain passes, run `box app restart` for backend, registration,
 configuration, or migration changes, then inspect the refreshed Preview. That command restarts only
 the editable application and waits for health while preserving the supervisor and Builder session.

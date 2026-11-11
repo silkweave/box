@@ -2,35 +2,15 @@ import * as React from 'react'
 import { CheckCircle2, CircleAlert, CircleDashed } from 'lucide-react'
 import { AccountConnectDialog } from '@workerdeck/ui'
 import { Badge, Button, confirm } from '@silkweave/box-ui'
-import { agentClient, notifyAgentAccountsChanged, setAgentEngine } from '../../lib/agentStore.ts'
+import { agentClient, loadAgentAccounts, notifyAgentAccountsChanged, setAgentEngine, type AgentAccountProfile, type AgentAccountsResponse } from '../../lib/agentStore.ts'
 import { relativeTime } from '../../lib/format.ts'
 import { useAuth } from '../../lib/useAuth.tsx'
 import { upsertUser } from '../../lib/useUsersData.ts'
 import type { User } from '../../user-types.ts'
 
-interface AccountProfile {
-  name: string
-  person: string
-  engine: 'claude' | 'codex'
-  description: string | null
-  connectable: boolean
-  account: { connectedAt: string; expiresAt: string } | null
-  available: boolean | null
-  unavailableReason: string | null
-}
-
-interface AccountsResponse {
-  enabled: boolean
-  profiles: AccountProfile[]
-}
+type AccountProfile = AgentAccountProfile
 
 const ENGINE_LABEL: Record<string, string> = { claude: 'Claude', codex: 'Codex' }
-
-const fetchAccounts = async (userId: string): Promise<AccountsResponse> => {
-  const res = await fetch(`/api/agent/accounts?user=${encodeURIComponent(userId)}`, { credentials: 'same-origin' })
-  if (!res.ok) throw new Error(`could not load agent accounts (${res.status})`)
-  return (await res.json()) as AccountsResponse
-}
 
 /** A profile counts as connected when it has a stored account or the worker finds it signed in. */
 const connected = (p: AccountProfile): boolean => p.account !== null || p.available === true
@@ -45,14 +25,14 @@ const dateOnly = (iso: string): string => iso.slice(0, 10)
  */
 export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boolean }) {
   const { principal } = useAuth()
-  const [data, setData] = React.useState<AccountsResponse | null>(null)
+  const [data, setData] = React.useState<AgentAccountsResponse | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [connecting, setConnecting] = React.useState<AccountProfile | undefined>(undefined)
   const [saving, setSaving] = React.useState(false)
   const self = principal?.id === user.id
 
   const load = React.useCallback(() => {
-    fetchAccounts(user.id).then(setData, (e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+    loadAgentAccounts(user.id).then(setData, (e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [user.id])
   React.useEffect(load, [load])
 

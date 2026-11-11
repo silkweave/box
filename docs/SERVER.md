@@ -629,6 +629,11 @@ a module's `onModuleInit`, a registered port, the agent host - is proven by boot
 
 The supervisor and application emit structured JSON diagnostic records to standard output, alongside
 normal Nest, Vite and Builder command output. Each record includes UTC time, PID, component and event.
+In built mode (`box start` and the service) standard output leaves out debug records: request
+traces (`http.*`, `proxy.*`, `ws.*`) and heartbeats, except a 5xx `http.finish`, `http.wait` (no
+headers after 10 seconds) and premature closes. The supervisor's journal
+(`data/builder/journal.ndjson`, see [BUILDER.md](BUILDER.md)) keeps slow and failed requests;
+`box dev --log-level debug` shows every record.
 Capture a diagnostic session with `box dev > _docs/box-runtime.log 2>&1` after creating `_docs/`.
 The capture belongs in local developer notes, not committed product documentation. Stop the process
 before removing its capture; this explicit capture is not automatically rotated.

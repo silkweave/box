@@ -85,8 +85,8 @@ bun setup --no-start
 ```
 
 An owner who runs plain `bun setup` (or the `box.silkweave.dev` installer) in their own terminal
-gets the same steps, after which setup starts `bun dev` and opens the sign-in link in the browser
-when the Box is ready. An agent passes `--no-start` and boots the Box itself in step 4, so the
+gets the same steps, after which setup installs the Box as a background service of their user
+(`box service install`), prints the sign-in link when the Box is ready and opens it in the browser. An agent passes `--no-start` and boots the Box itself in step 4, so the
 server stays visible and stoppable in the owner's shell tools.
 
 Setup is a host-only operation. It:
@@ -127,7 +127,9 @@ feature capability under `background.features` remain off by default.
 
 If setup configured a provider, the agent surface boots it. A configured directory without working
 provider authentication remains a visible readiness failure instead of being reported as ready.
-Leave the server running while signing in.
+Leave the server running while signing in. When setup is finished and the owner wants the Box to keep running
+without a terminal (a server, or a Mac that should start it at login), stop `bun dev` and run
+`box service install` (docs/SETUP.md, "Running in the background").
 
 ## 5. Manual owner fallback
 

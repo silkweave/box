@@ -6,7 +6,8 @@
 #   2. Bun, the Box runtime, installed or upgraded to the version the Box declares.
 #   3. Optionally Claude Code, when no Claude or Codex agent is on this machine.
 #   4. A Box checkout (default ./box, confirmed first), its dependencies and the `box` command.
-#   5. `bun setup`, which creates the first owner, starts the Box and opens the sign-in page.
+#   5. `bun setup`, which creates the first owner, starts the Box as a user service (systemd or launchd)
+#      and prints the sign-in link.
 #
 # Options (environment):
 #   BOX_DIR=<path>     where to create the Box (default: ./box, asked interactively)
@@ -23,6 +24,7 @@ set -euo pipefail
 BOX_REPO=${BOX_REPO:-https://github.com/silkweave/box.git}
 BOX_REF=${BOX_REF:-}
 BOX_YES=${BOX_YES:-}
+START_PATH=$PATH  # the caller's PATH, before this script adds ~/.bun/bin and ~/.local/bin to its own
 EXPLAIN=0
 MIN_BUN=1.4.2
 PG_MAJOR=18  # pg_dump/pg_restore for backups: packages/core/src/db/engines.ts SERVER_MAJOR
@@ -153,7 +155,7 @@ plan() {
   printf '    %s %s\n' "$(tone accent 2)" "$(tone text 'Prepare the tools the Box runs on')"
   printf '    %s %s\n' "$(tone accent 3)" "$(tone text 'Choose a folder for your Box')"
   printf '    %s %s\n' "$(tone accent 4)" "$(tone text 'Download the Box and add the box command')"
-  printf '    %s %s\n' "$(tone accent 5)" "$(tone text 'Set up your account; the Box then opens in your browser')"
+  printf '    %s %s\n' "$(tone accent 5)" "$(tone text 'Set up your account; the Box then starts and gives you a sign-in link')"
   line 'Nothing changes without asking first. Press Enter to take a suggested answer.' muted
   printf '\n'
   if [ -z "$BOX_YES" ] && [ "$TTY" = 1 ] && confirm 'Explain each step and question as we go?' y; then EXPLAIN=1; fi
@@ -445,36 +447,58 @@ install_box() {
     *'left alone'*) warn 'Another program is installed as ~/.local/bin/box; it was left alone.' ;;
     *) run 'Adding the box command' bun run --silent box:install ;;
   esac
-  local bin="$HOME/.local/bin"
-  case ":$PATH:" in
-    *":$bin:"*) ;;
-    *)
-      export PATH="$bin:$PATH"
-      local profile
-      case "${SHELL:-}" in
-        */zsh) profile="$HOME/.zshrc" ;;
-        */bash) if [ "$PLATFORM" = macos ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi ;;
-        *) profile="$HOME/.profile" ;;
-      esac
-      if grep -qs '.local/bin' "$profile"; then
-        :
-      elif confirm 'Make the box command work in new Terminal windows?' y "Adds one line to $(basename "$profile") so Terminal finds the box command.\nWithout it, run it as $BOX_DIR/packages/cli/bin/box."; then
-        # shellcheck disable=SC2016 # written literally so the profile expands it
-        printf '\n# Silkweave Box: the box command\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$profile"
-        ok "Added ~/.local/bin to $(basename "$profile")"
-      else
-        note "Run the Box later with: $BOX_DIR/packages/cli/bin/box dev"
-      fi
-      ;;
-  esac
+  persist_path
 }
 
+# New Terminal windows need both the box command (~/.local/bin) and Bun (~/.bun/bin): the box command
+# runs on Bun. This script put both on its own PATH only; Bun's installer does not reliably add
+# ~/.bun/bin to the shell profile (a fresh Ubuntu VM got none), so write what the caller's PATH and
+# the profile both lack. The lines must also reach non-interactive shells (`ssh host box status`):
+# zsh reads ~/.zshenv for every shell, and bash over SSH reads ~/.bashrc, whose Ubuntu and Debian
+# default returns early when not interactive, so the lines go at its top.
+persist_path() {
+  local profile bun_bin="${BUN_INSTALL:-$HOME/.bun}/bin" add=() lines='' top=0
+  case "${SHELL:-}" in
+    */zsh) profile="$HOME/.zshenv" ;;
+    */bash) if [ "$PLATFORM" = macos ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; top=1; fi ;;
+    *) profile="$HOME/.profile" ;;
+  esac
+  # shellcheck disable=SC2016,SC2088 # shown and written literally; the profile expands $HOME
+  if path_lacks "$HOME/.local/bin" && ! grep -qs '.local/bin' "$profile"; then
+    add+=('~/.local/bin'); lines+='export PATH="$HOME/.local/bin:$PATH"\n'
+  fi
+  # Only a Bun this script (or Bun's installer) put in ~/.bun; a Homebrew Bun is already on PATH.
+  if [ -x "$bun_bin/bun" ] && path_lacks "$bun_bin" && ! grep -qs "${bun_bin#"$HOME"/}" "$profile"; then
+    add+=("${bun_bin/#"$HOME"/\~}"); lines+="export PATH=\"${bun_bin/#"$HOME"/\$HOME}:\$PATH\"\\n"
+  fi
+  [ ${#add[@]} = 0 ] && return
+  local hint="export PATH=\"\$HOME/.local/bin:${bun_bin/#"$HOME"/\$HOME}:\$PATH\""
+  if confirm 'Make the box command work in new Terminal windows?' y "Adds ${add[*]} to PATH in $(basename "$profile"), so Terminal finds the box command and Bun.\nWithout it, start each new Terminal with: $hint"; then
+    if [ "$top" = 1 ] && [ -s "$profile" ]; then
+      # Rewritten in place (not moved), so a symlinked or specially owned profile stays as it was.
+      local rest; rest=$(cat "$profile")
+      printf '# Silkweave Box: the box command and Bun\n%b\n%s\n' "$lines" "$rest" >"$profile"
+    else
+      printf '\n# Silkweave Box: the box command and Bun\n%b' "$lines" >>"$profile"
+    fi
+    ok "Added ${add[*]} to $(basename "$profile")"
+  else
+    note "In a new Terminal, first run: $hint"
+  fi
+}
+
+path_lacks() { case ":$START_PATH:" in *":$1:"*) return 1 ;; *) return 0 ;; esac; }
+
 start_setup() {
-  step 'Setting up your Box' 'Creates your account and connects the AI agent. The Box then starts and opens in your browser.'
+  step 'Setting up your Box' 'Creates your account and connects the AI agent. The Box then starts in the background and\nprints your sign-in link (it opens in your browser if it can).'
   if [ "$RESUME" = 1 ] && grep -qs '"token"' box.local.json; then
     ok 'This Box is already set up.'
-    line 'Start it with:' muted
-    printf '    %s\n' "$(tone accent "cd $BOX_DIR && bun dev")"
+    if [ -z "$BOX_YES" ] && [ "$TTY" = 1 ] && confirm 'Start it in the background now?' y 'Runs the Box as a service of your user: it keeps running after you close this window or\nlog out, and starts with the computer. Stop it any time with: box service stop'; then
+      bun --no-env-file packages/cli/src/index.ts service install <&3 3<&- || die 'The Box did not start.' 'See what it printed: box service logs'
+      exec bun --no-env-file packages/cli/src/index.ts auth login <&3 3<&-
+    fi
+    line 'Start it in the background with:' muted
+    printf '    %s\n' "$(tone accent "cd $BOX_DIR && box service install")"
     line 'Need a new sign-in link? Run: box auth login' muted
     exit 0
   fi

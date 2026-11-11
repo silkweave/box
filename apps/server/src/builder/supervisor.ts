@@ -1,6 +1,6 @@
 import { createBoxStatusStream } from './box-status-stream.js'
 import { applicationUpgrade } from './application-upgrade.js'
-import { diagnostic, errorKind, requestId, runtimeHeartbeat, setDiagnosticSink, setDiagnosticTap, traceHttp, traceSocket } from '../diagnostics/runtime.js'
+import { diagnostic, diagnosticLevel, errorKind, parseDiagnosticLine, requestId, runtimeHeartbeat, setDiagnosticSink, setDiagnosticTap, traceHttp, traceSocket } from '../diagnostics/runtime.js'
 import { execFileSync } from 'node:child_process'
 import { createServer, request as httpRequest, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from 'node:http'
 import { createGzip } from 'node:zlib'
@@ -59,6 +59,9 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   // Everything the supervisor sees, kept for the Builder session export (builder-journal.ts).
   const journal = createBuilderJournal(paths.instanceDir)
   setDiagnosticTap(record => journal.diagnostic(record))
+  // Built mode (`box start`, the service): stdout is the service log, so debug records (request
+  // traces, heartbeats) stay in the journal only. `box dev` sets its own sink before this runs.
+  if (!options.devView) setDiagnosticSink(record => { if (diagnosticLevel(record) !== 'debug') console.info(JSON.stringify(record)) })
   const stopHeartbeat = runtimeHeartbeat('supervisor')
   const config = boxJson()
   const machine = agentIdentity()
@@ -71,7 +74,10 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     onOutput: (source: 'app' | 'vite', level: 'info' | 'warn', line: string) => {
       journal.output(source, level, line)
       if (options.devView) options.devView.child(source, level, line)
-      else (level === 'warn' ? process.stderr : process.stdout).write(`${line}\n`)
+      else {
+        const record = parseDiagnosticLine(line)
+        if (!record || diagnosticLevel(record) !== 'debug') (level === 'warn' ? process.stderr : process.stdout).write(`${line}\n`)
+      }
     },
   })
   const report = (level: 'info' | 'warn' | 'error', message: string): void => {
@@ -110,12 +116,18 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     finally { const durationMs = Math.round(performance.now() - started); if (durationMs >= 500) diagnostic('supervisor', 'auth.slow', { durationMs }) }
   })
   diagnostic('supervisor', 'boot.host.start')
+  const turnSession = (sessionId: string) => {
+    const info = host.worker.registry.get(sessionId)?.info()
+    return { engine: info?.engine ?? null, profile: info?.profile ?? null, model: info?.model ?? null, engineSessionId: info?.sdkSessionId ?? null }
+  }
   const host = await createBuilderHost(paths, {
+    onTurnStart: (sessionId, event) => {
+      void recordTurn(root, paths.instanceDir, sessionId, { seq: event.seq, subtype: 'started', durationMs: 0 }, turnSession(sessionId))
+        .catch(error => diagnostic('supervisor', 'turn-record.failed', { error: errorKind(error) }))
+    },
     onTurnEnd: (sessionId, event) => {
-      const info = host.worker.registry.get(sessionId)?.info()
-      void recordTurn(root, paths.instanceDir, sessionId, event, {
-        engine: info?.engine ?? null, profile: info?.profile ?? null, model: info?.model ?? null, engineSessionId: info?.sdkSessionId ?? null,
-      }).catch(error => diagnostic('supervisor', 'turn-record.failed', { error: errorKind(error) }))
+      void recordTurn(root, paths.instanceDir, sessionId, event, turnSession(sessionId))
+        .catch(error => diagnostic('supervisor', 'turn-record.failed', { error: errorKind(error) }))
     },
   })
   diagnostic('supervisor', 'boot.host.ready')
@@ -143,21 +155,30 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       try { await app.restart(next.enabled) } finally { busy = false }
     }
     return next
-  })
+  }, 'maintenance change')
   let stopping = false
   let operations = Promise.resolve()
   let operationSequence = 0
-  const mutate = <T>(operation: () => Promise<T> | T): Promise<T> => {
+  // What the serialized queue is doing, for `box app status` and a restart that waits too long.
+  let currentOperation: { id: number; label: string; since: string } | null = null
+  const queuedOperations = new Map<number, string>()
+  const mutate = <T>(operation: () => Promise<T> | T, label = 'operation'): Promise<T> => {
     const operationId = ++operationSequence
     const queued = performance.now()
-    diagnostic('supervisor', 'operation.queued', { operationId })
+    queuedOperations.set(operationId, label)
+    diagnostic('supervisor', 'operation.queued', { operationId, label })
     const result = operations.then(async () => {
       const started = performance.now()
-      diagnostic('supervisor', 'operation.start', { operationId, queueMs: Math.round(started - queued) })
+      queuedOperations.delete(operationId)
+      currentOperation = { id: operationId, label, since: new Date().toISOString() }
+      diagnostic('supervisor', 'operation.start', { operationId, label, queueMs: Math.round(started - queued) })
       if (stopping) throw new BuilderLifecycleError(503, 'The Box supervisor is stopping')
       try { return await operation() }
-      catch (error) { diagnostic('supervisor', 'operation.error', { operationId, error: errorKind(error) }); throw error }
-      finally { diagnostic('supervisor', 'operation.finish', { operationId, durationMs: Math.round(performance.now() - started) }) }
+      catch (error) { diagnostic('supervisor', 'operation.error', { operationId, label, error: errorKind(error) }); throw error }
+      finally {
+        if (currentOperation?.id === operationId) currentOperation = null
+        diagnostic('supervisor', 'operation.finish', { operationId, label, durationMs: Math.round(performance.now() - started) })
+      }
     })
     operations = result.then(() => {}, () => {})
     return result
@@ -251,14 +272,14 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
     browser.revoke('Box frontend restarting')
     try { return await app.restartFrontend() }
     finally { diagnostic('supervisor', 'local-frontend-restart.finish') }
-  })
+  }, 'frontend restart')
   const restartApplication = () => mutate(async () => {
     diagnostic('supervisor', 'local-app-restart.start')
     browser.revoke('Box application restarting')
     busy = true
     try { return await app.restart(inMaintenance()) }
     finally { busy = false; diagnostic('supervisor', 'local-app-restart.finish') }
-  })
+  }, 'app restart')
   // Built mode: the release everyone outside Builder loads changes only here.
   let webPromoting = false
   let webError: string | null = null
@@ -282,7 +303,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       diagnostic('supervisor', 'web-promote.finish', { durationMs: Math.round(performance.now() - started), failed: webError !== null })
     }
   }
-  const promoteLocal = () => mutate(() => promoteWeb({ check: true }))
+  const promoteLocal = () => mutate(() => promoteWeb({ check: true }), 'web promote')
   const devAccess = createDevAccessCache(async cookie => (await auth.authenticate(cookie)).ok)
   // Vite exists in built mode only for a Builder session's Preview.
   const startPreviewVite = async (): Promise<void> => {
@@ -432,7 +453,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
           default: throw new BuilderLifecycleError(404, 'Unknown Builder control')
         }
       } finally { busy = false; diagnostic('supervisor', 'control.finish', { requestId: requestId(req), action: path }) }
-    })
+    }, `Builder ${path.slice(1)}`)
     await operation
     json(res, 200, { ok: true })
   }
@@ -591,7 +612,8 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       frontend: () => app.frontendStatus(),
       restart: restartApplication,
       restartFrontend,
-      refresh: () => mutate(refreshUi),
+      refresh: () => mutate(refreshUi, 'Builder UI refresh'),
+      operations: () => ({ current: currentOperation, queued: [...queuedOperations.values()] }),
       promote: promoteLocal,
       maintenance: { read: () => readMaintenance(paths.instanceDir), change: patch => changeMaintenance(patch, null, 'host') },
       exportSession,
@@ -613,7 +635,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       const source = sourceState(root)
       const release = currentWebRelease(paths.instanceDir)
       if (!release || release.dirty || source.dirty || release.sourceSha !== source.sha) {
-        void mutate(() => promoteWeb({ check: false })).catch(error => report('error', `Box web release needs repair: ${String(error)}`))
+        void mutate(() => promoteWeb({ check: false }), 'web promote').catch(error => report('error', `Box web release needs repair: ${String(error)}`))
       }
     }
   } catch (error) {
@@ -645,6 +667,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       stopHeartbeat()
       diagnostic('supervisor', 'shutdown.finish')
       setDiagnosticTap(undefined)
+      if (!options.devView) setDiagnosticSink(undefined)
       journal.close()
       if (options.signals) { process.removeListener('SIGINT', onSigint); process.removeListener('SIGTERM', onSigterm) }
     })()
