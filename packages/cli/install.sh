@@ -25,6 +25,7 @@ BOX_REF=${BOX_REF:-}
 BOX_YES=${BOX_YES:-}
 EXPLAIN=0
 MIN_BUN=1.4.2
+PG_MAJOR=18  # pg_dump/pg_restore for backups: packages/core/src/db/engines.ts SERVER_MAJOR
 LOG=
 TICK=0
 
@@ -251,7 +252,6 @@ linux_install() {  # $1 = reason, rest = packages
   elif have zypper; then manager=zypper; command="sudo zypper install -y $*"
   else die "$reason needs: $*." 'Install them with your package manager, then run the installer again.'
   fi
-  if [ "$(id -u)" = 0 ]; then command=${command//sudo /}; fi
   line "$reason needs: $* (installed with $manager)." muted
   confirm 'Install them now?' y "Git downloads the Box and keeps it up to date; unzip unpacks Bun.\nInstalling system packages asks for your computer password once." || die "$* required." "Install with: $command"
   if [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null; then
@@ -323,9 +323,51 @@ ensure_bun() {  # $1 = minimum version
   ok "Bun $current"
 }
 
+# The newest pg_dump major on this host (PATH, Homebrew's libpq/postgresql, Debian's versioned dirs), or empty.
+pg_client_major() {
+  local best='' v bin
+  for bin in "$(command -v pg_dump 2>/dev/null)" /opt/homebrew/opt/libpq/bin/pg_dump /usr/local/opt/libpq/bin/pg_dump \
+    /opt/homebrew/opt/postgresql@$PG_MAJOR/bin/pg_dump /usr/local/opt/postgresql@$PG_MAJOR/bin/pg_dump /usr/lib/postgresql/*/bin/pg_dump; do
+    [ -n "$bin" ] && [ -x "$bin" ] || continue
+    v=$("$bin" --version 2>/dev/null | sed -n 's/^pg_dump (PostgreSQL) \([0-9][0-9]*\).*/\1/p' | head -1)
+    [ -n "$v" ] && { [ -z "$best" ] || [ "$v" -gt "$best" ]; } && best=$v
+  done
+  printf '%s' "$best"
+}
+
+# PostgreSQL's client tools: the Box backs its database up with pg_dump and pg_restore, which must be at
+# least as new as the server. Most Linux releases ship an older major, so on apt systems the
+# PostgreSQL apt repository (apt.postgresql.org, its own setup script) is added first when needed.
+ensure_pg_client() {
+  local have command
+  have=$(pg_client_major)
+  if [ -n "$have" ] && [ "$have" -ge "$PG_MAJOR" ]; then ok "PostgreSQL client tools $have"; return; fi
+  local why="The Box keeps its data in a PostgreSQL database and backs it up with pg_dump and pg_restore\n$PG_MAJOR or newer${have:+ (this computer has $have)}."
+  if [ "$PLATFORM" = macos ]; then
+    if ! have brew; then note "PostgreSQL client tools $PG_MAJOR: setup shows how to install them (Homebrew: brew install libpq)."; return; fi
+    confirm "Install the PostgreSQL client tools with Homebrew?" y "$why" || die "pg_dump $PG_MAJOR is required." 'Install with: brew install libpq'
+    run 'Installing the PostgreSQL client tools' brew install libpq
+  elif have apt-get; then
+    command="if ! apt-cache policy postgresql-client-$PG_MAJOR 2>/dev/null | grep -q 'Candidate: [0-9]'; then sudo apt-get update && sudo apt-get install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y; fi && sudo apt-get install -y postgresql-client-$PG_MAJOR"
+    confirm "Install the PostgreSQL $PG_MAJOR client tools (adds the PostgreSQL apt repository if needed)?" y "$why" || die "pg_dump $PG_MAJOR is required." "Install with: $command"
+    if [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null; then
+      line 'Your computer password is needed to install them.' muted
+      sudo -v <&3 || die 'Could not get administrator rights.' "Install them yourself: $command"
+    fi
+    run_foreground 'Installing the PostgreSQL client tools' bash -c "$command"
+  else
+    note "PostgreSQL client tools $PG_MAJOR: install them with your package manager (setup checks again)."
+    return
+  fi
+  have=$(pg_client_major)
+  { [ -n "$have" ] && [ "$have" -ge "$PG_MAJOR" ]; } || die "pg_dump $PG_MAJOR or newer is still not found."
+  ok "PostgreSQL client tools $have"
+}
+
 check_tools() {
-  step 'Preparing the tools' 'Installs Bun, the engine the Box runs on, and an AI agent if none is on this computer.'
+  step 'Preparing the tools' 'Installs Bun, the engine the Box runs on, the PostgreSQL client tools for backups, and an AI agent if none is on this computer.'
   ensure_bun "$MIN_BUN"
+  ensure_pg_client
   if have node; then note "Node.js $(node --version) found; the Box does not need it."; else note 'Node.js is not needed; the Box runs on Bun.'; fi
 
   if have claude || have codex || [ -d "$HOME/.claude" ] || [ -d "$HOME/.codex" ]; then
@@ -447,6 +489,7 @@ main() {
   attach_terminal
   [ "$TTY" = 1 ] || [ -n "$BOX_YES" ] || die 'The installer asks a few questions and needs a terminal.' 'Run it in Terminal, or set BOX_YES=1 to accept every default.'
   detect_platform
+  [ "$(id -u)" != 0 ] || die 'The Box does not run as root: its database refuses to start as the root user.' 'Sign in as a normal user (with sudo rights for installing packages) and run the installer again.'
   banner
   plan
   RESUME=0

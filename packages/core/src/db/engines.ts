@@ -108,7 +108,7 @@ export function nativeInstallHint(): string {
 
 export function clientToolsHint(): string {
   if (platform() === 'darwin') return `Install the client tools with Homebrew: brew install libpq (or postgresql@${SERVER_MAJOR})`
-  return `Install the client tools: sudo apt install postgresql-client-${SERVER_MAJOR} (PostgreSQL apt repository)`
+  return `Install the client tools from the PostgreSQL apt repository (https://www.postgresql.org/download/linux/): sudo apt install postgresql-client-${SERVER_MAJOR}`
 }
 
 /** Whether `cmd` is on PATH. */
@@ -127,9 +127,14 @@ export function hostInstallCommand(what: 'native' | 'client-tools', has: (cmd: s
     return what === 'native' ? ['brew', 'install', `postgresql@${SERVER_MAJOR}`, 'pgvector'] : ['brew', 'install', 'libpq']
   }
   if (platform() === 'linux' && has('apt-get')) {
-    return what === 'native'
-      ? ['sudo', 'apt-get', 'install', '-y', `postgresql-${SERVER_MAJOR}`, `postgresql-${SERVER_MAJOR}-pgvector`]
-      : ['sudo', 'apt-get', 'install', '-y', `postgresql-client-${SERVER_MAJOR}`]
+    const packages = what === 'native' ? [`postgresql-${SERVER_MAJOR}`, `postgresql-${SERVER_MAJOR}-pgvector`] : [`postgresql-client-${SERVER_MAJOR}`]
+    // Most releases ship an older major: add the PostgreSQL apt repository (its own setup script from
+    // postgresql-common) when apt has no candidate for the package yet.
+    return ['sh', '-c', [
+      `if ! apt-cache policy ${packages[0]} 2>/dev/null | grep -q 'Candidate: [0-9]'; then`,
+      'sudo apt-get update && sudo apt-get install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y; fi',
+      `&& sudo apt-get install -y ${packages.join(' ')}`,
+    ].join(' ')]
   }
   return null
 }

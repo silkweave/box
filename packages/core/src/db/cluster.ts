@@ -155,7 +155,9 @@ export async function initCluster(c: Cluster, install: EngineInstall): Promise<C
   mkdirSync(c.dir, { recursive: true, mode: 0o700 })
   mkdirSync(p.cache, { recursive: true, mode: 0o700 })
   await runTool(join(install.binDir, 'initdb'), ['-D', p.data, '-U', OWNER_LOGIN, '-E', 'UTF8', '--no-locale',
-    '--auth-local=reject', '--auth-host=reject'], { ...install, env: { ...install.env, ...cacheEnv(install, p.cache) } })
+    // TZ: the server always runs in UTC (the start arguments), so initdb writes UTC too rather than
+    // reading the host's zone, which a minimal or misconfigured host names in a form it refuses.
+    '--auth-local=reject', '--auth-host=reject'], { ...install, env: { ...install.env, ...cacheEnv(install, p.cache), TZ: 'UTC' } })
   writeFileSync(join(p.data, 'pg_hba.conf'), hbaContract())
   writeFileSync(join(p.data, 'pg_ident.conf'), identContract())
   const id: ClusterIdentity = {
