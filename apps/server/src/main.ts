@@ -5,7 +5,7 @@ import { NestFactory, Reflector } from '@nestjs/core'
 import type { NestExpressApplication } from '@nestjs/platform-express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import type { RequestHandler } from 'http-proxy-middleware'
-import { SESSION_COOKIE, accessOf, checkCoverageAtBoot, recoverPolicyJournal, asSystem, startDatabase, startPolicyListener, fillRequest, runInRequest, authenticatePrincipal, mcpConnectionPathId, mcpConnections, boxBrand, dataPath, findPathMount, isRawUploadRoute, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
+import { SESSION_COOKIE, accessOf, checkCoverageAtBoot, recoverPolicyJournal, asSystem, startDatabase, startPolicyListener, fillRequest, runInRequest, authenticatePrincipal, mcpServerPathId, mcpServerDirectory, boxBrand, dataPath, findPathMount, isRawUploadRoute, pathMountSigninUrl, assertBackgroundDeclared, boxJson, clientIp, ensureBoxConfig, ensureAgentPrincipals, parseCookies, readUsers, rateLimit, repoRoot, resolveSessionPrincipal, setMaintenanceOverride, setSecurityHeaders, setTrustedContentHeaders } from '@silkweave/box-core'
 import { AppModule, trpcTransport } from './app.module.js'
 import { SERVER_FEATURE_LIST } from './generated/features.js'
 import { AGENT_PATH, createAgentMount } from './agent/agent.mount.js'
@@ -19,8 +19,9 @@ import { serveWebApp } from './web/web-release.js'
 
 // Reserved path prefixes the SPA front door must NOT swallow - they belong to Nest (REST under the
 // global `api` prefix, plus the silkweave-registered /trpc + /mcp transports) or, for /agent, to
-// the in-process workerdeck mount registered below (which also gets the per-IP rate limit).
-const RESERVED = /^\/(api|trpc|mcp|agent)(\/|$)/
+// the in-process workerdeck mount registered below (which also gets the per-IP rate limit), and the
+// OAuth discovery documents the /mcp adapter serves at the origin (`/.well-known/oauth-*`, RFC 8414).
+const RESERVED = /^\/(api|trpc|mcp|agent|\.well-known)(\/|$)/
 
 const flagValue = (name: string): string | undefined => {
   const prefix = `--${name}=`
@@ -81,9 +82,10 @@ async function bootstrap(): Promise<void> {
   // Request diagnostics name a route root only when core or a registered feature serves it.
   addRouteRoots(SERVER_FEATURE_LIST.flatMap((f) => [f.id, ...(f.routeRoots ?? [])]))
   // The request context (core request-context.ts), opened FIRST so it survives every middleware
-  // below: an empty holder per HTTP request that AuthGuard, a path mount or the connection endpoint
-  // fills once it knows the principal. tRPC and MCP calls open their own per call (call-context.ts).
-  app.use((_req: IncomingMessage, _res: ServerResponse, next: () => void) => runInRequest(next))
+  // below: an empty holder per HTTP request that AuthGuard, a path mount or the MCP server endpoint
+  // fills once it knows the principal, with the caller's address (`clientIp`) for rate limits and
+  // audit rows below the request. tRPC and MCP calls open their own per call (call-context.ts).
+  app.use((req: IncomingMessage, _res: ServerResponse, next: () => void) => runInRequest(next, { ip: clientIp(req) }))
   app.use((req: IncomingMessage, res: ServerResponse, next: () => void) => { traceHttp('app', req, res, true); next() })
   app.setGlobalPrefix('api')
 
@@ -193,31 +195,31 @@ async function bootstrap(): Promise<void> {
     })
   })
 
-  // A connection's session endpoint (core port, packages/core/src/mcp-connections.ts):
-  // `/mcp/connections/<id>` serves one outside MCP server's tools under their upstream names to a
+  // An MCP server's session endpoint (core port, packages/core/src/mcp-servers.ts):
+  // `/mcp/servers/<id>` serves one outside MCP server's tools under their upstream names to a
   // server-owned agent session whose toolset grants it. The `mcp` recipe's relay answers it; without
   // the recipe it is 404. Bearer only (an MCP client, never a browser), with the API rate limit; the
   // body is already parsed above.
   app.use((req: IncomingMessage & { body?: unknown }, res: ServerResponse, next: (err?: unknown) => void) => {
     const path = (req.url ?? '/').split('?', 1)[0]
-    const id = mcpConnectionPathId(path)
+    const id = mcpServerPathId(path)
     if (id === null) return next()
     const json = (status: number, body: unknown): void => {
       res.statusCode = status
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify(body))
     }
-    const directory = mcpConnections()
-    if (!directory) return json(404, { message: 'no MCP connections on this Box' })
+    const directory = mcpServerDirectory()
+    if (!directory) return json(404, { message: 'no MCP servers on this Box' })
     void (async () => {
       const authz = req.headers.authorization
       if (typeof authz !== 'string' || !/^Bearer\s+/i.test(authz)) return json(401, { message: 'bearer token required' })
       const principal = await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim())
       if (!principal) return json(401, { message: 'invalid token' })
-      fillRequest({ principal, access: await accessOf(principal), credential: 'bearer', handler: `mcp-connection:${id}` })
+      fillRequest({ principal, access: await accessOf(principal), credential: 'bearer', handler: `mcp-server:${id}` })
       await directory.serve({ req, res, id, principal })
     })().catch((err: unknown) => {
-      diagnostic('app', 'mcp-connection.error', { connection: id, error: errorKind(err) })
+      diagnostic('app', 'mcp-server.error', { server: id, error: errorKind(err) })
       if (res.headersSent) { res.destroy(); return }
       json(500, { message: 'internal error' })
     })

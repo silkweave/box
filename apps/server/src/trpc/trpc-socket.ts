@@ -66,7 +66,7 @@ export function trpcWithSocket(options: Parameters<typeof trpc>[0]): { adapter: 
     ...http,
     register(registered: RegisterArgs) {
       // Every call, over HTTP (batches included) and over the socket, runs in its own request frame.
-      const args = { ...registered, actions: registered.actions.map(withCallContext) }
+      const args = { ...registered, actions: registered.actions.map((action) => withCallContext(action)) }
       http.register(args)
       const { baseContext } = args
       const logger = createActionLogger()

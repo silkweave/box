@@ -279,36 +279,26 @@ another modal. Profile edits stay inline and include sign-out.
 
 ### Building a settings section
 
-Settings sections are a canvas, not a stack of cards. Build them from the pieces
-`@silkweave/box-ui` exports (see the `Settings/SettingsPane` story):
+What a section looks like (archetypes, where actions go, member view, states, copy) is in
+[DESIGN.md](DESIGN.md) chapter 2, with one reference story per archetype under
+`packages/ui/src/stories/patterns/`. Load the `$ui` skill before building one. The mechanics:
 
-- `SettingsIntro` for the one-paragraph explanation under the title, with an optional `aside`
-  for view controls (a group-by switch, Refresh).
-- `SettingsList` and `SettingsListRow` for collections: full-bleed rows ruled top and bottom, the
-  column template passed as a grid class so rows and a `SettingsListHeader` line up. `onOpen`
-  makes the whole row open its editor; trailing actions use `settingsRowActionCls` and stop
-  propagation. `SettingsListHeading` labels a second list in the same section.
-- `SettingsGroup` for a titled group inside a form or detail (a hairline rule and an uppercase
-  label, with an optional aside such as Reset).
-- `SettingsField` and `settingsInputCls` for labelled inputs. Use `SelectField` (options as data,
-  groups for what an `<optgroup>` did) for a closed set and `Autocomplete` for free text with
-  suggestions; never a native `<select>` or `<datalist>`, which draw their own caret and popup. Lay fields out on a grid that uses
-  the pane's width (Profile and the Users editor use three columns), not a narrow centred column.
-- The pane footer for primary actions, which stays pinned however long the content is. A list
-  publishes its create button with `useSettingsFooter(footer, deps)` and `SettingsFooterBar`. An
-  editor or confirmation wraps its action row in `SettingsActions`, which pins it to the footer
-  inside Settings and renders it inline anywhere else. Footers stack: the newest shows, and closing
-  an editor or confirmation hands the bar back to the list. A submit button in the footer sits
-  outside its form, so it names the form with `form='<form id>'`.
-- Sub-pages are routed through the section's `params` (`#settings/pods/<id>/members`) and render
-  as inline editors. `InlineDialogTitle` takes a `trail` of the pages between the section and the
-  editor and an `onRoot` for the section title, so the bar reads
-  `Pods › Founders amplification › Add members` and each part navigates.
-- `SETTINGS_GUTTER` for any other block that must align with the title bar and rows.
-
-Tabs inside a section use `TabNav` directly under the title bar (Automation, Channels). A log
-(`LogViewer`, `RunLogPane`) follows its own tail inside its body; never call `scrollIntoView` on
-content inside the pane, which scrolls the whole pane along with it.
+- Registration: core sections are listed in `views/SettingsView.tsx`; a feature adds its own
+  through `settings` in its web manifest (`id`, `label`, `icon`, `group`, `order`, `render`).
+  Feature sections show only to principals who read the feature's area (`lib/access.ts`).
+- Routes: `#settings/<section>/<params...>`. `render(params)` receives the parts after the
+  section id; the section decides from them which page is open and navigates with
+  `useSettingsDialog().open(path)`. Detail, create and tab pages always have a route.
+- Pages: a detail or create page is a `SettingsPage` rendered over the list inside the pane's
+  `InlineDialogScope`; its title becomes the breadcrumb, its `trail` names the pages between the
+  section and it (`Pods › Founders amplification › Add members`), each crumb navigates.
+- Slots: the pane's title bar, info popover and footer are filled by publishing from inside the
+  section (`SettingsHeaderActions`, `SettingsIntro` or `SettingsInfo`, `SettingsSaveBar`). The
+  newest publisher wins and unmounting hands the slot back, so a page opened over a list takes
+  over the title bar and footer and closing it restores the list's. A submit button in the footer
+  sits outside its form, so `useSettingsForm` gives the form an id the bar points at.
+- A log (`LogViewer`, `RunLogPane`) follows its own tail inside its body; never call
+  `scrollIntoView` on content inside the pane, which scrolls the whole pane along with it.
 
 ## Routing - real paths, no server work
 
@@ -559,7 +549,6 @@ Everything in `src/lib/` that is not covered above, and why it is core rather th
 | File | What |
 |---|---|
 | `format.ts` | **One date format, `YYYY-MM-DD`, everywhere**, through three deliberately distinct formatters: `formatDate` (a date), `formatBucket` (a warehouse bucket, **UTC**), `formatDateTime` (a timestamp in the *reader's* timezone, for the few fields that are wall clock to a person). Plus `formatNumber`, `formatDelta`, `formatDuration`. Do not flatten the three into one, and do not call `toLocaleString()` at a call site |
-| `gridColumns.ts` | The geometry half of a data grid, shared by every feature that draws one. Two things about a column, stored in two different places on purpose: WHICH columns and in WHAT ORDER is view state (shared with the team); HOW WIDE each one is, is a user setting (localStorage, per column) - width is about your screen and your eyesight, and syncing it would mean one person's drag re-laying-out everybody else's board |
 | `guards.ts` | Type guards (`isStringArray`, ...) used by stored views and localStorage reads. |
 | `useRecentIds.ts` | "Where have I been": the ids you opened, newest first, per browser. Deliberately not shared the way a team's saved view is |
 | `image.ts` | Client-side avatar prep - downscale and square-crop a picked file into a small data URI that fits in the `users.image` column. No upload infrastructure |

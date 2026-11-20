@@ -43,7 +43,11 @@ const TONE_BADGE: Record<StatusTone, { icon: typeof Loader2; cls: string; spin?:
   error: { icon: XCircle, cls: 'text-destructive' },
 }
 
-/** Icon + word. The word is the caller's - the badge supplies the shape and the colour. */
+/**
+ * Icon + word. The word is the caller's - the badge supplies the shape and the colour.
+ * Use it for a run's status beside its title (as `LogViewer` does). Not for a state pill in a list
+ * (`Badge`) or a bare health light (`StatusDot`). `tone: null` renders nothing.
+ */
 export function StatusBadge({ tone, label }: { tone: StatusTone | null; label: string }) {
   if (!tone) return null
   const b = TONE_BADGE[tone]
@@ -73,6 +77,15 @@ interface LogViewerProps {
   className?: string
 }
 
+/**
+ * A terminal-styled pane of output lines under a header (title, status chip, line count), scrolling
+ * inside its own body and following the tail.
+ * Use it for a run's, build's or stream's output, mapped by the caller onto `LogLine[]`.
+ * Not for a list of runs or events (a `DataGrid` in the Log archetype, `ActionListRow` in a
+ * feed) or structured records.
+ * `follow` keeps the newest line in view while the reader is at the bottom; scrolling up pauses it.
+ * `emptyNote` is required: the library does not know your verb.
+ */
 export function LogViewer({
   title,
   status,

@@ -20,7 +20,8 @@
 // draws the editor that type calls for: a date gets relative windows and a range rather than four
 // bucket chips. A field may also be PINNED: a preset names the fields that matter to it, and each
 // sits in the row as a chip with its value, one click from its editor. Pinning is offered (a star in
-// the panel) only where the host passes `pins`, because only a preset board has somewhere to keep it.
+// the panel) where the host passes `pins`; `DataGrid` always does, keeping pins in the preset or,
+// for a grid that keeps its own view, in this browser under its `storageKey`.
 //
 // Two of its controls carry more than they look like. SORT is one control with two values - the
 // field, and the direction beside it - because "in what order?" is one question, and baking the
@@ -47,22 +48,19 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  ArrowDownWideNarrow,
-  ArrowUpNarrowWide,
   Check,
   Columns3,
   GripVertical,
-  ListFilter,
-  Search,
-  X,
 } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
+import { SearchInput } from '../components/SearchInput.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.tsx'
-import { FilterPanel, offered } from '../filters/FilterPanel.tsx'
+import { PopoverHeader } from '../components/PopoverHeader.tsx'
+import { offered } from '../filters/FilterPanel.tsx'
 import { PinnedFilterChip } from '../filters/PinnedFilterChip.tsx'
 import { isActive } from '../filters/match.ts'
-import type { FilterField, FilterOption, FilterValue, Filters } from '../filters/types.ts'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/Select.tsx'
+import type { FilterField, FilterOption, FilterValue, Filters, SortDir, SortOption } from '../filters/types.ts'
+import { FilterControl, GroupControl, SortControl } from '../filters/ViewControls.tsx'
 import type { NavIcon } from '../shell/Sidebar.tsx'
 
 /** The two shared layouts: a list and a board. ONE vocabulary whatever the caller labels them - a
@@ -83,9 +81,7 @@ export interface LayoutOption {
   columns?: boolean
 }
 
-/** Which way a sort runs. Split from the field it sorts by: fusing the two into one enum value is
- *  what produces a sort called "Least recently contacted" with no way to ask it the other way. */
-export type SortDir = 'asc' | 'desc'
+export type { SortDir, SortOption } from '../filters/types.ts'
 
 /** The axes the bar reads and writes. An app's own view state is narrower (its option fields are
  *  enums) and usually carries more; it passes the overlap in and merges the patch back. */
@@ -107,16 +103,6 @@ export interface BoardBarValue {
 }
 
 export type { FilterOption }
-
-/** One sort axis. The DIRECTION is a separate control, so an option names a field and nothing else -
- *  "Last contact", not "Least recently contacted". */
-export interface SortOption extends FilterOption {
-  /** How this field reads when you switch to it: money and dates-of-record want the big end first,
-   *  names and deadlines want the small one. Defaults to ascending. */
-  defaultDir?: SortDir
-  /** This axis has no direction to speak of (manual order is whatever the drags left behind). */
-  undirected?: boolean
-}
 
 /** Everything the bar needs to know about a board, and nothing about what any of it MEANS. */
 export interface BoardBarSpec {
@@ -153,6 +139,14 @@ function activeFilterCount(fields: readonly FilterField[], filters: Filters, sea
   return fields.reduce((n, f) => n + (isActive(f.type, filters[f.key]) ? 1 : 0), 0) + (search.trim() ? 1 : 0)
 }
 
+/**
+ * The control strip above a board or list: presets, layout, search, group, sort, filters (with
+ * pinned chips) and columns, in one row.
+ * Use it above a `BoardKanban` or a custom list; `DataGrid` already draws it.
+ * Not for a row count (`GridFooter`).
+ * Controlled: `value` in, a partial patch out. `spec` carries the caller's options and typed filter
+ * fields; `controls` turns controls off; `pins` offers pinning; `dense` suits a card.
+ */
 export function BoardViewBar({
   value,
   onChange,
@@ -162,6 +156,7 @@ export function BoardViewBar({
   pins = false,
   today,
   dense = false,
+  settings = false,
   trailing,
 }: {
   value: BoardBarValue
@@ -179,6 +174,8 @@ export function BoardViewBar({
   today?: string
   /** The embedded form: no strip border or canvas background, a narrower search. */
   dense?: boolean
+  /** On a settings canvas: ruled top and bottom on the pane's surface (`DataGrid` sets it). */
+  settings?: boolean
   /** Pushed to the far end of the strip, e.g. a card's own action. */
   trailing?: ReactNode
 }) {
@@ -214,14 +211,6 @@ export function BoardViewBar({
     onChange({ columns: arrayMove(keys, from, to) })
   }
 
-  const sortOption = spec.sort.find((o) => o.value === value.sort)
-  // Switching field also switches direction, to the one that field reads naturally. Picking "MRR"
-  // and being shown the smallest accounts first would be a control that technically obeyed you.
-  const setSort = (next: string | null): void => {
-    if (next == null) return
-    onChange({ sort: next, sortDir: spec.sort.find((o) => o.value === next)?.defaultDir ?? 'asc' })
-  }
-
   // A field with no filter is absent from the record rather than present as null, so a cleared view
   // and a fresh one are the same object.
   const setField = (key: string, next: FilterValue | null): void => {
@@ -241,7 +230,7 @@ export function BoardViewBar({
     // the argument that a filter you cannot see is a filter you forget you set. The count on the
     // funnel and the × beside it say the same thing in a fixed amount of space, and the row that
     // appeared and disappeared under the bar moved the whole grid down the moment you filtered.
-    <div className={cn('flex flex-wrap items-center gap-1.5', dense ? 'px-0 py-0' : 'border-b border-border bg-bg px-3 py-1.5')}>
+    <div className={cn('flex flex-wrap items-center gap-1.5', dense ? 'px-0 py-0' : settings ? 'border-y border-border bg-surface p-2' : 'border-b border-border bg-bg p-2')}>
       {presets}
 
       {/* Two or three options, so it is a segmented control rather than a select - and it sits with
@@ -275,19 +264,14 @@ export function BoardViewBar({
       )}
 
       {show('search') && (
-      <div className='relative'>
-        <Search className='pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground' />
-        <input
-          value={value.search}
-          onChange={(e) => onChange({ search: e.target.value })}
-          placeholder={spec.searchPlaceholder}
-          aria-label={`Search ${spec.noun}`}
-          className={cn(
-            'h-7 rounded-md border border-border bg-bg pr-2 pl-7 text-body-sm text-text transition-colors outline-none placeholder:text-fg-4 hover:border-accent/40 focus:border-accent',
-            dense ? 'w-44' : 'w-56',
-          )}
-        />
-      </div>
+      <SearchInput
+        size='sm'
+        value={value.search}
+        onChange={(search) => onChange({ search })}
+        placeholder={spec.searchPlaceholder}
+        label={`Search ${spec.noun}`}
+        className={dense ? 'w-44' : 'w-56'}
+      />
       )}
 
       {/* The pinned fields, right after search: the questions this preset is about, each answered
@@ -300,63 +284,11 @@ export function BoardViewBar({
       {/* Grouping is a list concept (and any layout that declares it): the board already groups,
           in columns. */}
       {show('group') && showGroups && spec.groupBy.length > 0 && (
-        <Select
-          value={value.groupBy}
-          onValueChange={(next) => next != null && onChange({ groupBy: next })}
-          items={spec.groupBy}>
-          <SelectTrigger aria-label='Group by' className='h-7 min-w-32'>
-            <SelectValue>
-              {(val) => (
-                <span className={val === 'none' ? 'text-muted-foreground' : undefined}>
-                  Group: {spec.groupBy.find((o) => o.value === val)?.label}
-                </span>
-              )}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {spec.groupBy.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <GroupControl options={spec.groupBy} value={value.groupBy} onChange={(groupBy) => onChange({ groupBy })} />
       )}
 
-      {/* Field and direction are ONE control: they answer one question ("in what order?") and
-          splitting them across the bar made the arrow read as a stray toggle. A board with no sort
-          axes at all draws neither half - see `BoardBarSpec.sort`. */}
       {show('sort') && spec.sort.length > 0 && (
-        <div className='inline-flex items-center'>
-          <Select value={value.sort ?? ''} onValueChange={setSort} items={spec.sort}>
-            <SelectTrigger
-              aria-label='Sort'
-              className={cn('h-7 min-w-28', !sortOption?.undirected && 'rounded-r-none border-r-0')}>
-              <SelectValue>{(val) => <span>Sort: {spec.sort.find((o) => o.value === val)?.label}</span>}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {spec.sort.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {!sortOption?.undirected && (
-            <button
-              type='button'
-              onClick={() => onChange({ sortDir: value.sortDir === 'asc' ? 'desc' : 'asc' })}
-              aria-label={`Sort direction: ${value.sortDir === 'asc' ? 'ascending' : 'descending'}`}
-              title={`${value.sortDir === 'asc' ? 'Ascending' : 'Descending'} - click to reverse`}
-              className='inline-flex h-7 items-center rounded-r-md border border-border bg-bg px-1.5 text-muted-foreground transition-colors hover:border-accent/40 hover:text-text'>
-              {value.sortDir === 'asc' ? (
-                <ArrowUpNarrowWide className='size-3.5' />
-              ) : (
-                <ArrowDownWideNarrow className='size-3.5' />
-              )}
-            </button>
-          )}
-        </div>
+        <SortControl options={spec.sort} sort={value.sort} dir={value.sortDir} onChange={(sort, sortDir) => onChange({ sort, sortDir })} />
       )}
 
       {/* Filter and Clear are ONE control, the same shape as sort's field+direction pair: the funnel
@@ -364,50 +296,16 @@ export function BoardViewBar({
           separate concern from filtering - it is the thing you want the instant you can see the
           board is filtered, and it used to live at the end of a second row of chips. */}
       {show('filters') && fields.length > 0 && (
-      <div className='inline-flex items-center'>
-        <Popover>
-          {/* Icon-only, but the COUNT stays: a funnel says "filters live here", and the number is
-              the only part that says something you cannot see from the board itself. */}
-          <PopoverTrigger
-            aria-label={nFilters > 0 ? `Filters (${nFilters} active)` : 'Filters'}
-            title={nFilters > 0 ? `${nFilters} active filter${nFilters > 1 ? 's' : ''}` : 'Filter'}
-            className={cn(
-              'inline-flex h-7 items-center gap-1 rounded-md border px-1.5 text-body-sm transition-colors',
-              nFilters > 0
-                ? 'rounded-r-none border-r-0 border-accent/40 bg-accent-tint text-accent'
-                : 'border-border bg-bg text-muted-foreground hover:border-accent/40 hover:text-text',
-            )}>
-            <ListFilter className='size-3.5' />
-            {nFilters > 0 && <span className='tabular-nums'>{nFilters}</span>}
-          </PopoverTrigger>
-          {/* The kit's panel: fields on the left, the selected one's typed editor on the right. */}
-          <PopoverContent
-            align='start'
-            side='bottom'
-            className='max-h-[75vh] w-[min(30rem,calc(100vw-1rem))] gap-0 overflow-y-auto p-0'>
-            <FilterPanel
-              fields={fields}
-              value={filters}
-              onChange={(next) => onChange({ filters: next })}
-              pinned={value.pinned}
-              onPinnedChange={pins ? (next) => onChange({ pinned: next }) : undefined}
-              today={today}
-            />
-          </PopoverContent>
-        </Popover>
-        {/* Only on screen when it would do something - an always-present × on an unfiltered board is
-            a control that is disabled 90% of the time. */}
-        {nFilters > 0 && (
-          <button
-            type='button'
-            onClick={clearAll}
-            aria-label={`Clear ${nFilters} filter${nFilters > 1 ? 's' : ''}`}
-            title='Clear the filters and the search'
-            className='inline-flex h-7 items-center rounded-r-md border border-accent/40 bg-accent-tint px-1.5 text-accent transition-colors hover:bg-accent/20'>
-            <X className='size-3.5' />
-          </button>
-        )}
-      </div>
+        <FilterControl
+          fields={fields}
+          value={filters}
+          onChange={(next) => onChange({ filters: next })}
+          active={nFilters}
+          onClear={clearAll}
+          pinned={value.pinned}
+          onPinnedChange={pins ? (next) => onChange({ pinned: next }) : undefined}
+          today={today}
+        />
       )}
 
       {/* Columns shape the list (and any layout that declares them); a board card has a fixed anatomy. */}
@@ -419,12 +317,12 @@ export function BoardViewBar({
             className='inline-flex size-7 items-center justify-center rounded-md border border-border bg-bg text-muted-foreground transition-colors hover:border-accent/40 hover:text-text'>
             <Columns3 className='size-3.5' />
           </PopoverTrigger>
-          <PopoverContent align='start' side='bottom' className='flex max-h-[70vh] w-64 flex-col gap-1 overflow-y-auto'>
-            <span className='px-1 text-label text-muted-foreground'>{spec.columnsNote}</span>
-            <span className='px-1 pb-1 text-label text-fg-4'>
-              Drag to reorder. To resize, drag a column's right edge in the header - that one is
-              yours alone, and no preset stores it.
-            </span>
+          <PopoverContent align='start' side='bottom' className='flex max-h-[70vh] w-64 flex-col gap-0 p-0'>
+            <PopoverHeader
+              title='Columns'
+              info={<>{spec.columnsNote} Drag to reorder. To resize, drag a column's right edge in the header; that width is yours alone.</>}
+            />
+            <div className='flex min-h-0 flex-col gap-1 overflow-y-auto p-2'>
             {/* The chosen ones, in the order they render - drag to rearrange the board. */}
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onColumnDragEnd}>
               <SortableContext items={chosen.map((c) => c.key)} strategy={verticalListSortingStrategy}>
@@ -443,6 +341,7 @@ export function BoardViewBar({
                 ))}
               </>
             )}
+            </div>
           </PopoverContent>
         </Popover>
       )}

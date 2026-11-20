@@ -64,6 +64,15 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 /** Monday-first, matching ISO-8601 - the same standard the date format itself comes from. */
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su']
 
+/**
+ * The date field: a text input that takes and shows `YYYY-MM-DD`, with the house calendar popover.
+ * Use it for every calendar date. Value: `''` when unset, `yyyy-mm-dd` otherwise; only a complete,
+ * real date reaches `onChange`.
+ * Not for a native `<input type='date'>` (follows the browser's locale, cannot be themed) or two
+ * dates that form one window (`DateRangeInput`).
+ * Sizes: default (with a Today shortcut), `noToday` for several dates in a row, `compact` inside a
+ * card, `inline` for a table cell. `today` pins what "today" means (stories, tests).
+ */
 export function DateInput({
   value,
   onChange,

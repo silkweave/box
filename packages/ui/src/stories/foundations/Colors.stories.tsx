@@ -4,7 +4,7 @@ import { Page, Row, Section } from './scaffold.tsx'
 const BACKGROUNDS = ['--bg', '--bg-surface', '--bg-surface-hover', '--bg-code', '--sidebar']
 const BORDERS = ['--border', '--border-light', '--border-strong', '--shine']
 const TEXT = ['--fg-1', '--fg-2', '--fg-3', '--fg-4', '--fg-disabled']
-const ACCENT = ['--accent', '--accent-hover', '--accent-dim', '--accent-bg']
+const ACCENT = ['--accent', '--accent-hover', '--accent-solid', '--accent-solid-hover', '--accent-dim', '--accent-bg']
 const SEMANTIC = ['--success', '--success-bg', '--warning', '--warning-bg', '--danger', '--danger-bg', '--info', '--info-bg']
 const SILK = ['--silk-magenta', '--silk-purple', '--silk-violet', '--silk-indigo', '--silk-cyan']
 
@@ -54,7 +54,7 @@ export const Palette: Story = {
       <Section title="Foreground" note="Four steps of emphasis plus a disabled stop.">
         <Swatches tokens={TEXT} />
       </Section>
-      <Section title="Accent" note="One indigo accent. --accent-bg is the tinted surface for active rows and soft fills.">
+      <Section title="Accent" note="One indigo accent. --accent-solid is the fill under white text (the primary button); --accent-bg is the tinted surface for active rows and soft fills.">
         <Swatches tokens={ACCENT} />
       </Section>
       <Section title="Semantic" note="Each status pairs a foreground with a tinted background.">

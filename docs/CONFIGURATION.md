@@ -108,11 +108,11 @@ default Shuttle agent, default `default`), `token` (bearer token for Shuttle net
 ## Agent tools
 
 `agentMcp.toolsets` holds the toolsets that chat rooms and agent triggers grant to their agent
-sessions ([AGENT-TOOLS.md](AGENT-TOOLS.md)): id -> `label`, `description`, `servers` (connection
+sessions ([AGENT-TOOLS.md](AGENT-TOOLS.md)): id -> `label`, `description`, `servers` (MCP server
 ids), `allow`, `deny`. Settings > Agent tools writes it to `box.local.json`. Built-in toolsets (such
 as a feature's drafting toolset) come from features and are not configured here. The servers a toolset attaches are
-connections of the MCP connections recipe, configured under `features.mcp` with their secrets in
-`credentials.mcp.<connection>` ([recipes/mcp/SPEC.md](../recipes/mcp/SPEC.md)).
+the MCP servers of the mcp recipe's servers powerup, configured under `features.mcp.servers` with their secrets in
+`credentials.mcp.<server>` ([recipes/mcp/SPEC.md](../recipes/mcp/SPEC.md)).
 
 ## Recipe ledger
 

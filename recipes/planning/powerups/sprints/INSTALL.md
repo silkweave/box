@@ -34,7 +34,7 @@ None.
 2. **Files wholly owned**, copied from `<fetched recipe>/features/planning/`: `core/sprints.ts`,
    `core/sprints.test.ts`, `core/sprint-tasks.test.ts`; `web/sprint-types.ts`,
    `web/lib/useSprintsData.ts`, `web/views/SprintsLayout.tsx`, `web/views/SprintsIndex.tsx`,
-   `web/views/SprintDetailView.tsx` and `web/components/sprint/` (`SprintGrid`, `SprintPlanning`,
+   `web/views/SprintDetailView.tsx`, `web/views/SprintCreateForm.tsx` and `web/components/sprint/` (`SprintGrid`, `SprintPlanning`,
    `SprintDesign`, `SprintBoard`, `SprintBurndown`, `SprintStatusButton`, `TaskCard`,
    `NewSprintTaskDialog`).
 3. **Seams in shared files** (each marked `sprints powerup`):

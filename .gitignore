@@ -35,6 +35,7 @@ config/credentials.json
 !.claude/skills/upgrade/
 !.claude/skills/verify/
 !.claude/skills/add-tracker/
+!.claude/skills/ui/
 .agents/skills/*
 !.agents/skills/setup-box
 !.agents/skills/consult
@@ -42,6 +43,7 @@ config/credentials.json
 !.agents/skills/upgrade
 !.agents/skills/verify
 !.agents/skills/add-tracker
+!.agents/skills/ui
 .codex/prompts/
 
 # Router types are generated. Feature registration and exports are maintained source.

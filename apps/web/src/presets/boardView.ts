@@ -28,12 +28,10 @@
 //   • THE LIVE VIEW stays per-browser localStorage. What you have filtered right now is a cursor, not
 //     an artifact; syncing it would mean one person's filter click moving everybody else's screen.
 //
-// WHICH PRESET YOU ARE ON LIVES IN THE URL (`?preset=Critical%20path`, 2026-08-12). It is the one
-// piece of view state that is worth sharing in a link and worth having a back button, and putting it
-// in the query string makes both free. localStorage still remembers which preset the live state was
-// derived from - that is what tells a fresh navigation ("apply this preset") from a reload of your own
-// half-edited session ("leave my filters alone"), and the two would be indistinguishable from the URL
-// alone.
+// WHICH PRESET YOU ARE ON is per browser too (`basedOn` in localStorage), beside the live view it
+// was applied to: the list's address stays clean (`/crm/deals`), and a reload keeps your half-edited
+// session. Picking a preset is choosing a lens, not opening a page, so it adds no history entry and a
+// link does not carry it.
 //
 // The live view is a MODULE-level store rather than per-component state, because two components read
 // it at once (the sidebar's preset list and the board itself) and two `useState`s would drift apart
@@ -42,7 +40,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { BoardLayout, SortDir } from '@silkweave/box-ui/board'
 import { countActive, normalizeAll, sameAll, type FilterSchema, type Filters } from '@silkweave/box-ui/filters'
-import { useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { readStored, writeStored } from '../lib/usePersistedState.ts'
 import { isStringArray } from '../lib/guards.ts'
 import {
@@ -109,7 +106,7 @@ export interface ViewStore<S> {
   /** The team's presets for this module, in their order (empty until the first fetch lands). */
   presets: Preset<S>[]
   /**
-   * The preset the URL points at, or null. It does NOT go away when you edit a filter - the picker
+   * The preset this browser is on, or null. It does NOT go away when you edit a filter - the picker
    * keeps showing the lens you came from and marks it changed instead, because "Custom view" threw
    * away the one fact you need to decide between saving over it and saving a new one.
    */
@@ -140,7 +137,7 @@ export interface ViewStore<S> {
   /** True when at least one built-in is missing, i.e. "Restore default presets" has work to do. */
   missingDefaults: number
   /** Throw away the edits: back to what `selected` shows, or to the module default when nothing is
-   *  selected (which also clears the URL). */
+   *  selected. */
   reset: () => void
   /** The shared list has not arrived yet. */
   loading: boolean
@@ -169,39 +166,15 @@ export interface ViewStoreSpec<S extends BaseViewState> {
   /** Structural equality - compared field by field, never by JSON string (key order does not
    *  survive a normalize round trip, and a reloaded preset must not read as "Custom view"). */
   same: (a: S, b: S) => boolean
-  /**
-   * The search param that names the selected preset (default `preset`). Two stores mounted on one
-   * page MUST use different params: each clears a name it cannot resolve and puts its own remembered
-   * one back, so two stores sharing a param rewrite the URL against each other forever.
-   */
-  urlParam?: string
-  /**
-   * Where arriving on the bare board lands: at `path` with no preset in the URL (a sidebar entry, a
-   * typed address, a bookmark), select `preset` instead of the one this browser used last. A URL
-   * naming a preset - every preset click, a reload, a shared link - is untouched, and so is any other
-   * path the store is mounted on (an account's page). Skipped if the preset no longer exists. A
-   * store mounted on more than one board path gives one landing per path. A `path` ending in `/*`
-   * covers every path below it (a board's item addresses, `/tasks/T3`), not itself.
-   */
-  landing?: { path: string; preset: string } | { path: string; preset: string }[]
-}
-
-/** The landing that applies at `pathname` (trailing slash already stripped), if any: an exact `path`,
- *  or a `<prefix>/*` path for anything strictly below `<prefix>`. */
-export function landingAt(
-  landing: ViewStoreSpec<BaseViewState>['landing'],
-  pathname: string,
-): { path: string; preset: string } | undefined {
-  return (landing ? [landing].flat() : []).find((l) =>
-    l.path.endsWith('/*') ? pathname.startsWith(l.path.slice(0, -1)) && pathname.length > l.path.length - 1 : l.path === pathname,
-  )
+  /** The preset a browser that has never picked one starts on (the first built-in, "Pipeline"),
+   *  instead of the module default with nothing selected. Skipped if the preset no longer exists. */
+  initialPreset?: string
 }
 
 /**
  * Build a module's view hook: a shared live-view store plus the team's presets off the server.
  */
 export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>): () => ViewStore<S> {
-  const urlParam = spec.urlParam ?? 'preset'
   const liveKey = `${spec.storageKey}.view`
   const basedOnKey = `${spec.storageKey}.basedOn`
   const seed: PresetSeed[] = spec.defaultPresets.map((p) => ({
@@ -235,17 +208,17 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
     emit()
   }
 
+  // Nothing stored for this list yet, neither a live view nor a selection (even an empty one).
+  const UNSET = Symbol('unset')
+  const neverUsed = (): boolean => readStored<unknown>(liveKey, UNSET) === UNSET && readStored<unknown>(basedOnKey, UNSET) === UNSET
+
   // --- the one-time install of this module's built-ins ---------------------------------------------
   // Fired at most once per page load per module, and a no-op on the server once the module is in
   // `seeded` - so the guard against re-adding a deleted preset lives server-side, where two tabs
   // opening the board at the same moment cannot race it.
   let seeding: Promise<void> | null = null
 
-  // The remembered preset being written back into the URL, shared by every mounted consumer. A module
-  // whose layout AND board both read the store (the CRM) otherwise fired two replace-navigations per
-  // render; each cancelled the other, the URL never changed, and the effect re-fired on every render
-  // until React stopped it ("Maximum update depth exceeded"). One writer per name until it lands.
-  let restoringUrl: string | null = null
+  let initialApplied = false
 
   return function useViewStore(): ViewStore<S> {
     const [local, setLocal] = useState<{ view: S; basedOn: string | null }>(() => ({
@@ -255,27 +228,6 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
     const [writeError, setWriteError] = useState<string | null>(null)
     const { data, error: readError } = usePresets()
     const view = local.view
-    // `strict: false` because one store serves several routes (a board index and its detail children),
-    // and none of them declares this param - it is view state that happens to live in the URL, not
-    // part of any route's contract.
-    const search = useSearch({ strict: false }) as Record<string, unknown>
-    const navigate = useNavigate()
-    const pathname = useLocation().pathname.replace(/\/$/, '')
-    const rawName = search[urlParam]
-    const urlName = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null
-    /** Write (or clear) `?preset=` (or `urlParam`) without adding a history entry - selecting a lens is
-     *  not a page. */
-    const setUrl = useCallback(
-      (name: string | null) =>
-        void navigate({
-          // No route here declares the param, so the reducer is typed against an empty search shape -
-          // the cast is the price of keeping this out of every route's contract (see `strict: false`).
-          search: ((prev: Record<string, unknown>) => ({ ...prev, [urlParam]: name ?? undefined })) as never,
-          replace: true,
-        }),
-      [navigate],
-    )
-
     useEffect(() => {
       const sync = (): void => setLocal({ view: readLive(), basedOn: readBasedOn() })
       listeners.add(sync)
@@ -324,52 +276,29 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
       writeLive(typeof next === 'function' ? (next as (prev: S) => S)(readLive()) : next)
     }, [])
 
-    // The URL names the selection; `presets` decides whether that name still resolves. A link to a
-    // preset that has since been renamed or deleted selects nothing rather than showing a title the
-    // list does not contain.
-    const selectedPreset = urlName ? (presets.find((v) => v.name === urlName) ?? null) : null
+    // The remembered selection; `presets` decides whether that name still resolves. A preset renamed
+    // or deleted elsewhere selects nothing rather than showing a title the list does not contain.
+    const selectedPreset = local.basedOn ? (presets.find((v) => v.name === local.basedOn) ?? null) : null
     const selected = selectedPreset?.name ?? null
     // Nothing selected is not "nothing to save": you can arrive on a bare board, set it up, and want
     // that as a preset. So the comparison falls back to the module default, and the bar offers Save
     // New and Reset (but not Save Existing - there is nothing to overwrite).
     const dirty = !spec.same(selectedPreset ? selectedPreset.state : spec.defaultView, view)
 
-    // Keep the URL and the live view in step, in both directions:
-    //  • a name in the URL that the live view was NOT derived from is a navigation (a link, the back
-    //    button, a sidebar click) - apply it;
-    //  • the same name it WAS derived from is a reload of your own session - leave your edits alone,
-    //    which is the whole reason `basedOn` still exists;
-    //  • no name in the URL on the store's `landing` path selects the landing preset;
-    //  • a selection remembered from last time with no name in the URL puts itself back in the URL, so
-    //    the address bar always says what the picker says;
-    //  • a name that no longer resolves clears itself out.
+    // A browser that has never used this list (no live view, no selection stored; not one whose
+    // selection was cleared by a delete or a custom view) starts on the module's initial preset.
+    // Waits until the list is authoritative: a writer's first load of an unseeded module has no
+    // presets yet, and seeding brings them. A reader sees the built-ins locally (above).
     useEffect(() => {
-      if (!data) return
-      if (urlName) {
-        restoringUrl = null
-        const found = presets.find((v) => v.name === urlName)
-        if (!found) return setUrl(null)
-        if (readBasedOn() !== urlName) {
-          writeBasedOn(urlName)
-          setView(found.state)
-        }
-        return
-      }
-      const landingSpec = landingAt(spec.landing, pathname)
-      const landing = landingSpec ? presets.find((v) => v.name === landingSpec.preset) : undefined
-      if (landing) {
-        if (restoringUrl === landing.name) return
-        restoringUrl = landing.name
-        writeBasedOn(landing.name)
-        setView(landing.state)
-        return setUrl(landing.name)
-      }
-      const remembered = readBasedOn()
-      if (remembered && restoringUrl !== remembered && presets.some((v) => v.name === remembered)) {
-        restoringUrl = remembered
-        setUrl(remembered)
-      }
-    }, [data, urlName, presets, setUrl, setView, pathname])
+      if (!data || initialApplied || !spec.initialPreset) return
+      if (canWrite && !seeded) return
+      initialApplied = true
+      if (!neverUsed()) return
+      const initial = presets.find((v) => v.name === spec.initialPreset)
+      if (!initial) return
+      writeBasedOn(initial.name)
+      setView(initial.state)
+    }, [data, canWrite, seeded, presets, setView])
 
     const patch = useCallback(
       <K extends keyof S>(key: K, value: S[K]) => setView((prev) => ({ ...prev, [key]: value })),
@@ -384,9 +313,8 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
         // re-picking the preset you are already on (after editing it) resets you onto it.
         writeBasedOn(name)
         setView(found.state)
-        setUrl(name)
       },
-      [presets, setView, setUrl],
+      [presets, setView],
     )
 
     const run = useCallback(async (op: Promise<void>): Promise<void> => {
@@ -403,11 +331,10 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
         const trimmed = name.trim()
         if (!trimmed) return
         await run(savePreset(spec.module, trimmed, view, icon, description))
-        // You are now ON that preset - the URL says so, and a further edit offers to save back to it.
+        // You are now ON that preset: a further edit offers to save back to it.
         writeBasedOn(trimmed)
-        setUrl(trimmed)
       },
-      [run, view, setUrl],
+      [run, view],
     )
 
     const update = useCallback(
@@ -419,15 +346,11 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
         await run(
           updatePreset(spec.module, name, { name: next, description: patch.description, icon: patch.icon }),
         )
-        // A rename carries the selection with it, in the URL and in storage - otherwise Save Existing
-        // would point at a name that no longer exists and quietly re-create the preset under its old
-        // title, and the address bar would still be advertising the dead one.
-        if (next && next !== name && readBasedOn() === name) {
-          writeBasedOn(next)
-          setUrl(next)
-        }
+        // A rename carries the selection with it - otherwise Save Existing would point at a name that
+        // no longer exists and quietly re-create the preset under its old title.
+        if (next && next !== name && readBasedOn() === name) writeBasedOn(next)
       },
-      [run, setUrl],
+      [run],
     )
 
     const reorder = useCallback(async (names: string[]): Promise<void> => run(reorderPresets(spec.module, names)), [run])
@@ -435,25 +358,20 @@ export function createViewStore<S extends BaseViewState>(spec: ViewStoreSpec<S>)
     const remove = useCallback(
       async (name: string): Promise<void> => {
         await run(deletePreset(spec.module, name))
-        if (readBasedOn() === name) {
-          writeBasedOn(null)
-          setUrl(null)
-        }
+        if (readBasedOn() === name) writeBasedOn(null)
       },
-      [run, setUrl],
+      [run],
     )
 
     const restoreDefaults = useCallback(async (): Promise<void> => run(seedPresets(spec.module, seed, 'restore')), [run])
 
     // "Reset" means "put back what I was looking at", which is the selected preset when there is one.
-    // Only a board with nothing selected resets to the module default, and that also drops the URL -
-    // there is no lens to point at any more.
+    // Only a board with nothing selected resets to the module default.
     const reset = useCallback(() => {
       if (selectedPreset) return setView(selectedPreset.state)
       writeBasedOn(null)
-      setUrl(null)
       setView(spec.defaultView)
-    }, [selectedPreset, setView, setUrl])
+    }, [selectedPreset, setView])
 
     const have = new Set(presets.map((p) => p.name))
     return {

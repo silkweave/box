@@ -14,16 +14,13 @@ import { useState, type ReactNode } from 'react'
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
-  pointerWithin,
   useDroppable,
-  useSensor,
-  useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { cn } from '../lib/utils.ts'
-import { CLICK_SLOP, DraggableCard } from './DraggableCard.tsx'
+import { DraggableCard } from './DraggableCard.tsx'
+import { boardCollision, useBoardSensors } from './boardSensors.ts'
 import type { NavIcon } from '../shell/Sidebar.tsx'
 
 export interface KanbanColumn {
@@ -37,6 +34,14 @@ export interface KanbanColumn {
   terminal?: boolean
 }
 
+/**
+ * The kanban board: columns you drag cards between, with a drag overlay and the click-vs-drag rule.
+ * Use it where the column IS a stored value (a status, a stage) and moving a card changes it.
+ * Not for ordering within a column (there is none; a column keeps the order it is given) or rows
+ * with columns of fields (`DataGrid`).
+ * The card body (`renderCard`) and whether a drop is allowed (`onDrop`) are the caller's; omit
+ * `onDrop` for a derived board and nothing drags. `terminal` columns render flatter, as exits.
+ */
 export function BoardKanban<T>({
   items,
   columns,
@@ -75,8 +80,8 @@ export function BoardKanban<T>({
   dropLabel?: string
 }) {
   const [dragging, setDragging] = useState<T | null>(null)
-  // A small distance threshold keeps a click-to-open from being read as a drag.
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: CLICK_SLOP } }))
+  // Pointer with a click-vs-drag threshold, plus the keyboard.
+  const sensors = useBoardSensors()
 
   const buckets = new Map<string, T[]>(columns.map((c) => [c.key, []]))
   for (const item of items) buckets.get(columnOf(item))?.push(item)
@@ -86,7 +91,7 @@ export function BoardKanban<T>({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={pointerWithin}
+      collisionDetection={boardCollision}
       onDragStart={(e: DragStartEvent) => setDragging(find(String(e.active.id)) ?? null)}
       onDragEnd={(e: DragEndEvent) => {
         setDragging(null)

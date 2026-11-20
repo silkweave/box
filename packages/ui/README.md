@@ -23,17 +23,123 @@ The corollary is naming: a component is named for what it IS, not what it was fi
 `GroupByControl` was a segmented control that hard-coded the words "Group by". `TagPicker` was a
 token picker that lowercased everything on the way out, which is right for tags and corrupts
 anything with an identity. `RunLog` exported a server wire type. `formatMrr` formatted money. The
-app keeps its vocabulary in thin adapters - `apps/web/src/lib/tags.tsx`,
-`apps/web/src/lib/rowCount.ts` (which turns two counts and a noun into "17 / 53 accounts" so
-`GridFooter` never has to) are the shape to copy. An adopted app does the same in its own
+app keeps its vocabulary in thin adapters - `apps/web/src/lib/tags.tsx` is the shape to copy. An adopted app does the same in its own
 directory: the planning app's `StatusPill.tsx` is that pattern at feature scope.
 
-**A component without a story is not in the library.**
+**A component without a story is not in the library.** The story renders the production
+component, never a rebuild of its parts, with one fixture for every branch that changes what it
+draws: an option count past a threshold, `iconOnly`, read-only, empty, long text, a narrow host.
+Each fixture sits in an element with `data-fixture`, and the component's rendered contract is a
+spec in `test/rendered/` that measures the element carrying the meaning (the glyph, not only its
+button), checks the interactions (open, pick, clear, Escape returns focus) and must fail when the
+contract breaks. `cells.stories.tsx` with `test/rendered/cells.spec.ts` is the shape to copy.
 
 ```
 bun run --filter @silkweave/box-ui storybook        # http://localhost:6006
-bun run --filter @silkweave/box-ui typecheck        # also type-checks every story
+bun run --filter @silkweave/box-ui typecheck        # also type-checks every story and spec
+bun run --filter @silkweave/box-ui test:rendered    # builds Storybook, runs the specs headless
 ```
+
+The rendered gate needs a headless Chromium (`bunx playwright-core install chromium-headless-shell`
+once); without one it fails rather than skipping. `box verify` runs it in the Stack checkout only:
+a Box, and a Builder session in one, does not. Screenshot baselines (`test/rendered/screens/`) are
+reviewed pictures from the maintainer's macOS machine; accept new ones with `--accept` only after
+looking at the diffs in `node_modules/.cache/rendered-diffs/`.
+
+## Choosing a component
+
+Find the need, use the piece, and do not reach for the third column. Each piece's doc comment says
+the same in more detail, and its story shows it. Rules behind the table: `docs/DESIGN.md`.
+
+### Controls, actions and display
+
+| Need | Piece | Not this |
+|---|---|---|
+| A text value in a form | `Input` inside a `Field` | a raw `<input>`, a private `inputCls`, `settingsInputCls` |
+| Long text or code | `Textarea` (`autoGrow`, `mono`) inside a `Field` | a raw `<textarea>` |
+| A label, hint and error around one control | `Field` | `SettingsField` (retiring), a hand-built `<label>` |
+| Fields side by side | `FieldGrid` (3 columns for short values, 2 medium, 1 long) | `grid-cols-*` per section |
+| One value from a list | `SelectField` | the `Select` parts (only for custom trigger or item content), a native `<select>` |
+| Free text with suggestions | `Autocomplete` | `SelectField` (a closed set) |
+| Several free values (tags) | `TokenPicker` | several inputs, a comma-separated `Input` |
+| Several records picked by name (signals, kinds) | `TokenPicker` with `{ value, label }` options and `allowCreate={false}` | a `SelectField` plus a chip list |
+| A saved set of short values shown as removable chips | `TagList` | hand-made chip spans with an X button |
+| A colour | `ColorInput` | a raw `<input type='color'>` |
+| Picking a file to upload | `FileButton` | a hidden `<input type='file'>` and a ref |
+| A person | `UserPicker`; to show one, `UserChip` (an id) or `Avatar` (a user you hold) | a `SelectField` of names |
+| A picker's long list (search past five, capped height) | `OptionList` inside `PopoverContent` (built into `SelectField`, `SelectCell`, `UserPicker`) | a hand-rolled list of buttons |
+| The title bar of a tool popover | `PopoverHeader` (name, info tooltip) | an explanation paragraph in the panel |
+| A date; a window of two dates | `DateInput`; `DateRangeInput` | `<input type='date'>`, two `DateInput`s for one window |
+| A setting that takes effect as a state (enabled, armed) | `Switch` | a checkbox styled as a toggle |
+| Picking items in a set, a yes/no form value | `Checkbox` | `Switch` |
+| 2 to 5 options, all visible, that filter or regroup the screen | `SegmentedControl` | `TabNav` (pages), `SelectField` (more options) |
+| Searching the list below | `SearchInput` | `Input` |
+| An act | `Button` (`size='sm'` in compact surfaces) | a styled `<button>` |
+| An icon-only act on a row or a toolbar | `IconButton` | `Button size='icon*'` without a label, `settingsRowActionCls` |
+| Two or more secondary acts on a row or record | `ActionMenu` | a row of icon buttons, a hand-rolled menu, a bare trash icon |
+| Copying a value; a read-only value with its copy button | `CopyButton`; `CopyField` | a clipboard call in a section |
+| A link the kit draws | `NavAnchor` | `<a onClick>` that breaks Cmd-click |
+| A state or a kind | `Badge` | coloured text |
+| A health light | `StatusDot` | a hand-drawn dot |
+| A run's output and its status | `LogViewer`, `StatusBadge` | a `<pre>` per line |
+| A fold inside a form ("Advanced") | `Disclosure` | `<details>`, `CollapsibleSection` |
+| A page section that folds | `CollapsibleSection` | `Disclosure` |
+| A copy-once result (a new token) or a confirmation | `Dialog`; `confirm()` | a `Dialog` for an edit form |
+| A failed write with nowhere else to say it | `notifyError()` (`NotifyHost` once) | `window.alert`, a private error paragraph |
+| A message the person must read first (warnings after a write) | `notice()` | `window.alert` |
+| Where an autosaving document stands | `SaveStatus` | a private "Saving…" badge |
+| An app create form or a record's settings form | `RecordDialog` (hash-routed) | a hand-built `Dialog`, a create page |
+| A record's own page | `RecordPage` | page padding, a footer with Save |
+| An editor page opened from a list, outside Settings | `InlineDialog` in an `InlineDialogScope` | a modal `Dialog` |
+| A small panel one click away | `Popover` | `Dialog` |
+
+### Pages, lists and states
+
+| Need | Piece | Not this |
+|---|---|---|
+| A page title | `PageHeader` | a hand-written `<h1>` |
+| A page's width and padding | `PageContainer` | `max-w-*` per page |
+| A view's create actions | `TopBarActions` (app pages), `SettingsHeaderActions` (Settings) | buttons in a heading above a grid |
+| The pages of one view | `TabNav`; in Settings `SettingsTabs` | `SegmentedControl` |
+| A whole page with nothing in it, and the act that fills it | `EmptyState` | `CenteredNote`, `SettingsEmpty` |
+| A whole view loading, empty or failed | `CenteredNote` | `EmptyState`, a spinner in a corner |
+| Any list of records: an app page, a Settings list, a section of a detail page | `DataGrid` (`./list`) | hand-written rows, group rows or tables, `GridHeader` over your own body |
+| A row's name: name, second line, avatar or tile, one state | `NameCell` (`./list`) in `name.render` | two hand-sized `<p>`s, a `Badge` that grows the line |
+| A grid cell that edits in place | `TitleCell`, `SelectCell`, `DateCell`, `TagsCell` (`./list`), `UserPicker`; a custom popover cell uses `CELL_BUTTON` (+ `CELL_ICON`); an always-shown icon column is `fixed` and `leading` | a private hover style or select, an `IconButton` in a cell |
+| A feed or queue of items handled in place | `ActionListRow` | a `DataGrid` row |
+| Columns you drag cards between | `BoardKanban` with `BoardViewBar` | `DataGrid` |
+| A custom board of `DraggableCard`s | `useBoardSensors` and `boardCollision` on its `DndContext` (pointer and keyboard) | a `PointerSensor` alone, `pointerWithin` alone (a keyboard drop finds no target) |
+| One measure over time; several on one scale; a trend in a card | `TimeSeriesChart`; `SeriesLineChart`; `Sparkline` | a second y-axis |
+
+### Settings
+
+| Need | Piece | Not this |
+|---|---|---|
+| A section's canvas | `SettingsPane`, with `SettingsIntro` and `SettingsInfo` | own padding or `SETTINGS_GUTTER` in a section |
+| A detail or create page over the list | `SettingsPage` | `InlineDialog` and its parts assembled by hand |
+| The identity of a detail page (avatar, status, address) | `SettingsDetailHeader` | `PageHeader` |
+| Tabs in a section or a detail page | `SettingsTabs` | `TabNav` placed by hand, two levels of tabs |
+| A group of fields | `SettingsGroup` with a `FieldGrid` | cards and borders |
+| A Settings list (search, filters, sort, groups, count) | `DataGrid`, which adapts to the pane | a hand-made search field or toolbar |
+| A named part of a dialog form | `FieldSection` with a `FieldGrid` | `SettingsGroup` (it draws the canvas gutter), a local heading and rule |
+| Read-only label and value pairs | `SettingsFacts`, `SettingsFact` | a private `Row` or `Meta` |
+| A row whose point is its control (a switch, a level) | `SettingsControlRow` in a `SettingsControlList` | a list row with a control wedged in |
+| An outside system rewrote a value someone must accept | `SettingsChangedFrom` | a warning-styled span |
+| Filter and Refresh above a log | `DataGrid` with Refresh in `actions` | actions in the title bar |
+| Things whose fields fit a row, edited in place | `DataGrid` `editing` | a create page for 1 to 3 short values |
+| An empty section that is not a list | `SettingsEmpty` | `EmptyState`, `CenteredNote` |
+| First load; a failed load | `SettingsLoading`; `SettingsError` | a section's own spinner, a raw server message |
+| A condition and its fix | `SettingsNotice` | a coloured card |
+| The member view (cannot change) | `SettingsReadOnly` | hiding controls section by section |
+| A form's draft, dirty state and Save | `useSettingsForm` with `SettingsSaveBar` | a private `dirty` flag or `useSubmit` |
+| Delete on a detail page | `SettingsDeleteButton` in the save bar's `start` | Delete in a header menu, a trash icon on rows |
+
+### Patterns
+
+The pieces compose into page archetypes (List, Detail, Create, Form, Tabbed section, Overview,
+Log; see `docs/DESIGN.md`). Each archetype gets a complete reference page as a story in
+`src/stories/patterns/`, under `Patterns/` in Storybook; they are written after the pieces above
+land. Start a new page from the nearest pattern story, not from a blank file.
 
 ## Storybook
 
@@ -98,7 +204,7 @@ import { cn, usePersistedState } from '@silkweave/box-ui/lib'
 |---|---|
 | `.` | React, `@base-ui/react`, `lucide-react`, `class-variance-authority` |
 | `./board` | + `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` |
-| `./datagrid` | + `@dnd-kit/core` |
+| `./list` | + `@dnd-kit/core` |
 | `./charts` | + `recharts` |
 | `./editor` | + the eight `@tiptap/*` packages |
 | `./lib` | nothing - DOM and React only |
@@ -134,7 +240,7 @@ reverse. Three of them, each picked for what actually crosses:
 | `UsersProvider` | context, value is DATA (`AvatarUser[]`) | Twenty-odd feature call sites render an avatar or a picker without passing users. Threading a prop to each leaf is the case a context exists for. `null` means "not loaded" and is deliberately distinct from `[]`. |
 | `doc: DocHandle` | a plain prop | `DocEditor` is controlled, like an `<input>`. Loading and saving is the app's business - apps/web routes it over tRPC to three different controllers by `kind`, and none of that may cross. |
 
-`UserMenu` takes props rather than a context: it renders exactly once, and every input (who is
+`AccountMenu` takes props rather than a context: it renders exactly once, and every input (who is
 signed in, what sign-out means, where the active user is persisted) is a policy the library should
 not hold an opinion about.
 
@@ -147,14 +253,13 @@ same rule with the runtime doing the bookkeeping.
 
 | Path | What |
 |---|---|
-| `src/components/` | Primitives: Button, Badge, Dialog, Popover, Select, DateInput, TokenPicker, Figures, UrlInput, ActionListRow, Confetti, … |
+| `src/components/` | Primitives: Button, IconButton, Input, Textarea, Field, SelectField, Switch, CopyButton, Badge, StatusDot, Dialog, Popover, DateInput, TokenPicker, Figures, ActionMenu, ActionListRow, Confetti, … |
 | `src/shell/` | AppShell, Sidebar, TopBar, PageContainer, CollapsibleSection, EmptyState, ThemeToggle, and the `ShellExtensions` seam |
-| `src/settings/` | The settings detail pane (`SettingsPane`: title bar with breadcrumbs, scroll surface, footer slot) and the section vocabulary: intro, list and rows, group, field, footer bar |
+| `src/settings/` | The settings frame (`SettingsPane`: title bar with breadcrumbs, scroll surface, footer slot) and the section vocabulary: intro, page, detail header, tabs, group, control row, facts, save bar, states |
 | `src/board/` | The board: `BoardKanban`, the `DraggableCard` frame both card shapes share, and the controlled `BoardViewBar`. Its own entry point |
 | `src/filters/` | The typed filter kit: field types (options, person, date, number, text, boolean), the pure rules that match, repair, compare and summarize their values (`matchAll`, `normalizeAll`, `sameAll`, `pruneInactive`, `summarize`), the `FilterPanel` the bar's funnel opens, one editor per type, and `PinnedFilterChip`. Its own entry point |
 | `src/charts/` | The charts: `TimeSeriesChart`, `SeriesLineChart`, `Sparkline`, the tooltip/legend frames, the window helpers and `theme.ts`'s series palette. Its own entry point |
-| `src/grid/` | The data grid: `columns.ts` (order, widths, footer aggregates) plus `GridHeader` and `GridFooter` |
-| `src/datagrid/` | `DataGrid`, the one list component (a `full` page or a `card` section) on top of `BoardViewBar` and `src/grid/`: filter, sort, group, nest, fold, drag. `tree.ts` (pure tree helpers), `moves.ts` (the optimistic move queue), `useTreeDrag`, `useGlide`, `Row`. Its own entry point |
+| `src/list/` | `DataGrid`, the one list of records (an app page, a Settings list, a `card` or `section` of a page) on top of `BoardViewBar`: filter, sort, group, nest, fold, drag, edit in place. `Row`, `GroupRow`, `GridHeader`, `GridFooter` (internal to the list), `columns.ts` (order, widths, footer aggregates), `chrome.ts` (internal class strings), `useListView` (the view as state), `tree.ts`, `moves.ts` (the optimistic move queue), `useTreeDrag`, `useGlide`. Its own entry point |
 | `src/users/` | The directory seam, Avatar's `AvatarUser` shape, UserPicker, UserChip, AccountMenu |
 | `src/editor/` | The TipTap markdown editor behind its lazy boundary, and the `DocHandle` seam. Its own entry point |
 | `src/icons/` | `createIconTable` + `BRAND_ICONS` - the MECHANISM for a string-keyed glyph table with a fallback. The table itself is an app's vocabulary and lives in `apps/web/src/lib/channelIcons.tsx` |
@@ -192,19 +297,19 @@ vocabulary. `storageKey()` in `./lib` is there for a caller that wants the house
 object, because switching the sort field writes two fields at once and an app's state is narrower
 than the bar's (its filter axes are enums) and carries more. Where the view lives - a store,
 localStorage, the URL - is the app's, and the preset control is a `presets` SLOT rather than a
-component here, because a preset is a record on somebody's server. The data app's
-`ViewBar.tsx` (adopted, not in this repo) is one binding of the two.
+component here, because a preset is a record on somebody's server. In the Box, `DataGrid`
+draws the bar and the app passes its view store and `PresetPicker` in.
 
 **Filters are typed fields.** The bar's spec lists `fields` (`@silkweave/box-ui/filters`), each with
 a type that picks its editor and its matching rule: options (any of), person (people plus Me and
 Nobody), date (relative windows such as Overdue or Next 7 days, a From/To range, or No date),
 number (comparisons, between, empty, set), text (matches anywhere) and boolean. A stored value that
 is absent or null is no filter. `value.pinned` names fields drawn as chips in the bar, each showing
-its current value and opening its own editor; with `pins` the panel's star toggles them, which is
-how a preset carries the filters its team reaches for. Clear empties the filters and keeps the pins.
+its current value and opening its own editor; the panel's star toggles them (every `DataGrid`;
+`BoardViewBar` alone with `pins`), which is how a preset carries the filters its team reaches for. Clear empties the filters and keeps the pins.
 
-**`DataGrid` is controlled and knows no domain.** The host passes the view (as for
-`BoardViewBar`) and accessors: `searchText`, `filterValue`, `sortValue`, `groupOf`, `parentId`,
+**`DataGrid` knows no domain.** The host passes the view (as for `BoardViewBar`; omitted, the grid
+keeps it itself, per browser under `storageKey`) and accessors: `searchText`, `filterValue`, `sortValue`, `groupOf`, `parentId`,
 `icon`, `rowLabel`, and the move rules `maxDepth`, `canNest` and `canMove`. Drag (and arrow keys on
 the row's icon, which doubles as the handle) is offered under the manual sort, ungrouped and
 unfiltered. While a row is dragged the list is drawn as it would be after the drop; releasing

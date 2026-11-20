@@ -28,8 +28,8 @@ export const POLICY_STATE_TABLE = 'policy_state'
 export const POLICY_JOURNAL_TABLE = 'policy_journal'
 /** box_policy's column grants on core.users: a user's role is a policy row, nothing else there is. */
 // Role assignment and activation, and the final step of a revoke (status, token revocation, link
-// watermark) or a delete: the identity changes that decide whether a principal can act (11.10).
-export const POLICY_USER_COLUMNS = { select: ['id', 'kind', 'role', 'status'], update: ['role', 'status', 'token_revoked_at', 'link_watermark', 'updated_at', 'updated_by'] } as const
+// watermark, the delegated-credential epoch) or a delete: the identity changes that decide whether a principal can act (11.10).
+export const POLICY_USER_COLUMNS = { select: ['id', 'kind', 'role', 'status'], update: ['role', 'status', 'token_revoked_at', 'link_watermark', 'auth_epoch', 'updated_at', 'updated_by'] } as const
 /** What PUBLIC reads of core.policy_state (admission's probe). */
 export const POLICY_STATE_PUBLIC_COLUMNS = ['id', 'revision'] as const
 const RUNTIME_ATTRS = 'nosuperuser nocreatedb nocreaterole noreplication nobypassrls'

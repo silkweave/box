@@ -19,6 +19,9 @@ export const WithName: Story = { args: { userId: 'grace', showName: true } }
 /** Null or unknown id renders NOTHING - not a placeholder, not a dash. */
 export const Unknown: Story = { args: { userId: 'nobody' } }
 
+/** `unknown='id'`: an id the directory does not hold (a deleted person) stays visible as the id. */
+export const UnknownShownAsId: Story = { args: { userId: 'nobody', showName: true, unknown: 'id' } }
+
 /** The same chip serving four different app roles, which is the argument for the name. */
 export const RolesAreTheAppsBusiness: Story = {
   args: { userId: 'ada' },

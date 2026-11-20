@@ -10,6 +10,7 @@ const PEOPLE: Record<string, { id: string; display: string; role: string; kind: 
 vi.mock('@silkweave/box-core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@silkweave/box-core')>()),
   authenticatePrincipal: async (token: string) => PEOPLE[token] ?? null,
+  resolveMcpCredential: async (token: string) => (PEOPLE[token] ? { principal: PEOPLE[token], credential: 'bearer' } : null),
   // `sales`: crm read, nothing else (mcp none).
   accessOf: async (p: { role: string }) => p.role === 'sales'
     ? { role: 'sales', areas: new Map([['crm', 'read']]), fallback: 'none', admin: false, revision: 1 }

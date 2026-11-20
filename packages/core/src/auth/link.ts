@@ -37,8 +37,8 @@
 // Anyone touching either file should assume (1) through (4) are each holding a real edge case up,
 // because they are.
 
-import { createHmac, hkdfSync, timingSafeEqual } from 'node:crypto'
-import { authSecret } from './secrets.js'
+import { createHmac, timingSafeEqual } from 'node:crypto'
+import { sessionDerivedKey } from './secrets.js'
 
 /** Version + type tag. Inside the MAC, so it is a domain separator and not merely a label. */
 export const SIGNIN_GRANT_PREFIX = 'bl2'
@@ -74,8 +74,7 @@ export type SigninGrantResult = { ok: true; claims: SigninGrantClaims } | { ok: 
 
 // Purpose-bound key derivation keeps sign-in grants separate from sessions. Rotating the
 // session secret invalidates both sessions and outstanding grants.
-const linkKey = (): Buffer =>
-  Buffer.from(hkdfSync('sha256', authSecret('AUTH_SESSION_SECRET'), '', 'silkweave-box/signin-link/v1', 32))
+const linkKey = (): Buffer => sessionDerivedKey('silkweave-box/signin-link/v1')
 
 const mac = (signed: string): Buffer => createHmac('sha256', linkKey()).update(signed).digest()
 const sign = (signed: string, bytes = 32): string => mac(signed).subarray(0, bytes).toString('base64url')

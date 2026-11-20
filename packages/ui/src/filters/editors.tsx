@@ -371,7 +371,11 @@ export function BooleanFilter({ field, value, onChange }: FilterEditorProps<Bool
 
 // ---- any ----------------------------------------------------------------------------------------
 
-/** The editor for a field of any type. */
+/**
+ * The editor for a field of any type, chosen by `field.type`.
+ * Use it to build a filter UI of your own; `FilterPanel` and `PinnedFilterChip` already use it.
+ * Editors commit as you go (text after 200ms); `onChange(null)` means no filter on this field.
+ */
 export function FilterEditor({ field, value, onChange, today }: FilterEditorProps<FilterField>) {
   switch (field.type) {
     case 'options':

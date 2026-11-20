@@ -20,6 +20,14 @@ import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
 
+/**
+ * A page section that folds shut behind a caret; the whole heading is the button.
+ * Use it for a section a reader may want out of the way: a chart block, a card on a detail page.
+ * Not for a small fold inside a form ("Advanced": `Disclosure`) or switching pages (`TabNav`).
+ * Controlled only (`open`, `onOpenChange`); the body unmounts when shut. `heading` wraps the trigger
+ * in an h2 to h5 for the outline. `aside` renders in both states: pass `null` when shut for actions
+ * on rows that are no longer visible.
+ */
 export function CollapsibleSection({
   open,
   onOpenChange,

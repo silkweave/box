@@ -3,6 +3,15 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { X } from 'lucide-react'
 import { type FunctionComponent } from 'react'
 
+/**
+ * The modal dialog (base-ui): `Dialog`, `DialogTrigger`, `DialogContent` (portal, backdrop, close X
+ * unless `showClose={false}`), `DialogTitle`, `DialogDescription`, `DialogClose`.
+ * Use it for a result the person must copy before leaving (a new token, a sign-in link) and for
+ * confirmations (prefer `confirm()`).
+ * Not for a create form or a record's settings form (`RecordDialog` in the app frame,
+ * `SettingsPage` in Settings).
+ * Rule: every dialog has a `DialogTitle`; it is the accessible name.
+ */
 export const Dialog = DialogPrimitive.Root
 export const DialogTrigger = DialogPrimitive.Trigger
 export const DialogClose = DialogPrimitive.Close

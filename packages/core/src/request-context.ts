@@ -22,14 +22,20 @@ export { currentScope, type ContextFrame, type ContextScope, type RequestHolder 
 
 const store = contextStore()
 
-/** Run `fn` in a fresh, empty request holder (a transport's job, not a handler's). */
-export function runInRequest<T>(fn: () => T): T {
-  return store.run({ kind: 'request', holder: {} }, fn)
+/** Run `fn` in a fresh, empty request holder (a transport's job, not a handler's). `ip` is the
+ *  caller's address as the transport resolved it (`clientIp`), never a value a handler supplies. */
+export function runInRequest<T>(fn: () => T, init: Pick<RequestHolder, 'ip'> = {}): T {
+  return store.run({ kind: 'request', holder: { ...init } }, fn)
+}
+
+/** The current HTTP request's caller address, or null outside one (system work, tests). */
+export function requestIp(): string | null {
+  return requestHolder()?.ip ?? null
 }
 
 /** A fresh, empty request frame, for a transport that binds it to a stream (`bindStream`). */
-export function freshRequestFrame(): ContextFrame {
-  return { kind: 'request', holder: {} }
+export function freshRequestFrame(init: Pick<RequestHolder, 'transport'> = {}): ContextFrame {
+  return { kind: 'request', holder: { ...init } }
 }
 
 /** The innermost request holder, or null outside one. AuthGuard fills it. */

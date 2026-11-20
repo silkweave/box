@@ -36,8 +36,8 @@ export const boxLight = create({
   ...shared,
   base: 'light',
 
-  colorPrimary: '#5558e6', // --accent
-  colorSecondary: '#5558e6', // --accent (drives the selected/hover bar color)
+  colorPrimary: '#4a4dd9', // --accent
+  colorSecondary: '#4a4dd9', // --accent (drives the selected/hover bar color)
 
   appBg: '#ffffff', // --bg
   appContentBg: '#ffffff', // --bg
@@ -46,12 +46,12 @@ export const boxLight = create({
 
   textColor: '#0e0e16', // --fg-1
   textInverseColor: '#ffffff', // --accent-fg
-  textMutedColor: '#6b6b7a', // --fg-3
+  textMutedColor: '#5f5f6e', // --fg-3
 
   barBg: '#ffffff', // --bg
   barTextColor: '#41414f', // --fg-2
-  barSelectedColor: '#5558e6', // --accent
-  barHoverColor: '#5558e6', // --accent
+  barSelectedColor: '#4a4dd9', // --accent
+  barHoverColor: '#4a4dd9', // --accent
 
   inputBg: '#ffffff', // --bg
   inputBorder: '#e8e8ec', // --border

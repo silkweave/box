@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { DiscoveryModule } from '@nestjs/core'
 import { AuthController } from './auth.controller.js'
+import { ConnectController } from './connect.controller.js'
 import { AuthGuard } from './auth.guard.js'
 import { HandlerMap } from './handler-map.js'
 
@@ -12,7 +13,7 @@ import { HandlerMap } from './handler-map.js'
 // HandlerMap classifies every handler at boot (handler-map.ts) and refuses to boot on one it cannot.
 @Module({
   imports: [DiscoveryModule],
-  controllers: [AuthController],
+  controllers: [AuthController, ConnectController],
   providers: [AuthGuard, HandlerMap],
   exports: [AuthGuard],
 })

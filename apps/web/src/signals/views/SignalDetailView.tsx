@@ -1,52 +1,53 @@
 import { useState } from 'react'
-import { Archive, ArchiveRestore, ArrowDownRight, ArrowLeft, ArrowUpRight, Minus, Pencil } from 'lucide-react'
+import { Archive, ArchiveRestore, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { canAccessArea, useAccess } from '@/lib/access'
-import type { Channel, Signal, SignalDataSource } from '../../types.ts'
+import type { Signal, SignalDataSource, SignalsData } from '../../types.ts'
 import { channelLabel } from '../../types.ts'
-import { setSignalArchivedState, setSignalOwner, useSignalsDataWithArchived } from '../lib/useSignalsData.ts'
+import { setSignalArchivedState, setSignalOwner } from '../lib/useSignalsData.ts'
 import { useAuth } from '../../lib/useAuth.tsx'
-import { ArchivedBadge } from '../components/SignalCard.tsx'
-import { findSignal, signalSlug } from '../lib/signalSlug.ts'
-import { SignalsLink, signalHash, signalsHash, signalsPath } from '../lib/signalLink.tsx'
+import { SignalsLink, signalHash, signalsPath } from '../lib/signalLink.tsx'
 import { useSettingsDialog } from '../../lib/settingsDialog.ts'
 import { signalLabel, signalMap } from '../lib/signalLabel.ts'
 import { SignalChart } from '../components/SignalChart.tsx'
-import { SignalDialog } from '../components/SignalDialog.tsx'
 import { SignalUsage } from '../components/SignalUsage.tsx'
 import { SignalPointsEditor } from '../components/SignalPointsEditor.tsx'
-import { SETTINGS_GUTTER, Button, UserPicker } from '@silkweave/box-ui'
-import { computeDelta, formatBucket, formatDelta, formatNumber, relativeTime } from '../../lib/format.ts'
+import { SignalDelta } from '../components/SignalDelta.tsx'
+import {
+  Badge,
+  RelativeTime,
+  SettingsDetailHeader,
+  SettingsEmpty,
+  SettingsFact,
+  SettingsFacts,
+  SettingsGroup,
+  SettingsNotice,
+  SettingsPage,
+  UserPicker,
+  type ActionMenuItem,
+} from '@silkweave/box-ui'
+import { DataGrid } from '@silkweave/box-ui/list'
+import { errorMessage } from '@silkweave/box-ui/lib'
+import { computeDelta, formatBucket, formatNumber } from '../../lib/format.ts'
 
-/** A single signal's deep-dive at `#settings/signals/<channel>/<slug>`: the definition
- *  (description, semantics), headline stats, the interactive range chart, and a recent-snapshots
- *  table. A data-less signal (registered, no points yet) renders its definition with an honest
- *  empty state. */
-export function SignalDetailView({ channel, slug }: { channel: string; slug: string }) {
-  // Archived signals included: a detail stays readable after archiving, and is where it comes back.
-  const { data } = useSignalsDataWithArchived()
+/**
+ * A single signal's page at `#settings/signals/<id>` (archetype Detail,
+ * docs/DESIGN.md 2.3): the header with its identity, the definition as facts, the readings, the
+ * history chart with the recent snapshots, and the hand-entered points. A data-less signal
+ * (registered, no points yet) shows its definition with an honest empty state.
+ *
+ * Who may change what: a definition (Edit) is every writer's, like `signal-upsert`; archiving and
+ * the owner are administrators' (`signal-archive`, `signal-owner-set`). Nothing here is a draft:
+ * the owner picker saves on change and says so.
+ */
+export function SignalDetailView({ signal, data }: { signal: Signal; data: SignalsData }) {
   const { open } = useSettingsDialog()
   const { principal } = useAuth()
   const isAdmin = principal?.role === 'admin'
   useAccess() // re-render when access changes
-  const [editOpen, setEditOpen] = useState(false)
   const [archiving, setArchiving] = useState(false)
-  const [archiveError, setArchiveError] = useState<string | null>(null)
-
-  if (!data) return null
-  const signal = findSignal(data.signals, channel, slug)
-
-  if (!signal)
-    return (
-      <div className={`${SETTINGS_GUTTER} pb-6`}>
-        <p className='text-body-sm text-muted-foreground'>
-          No signal matches <code>{channel}/{slug}</code>.{' '}
-          <SignalsLink hash={signalsHash()} className='text-accent hover:underline'>
-            Back to all signals
-          </SignalsLink>
-        </p>
-      </div>
-    )
+  const [failure, setFailure] = useState<string | null>(null)
+  const [ownerSaved, setOwnerSaved] = useState(false)
 
   const points = signal.points
   const latest = points.length > 0 ? points[points.length - 1] : null
@@ -57,46 +58,9 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
   // `points` are window stats there - the label must not claim "all-time" it cannot back.
   const windowed = signal.interval === 'hour'
 
-  // Peak/low carry the bucket they happened in - the sub-line slot exists on every tile anyway, and
-  // "12,492 on Jul 18" answers the question the bare number provokes.
+  // Peak/low carry the bucket they happened in: "12,492 on Jul 18" answers the question the bare number provokes.
   const peak = points.length > 0 ? points.reduce((a, b) => (b.value > a.value ? b : a)) : null
   const low = points.length > 0 ? points.reduce((a, b) => (b.value < a.value ? b : a)) : null
-
-  const stats: TileProps[] = latest
-    ? [
-        {
-          // An increment signal's last bucket is still filling - say so instead of "Current".
-          label: isIncrement ? (signal.interval === 'day' ? 'Today so far' : 'Current bucket') : 'Current',
-          // The unit rides as its own element, never concatenated into the value: glued together
-          // ("11,552.12 USD") they form one unbreakable string that blows through a quarter-width
-          // card, which is what made these overflow.
-          value: formatNumber(latest.value),
-          unit: signal.unit,
-          sub: formatBucket(latest.date),
-        },
-        {
-          label: 'Latest change',
-          // Header, then the absolute change, then the percentage as a colored chip - the three
-          // used to be one string, which wrapped onto three lines at this width.
-          value: delta ? `${delta.abs > 0 ? '+' : ''}${formatNumber(delta.abs)}` : 'baseline',
-          unit: delta ? signal.unit : null,
-          muted: !delta,
-          sub: delta ? <DeltaChip delta={delta} /> : 'first point - nothing to compare',
-        },
-        {
-          label: windowed ? '90d peak' : 'All-time peak',
-          value: formatNumber(Math.max(...values)),
-          unit: signal.unit,
-          sub: peak ? formatBucket(peak.date) : null,
-        },
-        {
-          label: windowed ? '90d low' : 'All-time low',
-          value: formatNumber(Math.min(...values)),
-          unit: signal.unit,
-          sub: low ? formatBucket(low.date) : null,
-        },
-      ]
-    : []
 
   // The three standing questions (plus last-7d), from the server's full-store aggregates - NOT
   // from `points`, which may be windowed. Null renders an honest dash, never a fabricated 0.
@@ -109,201 +73,195 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
   ]
 
   const recent = [...points].reverse().slice(0, 14)
+  const byId = signalMap(data)
+  const toList = () => open(signalsPath())
 
-  // Archiving is configuration (admin-only server-side, like signal-upsert): it hides the signal from
-  // pickers and the Signals grid; points, goals and milestones that read it are unaffected.
+  // Archiving is configuration (admin-only server-side, like renaming and deleting): it hides the
+  // signal from pickers and the Signals grid; points, goals and milestones that read it are unaffected.
   const toggleArchived = (): void => {
     setArchiving(true)
-    setArchiveError(null)
+    setFailure(null)
     setSignalArchivedState(signal.id, !signal.archived_at)
-      .catch((err: unknown) => setArchiveError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => setFailure(errorMessage(err)))
       .finally(() => setArchiving(false))
   }
-  const byId = signalMap(data)
+  const saveOwner = (id: string | null): void => {
+    setFailure(null)
+    setSignalOwner(signal.id, id)
+      .then(() => {
+        setOwnerSaved(true)
+        setTimeout(() => setOwnerSaved(false), 1500)
+      })
+      .catch((err: unknown) => setFailure(errorMessage(err)))
+  }
+
+  const actions: ActionMenuItem[] = [
+    ...(canAccessArea(signal.area, 'write') ? [{ label: 'Edit signal', icon: <Pencil />, onSelect: () => open(`${signalsPath(signal.id)}/edit`) }] : []),
+    ...(isAdmin
+      ? [{ label: signal.archived_at ? 'Unarchive' : 'Archive', icon: signal.archived_at ? <ArchiveRestore /> : <Archive />, disabled: archiving, onSelect: toggleArchived }]
+      : []),
+  ]
 
   return (
-    <div className={`${SETTINGS_GUTTER} pb-6`}>
-      <SignalsLink
-        hash={signalsHash(signal.channel)}
-        className='mb-4 inline-flex items-center gap-1.5 text-label text-muted-foreground transition-colors hover:text-text'>
-        <ArrowLeft className='size-3.5' /> {channelLabel(signal.channel)}
-      </SignalsLink>
-
-      <header className='mb-6'>
-        <div className='flex items-start justify-between gap-3'>
-          <div>
-            <div className='text-label uppercase tracking-[0.06em] text-muted-foreground'>{signal.group}</div>
-            <h1 className='mt-1 flex flex-wrap items-center gap-2 font-serif text-display-md leading-tight text-text'>
-              {signal.label}
-              {signal.archived_at && <ArchivedBadge className='font-sans' />}
-            </h1>
-          </div>
-          {/* Write on the signal's area edits a definition; archiving is admin-only, like the owner picker below. */}
-          <div className='flex shrink-0 items-center gap-2'>
-            {isAdmin && (
-              <Button
-                size='sm'
-                variant='outline'
-                disabled={archiving}
-                onClick={toggleArchived}
-                title={signal.archived_at ? 'Show it in pickers and the Signals page again' : 'Hide it from pickers and the Signals page; its points and readers stay'}>
-                {signal.archived_at ? <ArchiveRestore /> : <Archive />} {signal.archived_at ? 'Unarchive' : 'Archive'}
-              </Button>
-            )}
-            {canAccessArea(signal.area, 'write') && (
-              <Button size='sm' variant='outline' onClick={() => setEditOpen(true)}>
-                <Pencil /> Edit
-              </Button>
-            )}
-          </div>
-        </div>
-        {signal.archived_at && (
-          <p className='mt-2 text-label text-muted-foreground'>
-            Archived {relativeTime(signal.archived_at)}: hidden from pickers and the Signals page, still read by
-            whatever references it.
-          </p>
-        )}
-        {archiveError && <p className='mt-2 text-label text-danger'>{archiveError}</p>}
-        <div className='mt-1 flex flex-wrap items-center gap-3'>
-          <code className='text-label text-muted-foreground'>{signal.id}</code>
-          <span className='inline-flex items-center gap-1 text-label text-muted-foreground'>
-            Owner
-            {/* Writes the definition + a per-signal override in the signal-owner settings (clear =
-                explicitly unowned). Ownership is configuration - admin-only, read-only chip for
-                everyone else. */}
-            <UserPicker
-              value={signal.owner}
-              onChange={(id) => void setSignalOwner(signal.id, id)}
-            />
+    <SettingsPage
+      title={signal.label}
+      info='A signal is a number the team watches over time. Anyone who can write may edit its definition; administrators archive it and set its owner.'
+      onRoot={toList}
+      onClose={toList}>
+      <SettingsDetailHeader
+        title={signal.label}
+        badges={signal.archived_at ? <Badge variant='neutral'>Archived</Badge> : undefined}
+        meta={
+          <span>
+            <code>{signal.id}</code>{signal.group ? <> &middot; {signal.group}</> : null}
           </span>
-        </div>
-        {/* The definition's semantics at a glance: source, grain, meaning, direction. */}
-        <div className='mt-3 flex flex-wrap items-center gap-1.5'>
-          <DefinitionChip title='Where the identity and points come from'>{signal.source}</DefinitionChip>
-          <DefinitionChip title='Bucket width of one point'>{signal.interval}</DefinitionChip>
-          <DefinitionChip title='snapshot = whole value at that time; increment = occurrences per bucket'>
-            {signal.accumulation}
-          </DefinitionChip>
-          <DefinitionChip title='Which way is good'>{signal.direction === 'up' ? 'up is good' : 'down is good'}</DefinitionChip>
+        }
+        actions={actions.length > 0 ? actions : undefined}>
+        {signal.archived_at && (
+          <p className='text-label text-muted-foreground'>
+            Archived <RelativeTime value={signal.archived_at} />: hidden from pickers and the Signals page, still read by whatever references it.
+          </p>
+        )}
+      </SettingsDetailHeader>
+      {failure && <SettingsNotice tone='danger' title='That change was not saved'>{failure}</SettingsNotice>}
+
+      <SettingsGroup title='Definition' description={signal.description || undefined}>
+        <SettingsFacts columns={3}>
+          <SettingsFact label='Channel'>{channelLabel(signal.channel)}</SettingsFact>
+          <SettingsFact label='Interval'>{INTERVAL[signal.interval] ?? signal.interval}</SettingsFact>
+          <SettingsFact label='Direction'>{signal.direction === 'up' ? 'Up is good' : 'Down is good'}</SettingsFact>
+          <SettingsFact label='Source'>{signal.source}</SettingsFact>
+          {signal.unit && <SettingsFact label='Unit'>{signal.unit}</SettingsFact>}
+          <SettingsFact label='Accumulation'>
+            <span title='Snapshot: the whole value at that time. Increment: occurrences per bucket.'>{signal.accumulation}</span>
+          </SettingsFact>
+          <SettingsFact label='Owner'>
+            <span className='inline-flex items-center gap-2'>
+              {/* Writes the definition and a per-signal override in the signal-owner settings (clear =
+                  explicitly unowned). Administrators only; everyone else sees the chip. */}
+              <UserPicker value={signal.owner} readOnly={!isAdmin} onChange={saveOwner} emptyLabel='No owner' showEmptyLabel />
+              {ownerSaved && <span className='text-label text-success'>Saved</span>}
+            </span>
+          </SettingsFact>
           {signal.formula && (
-            <DefinitionChip title='Points are computed from other signals; a manual point overrides its bucket'>formula</DefinitionChip>
+            <SettingsFact label='Formula' span='full'>
+              <code title='Points are computed from other signals; a manual point overrides its bucket'>= {signal.formula}</code>
+            </SettingsFact>
           )}
-        </div>
-        {signal.formula && (
-          <p className='mt-2 text-label text-muted-foreground'>
-            = <code className='text-text'>{signal.formula}</code>
-          </p>
-        )}
-        {signal.data_source_id && <ConnectionChip signal={signal} sources={data.sources} />}
-        {signal.description && (
-          <p className='mt-3 max-w-prose text-body-sm leading-relaxed text-muted-foreground'>{signal.description}</p>
-        )}
-        <SignalUsage signalId={signal.id} className='mt-3' />
-        {signal.depends_on.length > 0 && (
-          <p className='mt-2 text-label text-muted-foreground'>
-            Driven by:{' '}
-            {signal.depends_on.map((id, i) => (
-              <span key={id}>
-                {i > 0 && ' · '}
-                <DependencyLink byId={byId} id={id} />
-              </span>
-            ))}
-          </p>
-        )}
-      </header>
+          {signal.data_source_id && (
+            <SettingsFact label='Connection' span='full'>
+              <ConnectionLine signal={signal} sources={data.sources} />
+            </SettingsFact>
+          )}
+          {signal.depends_on.length > 0 && (
+            <SettingsFact label='Driven by' span='full'>
+              {signal.depends_on.map((id, i) => (
+                <span key={id}>
+                  {i > 0 && ' · '}
+                  <DependencyLink byId={byId} id={id} />
+                </span>
+              ))}
+            </SettingsFact>
+          )}
+          <SignalUsage signalId={signal.id} className='col-span-full' />
+        </SettingsFacts>
+      </SettingsGroup>
 
       {latest ? (
         <>
-          <section className='mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4'>
-            {stats.map((s) => (
-              <StatTile key={s.label} {...s} />
-            ))}
-          </section>
+          <SettingsGroup title='Latest'>
+            <SettingsFacts columns={2}>
+              <SettingsFact
+                label={
+                  // An increment signal's last bucket is still filling - say so instead of "Current".
+                  isIncrement ? (signal.interval === 'day' ? 'Today so far' : 'Current bucket') : 'Current'
+                }>
+                <Reading value={formatNumber(latest.value)} unit={signal.unit} sub={formatBucket(latest.date)} />
+              </SettingsFact>
+              <SettingsFact label='Latest change'>
+                {delta ? (
+                  <Reading value={`${delta.abs > 0 ? '+' : ''}${formatNumber(delta.abs)}`} unit={signal.unit} sub={<SignalDelta variant='chip' delta={delta} direction={signal.direction} />} />
+                ) : (
+                  <Reading value='baseline' muted sub='first point, nothing to compare' />
+                )}
+              </SettingsFact>
+              <SettingsFact label={windowed ? '90d peak' : 'All-time peak'}>
+                <Reading value={formatNumber(Math.max(...values))} unit={signal.unit} sub={peak ? formatBucket(peak.date) : null} />
+              </SettingsFact>
+              <SettingsFact label={windowed ? '90d low' : 'All-time low'}>
+                <Reading value={formatNumber(Math.min(...values))} unit={signal.unit} sub={low ? formatBucket(low.date) : null} />
+              </SettingsFact>
+            </SettingsFacts>
+          </SettingsGroup>
 
-          <section className='mb-6 grid grid-cols-2 gap-2.5 sm:grid-cols-4'>
-            {periods.map((p) => (
-              <StatTile
-                key={p.label}
-                label={p.label}
-                title={p.title}
-                value={p.value == null ? null : formatNumber(p.value)}
-                unit={signal.unit}
-                emptyHint='No data in this window'
-              />
-            ))}
-          </section>
+          <SettingsGroup title='Over time'>
+            <SettingsFacts columns={2}>
+              {periods.map((p) => (
+                <SettingsFact key={p.label} label={p.label}>
+                  <span title={p.title}>
+                    <Reading value={p.value == null ? null : formatNumber(p.value)} unit={signal.unit} />
+                  </span>
+                </SettingsFact>
+              ))}
+            </SettingsFacts>
+          </SettingsGroup>
 
-          <SignalChart signal={signal} />
+          <SettingsGroup title='History'>
+            <SignalChart signal={signal} />
+          </SettingsGroup>
 
-          <section className='mt-8'>
-            <h2 className='mb-3 text-label uppercase tracking-[0.07em] text-muted-foreground'>Recent snapshots</h2>
-            <div className='overflow-hidden rounded-lg border border-border'>
-              <table className='w-full text-body-sm'>
-                <thead>
-                  <tr className='border-b border-border bg-surface text-left text-label uppercase tracking-[0.06em] text-muted-foreground'>
-                    <th className='px-4 py-2 font-medium'>Date</th>
-                    <th className='px-4 py-2 text-right font-medium'>Value</th>
-                    <th className='px-4 py-2 text-right font-medium'>Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.map((p, i) => {
-                    const prev = recent[i + 1]
-                    const diff = prev ? p.value - prev.value : null
-                    return (
-                      <tr key={p.date} className='border-b border-border last:border-0 bg-bg/40'>
-                        <td className='px-4 py-2 text-muted-foreground tabular-nums'>{formatBucket(p.date)}</td>
-                        <td className='px-4 py-2 text-right tabular-nums text-text'>{formatNumber(p.value)}</td>
-                        <td className='px-4 py-2 text-right tabular-nums'>
-                          {diff == null ? (
-                            <span className='text-muted-foreground'>-</span>
-                          ) : (
-                            <span className={diff > 0 ? 'text-success' : diff < 0 ? 'text-danger' : 'text-muted-foreground'}>
-                              {diff > 0 ? '+' : ''}
-                              {formatNumber(diff)}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          {/* A bounded excerpt: the latest 14 buckets, so no search or filter. The full history is the
+              chart above, and the manual points below keep their own search and date filter. */}
+          <DataGrid<{ date: string; value: number; diff: number | null }>
+            variant='section'
+            title={`Last ${recent.length} snapshots`}
+            rows={recent.map((p, i) => ({ date: p.date, value: p.value, diff: recent[i + 1] ? p.value - recent[i + 1]!.value : null }))}
+            getId={(p) => p.date}
+            bar={{ noun: 'snapshots' }}
+            rowLabel={(p) => formatBucket(p.date)}
+            name={{ label: 'Date', render: (p) => <span className='text-body-sm tabular-nums text-muted-foreground'>{formatBucket(p.date)}</span> }}
+            columns={[
+              { key: 'value', label: 'Value', width: 112, render: (p) => <span className='block w-full text-right text-body-sm tabular-nums text-text'>{formatNumber(p.value)}</span> },
+              {
+                key: 'change',
+                label: 'Change',
+                width: 112,
+                render: (p) =>
+                  p.diff == null ? (
+                    <span className='block w-full text-right text-muted-foreground'>-</span>
+                  ) : (
+                    <SignalDelta variant='plain' delta={{ abs: p.diff, pct: null, dir: p.diff > 0 ? 'up' : p.diff < 0 ? 'down' : 'flat' }} direction={signal.direction} />
+                  ),
+              },
+            ]}
+          />
         </>
       ) : (
-        <section className='rounded-lg border border-dashed border-border bg-surface/50 p-6 text-body-sm text-muted-foreground'>
-          No data points yet. The signal exists and can already be bound to initiatives and targets;
-          {signal.formula
-            ? ' its points are computed from the formula once its inputs have data.'
-            : signal.data_source_id
-            ? ' points appear on its data source’s next sync - run one from Settings → Data sources if it has never synced.'
-            : signal.source === 'derived'
-              ? ' points appear when its channel derives.'
-              : signal.accumulation === 'increment'
-                ? ' occurrences count in via the signal-event tool, and buckets can be gap-filled by hand below.'
-                : ' enter points by hand below until a live source exists.'}
-        </section>
+        <SettingsGroup title='Readings'>
+          <SettingsEmpty>
+            No data points yet. The signal exists and can already be bound to initiatives and targets;
+            {signal.formula
+              ? ' its points are computed from the formula once its inputs have data.'
+              : signal.data_source_id
+                ? ' points appear on its data source’s next sync. Run one from Data sources if it has never synced.'
+                : signal.source === 'derived'
+                  ? ' points appear when its channel derives.'
+                  : signal.accumulation === 'increment'
+                    ? ' occurrences count in via the signal-event tool, and buckets can be gap-filled by hand.'
+                    : ' enter points by hand until a live source exists.'}
+          </SettingsEmpty>
+        </SettingsGroup>
       )}
 
-      {/* Manual entry is the bridge until a live source exists - and gap-fill for derived signal.
+      {/* Manual entry is the bridge until a live source exists, and gap-fill for derived signals.
           Always present: a shadowed manual point renders as such rather than being hidden. */}
       <SignalPointsEditor signal={signal} />
 
-      <SignalDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        signal={signal}
-        onSaved={(id, ch) => {
-          // The channel and id are part of the link; follow the signal if curation moved it.
-          if (ch !== signal.channel || id !== signal.id) open(signalsPath(ch, signalSlug({ id, channel: ch as Channel })))
-        }}
-        onDeleted={() => open(signalsPath(signal.channel))}
-      />
-    </div>
+    </SettingsPage>
   )
 }
+
+const INTERVAL: Record<string, string> = { hour: 'Hourly', day: 'Daily', week: 'Weekly', month: 'Monthly' }
 
 /**
  * The connection line for a signal bound to a data source: which source, which tracker, and when it
@@ -311,7 +269,7 @@ export function SignalDetailView({ channel, slug }: { channel: string; slug: str
  * (dangling - the points stay, they just stop refreshing), the last sync FAILED, or it has gone
  * STALE (read-side only, ~2x the daily cadence every source runs on - no stored staleness).
  */
-function ConnectionChip({ signal, sources }: { signal: Signal; sources: SignalDataSource[] }) {
+function ConnectionLine({ signal, sources }: { signal: Signal; sources: SignalDataSource[] }) {
   const source = sources.find((s) => s.id === signal.data_source_id)
   const failed = source?.last_sync_status === 'error'
   const stale =
@@ -321,110 +279,50 @@ function ConnectionChip({ signal, sources }: { signal: Signal; sources: SignalDa
   const tone = !source || failed ? 'text-danger' : stale ? 'text-warning' : 'text-muted-foreground'
 
   return (
-    <p className={cn('mt-3 text-label', tone)}>
+    <span className={cn('text-body-sm', tone)}>
       {!source ? (
         <>
-          Connected to <code>{signal.data_source_id}</code>, which no longer exists - the points below are
-          real history that has stopped refreshing. Re-point or clear the binding from Edit.
+          <code>{signal.data_source_id}</code> no longer exists. The points are real history that has stopped refreshing; re-point or clear the connection from Edit signal.
         </>
       ) : (
         <>
           {source.label} · <span title={`provider tracker key: ${signal.tracker_key}`}>{signal.tracker_key}</span> ·{' '}
           {source.last_sync_at ? (
-            <span title={source.last_sync_at}>
-              {failed ? 'last sync FAILED ' : 'synced '}
-              {relativeTime(source.last_sync_at)}
-            </span>
+            <>
+              {failed ? 'last sync failed ' : 'synced '}
+              <RelativeTime value={source.last_sync_at} />
+            </>
           ) : (
             'never synced'
           )}
-          {stale && !failed && ' - stale'}
+          {stale && !failed && ', stale'}
           {source.status === 'disabled' && ' · source disabled (syncs only on demand)'}
         </>
       )}
-    </p>
+    </span>
   )
 }
 
-interface TileProps {
-  label: string
-  /** Already formatted; `null` renders an honest dash rather than a fabricated zero. */
-  value: string | null
-  unit?: string | null
-  /** The third line: a bucket date, or the delta chip. Optional - tiles without one stay flush. */
-  sub?: React.ReactNode
-  title?: string
-  emptyHint?: string
-  /** Render the value in the muted tone (a placeholder like "baseline", not a real number). */
-  muted?: boolean
-}
-
-/**
- * One headline tile. Three fixed rows - LABEL / value / sub - so the two stat rows on this page read
- * as one system and every tile in a row lines up (grid rows stretch, so heights match for free).
- *
- * The overflow rules are the whole point and are easy to undo by accident:
- *   • the value TRUNCATES, which needs `min-w-0` on the flex child or the ellipsis never triggers;
- *   • the unit is a separate, `shrink-0` element - concatenating it into the value makes one
- *     unbreakable string that overflows a quarter-width card;
- *   • the value sits at display-sm, a step down from the old heading-1, which is what actually
- *     buys the room at four-across.
- */
-function StatTile({ label, value, unit, sub, title, emptyHint, muted }: TileProps) {
+/** A reading: the value in the display face, its unit beside it (a separate element, never glued
+ *  into the value, so a long number truncates instead of overflowing), and a line under it. */
+function Reading({ value, unit, sub, muted }: { value: string | null; unit?: string | null; sub?: React.ReactNode; muted?: boolean }) {
   return (
-    <div
-      title={title}
-      className='flex flex-col rounded-lg border border-border bg-surface px-3.5 py-3 shadow-(--shadow-sm) transition-colors hover:border-accent/40'>
-      <div className='truncate text-label uppercase tracking-[0.06em] text-muted-foreground'>{label}</div>
-      <div className='mt-2 flex items-baseline gap-1'>
+    <span className='flex flex-col gap-1'>
+      <span className='flex items-baseline gap-1'>
         {value == null ? (
-          <span className='font-serif text-display-sm leading-none text-muted-foreground' title={emptyHint}>
+          <span className='font-serif text-display-sm leading-none text-muted-foreground' title='No data in this window'>
             -
           </span>
         ) : (
           <>
-            <span
-              title={value}
-              className={cn(
-                'min-w-0 truncate font-serif text-display-sm tabular-nums leading-none',
-                muted ? 'text-muted-foreground' : 'text-text',
-              )}>
+            <span title={value} className={cn('min-w-0 truncate font-serif text-display-sm tabular-nums leading-none', muted ? 'text-muted-foreground' : 'text-text')}>
               {value}
             </span>
             {unit && <span className='shrink-0 text-label text-muted-foreground'>{unit}</span>}
           </>
         )}
-      </div>
-      {sub != null && <div className='mt-2 truncate text-label tabular-nums text-muted-foreground'>{sub}</div>}
-    </div>
-  )
-}
-
-/** The percentage half of "latest change", as a tinted chip. Up is green and down is red, matching
- *  SignalCard - deliberately NOT direction-aware, so the two surfaces never disagree on a colour. */
-function DeltaChip({ delta }: { delta: NonNullable<ReturnType<typeof computeDelta>> }) {
-  const Icon = delta.dir === 'up' ? ArrowUpRight : delta.dir === 'down' ? ArrowDownRight : Minus
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-label tabular-nums whitespace-nowrap',
-        delta.dir === 'up' && 'bg-success-bg text-success',
-        delta.dir === 'down' && 'bg-danger-bg text-danger',
-        delta.dir === 'flat' && 'text-muted-foreground',
-      )}
-      title={`Change from the previous bucket: ${formatDelta(delta)}`}>
-      <Icon className='size-3' />
-      {delta.pct == null ? formatNumber(delta.abs) : `${delta.pct > 0 ? '+' : ''}${delta.pct.toFixed(1)}%`}
-    </span>
-  )
-}
-
-function DefinitionChip({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <span
-      title={title}
-      className='inline-flex items-center rounded border border-border bg-surface px-1.5 py-0.5 text-label text-muted-foreground'>
-      {children}
+      </span>
+      {sub != null && <span className='truncate text-label tabular-nums text-muted-foreground'>{sub}</span>}
     </span>
   )
 }

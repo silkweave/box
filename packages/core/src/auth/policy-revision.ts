@@ -4,7 +4,7 @@
 // The revision is the committed policy generation (core.policy_state.revision) this process has
 // published (warehouse/policy-snapshot.ts): the only tag access and caches carry. It moves with
 // every change that can alter what someone may reach: role rows and user roles (policy commands),
-// and changes that live in files (agent config, toolsets, connection marks), which commit a bump
+// and changes that live in files (agent config, toolsets, server marks), which commit a bump
 // through the policy service before they report. Streams hold the revision they authorized at and
 // re-read access when it moves.
 import { onPolicySnapshot, policyGeneration } from '../warehouse/policy-snapshot.js'

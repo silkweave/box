@@ -36,7 +36,8 @@ None.
    - core: `goal-state.ts`, `goal-events.ts`, `goal-state.test.ts`, `goal-events.test.ts`;
    - server: `server/planning/goals.controller.ts`;
    - web: `goal-types.ts`, `lib/useGoalsData.ts`, `views/GoalsLayout.tsx`, `views/GoalsIndex.tsx`,
-     `views/GoalDetailView.tsx`, `components/GoalCard.tsx`, `GoalDialog.tsx`, `CycleDialog.tsx`,
+     `views/GoalDetailView.tsx`, `views/GoalCreateForm.tsx`, `views/CycleCreateForm.tsx`,
+     `components/GoalCard.tsx`, `goalForm.tsx`, `GoalDialog.tsx`, `CycleDialog.tsx`,
      `GoalSelect.tsx`, `GoalInitiatives.tsx`, `CycleBoardNote.tsx`;
    - the shared target measurement, unless the milestones powerup already brought it:
      `core/measure.ts`, `core/measure.test.ts`, the "target measurement" section of
@@ -57,7 +58,7 @@ None.
      upsert and its optimistic patch), `views/InitiativeDetailView.tsx` (`GoalsCard`, `GoalPicker`,
      `useGoalsData`, `goals` in `Folds`), `components/cells.tsx` (`GoalsCell`),
      `views/InitiativesGrid.tsx` (the goals cell), `lib/planningView.ts` (the `goals` column, its
-     place in `DEFAULT_VIEW`, the Growth preset), `components/InitiativeDialog.tsx` (the goals
+     place in `DEFAULT_VIEW`, the Growth preset), `views/InitiativeCreateForm.tsx` (the goals
      field), `components/RecordMenu.tsx` (`useGoalsData` for goal names), `lib/markdown.ts`
      (`names.goal`, the Goals line), `components/status.tsx` (`GOAL_STATUS_UI`, `GoalStatusLabel`,
      `GoalStatusSelect`), `components/dimensions.tsx` (`InitiativePicker`).

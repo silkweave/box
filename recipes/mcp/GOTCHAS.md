@@ -5,34 +5,41 @@ keys. Keep it stable. Record any local exception in the Box's `docs/GOTCHAS.md` 
 operation state in `_docs/INTEGRATION.md`.
 
 - **`features.mcp` is not core's `mcp`.** Core's `mcp.url` and `mcp.token` configure the `box`
-  CLI's connection to this Box. Connections live under `features.mcp.connections`; their secrets
-  under `credentials.mcp.<id>`.
-- **The redirect URI is `server.dashboardUrl`.** OAuth 2.1 servers refuse plain-http redirect URIs
-  that are not loopback, so a Box reached at `http://box.tailnet:8190` cannot complete OAuth. Serve
-  it over https (`tailscale serve` gives a `ts.net` certificate) and set `dashboardUrl` to that
-  address before connecting. Changing `dashboardUrl` later needs a reconnect (and, with Dynamic
-  Client Registration, a fresh registration). Keys are unaffected.
-- **The OAuth session belongs to the admin who clicked Connect.** Upstream it is that person's
-  grant: if they leave the upstream team or lose the role, the connection drops to `reauth`. For a
-  team connection that should outlive a person, prefer a service key.
-- **Authorization server metadata can sit at the path-inserted URL.** Stripe's issuer
-  `https://access.stripe.com/mcp` publishes its metadata at
-  `https://access.stripe.com/.well-known/oauth-authorization-server/mcp`, not under `/mcp/`.
-  Discovery tries the RFC 8414 form first.
-- **Stripe keys.** From 2026-12 Stripe MCP accepts only agent API keys (the "Agent" badge) and
-  OAuth; full secret keys and other restricted keys answer 401. Most of Stripe is behind two tools,
-  `stripe_api_read` and `stripe_api_write`, so the key's own permissions, not the tool list, are
-  the fine-grained limit. Stripe asks a human to confirm some writes (refunds, outbound payments)
-  through a URL in the tool result; that person approves as the connection's identity.
-- **Clients cache tool lists.** A tool turned on, or a new connection, appears in a person's Claude
-  or Codex only after the client reconnects, and in an agent session only from its next session.
-  Use `box <id>-<tool>` to test in the meantime.
-- **A session's shell can reach `/mcp` as its principal.** Sessions get passthrough tools only by
-  toolset, but a session allowed to run shell commands can read its principal's Box token and call
-  `/mcp` directly, getting what that person could. Toolsets for runs that read outside content
-  should deny `Bash`, as docs/AGENT-TOOLS.md already says.
-- **Upstream text is untrusted.** Tool descriptions and results come from outside the Box. Held
-  tools and the changed-description flag exist so a new or rewritten tool is read by a person before
-  agents follow it.
-- **The audit log holds call arguments.** They can name an upstream's customers. Keep `auditDays`
-  short enough for the team's data rules, and include the table in backups like other personal data.
+  CLI's connection to this Box. The `servers` powerup keeps its settings under
+  `features.mcp.servers` and its secrets under `credentials.mcp.<id>`.
+- **Sign-in needs an https address.** The MCP URL is `server.dashboardUrl` + `/mcp`, offered only on
+  https or on `http://localhost` and `http://127.0.0.1` when the client runs on the Box's machine.
+  A Box reached at `http://box.tailnet:8190` offers no sign-in; serve it over https
+  (`tailscale serve` gives a `ts.net` certificate) and set `dashboardUrl`.
+- **Changing the MCP URL disconnects everyone.** Grants are issued for one URL; at the next start
+  the old ones are revoked (`url_changed`) and every person connects again. Changing
+  `dashboardUrl` for another reason, such as a new hostname, does the same.
+- **The client must reach the address.** Claude Code, Codex and the other local clients run on the
+  person's machine and call the Box's URL directly, so a tailnet address works for a person on the
+  tailnet. The claude.ai and ChatGPT web apps, mobile apps and Claude Desktop Connectors call from
+  the vendor's servers and cannot reach a private Box; this recipe offers no way around that.
+  The person's browser must reach the dashboard (`/connect`) while signing in.
+- **Rotating a person's access token changes nothing; revoking them ends everything.** A person's
+  connections are separate credentials from their access token. Revoking the person's access or
+  deleting them ends all their connections, and restoring them later does not bring any back.
+- **Rotating `auth.sessionSecret` is not "disconnect all apps".** It ends access tokens (their key
+  derives from the secret); clients then refresh and carry on. To disconnect, revoke.
+- **A connected client holds the person's permissions.** Including changes the person can make,
+  and later role changes apply to it. A client's name is what it says about itself: only the
+  publishing host of a metadata document is shown as identified, and a self-registered client is
+  shown as unverified.
+- **Removing the app in the vendor does not revoke it in the Box.** Revoke it in Connected apps.
+- **A connection lasts 30 days, then the client signs in again.** Refresh tokens rotate on every
+  use; two copies of the same client configuration (a copied config, two machines sharing a token
+  store) fight over one chain, and a replay revokes the grant.
+- **Pending sign-ins live in memory.** A restart, or ten minutes, drops them: the consent page says
+  the request is no longer open and the person starts again in the client.
+- **The redirect list is fixed.** Loopback on any port, `claude.ai` and `chatgpt.com` callbacks
+  only. A client that redirects elsewhere is refused; there is no setting to add one.
+- **Open registration is rate limited.** More than 5 anonymous client registrations in 10 minutes
+  from one address, or 50 for the whole Box, answer 429 until the window passes. Behind a proxy
+  that is not on loopback every caller shares the proxy's address, so the per-address limit is
+  reached sooner.
+- **Outside MCP servers are the `servers` powerup.** Its gotchas (Stripe keys, the OAuth
+  redirect to upstream servers, untrusted upstream text, audit arguments) are in
+  [powerups/servers/POWERUP.md](powerups/servers/POWERUP.md#gotchas).

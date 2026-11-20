@@ -11,6 +11,7 @@ import { BrandProvider, UsersProvider } from '@silkweave/box-ui'
 import { useUsersData } from './lib/useUsersData.ts'
 import { LoginView } from './views/LoginView.tsx'
 import { SwitchAccountView } from './views/SwitchAccountView.tsx'
+import { ConnectView } from './views/ConnectView.tsx'
 import { dropSigninGrant, pendingSigninGrant, signedInGrantAction } from './lib/signinGrant.ts'
 import { AppShellExtensions } from './lib/shell.tsx'
 import { BuilderPreviewBridge } from './lib/BuilderPreviewBridge.tsx'
@@ -63,6 +64,8 @@ function AuthGate() {
   if (grant && grantAction === 'switch') return <SwitchAccountView grant={grant} current={principal} onStay={staySignedIn} />
   // Back to a server-served path mount (`/artifacts/<slug>/`) that sent this browser to sign in.
   if (followReturnPath()) return <div className='h-dvh w-full bg-bg' />
+  // MCP sign-in's consent page, outside the app shell: an MCP client sent this browser here.
+  if (window.location.pathname === '/connect') return <ConnectView requestId={new URLSearchParams(window.location.search).get('request') ?? ''} />
   return (
     <AppUsers>
       {principal.role === 'admin' && <BuilderPreviewBridge />}

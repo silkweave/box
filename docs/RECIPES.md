@@ -89,8 +89,11 @@ is descriptive prose, not a manifest. There is no `box adopt`, one-click install
 `deps.json`, feature package manifest, registry catalogue, release tag, or mount and compose
 workflow. The root workspace package owns packages imported by the shared feature tree.
 
+A recipe's web code follows [DESIGN.md](DESIGN.md), and its `AGENT.md` names the archetype of
+each of its pages (List, Detail, Create, Form, Tabbed section, Overview, Log).
+
 The recipes a Box can see are the ones in its `recipes/` directory, such as reminders, sink, Data
-Sync, planning, CRM, chat, automation, support, mcp (MCP connections), notifications, artifacts
+Sync, planning, CRM, chat, automation, support, mcp (MCP sign-in and MCP servers), notifications, artifacts
 and mobile. The Mobile app recipe is the
 one whose code ships with core ([MOBILE.md](MOBILE.md)): adapting it makes the shipped app the Box's
 own and records it in the ledger, and each recipe's `mobile` powerup requires it. A consumer Box starts with core and

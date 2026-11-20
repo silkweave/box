@@ -19,13 +19,13 @@ export const Initials: Story = { args: { user: SAMPLE_USERS[0]! } }
 
 export const Sizes: Story = {
   args: { user: SAMPLE_USERS[0]! },
-  render: (args) => (
+  render: () => (
     <div className='flex items-center gap-3'>
-      <Avatar {...args} size='xs' />
-      <Avatar {...args} size='sm' />
-      <Avatar {...args} size='nav' />
-      <Avatar {...args} size='md' />
-      <Avatar {...args} size='lg' />
+      <Avatar user={SAMPLE_USERS[0]!} size='xs' />
+      <Avatar user={SAMPLE_USERS[0]!} size='sm' />
+      <Avatar user={SAMPLE_USERS[0]!} size='nav' />
+      <Avatar user={SAMPLE_USERS[0]!} size='md' />
+      <Avatar user={SAMPLE_USERS[0]!} size='lg' />
     </div>
   ),
 }
@@ -38,6 +38,18 @@ export const Everyone: Story = {
       {SAMPLE_USERS.map((u) => (
         <Avatar key={u.id} user={u} size='md' />
       ))}
+    </div>
+  ),
+}
+
+/** `label`: a letter tile for a service, server or channel. A rounded square, so it never reads as a person. */
+export const Letter: Story = {
+  args: { label: 'Linear' },
+  render: () => (
+    <div className='flex items-center gap-3'>
+      <Avatar label='Linear' size='sm' />
+      <Avatar label='Stripe' size='md' />
+      <Avatar label='tracker' size='lg' />
     </div>
   ),
 }

@@ -6,7 +6,7 @@ import { cn } from '../lib/utils.ts'
  * and the caller decides what "open" means (a route, a hash, state).
  *
  * Use it for the pages of a view. For a choice that filters or regroups what is on screen, use
- * `SegmentedControl`.
+ * `SegmentedControl`. In a settings section use `SettingsTabs`, which places it in the pane.
  */
 export function TabNav<T extends string>({
   value,

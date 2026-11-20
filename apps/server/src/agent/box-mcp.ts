@@ -17,8 +17,8 @@
 // they move to the provider engine.
 //
 // The Box server's URL carries `?passthrough=0`: a server-owned session never gets the `mcp`
-// recipe's passthrough tools on `box`, only the connections its toolset grants. Each of those is a
-// second server at `/mcp/connections/<id>` on the same loopback address with the same token (the
+// recipe's passthrough tools on `box`, only the servers its toolset grants. Each of those is a
+// second server at `/mcp/servers/<id>` on the same loopback address with the same token (the
 // recipe's relay adds the upstream credential), plus an `x-box-via` header naming the room or run
 // for the audit log. No upstream credential enters a session.
 //
@@ -35,8 +35,8 @@ import type { CreateSessionRequest, ProfileInfo } from '@workerdeck/protocol'
 import {
   closeSessionCredential,
   MCP_GRANT_HEADER,
-  mcpConnectionGrant,
-  mcpConnections,
+  mcpServerGrant,
+  mcpServerDirectory,
   onPolicyRevision,
   openSessionCredential,
   scopeCoverageProblem,
@@ -76,7 +76,7 @@ export interface BoxMcpSessionInput {
   /** The caller's own floor, kept on every outcome. */
   disallowed?: readonly string[]
   toolset?: string | null
-  /** The room or run in the connections' audit log. */
+  /** The room or run in the relay's audit log. */
   via?: string | null
   /** What the session serves: `room:<id>` or `job:<app>:<id>`. Session controls check it. */
   scope: string
@@ -150,7 +150,7 @@ export function toolsetEngineProblem(toolset: string, caps: SessionToolCaps): st
 
 /**
  * Session options carrying `box` as `principalId` with a fresh session credential, plus the
- * connections and tool lists of `toolset` (core agent-tools.ts) when one is named, for an engine
+ * servers and tool lists of `toolset` (core agent-tools.ts) when one is named, for an engine
  * that takes session servers. The caller closes the returned session when it ends
  * (`closeBoxMcpSession`). Throws when any part cannot be granted as configured, including a
  * principal session on a profile that reports no session servers; only a session acting as nobody
@@ -217,33 +217,33 @@ export async function boxMcpSessionOptions(input: BoxMcpSessionInput): Promise<B
       disallowedTools.push(...BOX_MCP_FLOOR.map((tool) => `mcp__${BOX_MCP_SERVER}__${tool}`))
     }
     const extra = toolset ? toolsetSessionOptions(toolset) : null
-    // Connections: the person's own (their audience, run without asking, since they could call these
+    // Servers: the person's own (their audience, run without asking, since they could call these
     // tools themselves) plus the toolset's (granted by the toolset, whatever the audience). An agent
-    // principal has no own connections, and neither does a session under a built-in toolset that
+    // principal has no own servers, and neither does a session under a built-in toolset that
     // keeps only some Box tools (a drafting job for people outside the team). A toolset's deny list applies to both.
-    const directory = mcpConnections()
+    const directory = mcpServerDirectory()
     const own = principalId && directory && !extra?.boxTools ? await directory.personal(principalId) : []
     const granted = extra?.servers ?? []
     if (granted.length > 0) {
-      if (!directory) throw new Error(`toolset "${toolset}" attaches ${granted.join(', ')}, but this Box has no MCP connections (the mcp recipe)`)
-      if (!credential) throw new Error(`toolset "${toolset}" attaches connections, which a session acting as nobody cannot reach`)
+      if (!directory) throw new Error(`toolset "${toolset}" attaches ${granted.join(', ')}, but this Box has no MCP servers (the mcp recipe)`)
+      if (!credential) throw new Error(`toolset "${toolset}" attaches servers, which a session acting as nobody cannot reach`)
     }
     if (directory && credential) {
       for (const id of new Set([...granted, ...own])) {
         const viaToolset = granted.includes(id)
         const problem = await directory.sessionProblem(id)
         if (problem) {
-          // A toolset's connection fails the session closed; a person's own one is just left out.
+          // A toolset's server fails the session closed; a person's own one is just left out.
           if (viaToolset) throw new Error(`toolset "${toolset}": ${problem}`)
           continue
         }
         mcpServers[id] = {
           type: 'http',
-          url: `http://127.0.0.1:${servicePort()}/mcp/connections/${id}`,
+          url: `http://127.0.0.1:${servicePort()}/mcp/servers/${id}`,
           headers: {
             Authorization: `Bearer ${credential}`,
             ...(via ? { 'x-box-via': via } : {}),
-            ...(viaToolset ? { [MCP_GRANT_HEADER]: mcpConnectionGrant(principalId, id) } : {}),
+            ...(viaToolset ? { [MCP_GRANT_HEADER]: mcpServerGrant(principalId, id) } : {}),
           },
         }
         if (!viaToolset) allowedTools.push(`mcp__${id}`)

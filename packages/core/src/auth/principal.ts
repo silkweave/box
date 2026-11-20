@@ -21,6 +21,7 @@ import { admitSessionCredential, isSessionCredential, verifySessionCredential, t
 import { policyCommand, type PolicyTx } from '../warehouse/pg/boot.js'
 import { policyRevision } from './policy-revision.js'
 import { isBuiltinRole } from './roles.js'
+import { notifyUserAccessEnded } from '../users/access-ended.js'
 
 /** The authenticated identity attached to every request. */
 export interface Principal {
@@ -49,6 +50,13 @@ export interface Principal {
    * executor's admission re-resolves the principal after any later policy commit.
    */
   resolvedAt?: number
+  /**
+   * Present when the request carried a delegated credential (an MCP sign-in grant): the person's
+   * `auth_epoch` the grant was checked against. Re-resolution (admission after a policy commit)
+   * refuses the principal once the person's epoch moved, so a revoke and restore, or a delete and
+   * recreate, between two reads never lends the grant to the new incarnation.
+   */
+  authEpoch?: string
 }
 
 /**
@@ -60,8 +68,10 @@ export interface Principal {
  * different reason: a destructive chat operation lets a `session` principal act directly and holds a
  * `bearer` one for an in-channel approval (`chatOpNeedsApproval`). A model driving an MCP client
  * cannot choose how its client authenticates, which is what makes this a boundary rather than a hint.
+ * `oauth` is a connection a person approved for an MCP client (mcp-auth.ts): an API client like
+ * `bearer`, accepted on the `/mcp` transport only.
  */
-export type PrincipalCredential = 'session' | 'bearer'
+export type PrincipalCredential = 'session' | 'bearer' | 'oauth'
 
 /**
  * A stored role reference. NULL (an upgraded row core:001 left without one) is `member`, as it
@@ -195,6 +205,22 @@ export function resolvePrincipalById(id: string): Promise<Principal | null> {
     const resolvedAt = policyRevision()
     const row = await db.selectFrom('users').select(PRINCIPAL_COLUMNS).where('id', '=', id).executeTakeFirst()
     return row ? judge(row, resolvedAt) : null
+  })
+}
+
+/**
+ * A person who may hold delegated credentials (MCP sign-in grants, mcp-auth.ts) right now, with
+ * their current `auth_epoch`, or null: only an active or invited human, never an agent or the system
+ * principal. A grant is valid only while the epoch it was approved under is still this one.
+ */
+export function resolveDelegatedPrincipal(id: string): Promise<{ principal: Principal; epoch: string } | null> {
+  return asBootstrap(async () => {
+    if (!id || id === systemUserId()) return null
+    const resolvedAt = policyRevision()
+    const row = await db.selectFrom('users').select([...PRINCIPAL_COLUMNS, 'auth_epoch']).where('id', '=', id).executeTakeFirst()
+    if (!row || row.token_revoked_at) return null
+    const principal = await judge(row, resolvedAt)
+    return principal?.kind === 'human' ? { principal, epoch: row.auth_epoch } : null
   })
 }
 
@@ -492,11 +518,14 @@ export async function revokePrincipalToken(id: string, actor?: string): Promise<
     await tx.run(
       // The watermark bump is not incidental: without it, a link minted BEFORE the revoke would
       // still be consumable if the user is later re-enabled, quietly outliving the revocation.
+      // A new auth_epoch ends every delegated credential (MCP sign-in grant) approved before, also
+      // after access is restored.
       `update core.users set token_revoked_at = now(), status = 'revoked', link_watermark = $1,
-         updated_at = now(), updated_by = $2 where id = $3`,
+         auth_epoch = gen_random_uuid()::text, updated_at = now(), updated_by = $2 where id = $3`,
       [Date.now(), actor ?? null, id],
     )
   })
+  await notifyUserAccessEnded(id, 'revoked')
 }
 
 /**

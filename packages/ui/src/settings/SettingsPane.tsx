@@ -5,21 +5,37 @@
 // rules; forms are labelled fields on a grid; groups are separated by a ruled heading. Contained
 // surfaces are reserved for short callouts that need separation.
 //
+// This file is the frame: the pane, its footer bar and the three publish contexts (footer, title bar
+// actions, title bar info) the slots in `slots.tsx` write to. The vocabulary lives beside it, one
+// file per piece; `index.ts` is the public surface, and the contexts stay internal.
+//
 // These are the frame and the vocabulary only. What a row shows, which actions the footer carries
 // and what a field edits stay with the section that owns them.
+//
+// The house rules every section follows (2026-11-13):
+//   title bar slim: breadcrumbs, the title, the info icon and the section's create actions
+//   intro     `SettingsIntro`: one plain sentence, shown in the title bar's info popover with any
+//             longer story (`info`); nothing on the canvas
+//   actions   a list's create buttons go in the title bar (`SettingsHeaderActions`); a page open
+//             over the section owns the bar (its own create buttons show, the section's hide); a form's Save
+//             sits in the footer, right-aligned, primary last, Reset or Cancel left of it, a status
+//             note at the footer's left; the footer shows only while a form or editor needs it
+//   lists     a `DataGrid` (it adapts to the pane: sticky bar and column header, its count in
+//             the footer); a row ends in at most one status and one "..." `ActionMenu`; a value
+//             every row shares (an "Active" badge, "No email") is left out
+//   empty     `SettingsEmpty`: one sentence saying what goes here and how to add the first
+//   groups    `SettingsGroup` for a form's parts; a second list is a `section` grid with its title
+//   notices   `SettingsNotice` for a state that needs the owner (setup missing, attention)
 
 import * as React from 'react'
 import { ChevronRight, Info, X } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
+import { FormColumnContext, SettingsCanvasContext, SettingsDraftContext, SettingsLayerHostContext, leaveState, type DraftHost, type DraftState, type LayerHost, type SettingsLeaveState } from './internal.tsx'
 import { InlineCrumbProvider, type InlineCrumb, type InlineCrumbHost } from '../components/InlineDialog.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '../components/Popover.tsx'
 
 /** The horizontal gutter every settings surface shares: title bar, intro, list rows, footer. */
 export const SETTINGS_GUTTER = 'px-4 md:px-6'
-
-/** The text input treatment settings forms use. */
-export const settingsInputCls =
-  'w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-body-sm text-text transition-colors hover:border-accent/40 focus:border-accent focus:outline-none'
 
 /** A footer, or a function of whether content continues underneath it (to fade only then). */
 export type SettingsFooter = React.ReactNode | ((shadowed: boolean) => React.ReactNode)
@@ -27,17 +43,11 @@ export type SettingsFooter = React.ReactNode | ((shadowed: boolean) => React.Rea
 /** Footers are kept per publisher in publish order; the pane shows the newest. A list publishes
  *  its create button, the editor that replaces it publishes Save, a confirmation over that its own
  *  answer; each removal hands the bar back to the one underneath. */
-type FooterHost = (key: object, footer: SettingsFooter | null) => void
-const SettingsFooterContext = React.createContext<FooterHost | null>(null)
+export type FooterHost = (key: object, footer: SettingsFooter | null) => void
+export const SettingsFooterContext = React.createContext<FooterHost | null>(null)
 
-/** Publish this section's footer to the pane while mounted. Pass `null` to publish nothing. */
-export function useSettingsFooter(footer: SettingsFooter | null, deps: React.DependencyList) {
-  const host = React.useContext(SettingsFooterContext)
-  if (!host) throw new Error('useSettingsFooter must be used inside a SettingsPane.')
-  usePublishFooter(host, footer, deps)
-}
-
-function usePublishFooter(host: FooterHost | null, footer: SettingsFooter | null, deps: React.DependencyList) {
+/** Publish a footer to `host` while mounted (internal: `useSettingsFooter`, `SettingsActions`). */
+export function usePublishFooter(host: FooterHost | null, footer: SettingsFooter | null, deps: React.DependencyList) {
   const key = React.useRef({}).current
   React.useEffect(() => {
     if (!host) return
@@ -48,27 +58,21 @@ function usePublishFooter(host: FooterHost | null, footer: SettingsFooter | null
   React.useEffect(() => (host ? () => host(key, null) : undefined), [host, key])
 }
 
+/** The pane's base footer: a list's status row (its count). Any published footer (a Save bar, a
+ *  confirmation) replaces it while it is up. Newest publisher wins. */
+export const SettingsBaseFooterContext = React.createContext<FooterHost | null>(null)
+
+/** The title bar's actions slot: create buttons of the deepest layer (the section, or the page open
+ *  over it), newest publisher of that layer wins. */
+export type ActionsHost = (key: object, actions: React.ReactNode | null, layer?: number) => void
+export const SettingsActionsContext = React.createContext<ActionsHost | null>(null)
+
 /** The title bar's info slot: one short explanation of the section, behind an info icon. */
-type InfoHost = (key: object, info: React.ReactNode | null) => void
-const SettingsInfoContext = React.createContext<InfoHost | null>(null)
+export type InfoHost = (key: object, info: React.ReactNode | null) => void
+export const SettingsInfoContext = React.createContext<InfoHost | null>(null)
 
-/**
- * Publish a section's explanation to the pane's title bar while mounted: it shows as an info icon
- * beside the title (or the breadcrumb) that opens a short popover. Outside a pane it renders the
- * icon in place. Pass what used to be the intro line; keep it to a sentence or two.
- */
-export function SettingsInfo({ children }: { children: React.ReactNode }) {
-  const host = React.useContext(SettingsInfoContext)
-  const key = React.useRef({}).current
-  React.useEffect(() => {
-    if (!host) return
-    host(key, children)
-    return () => host(key, null)
-  }, [host, key, children])
-  return host ? null : <SettingsInfoButton>{children}</SettingsInfoButton>
-}
-
-function SettingsInfoButton({ children }: { children: React.ReactNode }) {
+/** The info icon and its popover (internal: the pane's title bar and `SettingsInfo` outside a pane). */
+export function SettingsInfoButton({ children }: { children: React.ReactNode }) {
   return (
     <Popover>
       <PopoverTrigger
@@ -81,22 +85,6 @@ function SettingsInfoButton({ children }: { children: React.ReactNode }) {
       </PopoverContent>
     </Popover>
   )
-}
-
-/**
- * The action row at the bottom of an editor or confirmation. Inside a SettingsPane it is pinned to
- * the pane's footer, so the actions stay in reach however long the form is; anywhere else it is a
- * plain right-aligned row. A submit button rendered here sits outside its form's DOM, so give it
- * `form='<form id>'`.
- */
-export function SettingsActions({ className, children }: { className?: string; children: React.ReactNode }) {
-  const host = React.useContext(SettingsFooterContext)
-  usePublishFooter(
-    host,
-    host ? (shadowed) => <SettingsFooterBar shadowed={shadowed} className={className}>{children}</SettingsFooterBar> : null,
-    [children, className],
-  )
-  return host ? null : <div className={cn('flex items-center justify-end gap-2', className)}>{children}</div>
 }
 
 function EdgeFade({ edge, visible }: { edge: 'top' | 'bottom'; visible: boolean }) {
@@ -120,16 +108,51 @@ function EdgeFade({ edge, visible }: { edge: 'top' | 'bottom'; visible: boolean 
  *
  * An inline editor opened inside it (an `InlineDialog` under an `InlineDialogScope`) shows as a
  * breadcrumb in the title bar - "Users › Toby" - and the section title becomes the way back.
+ *
+ * `leaveCheck` is a ref the pane fills with a check of every `useSettingsForm` inside it: `clean`,
+ * `dirty` (ask first) or `failed` (a save that was in flight failed: stay, the form says why). It
+ * waits for saves in flight. A tab switch the person already confirmed and Cancel count as clean.
+ * The app calls it from its router's navigation blocker (Back, Close, a link); the kit never sees
+ * the router.
  */
-export function SettingsPane({ title, onClose, children }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
-  const mainRef = React.useRef<HTMLDivElement>(null)
-  const bodyRef = React.useRef<HTMLDivElement>(null)
-  const [edges, setEdges] = React.useState({ above: false, below: false })
+export function SettingsPane({ title, onClose, leaveCheck, children }: {
+  title: React.ReactNode
+  onClose: () => void
+  leaveCheck?: React.RefObject<(() => Promise<SettingsLeaveState>) | null>
+  children: React.ReactNode
+}) {
+  const drafts = React.useRef(new Map<object, DraftState>())
+  const draftHost = React.useCallback<DraftHost>((key, state) => {
+    if (state === false) drafts.current.delete(key)
+    else drafts.current.set(key, state)
+  }, [])
+  React.useEffect(() => {
+    if (!leaveCheck) return
+    leaveCheck.current = () => leaveState(() => drafts.current.values())
+    return () => { leaveCheck.current = null }
+  }, [leaveCheck])
+  const { mainRef, bodyRef, edges, measure } = useScrollEdges()
   const footers = React.useRef(new Map<object, SettingsFooter>())
   const [, setFooterVersion] = React.useState(0)
   // The newest published info wins, like footers: a section's own note, or an editor's over it.
   const infos = React.useRef(new Map<object, React.ReactNode>())
   const [info, setInfo] = React.useState<React.ReactNode>(null)
+  // Actions are kept per publisher with the layer it sits on: the section is 0, a page over it 1.
+  // Open pages register their layer separately, so the deepest open layer owns the bar even when
+  // it publishes nothing.
+  const actionsMap = React.useRef(new Map<object, { node: React.ReactNode; layer: number }>())
+  const layers = React.useRef(new Map<object, number>())
+  const [, setActionsVersion] = React.useState(0)
+  const publishActions = React.useCallback<ActionsHost>((key, next, layer = 0) => {
+    if (next === null) actionsMap.current.delete(key)
+    else actionsMap.current.set(key, { node: next, layer })
+    setActionsVersion((v) => v + 1)
+  }, [])
+  const publishLayer = React.useCallback<LayerHost>((key, layer) => {
+    if (layer === null) layers.current.delete(key)
+    else layers.current.set(key, layer)
+    setActionsVersion((v) => v + 1)
+  }, [])
   const publishInfo = React.useCallback<InfoHost>((key, next) => {
     if (next === null) infos.current.delete(key)
     else infos.current.set(key, next)
@@ -140,7 +163,13 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
     else footers.current.set(key, next)
     setFooterVersion((v) => v + 1)
   }, [])
-  const footer = [...footers.current.values()].at(-1) ?? null
+  const baseFooters = React.useRef(new Map<object, SettingsFooter>())
+  const publishBase = React.useCallback<FooterHost>((key, next) => {
+    if (next === null) baseFooters.current.delete(key)
+    else baseFooters.current.set(key, next)
+    setFooterVersion((v) => v + 1)
+  }, [])
+  const footerBelowCrumbs = [...footers.current.values()].at(-1)
 
   // Crumbs are kept per editor in open order; the title bar shows the newest. Only its title is
   // state: Back reads the current entry at click time, so it never calls a stale close.
@@ -157,7 +186,13 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
       return same ? prev : { key: last[0], title: last[1].title, trail }
     })
   }, [])
+  // While a page covers the section, the section list's count row is not the page's: hide it.
+  const footer = footerBelowCrumbs ?? (crumb ? null : [...baseFooters.current.values()].at(-1)) ?? null
   const current = () => (crumb ? crumbs.current.get(crumb.key) : undefined)
+  // The owner of the title bar: the deepest open page, or the section. An editor over it that is not
+  // a page (more crumbs than pages) owns it too, with no actions.
+  const topLayer = Math.max(0, ...layers.current.values())
+  const actions = crumbs.current.size > layers.current.size ? null : ([...actionsMap.current.values()].filter((a) => a.layer === topLayer).at(-1)?.node ?? null)
   const toRoot = () => {
     const c = current()
     ;(c?.onRoot ?? c?.onBack)?.()
@@ -165,28 +200,16 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
   const crumbBtn = 'rounded-sm text-muted-foreground transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
   const sep = <li aria-hidden='true' className='shrink-0 text-fg-4'><ChevronRight className='size-4' /></li>
 
-  const measure = React.useCallback(() => {
-    const main = mainRef.current
-    if (!main) return
-    const next = { above: main.scrollTop > 0, below: main.scrollTop + main.clientHeight < main.scrollHeight - 1 }
-    setEdges((prev) => (prev.above === next.above && prev.below === next.below ? prev : next))
-  }, [])
-
-  // Both boxes are observed: the pane resizing, and its content growing (data arriving, rows wrapping).
-  React.useEffect(() => {
-    measure()
-    const observer = new ResizeObserver(measure)
-    if (mainRef.current) observer.observe(mainRef.current)
-    if (bodyRef.current) observer.observe(bodyRef.current)
-    return () => observer.disconnect()
-  }, [measure])
-
   return (
     <SettingsFooterContext.Provider value={publish}>
+      <SettingsBaseFooterContext.Provider value={publishBase}>
       <SettingsInfoContext.Provider value={publishInfo}>
+      <SettingsActionsContext.Provider value={publishActions}>
+      <SettingsLayerHostContext.Provider value={publishLayer}>
+      <SettingsDraftContext.Provider value={draftHost}>
       <InlineCrumbProvider host={crumbHost}>
       <div className='flex h-full min-h-0 flex-col overflow-hidden bg-surface'>
-        <header className={cn('relative z-10 flex h-16 shrink-0 items-center gap-2 bg-surface', SETTINGS_GUTTER)}>
+        <header className={cn('relative z-10 flex h-14 shrink-0 items-center gap-2 bg-surface', SETTINGS_GUTTER)}>
           {crumb ? (
             <nav aria-label='Breadcrumb' className='min-w-0'>
               <ol className='flex min-w-0 items-center gap-1.5 font-serif text-lg'>
@@ -215,138 +238,67 @@ export function SettingsPane({ title, onClose, children }: { title: React.ReactN
             <h1 className='font-serif text-lg text-text'>{title}</h1>
           )}
           {info != null && <SettingsInfoButton>{info}</SettingsInfoButton>}
+          {/* The open page owns the bar: the section's create buttons hide under it, the page's own
+              show. An editor over the section that is not a page (no layer) shows none. */}
+          <div className='ml-auto flex items-center gap-2'>{actions}</div>
           <button
             type='button'
             aria-label='Close settings'
             onClick={onClose}
-            className='ml-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-text'>
+            className='rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-hover hover:text-text'>
             <X className='size-4' />
           </button>
           <EdgeFade edge='top' visible={edges.above} />
         </header>
         <main ref={mainRef} data-settings-main className='settings-detail-main min-h-0 flex-1 overflow-y-auto bg-surface' onScroll={measure}>
-          <div ref={bodyRef} className='min-h-full'>{children}</div>
+          {/* The canvas: sections stand on it directly, so their pieces bring the gutter and their
+              top offset; the canvas gives only the ends. */}
+          <div ref={bodyRef} className='flex min-h-full min-w-0 flex-col pt-2 pb-8'>
+            <SettingsCanvasContext.Provider value='canvas'>{children}</SettingsCanvasContext.Provider>
+          </div>
         </main>
         {typeof footer === 'function' ? footer(edges.below) : footer}
       </div>
       </InlineCrumbProvider>
+      </SettingsDraftContext.Provider>
+      </SettingsLayerHostContext.Provider>
+      </SettingsActionsContext.Provider>
       </SettingsInfoContext.Provider>
+      </SettingsBaseFooterContext.Provider>
     </SettingsFooterContext.Provider>
   )
 }
 
 /** The fixed bottom bar for a section's primary actions. Pass the `shadowed` flag the footer gets. */
 export function SettingsFooterBar({ shadowed, className, children }: { shadowed: boolean; className?: string; children: React.ReactNode }) {
+  // On a `RecordPage` the bar spans the page and its buttons line up with the form's column.
+  const column = React.useContext(FormColumnContext)
   return (
-    <footer className={cn('relative z-10 flex shrink-0 items-center justify-end gap-2 bg-surface py-4', SETTINGS_GUTTER, className)}>
+    <footer className={cn('relative z-10 flex shrink-0 items-center justify-end gap-2 bg-surface py-4', !column && SETTINGS_GUTTER, !column && className)}>
       <EdgeFade edge='bottom' visible={shadowed} />
-      {children}
+      {/* The gutter sits inside the capped column, as the groups' gutter does in the body. */}
+      {column ? <div className={cn('mx-auto flex w-full min-w-0 items-center justify-end gap-2', column, SETTINGS_GUTTER, className)}>{children}</div> : children}
     </footer>
   )
 }
 
-/** The section's one-paragraph explanation, under the title bar. */
-export function SettingsIntro({ children, aside, className }: { children: React.ReactNode; aside?: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn('flex flex-wrap items-start justify-between gap-x-4 gap-y-2 pb-4', SETTINGS_GUTTER, className)}>
-      <p className='min-w-0 flex-1 basis-80 text-body-sm text-muted-foreground'>{children}</p>
-      {aside && <div className='flex shrink-0 items-center gap-2'>{aside}</div>}
-    </div>
-  )
+/** The scroll edges of a canvas: whether content continues above and below (to fade the bars). */
+export function useScrollEdges(): { mainRef: React.RefObject<HTMLDivElement | null>; bodyRef: React.RefObject<HTMLDivElement | null>; edges: { above: boolean; below: boolean }; measure: () => void } {
+  const mainRef = React.useRef<HTMLDivElement>(null)
+  const bodyRef = React.useRef<HTMLDivElement>(null)
+  const [edges, setEdges] = React.useState({ above: false, below: false })
+  const measure = React.useCallback(() => {
+    const main = mainRef.current
+    if (!main) return
+    const next = { above: main.scrollTop > 0, below: main.scrollTop + main.clientHeight < main.scrollHeight - 1 }
+    setEdges((prev) => (prev.above === next.above && prev.below === next.below ? prev : next))
+  }, [])
+  React.useEffect(() => {
+    measure()
+    const observer = new ResizeObserver(measure)
+    if (mainRef.current) observer.observe(mainRef.current)
+    if (bodyRef.current) observer.observe(bodyRef.current)
+    return () => observer.disconnect()
+  }, [measure])
+  return { mainRef, bodyRef, edges, measure }
 }
-
-/** A group inside a section: a hairline rule, an uppercase label and an optional aside (a count, a
- *  reset button), then the group's content. */
-export function SettingsGroup({ title, aside, className, children }: { title: React.ReactNode; aside?: React.ReactNode; className?: string; children: React.ReactNode }) {
-  return (
-    <section className={cn('flex flex-col gap-4', className)}>
-      <div className='flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border pt-4'>
-        <h2 className='text-label uppercase tracking-[0.07em] text-muted-foreground'>{title}</h2>
-        {aside && <div className='flex items-center gap-2'>{aside}</div>}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-/** A labelled field: label, the control, and an optional hint line under it. */
-export function SettingsField({ label, hint, className, children }: { label: React.ReactNode; hint?: React.ReactNode; className?: string; children: React.ReactNode }) {
-  return (
-    <label className={cn('flex min-w-0 flex-col gap-1 text-label text-muted-foreground', className)}>
-      <span className='flex flex-wrap items-baseline gap-x-2'>{label}</span>
-      {children}
-      {hint && <span className='text-fg-4'>{hint}</span>}
-    </label>
-  )
-}
-
-/** The identity header of a person-shaped editor (Profile, a user): avatar, name, a meta line. */
-export function SettingsIdentity({ avatar, title, meta }: { avatar: React.ReactNode; title: React.ReactNode; meta?: React.ReactNode }) {
-  return (
-    <section className='relative overflow-hidden rounded-xl bg-gradient-to-br from-accent/20 via-accent/10 to-transparent px-5 py-6 sm:px-6'>
-      <div aria-hidden='true' className='absolute -top-12 -right-10 size-40 rounded-full bg-accent/15 blur-2xl' />
-      <div className='relative flex items-center gap-4'>
-        <div className='shrink-0'>{avatar}</div>
-        <div className='min-w-0'>
-          <p className='truncate font-serif text-display-sm text-text'>{title}</p>
-          {meta && <div className='mt-0.5 flex flex-wrap items-center gap-2 text-body-sm text-muted-foreground'>{meta}</div>}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-/** A full-bleed list of rows ruled top and bottom. Rows are `SettingsListRow`s. */
-export function SettingsList({ label, className, children }: { label?: string; className?: string; children: React.ReactNode }) {
-  return <ul aria-label={label} className={cn('flex flex-col border-t border-border', className)}>{children}</ul>
-}
-
-/** The label over a full-bleed list that is not the section's first (in the gutter, no rule: the
- *  list's own top rule follows it). */
-export function SettingsListHeading({ title, aside, className }: { title: React.ReactNode; aside?: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn('flex min-h-8 items-end justify-between gap-3 pt-8 pb-2', SETTINGS_GUTTER, className)}>
-      <h2 className='text-label uppercase tracking-[0.07em] text-muted-foreground'>{title}</h2>
-      {aside && <div className='flex items-center gap-2'>{aside}</div>}
-    </div>
-  )
-}
-
-/** A list's column-header row: the same grid as its rows (pass the template through `className`). */
-export function SettingsListHeader({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    <li aria-hidden='true' className={cn('grid items-center gap-3 border-b border-border py-2 text-label font-medium text-muted-foreground', SETTINGS_GUTTER, className)}>
-      {children}
-    </li>
-  )
-}
-
-/**
- * One row. The caller supplies the column template through `className` (a grid) so a section's
- * rows and its header or create row line up. With `onOpen` the whole row is a button that opens
- * the item; controls inside it should stop propagation.
- */
-export function SettingsListRow({ onOpen, label, className, style, ref, children }: { onOpen?: () => void; label?: string; className?: string; style?: React.CSSProperties; ref?: React.Ref<HTMLLIElement>; children: React.ReactNode }) {
-  return (
-    <li
-      ref={ref}
-      style={style}
-      role={onOpen ? 'button' : undefined}
-      tabIndex={onOpen ? 0 : undefined}
-      aria-label={label}
-      onClick={onOpen}
-      onKeyDown={onOpen ? (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen() } } : undefined}
-      className={cn(
-        'grid min-h-14 items-center gap-3 border-b border-border py-2.5 transition-colors',
-        SETTINGS_GUTTER,
-        onOpen && 'cursor-pointer hover:bg-accent-tint/50 focus-visible:bg-accent-tint/50 focus-visible:outline-none',
-        className,
-      )}>
-      {children}
-    </li>
-  )
-}
-
-/** The quiet square icon button rows use for their trailing actions. */
-export const settingsRowActionCls =
-  'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent-tint hover:text-accent disabled:pointer-events-none disabled:opacity-50'

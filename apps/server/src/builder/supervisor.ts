@@ -33,7 +33,7 @@ import { createDevAccessCache, FRONTEND_HEADER, isPreviewDocument, isViteOnlyReq
 import { currentWebRelease, prepareWebRelease, serveWebAsset, type WebRelease } from '../web/web-release.js'
 
 // Keep in step with RESERVED in main.ts: these never reach Vite.
-const APP_RESERVED = /^\/(api|trpc|mcp|agent)(\/|$)/
+const APP_RESERVED = /^\/(api|trpc|mcp|agent|\.well-known)(\/|$)/
 
 /** The checkout's revision and whether it has uncommitted work, recorded on each web release. */
 function sourceState(root: string): { sha: string | null; dirty: boolean } {

@@ -11,16 +11,15 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `3b05aae867ab3300db442f32f7ff207fecdc0fe0` (2026-11-11: a fresh
-install runs the Box as a background service of its user (`box service`: systemd user unit with
-linger, launchd agent) and prints the sign-in link; the service log leaves out request traces and
-heartbeats; box and Bun reach non-interactive SSH shells; `box verify` in a Box runs its feature
-tests plus a core smoke set while core matches upstream; `box app restart` reports what the
-supervisor is busy with. Since fcc4e5f (2026-11-11): the installer sets up the PostgreSQL 18 client
-tools and refuses root; partial updates merge onto the row locked in their own write. Since 5a736cf
-(2026-11-10): Silkweave 7.0.0; the warehouse on PostgreSQL (pgrust by default, native PostgreSQL 18
-with pgvector as the second engine; `pg_dump`/`pg_restore` 18 required); roles and areas with row
-security and agent coverage; trackers with `watches` and the add-tracker core skill),
+Latest core refresh: Stack commit `6ee5c60732f133da6b454e23ea9bbb8cda32c2c5` (2026-11-20: one
+DataGrid for every list of records with inline-editable columns, searchable pickers, favourites and
+self-kept views; kit number, text and date-time cells; create forms in hash-routed dialogs; every
+Settings section on the Box design system with WCAG AA colour tokens; MCP sign-in (the Box as the
+OAuth server for people's own MCP clients, Connected apps, consent page); delegated credentials end
+with the person's access; the installer asks for a Git name and email when none is set. Since
+3b05aae (2026-11-11): a fresh install runs the Box as a background service of its user and prints
+the sign-in link; the installer sets up the PostgreSQL 18 client tools; the warehouse on
+PostgreSQL; roles and areas with row security; trackers),
 materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.

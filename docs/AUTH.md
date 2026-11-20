@@ -77,6 +77,48 @@ CORS.
 bearer only if it resolves to a principal. A per-tool guard cannot gate `tools/list`, so without
 this an anonymous client could enumerate every tool.
 
+**MCP sign-in port** (`packages/core/src/mcp-auth.ts`). One feature may supply OAuth sign-in for
+people's own MCP clients through `ServerFeature.mcpAuth`, read while the app module builds the
+`/mcp` adapter (the adapter mounts its routes before modules initialise). One resolver,
+`resolveMcpCredential`, serves the adapter's token check, the tool-list filter and AuthGuard for
+calls the `/mcp` adapter opened (`isMcpCall`: its call wrapper marks the request frame, so nothing a
+caller sends can set it). A token the extension recognises is judged by the extension alone and
+fails closed; anything else is an access token. Such a call carries credential `oauth`, an API
+client like `bearer`. `authenticatePrincipal` stays access-token-only, so OAuth tokens are refused
+on REST, tRPC, path mounts, `/mcp/servers/<id>` and the login box. Without a supplier `/mcp`
+takes access tokens only and serves no OAuth routes.
+
+The access token stays the anchor: the browser, the host and admin-handed scripts use it. An OAuth
+grant is a delegated credential, minted only from a signed-in browser session with the person's
+explicit consent, scoped to `/mcp`, revocable one by one, and dead when the person's access is.
+Two core pieces make the last part hold without trusting the feature's bookkeeping:
+
+- `users.auth_epoch`: random, set when the row is created and replaced by every revoke. A grant
+  records the epoch it was approved under and is valid only while it matches
+  (`resolveDelegatedPrincipal` returns an eligible human with the current epoch: active or
+  invited, never an agent or the system principal). Restoring access, restoring a backup's user
+  row into a newer state, or re-creating the same id never revives an old grant. Restoring a
+  backup taken before a revoke rolls the revoke back with it; revoke again after such a restore.
+  Rotating a person's access token does not touch their grants. The principal a grant resolves to
+  is the very read whose epoch matched, stamped `authEpoch`; admission re-resolution after a
+  policy change re-checks that epoch, so a revoke and restore (or a delete and re-create) in the
+  middle of a request never lends the grant to the new incarnation, while a role change in the
+  same epoch applies as usual.
+- Consent is the session's person: an Allow names the person the page showed only as a
+  precondition (`shown`), refused when the session has since become someone else.
+- the access-ended port (`registerUserAccessEnded`, `users/access-ended.ts`): called after a revoke
+  or delete commits, so the feature tombstones the person's grants; a failing listener is logged
+  and changes nothing, the epoch check being the authority.
+
+Consent and Connected apps are core routes (`/api/connect/*`, tRPC `connect*`, never MCP tools),
+the dashboard's `/connect` page, Settings > Profile (your own), the Users detail (an admin's view)
+and `box auth connections`; the extension's `signIn` supplies the decisions. Any signed-in person
+may approve a client for themselves and see and revoke their own connections whatever their role's
+areas. The consent decision takes a session credential, the CSRF header and a same-origin request;
+the person it binds is always the session's. Rotating `auth.sessionSecret` ends OAuth access
+tokens (their signing key is derived from it) but not refresh tokens, so clients refresh and carry
+on: rotating the secret is not "disconnect all apps", revoking is.
+
 ## The two tiers
 
 `users.role` names a role: the built-in `admin` or `member`, or a custom role ("Roles and areas"
@@ -195,7 +237,7 @@ published snapshot of that revision (routing and role definitions together); eve
 transaction first compares the committed revision with the snapshot and with the revision the
 request's access was resolved at, and a newer one re-resolves the request's identity and access
 before any work (a principal that no longer resolves is refused). Changes that live in files
-(toolsets, connection tool levels, agent reconciliation) commit a revision bump before they report.
+(toolsets, MCP server tool levels, agent reconciliation) commit a revision bump before they report.
 
 **A new user is `pending` until it holds its role.** The row is created insert-only (an id taken
 meanwhile refuses) and activated with its role in one policy command; a pending row cannot sign in
@@ -369,14 +411,16 @@ no record names. A handler's catch-all that turns domain failures into 400s thro
 
 `AuthGuard` decides every transport from the same map, and `/mcp` lists only the tools the caller's
 role reaches (`apps/server/src/agent/mcp-passthrough.ts`); a missing or invalid bearer lists
-nothing, and outside connections' tools need `mcp` read for tools an administrator marked Reads
-and `mcp` write for every other tool, on `/mcp`, `/mcp/connections/<id>` and in sessions alike
+nothing, and outside MCP servers' tools need `mcp` read for tools an administrator marked Reads
+and `mcp` write for every other tool, on `/mcp`, `/mcp/servers/<id>` and in sessions alike
 (recipes/mcp/SPEC.md).
 
 **Request context.** Core carries who the current code runs for in one AsyncLocalStorage
 (`packages/core/src/request-context.ts`). The transport opens an empty holder (the first Express
 middleware per HTTP request, and one per tRPC or MCP action call, because a tRPC batch runs several
-calls in one request and WebSocket messages arrive outside Express) and `AuthGuard` fills it. A
+calls in one request and WebSocket messages arrive outside Express) and `AuthGuard` fills it. The
+HTTP holder also carries the caller's address (`clientIp`, set by the transport, read with
+`requestIp()`), for rate limits and audit rows written below the request. A
 stream is rebound on every step. No frame, or an unfilled one, reaches no area. Boot, jobs and other
 system work enter `asSystem(reason, fn)` explicitly; authentication runs in a narrow bootstrap
 scope. A request that needs fixed system SQL after authorizing (a signal rename or delete
@@ -449,8 +493,8 @@ An agent's output is shown only to readers who **cover** the agent (`packages/co
   area the agent reaches compares exactly, so an agent that writes artifacts and also reads `crm`
   needs every artifacts reader to read `crm`;
 - an agent with admin authority is read by admins only;
-- for every outside MCP connection the agent can use there (its toolset's), the reader is in that
-  connection's audience.
+- for every outside MCP server the agent can use there (its toolset's), the reader is in that
+  server's audience.
 
 | Destination | Readers |
 |---|---|
@@ -501,10 +545,10 @@ cover that agent itself (`relayCoverageProblem`): a room agent calling `WikiAsk`
 job's agent (checked before the job starts, on the answer and on each fetch, the waiting `WikiAsk`
 response included), and one calling `WikiUpdate` must cover the upkeep agent (checked on submit and
 again for whoever reads the record with `WikiUpdateGet` or `WikiUpdates`). Everyone who covers the
-room agent then covers the source on areas. A delegated job adds no connection reach: its toolset's
-connections must all be in the relaying session's toolset, which is the room's and is judged
+room agent then covers the source on areas. A delegated job adds no MCP server reach: its toolset's
+servers must all be in the relaying session's toolset, which is the room's and is judged
 against every reader of the room (`delegatedOutputProblem`); a person reading an answer directly
-must be in each connection's audience. A withheld record keeps only status metadata: the answer,
+must be in each server's audience. A withheld record keeps only status metadata: the answer,
 summary, pages, questions, progress, failure text, warnings and log are all removed.
 
 ## First run and the commands that exist

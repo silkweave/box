@@ -47,6 +47,14 @@ export interface DraggableCardProps {
   children: ReactNode
 }
 
+/**
+ * The card frame a board drags: dnd-kit wiring, a grip or whole-surface drag, and the click-vs-drag
+ * measurement. What is inside the card is the caller's.
+ * Use it for cards on a custom board (a sprint grid); `BoardKanban` renders it for you.
+ * Not for list rows (`DataGrid` rows drag through the grid) or a card that never moves.
+ * `handle`: `grip` for a wide card with links, `surface` for a dense label card.
+ * Rule: render the moving copy with `overlay` inside a `DragOverlay`; the source stays put as the hole.
+ */
 export function DraggableCard({
   id,
   label,
@@ -73,7 +81,10 @@ export function DraggableCard({
   return (
     <article
       ref={setNodeRef}
-      {...(surfaceDrag ? { ...listeners, ...attributes } : {})}
+      // The pointer and keyboard listeners sit on the card; dnd-kit's ARIA attributes (role, tabIndex)
+      // go on the stretched button below, because an `article` may not be a button and the card's
+      // children may hold their own controls.
+      {...(surfaceDrag ? listeners : {})}
       // Spread AFTER the listeners on purpose: this replaces dnd-kit's own `onPointerDown`, so it
       // has to call it on the way past.
       onPointerDown={(e) => {
@@ -96,15 +107,33 @@ export function DraggableCard({
         // No resting shadow on a surface card: a cell of cards each casting one reads as a pile of
         // chips rather than a list. The lift is reserved for the two states where it MEANS
         // something - the card under the pointer, and the card in the air.
-        'group/card rounded-md border border-border bg-bg outline-none',
+        'group/card relative rounded-md border border-border bg-bg outline-none',
         'transition-[color,background-color,border-color,box-shadow,opacity]',
         grip ? 'p-2.5 shadow-(--shadow-sm)' : 'p-2 text-left',
         surfaceDrag && 'cursor-grab touch-none hover:border-border-strong hover:shadow-(--shadow-sm)',
-        onClick && 'focus-visible:border-accent',
+        surfaceDrag && 'has-[>button[data-drag-surface]:focus-visible]:border-accent has-[>button[data-drag-surface]:focus-visible]:ring-2 has-[>button[data-drag-surface]:focus-visible]:ring-accent/50',
         isDragging && 'opacity-40',
         overlay && 'cursor-grabbing shadow-md',
         className,
       )}>
+      {surfaceDrag && (
+        <button
+          type='button'
+          data-drag-surface=''
+          {...attributes}
+          aria-label={label}
+          // Click-through for the pointer, so a click here comes from the keyboard (Enter) or
+          // assistive tech: it opens the card. The article's handler ignores it (no press recorded).
+          onClick={
+            onClick &&
+            ((e) => {
+              e.stopPropagation()
+              onClick()
+            })
+          }
+          className='pointer-events-none absolute inset-0 rounded-[inherit] outline-none'
+        />
+      )}
       {grip ? (
         <div className='flex items-start gap-1'>
           {/* Drawn for the overlay too, inert: without it the copy in the air is 18px narrower than

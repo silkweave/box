@@ -76,7 +76,7 @@ export function writeCredentials(channel: string, account: string, updates: Reco
 }
 
 /**
- * Remove ONE channel account's credentials from box.local.json (a disconnected MCP connection, say),
+ * Remove ONE channel account's credentials from box.local.json (a disconnected MCP server, say),
  * leaving every other channel and account untouched. Atomic and owner-only, like writeCredentials.
  */
 export function deleteCredentials(channel: string, account: string): void {

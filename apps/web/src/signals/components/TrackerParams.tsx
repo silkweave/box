@@ -1,11 +1,9 @@
-import { DateInput, SelectField, UserPicker } from '@silkweave/box-ui'
+import { DateInput, Field, FieldGrid, Input, SelectField, UserPicker } from '@silkweave/box-ui'
 import type { TrackerInfo } from '../lib/useTrackers.ts'
 
-const inputCls =
-  'w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-body-sm text-text transition-colors hover:border-accent/40 focus:border-accent focus:outline-none'
-
-/** A Box tracker's parameter fields, one per param (`hide` leaves some out, e.g. a goal's own
- *  `since`). Renders nothing when there is nothing to ask. */
+/** A Box tracker's parameter fields, one `Field` per param (`hide` leaves some out, e.g. a goal's
+ *  own `since`). The param's description is the field's hint. Renders nothing when there is
+ *  nothing to ask. */
 export function TrackerParams({
   tracker,
   value,
@@ -21,10 +19,9 @@ export function TrackerParams({
   if (params.length === 0) return null
   const put = (key: string, val: string): void => onChange({ ...value, [key]: val })
   return (
-    <div className='grid grid-cols-2 gap-3 rounded-md border border-border-light p-3'>
+    <FieldGrid columns={2}>
       {params.map((p) => (
-        <label key={p.key} className='flex flex-col gap-1' title={p.description ?? undefined}>
-          <span className='text-label text-muted-foreground'>{`${p.label}${p.required ? '' : ' (optional)'}`}</span>
+        <Field key={p.key} label={p.label} hint={p.description ?? undefined}>
           {p.kind === 'enum' ? (
             <SelectField
               value={value[p.key] ?? ''}
@@ -36,10 +33,10 @@ export function TrackerParams({
           ) : p.kind === 'user' ? (
             <UserPicker value={value[p.key] || null} onChange={(u) => put(p.key, u ?? '')} className='w-full' />
           ) : (
-            <input value={value[p.key] ?? ''} onChange={(e) => put(p.key, e.target.value)} className={inputCls} />
+            <Input value={value[p.key] ?? ''} onChange={(e) => put(p.key, e.target.value)} />
           )}
-        </label>
+        </Field>
       ))}
-    </div>
+    </FieldGrid>
   )
 }

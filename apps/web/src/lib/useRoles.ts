@@ -73,5 +73,7 @@ export function roleSummary(role: Role): string {
   if (role.id === 'admin') return 'Every area at write, and administration'
   if (role.id === 'member') return 'Every area at write'
   const named = Object.entries(role.areas).map(([area, level]) => `${area} ${level}`)
-  return `${named.length ? `${named.join(', ')}; ` : ''}everything else ${role.default}`
+  const rest = role.default === 'none' ? 'no access' : `${role.default}`
+  if (!named.length) return role.default === 'none' ? 'No access yet' : `Every area at ${role.default}`
+  return `${named.join(', ')}; everything else ${rest}`
 }

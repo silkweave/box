@@ -5,7 +5,7 @@ Tickets that belong to a customer: the requester is a CRM contact, so a ticket's
 ## Highlights
 
 - The requester is a CRM contact: one autocomplete searches the CRM's people, and a new requester becomes a contact under the company typed (found by name, or created)
-- "Log support ticket" on a CRM touch and in an account's actions, one ticket per touch; both open the New ticket dialog prefilled
+- "Log support ticket" on a CRM touch and in an account's actions, one ticket per touch; both open the New ticket page prefilled
 - A Support tab on the CRM account page: open tickets, late ones, open bug reports and the full history, counted through the account's contacts
 - An "Open support tickets" column for the CRM accounts grid and a "Late support tickets" attention reason
 
@@ -35,7 +35,7 @@ organizations its requesters come from: a support request never creates a CRM ac
 It owns one link table, `support_ticket_crm` (ticket to the touch it came from; the touch is
 unique). A ticket made from a touch takes the touch's contact as requester when it names none. It
 contributes to CRM's extension points: `crm.account.card` (the Support tab, with a Log support
-ticket button), `crm.account.actions` (Log support ticket: the New ticket dialog, a new requester
+ticket button), `crm.account.actions` (Log support ticket: the New ticket page, a new requester
 going under that account), `crm.touch.actions` (Log support ticket from the touch: requester is the
 touch's contact, with the touch id, channel, subject and summary; or Open ticket when the touch
 already has one), `crm.overview.alerts` (accounts with late tickets), `registerCrmColumn` (Open

@@ -44,7 +44,8 @@ None. The sink contributes nothing to core's run funnel - there is nothing to sc
 
 ## UI
 
-- **Routes**: `/sink` (the queue as a card grid) and `/sink/$file` (the same view, editing that
+- **Routes**: `/sink` (the queue as a card grid), New as a dialog over the queue
+  (`/sink#new`, `SinkCreateForm`: a name, then Create opens the empty file) and `/sink/$file` (the same view, editing that
   file). One stateful view reading the `$file` param; the child route only registers the segment.
 - **Nav**: one entry, `Sink`, icon `FolderInput`, order band **700**.
 - **Settings / shell / slots**: none.

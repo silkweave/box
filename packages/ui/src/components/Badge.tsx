@@ -20,10 +20,12 @@ const badgeVariants = cva(
         silk: 'border-transparent text-white',
       },
       mono: { true: 'font-mono', false: '' },
-      // `sm` for several tags on one dense line (a list row's status tags); `md` everywhere else.
+      // `sm` for several tags on one dense line (a list row's status tags); `xs` beside a name inside
+      // a 20px line (a 16px box, so the line never grows; `NameCell` uses it); `md` everywhere else.
       size: {
         md: 'gap-1.5 px-2.5 py-0.5 text-label leading-relaxed',
         sm: 'gap-1 px-1.5 py-0 text-[11px] leading-[1.35rem]',
+        xs: 'h-4 gap-1 px-1.5 py-0 text-[10.5px] leading-none',
       },
     },
     defaultVariants: { variant: 'neutral', mono: false, size: 'md' },
@@ -37,6 +39,15 @@ export interface BadgeProps
   dot?: boolean
 }
 
+/**
+ * A pill naming a state or a kind ("Connected", "Admin", "Built in"), in sentence case.
+ * Use it where the tone carries meaning: `success` healthy, `warning` needs attention, `neutral` a
+ * kind, `accent` a role, `danger` failed, `info` queued or informational.
+ * Not for a bare health light (`StatusDot`), a nav count (the sidebar item's `count`), or anything
+ * pressable (`Button`; `SegmentedControl` for a choice).
+ * `silk` is the brand gradient, at most once per surface. `size='sm'` for several badges on one dense
+ * row; `dot` repeats the state without relying on colour alone; `mono` for identifiers.
+ */
 export const Badge: FunctionComponent<BadgeProps> = ({
   className,
   variant = 'neutral',

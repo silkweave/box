@@ -27,6 +27,13 @@ interface Particle {
   color: string
 }
 
+/**
+ * A one-shot celebratory burst on a full-screen canvas that ignores the pointer.
+ * Use it for a rare finish worth marking: an inbox emptied, a goal reached.
+ * Not for routine success feedback (a "Saved" note says that).
+ * `fire`: bump the number to fire again; 0 never fires.
+ * Renders nothing under `prefers-reduced-motion`.
+ */
 export function Confetti({ fire }: { fire: number }) {
   const canvas = useRef<HTMLCanvasElement>(null)
 

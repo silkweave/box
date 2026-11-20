@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Copy, LogIn, Terminal } from 'lucide-react'
 import { Wordmark, Badge, Button } from '@silkweave/box-ui'
 import { useAuth } from '../lib/useAuth.tsx'
 import { dropSigninGrant, grantSubject, pendingSigninGrant, pendingSigninNotice } from '../lib/signinGrant.ts'
+import { rememberReturnPath } from '../lib/returnPath.ts'
 
 // The sign-in gate, shown whenever there is no session. Two ways in, and they are different
 // credentials (see apps/server/src/auth/auth.controller.ts):
@@ -35,6 +36,11 @@ export function LoginView() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Signed out on MCP sign-in's consent page: come back to the same request after signing in, also
+  // through a sign-in link opened in this tab.
+  useEffect(() => {
+    if (window.location.pathname === '/connect') rememberReturnPath(`${window.location.pathname}${window.location.search}`)
+  }, [])
 
   // The grant was taken out of the address bar before the router saw it (lib/signinGrant.ts), so it is
   // never on screen to be screenshotted or shoulder-read, and Back cannot return to it. It is spent

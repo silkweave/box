@@ -50,6 +50,10 @@ bun --version       # must be 1.4.2 or newer; CI pins 1.4.2
   (`pgrust` by default, native PostgreSQL 18 as the alternative); `box setup` prepares the engine and
   asks before installing any host package. There is no connection string to configure.
 
+- **A Git identity.** `git config user.name` and `git config user.email` must both print a value:
+  Builder's checkpoints and agents' commits fail without one. If either is empty, ask the owner
+  for their name and email and set them with `git config --global`; never replace a set one.
+
 Optional, only if they later want the feature that needs it: the `gh` CLI (GitHub signal pulls).
 
 If Bun is older than 1.4.2, update it first. Everything downstream fails confusingly.

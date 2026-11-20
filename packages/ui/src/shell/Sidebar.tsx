@@ -87,9 +87,15 @@ interface SidebarProps extends GroupNav {
   onHomeClick?: () => void
 }
 
-// Channel-nav sidebar (shell ported from claudepad): wordmark, then a vertical accordion of the
-// top-level groups (Signals/Inbox/Automation). The active group automatically reveals its sub-nav
-// beneath it; the others collapse to a single header. App chrome sits in a row at the bottom.
+/**
+ * The channel-nav sidebar (ported from claudepad): wordmark, then an accordion of the top-level
+ * groups whose active one reveals its sub-nav; app chrome sits in a row at the bottom.
+ * Use it through `AppShell`, which swaps it for `SidebarRail` when collapsed and for a drawer on
+ * small screens; render it directly only in a custom shell.
+ * Not for navigation between the pages of one view (`TabNav`).
+ * With `customization` it offers a Customize mode (order and hide groups). Items sharing a `section`
+ * must be contiguous.
+ */
 export function Sidebar({
   groups: allGroups,
   activeGroup,
@@ -134,7 +140,7 @@ export function Sidebar({
       {/* In framed mode, mt = the inset frame's top margin (8px) + border (1px), so the wordmark
           row shares the top bar's vertical center and the breadcrumb baseline. */}
       <div className={cn(framed ? 'mt-[9px]' : 'mt-0', 'flex h-14 items-center gap-1 px-3')}>
-        <HomeLink className='flex items-center rounded-md' aria-label='Home' onClick={onHomeClick}>
+        <HomeLink className='flex items-center rounded-md' onClick={onHomeClick}>
           <Wordmark size='full' />
         </HomeLink>
         {customization &&

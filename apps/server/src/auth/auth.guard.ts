@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
-import { accessOf, areaDestinationProblem, toolsetConnections, authenticatePrincipal, fillRequest, resolveSessionPrincipal, type Access, type Principal, type PrincipalCredential } from '@silkweave/box-core'
+import { accessOf, areaDestinationProblem, toolsetServers, authenticatePrincipal, fillRequest, isMcpCall, resolveMcpCredential, resolveSessionPrincipal, type Access, type Principal, type PrincipalCredential } from '@silkweave/box-core'
 import { IS_ADMIN, IS_PUBLIC } from './auth.decorators.js'
 import { handlerPolicy, refusalFor } from './handler-map.js'
 
@@ -36,22 +36,29 @@ export class AuthGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   /** Resolve the principal + whether it came from a Bearer token (vs the session cookie). */
-  private async resolve(req: GuardRequest): Promise<{ principal: Principal | null; viaBearer: boolean }> {
+  private async resolve(req: GuardRequest): Promise<{ principal: Principal | null; credential: PrincipalCredential }> {
     const authz = req.headers.authorization
     if (authz && /^Bearer\s+/i.test(authz)) {
-      return { principal: await authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim()), viaBearer: true }
+      const token = authz.replace(/^Bearer\s+/i, '').trim()
+      // A call through the `/mcp` adapter (its frame says so, auth/call-context.ts) also accepts the OAuth tokens of the
+      // `mcp` recipe's sign-in; every other route takes access tokens only (core mcp-auth.ts).
+      if (isMcpCall()) {
+        const resolved = await resolveMcpCredential(token)
+        return { principal: resolved?.principal ?? null, credential: resolved?.credential ?? 'bearer' }
+      }
+      return { principal: await authenticatePrincipal(token), credential: 'bearer' }
     }
-    return { principal: await resolveSessionPrincipal(req.headers.cookie), viaBearer: false }
+    return { principal: await resolveSessionPrincipal(req.headers.cookie), credential: 'session' }
   }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<GuardRequest>()
-    const { principal, viaBearer } = await this.resolve(req)
+    const { principal, credential } = await this.resolve(req)
     req.principal = principal
     // Recorded alongside the principal, for the one route family that must tell a person at a
     // browser from an API client (chat-op approvals). Only meaningful WITH a principal: a bearer
     // that failed to authenticate is not a credential, it is a rejected request.
-    if (principal) req.credential = viaBearer ? 'bearer' : 'session'
+    if (principal) req.credential = credential
     // The request context (core request-context.ts): the transport opened an empty holder for this
     // call, and this is where it is filled, so every accessor below the handler knows who it serves.
     // Without a principal it stays empty, which denies area data.
@@ -86,10 +93,10 @@ export class AuthGuard implements CanActivate {
     }
     // An agent's write into an area destination (artifacts: read by
     // everyone with read on the area) needs every such reader to cover the agent, with the
-    // connections its session's toolset gives it (PERMISSIONS 7.2). Rooms check their own readers.
+    // servers its session's toolset gives it (PERMISSIONS 7.2). Rooms check their own readers.
     // A job whose output returns to the caller only (a tool whose answer returns to the caller alone) writes nothing into the area.
     if (principal?.kind === 'agent' && policy.category.kind === 'area' && !policy.read && !policy.answersCaller) {
-      const problem = await areaDestinationProblem(policy.category.area, principal.id, toolsetConnections(principal.session?.toolset ?? null))
+      const problem = await areaDestinationProblem(policy.category.area, principal.id, toolsetServers(principal.session?.toolset ?? null))
       if (problem) throw new ForbiddenException({ error: 'coverage', area: policy.category.area, message: problem })
     }
 
@@ -101,7 +108,7 @@ export class AuthGuard implements CanActivate {
     // construction. @Public routes (login, magic link) never reach here.
     const method = (req.method ?? 'GET').toUpperCase()
     const mutating = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS'
-    if (mutating && !viaBearer && !req.headers['x-box-csrf']) {
+    if (mutating && credential === 'session' && !req.headers['x-box-csrf']) {
       throw new ForbiddenException('missing CSRF header')
     }
 

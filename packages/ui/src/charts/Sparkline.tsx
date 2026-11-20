@@ -13,6 +13,13 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
 import { cn } from '../lib/utils.ts'
 import { CHART_AXIS, CHART_SURFACE, MARK, seriesColor } from './theme.ts'
 
+/**
+ * A trend with no axes, grid or tooltip: the chart that fits inside a card beside its number.
+ * Use it for direction at a glance; `onHoverIndex` lets the card re-point its headline at the
+ * hovered reading.
+ * Not for reading values (`TimeSeriesChart`) or comparing series (`SeriesLineChart`).
+ * Windowing is the caller's: pass the points that count as "lately".
+ */
 export function Sparkline({
   points,
   color = seriesColor(0),

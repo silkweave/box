@@ -20,8 +20,15 @@ import type { PgMigration, SchemaOwner } from './pg/migrate.js'
 export type { MigrationTx, PgMigration as Migration, SchemaOwner } from './pg/migrate.js'
 export { orderOwners } from './pg/migrate.js'
 
-/** Core's own migrations, keyed `core:<name>`. Core has none; its tables come from the baseline. */
-export const CORE_MIGRATIONS: readonly PgMigration[] = []
+/** Core's own migrations, keyed `core:<name>`. A fresh database gets every column from the baseline. */
+export const CORE_MIGRATIONS: readonly PgMigration[] = [
+  {
+    // users.auth_epoch (core-models.ts): each existing row gets its own random epoch (a volatile
+    // default is evaluated per row).
+    name: '001-users-auth-epoch',
+    statements: [`alter table core.users add column if not exists auth_epoch text not null default gen_random_uuid()::text`],
+  },
+]
 
 /** Core's idempotent DDL after its tables: identity uniqueness on users (users/state.ts). */
 export const CORE_BASELINE: readonly string[] = [

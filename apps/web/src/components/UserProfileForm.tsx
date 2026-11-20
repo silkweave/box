@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Upload } from 'lucide-react'
-import { Avatar, Button, SettingsField, SettingsIdentity, settingsInputCls } from '@silkweave/box-ui'
+import { Avatar, Button, Field, FieldGrid, Input, SettingsDetailHeader, SettingsGroup, useSettingsReadOnly, type SettingsForm } from '@silkweave/box-ui'
 import { SWATCHES, swatchClass } from '@silkweave/box-ui/lib'
 import { ChannelGlyph } from '@/lib/channelIcons.tsx'
 import { cn } from '@/lib/utils'
@@ -57,169 +57,147 @@ export const userUpsertInput = (id: string, v: UserFormValues) => ({
 })
 
 /**
- * The one person form, shared by Profile (self) and the Users editor: an identity header, then
- * names, email, phone, avatar, handles and swatch on a three-column grid. The caller owns the values, the
- * submit and where Save lives (the settings footer, through `formId`).
+ * The one person form, shared by Profile (self) and the Users pages: an identity header (avatar,
+ * name, badges, a meta line), then names, email, phone, avatar, handles and swatch on the field
+ * grid. It renders canvas pieces as direct children, so it sits straight in a section or a
+ * `SettingsPage`. The caller owns the form (`useSettingsForm`) and its `SettingsSaveBar`.
  */
-export function UserProfileForm({
-  formId,
+export function UserProfileForm<T extends UserFormValues>({
+  form,
   base,
-  values,
-  onChange,
-  onSubmit,
+  badges,
   meta,
   emailHint,
   emailReadOnly = false,
   phoneHint,
   autoFocusNickname = false,
-  error,
-  onError,
+  children,
 }: {
-  formId: string
+  form: SettingsForm<T>
   /** The stored user (or a stub for a new one), overlaid with the values to preview the avatar. */
   base: User
-  values: UserFormValues
-  onChange: (patch: Partial<UserFormValues>) => void
-  onSubmit: (e: React.FormEvent) => void
+  badges?: React.ReactNode
   meta?: React.ReactNode
   emailHint?: React.ReactNode
   /** Read-only like the email: both are identities only an administrator changes. */
   emailReadOnly?: boolean
   phoneHint?: React.ReactNode
   autoFocusNickname?: boolean
-  error: string | null
-  onError: (message: string | null) => void
+  /** More groups inside the same form (the Users page's Work group). */
+  children?: React.ReactNode
 }) {
   const fileRef = React.useRef<HTMLInputElement>(null)
-  const { firstName, lastName, nickname, image, color, email, phone, handles } = values
+  const readOnly = useSettingsReadOnly()
+  const [imageError, setImageError] = React.useState<string | null>(null)
+  const { firstName, lastName, nickname, image, color, email, phone, handles } = form.values
+  const set = form.patch as (patch: Partial<UserFormValues>) => void
   const preview: User = { ...base, first_name: firstName, last_name: lastName, nickname, image: image.trim() || null, color: color || null, channels: handles }
   const displayName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || nickname.trim() || base.id
 
   const pickImage = async (file: File | undefined) => {
     if (!file) return
     try {
-      onChange({ image: await fileToAvatarDataUri(file) })
-      onError(null)
+      set({ image: await fileToAvatarDataUri(file) })
+      setImageError(null)
     } catch {
-      onError('Could not read that image - try a PNG or JPG.')
+      setImageError('Could not read that image. Try a PNG or JPG.')
     }
   }
 
   return (
-    <form id={formId} onSubmit={onSubmit} className='flex w-full flex-col gap-6'>
-      <SettingsIdentity
+    <form {...form.formProps} className='contents'>
+      <SettingsDetailHeader
         title={displayName}
+        badges={badges}
         meta={meta}
-        avatar={
+        media={
           <button
             type='button'
+            disabled={readOnly}
             onClick={() => fileRef.current?.click()}
             title='Upload avatar image'
             aria-label='Upload avatar image'
             className='group relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'>
-            <Avatar user={preview} size='lg' className='size-20 text-display-sm ring-4 ring-surface shadow-(--shadow-md)' />
+            <Avatar user={preview} size='lg' className='size-12' />
             <span className='absolute inset-0 hidden place-items-center rounded-full bg-black/45 text-white group-hover:grid'>
-              <Upload className='size-5' />
+              <Upload className='size-4' />
             </span>
           </button>
         }
       />
-
-      <section className='grid gap-x-5 gap-y-5 md:grid-cols-3'>
-        <SettingsField label='First name'>
-          <input name='firstName' autoComplete='given-name' value={firstName} onChange={(e) => onChange({ firstName: e.target.value })} placeholder='First name' className={settingsInputCls} />
-        </SettingsField>
-        <SettingsField label='Last name'>
-          <input name='lastName' autoComplete='family-name' value={lastName} onChange={(e) => onChange({ lastName: e.target.value })} placeholder='Last name' className={settingsInputCls} />
-        </SettingsField>
-        <SettingsField label='Nickname'>
-          {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
-          <input
-            name='nickname'
-            autoComplete='username'
-            autoFocus={autoFocusNickname}
-            value={nickname}
-            onChange={(e) => {
-              onChange({ nickname: e.target.value })
-              onError(null)
-            }}
-            placeholder='e.g. Alice'
-            className={settingsInputCls}
-          />
-        </SettingsField>
-
-        <SettingsField label='Email' hint={emailHint}>
-          <input name='email' autoComplete='email' value={email} readOnly={emailReadOnly} onChange={(e) => onChange({ email: e.target.value })} placeholder='name@example.com' className={settingsInputCls} />
-        </SettingsField>
-
-        <SettingsField label='Phone' hint={phoneHint}>
-          <input name='phone' type='tel' autoComplete='tel' value={phone} readOnly={emailReadOnly} onChange={(e) => onChange({ phone: e.target.value })} placeholder='+43 660 1234567' className={settingsInputCls} />
-        </SettingsField>
-
-        <div className='flex flex-col gap-1 text-label text-muted-foreground md:col-span-3'>
-          Avatar image
-          <div className='flex items-center gap-1.5'>
-            <input
+      <SettingsGroup title='Profile'>
+        <FieldGrid columns={3}>
+          <Field label='First name'>
+            <Input name='firstName' autoComplete='given-name' value={firstName} onChange={(e) => set({ firstName: e.target.value })} placeholder='First name' />
+          </Field>
+          <Field label='Last name'>
+            <Input name='lastName' autoComplete='family-name' value={lastName} onChange={(e) => set({ lastName: e.target.value })} placeholder='Last name' />
+          </Field>
+          <Field label='Nickname'>
+            {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+            <Input name='nickname' autoComplete='username' autoFocus={autoFocusNickname} value={nickname} onChange={(e) => set({ nickname: e.target.value })} placeholder='e.g. Alice' />
+          </Field>
+          <Field label='Email' hint={emailHint}>
+            <Input name='email' autoComplete='email' value={email} readOnly={emailReadOnly} onChange={(e) => set({ email: e.target.value })} placeholder='name@example.com' />
+          </Field>
+          <Field label='Phone' hint={phoneHint}>
+            <Input name='phone' type='tel' autoComplete='tel' value={phone} readOnly={emailReadOnly} onChange={(e) => set({ phone: e.target.value })} placeholder='+43 660 1234567' />
+          </Field>
+          <Field label='Avatar image' span='full' error={imageError}>
+            <Input
               name='image'
               autoComplete='url'
               value={image.startsWith('data:') ? '' : image}
-              onChange={(e) => onChange({ image: e.target.value })}
-              placeholder={image.startsWith('data:') ? 'Uploaded image set - paste a URL to replace it' : 'https://… or upload'}
-              className={settingsInputCls}
-              aria-label='Avatar image URL'
+              onChange={(e) => set({ image: e.target.value })}
+              placeholder={image.startsWith('data:') ? 'Uploaded image set. Paste a URL to replace it.' : 'https://… or upload'}
+              trailing={
+                <span className='flex items-center gap-1'>
+                  <Button type='button' variant='ghost' size='xs' onClick={() => fileRef.current?.click()}>
+                    <Upload /> Upload
+                  </Button>
+                  {image && <Button type='button' variant='ghost' size='xs' onClick={() => set({ image: '' })}>Remove</Button>}
+                </span>
+              }
             />
-            <Button type='button' variant='outline' size='sm' onClick={() => fileRef.current?.click()}>
-              <Upload /> Upload
-            </Button>
-            {image && (
-              <Button type='button' variant='ghost' size='sm' onClick={() => onChange({ image: '' })}>
-                Remove
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <div className='grid grid-cols-2 gap-x-5 gap-y-4 md:col-span-3 md:grid-cols-4'>
+          </Field>
+        </FieldGrid>
+      </SettingsGroup>
+      <SettingsGroup title='Handles' description='The accounts the data pulls read for this person.'>
+        <FieldGrid columns={3}>
           {HANDLE_CHANNELS.map((ch) => (
-            <SettingsField key={ch} label={HANDLE_LABEL[ch]}>
-              <span className='relative'>
-                <ChannelGlyph channel={ch} className='pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-fg-4' />
-                <input
-                  name={`channel-${ch}`}
-                  value={handles[ch] ?? ''}
-                  onChange={(e) => onChange({ handles: { ...handles, [ch]: e.target.value } })}
-                  placeholder={ch}
-                  className={cn(settingsInputCls, 'pl-8')}
-                  aria-label={`${ch} handle`}
-                />
-              </span>
-            </SettingsField>
-          ))}
-        </div>
-
-        <div className='flex flex-col gap-1 text-label text-muted-foreground md:col-span-3'>
-          Swatch color
-          <div className='flex items-center gap-1.5'>
-            {SWATCHES.map((s) => (
-              <button
-                key={s}
-                type='button'
-                title={s}
-                aria-label={`Swatch ${s}`}
-                aria-pressed={color === s}
-                onClick={() => onChange({ color: color === s ? '' : s })}
-                className={cn(
-                  'size-7 rounded-full border-2 border-surface shadow-(--shadow-sm) transition-[transform,box-shadow] hover:scale-110',
-                  swatchClass(s),
-                  color === s ? 'scale-110 ring-1 ring-[var(--swatch)] ring-offset-1 ring-offset-surface' : 'ring-1 ring-transparent',
-                )}
-                style={{ background: 'var(--swatch)' }}
+            <Field key={ch} label={HANDLE_LABEL[ch]}>
+              <Input
+                name={`channel-${ch}`}
+                value={handles[ch] ?? ''}
+                onChange={(e) => set({ handles: { ...handles, [ch]: e.target.value } })}
+                placeholder={ch}
+                leading={<ChannelGlyph channel={ch} className='size-3.5 text-fg-4' />}
               />
-            ))}
-          </div>
-        </div>
-      </section>
-
+            </Field>
+          ))}
+          <Field label='Swatch color' span='full'>
+            <div role='group' aria-label='Swatch color' className='flex items-center gap-1.5 py-1'>
+              {SWATCHES.map((s) => (
+                <button
+                  key={s}
+                  type='button'
+                  title={s}
+                  aria-label={`Swatch ${s}`}
+                  aria-pressed={color === s}
+                  onClick={() => set({ color: color === s ? '' : s })}
+                  className={cn(
+                    'size-7 rounded-full border-2 border-surface shadow-(--shadow-sm) transition-[transform,box-shadow] hover:scale-110',
+                    swatchClass(s),
+                    color === s ? 'scale-110 ring-1 ring-[var(--swatch)] ring-offset-1 ring-offset-surface' : 'ring-1 ring-transparent',
+                  )}
+                  style={{ background: 'var(--swatch)' }}
+                />
+              ))}
+            </div>
+          </Field>
+        </FieldGrid>
+      </SettingsGroup>
+      {children}
       <input
         ref={fileRef}
         name='imageFile'
@@ -232,8 +210,6 @@ export function UserProfileForm({
           e.target.value = ''
         }}
       />
-
-      {error && <p className='text-label text-danger'>{error}</p>}
     </form>
   )
 }

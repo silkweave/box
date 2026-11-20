@@ -80,10 +80,11 @@ not a known user (`assertKnownUser`); a sprint field on a milestone.
 ## UI
 
 - **Routes**: `/sprints` - `SprintsLayout` (shell + a sidebar of every sprint); `/` is
-  `SprintsIndex`, `$id` is an `Outlet` whose `/` and whose `$tab` are both `SprintDetailView`.
+  `SprintsIndex` (New sprint is a dialog over it at `/sprints#new`, `SprintCreateForm`), `$id` is an `Outlet` whose `/` and whose `$tab` are both `SprintDetailView`.
   `$tab` is `design|planning|board`; when the URL names none, the tab that opens is chosen from the
   sprint's status. An item opens in the same right panel as elsewhere, named with `?task=<key>`
   since the path already carries the tab.
+- **Sprint ids**: a new sprint's id is the slug of its title, with a `-2` suffix (then `-3`) when taken; `new` is refused as an id.
 - **Nav**: `Sprints` (icon `CalendarRange`, order 210) in the Operations section. Sprints is its own
   group rather than a tab inside Initiatives because a sprint has its own lifecycle and the board
   is a daily-driver surface.

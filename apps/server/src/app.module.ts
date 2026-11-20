@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { join } from 'node:path'
-import { authenticatePrincipal, boxBrand, repoRoot } from '@silkweave/box-core'
+import { boxBrand, installMcpAuth, mcpAuthExtension, repoRoot, resolveMcpCredential } from '@silkweave/box-core'
 import { SilkweaveModule } from '@silkweave/nestjs'
 import { mcp } from '@silkweave/nestjs/mcp'
 import { typegen } from '@silkweave/nestjs/typegen'
@@ -22,6 +22,11 @@ const CORE_MODULES = [AuthModule, UsersModule, ChangesModule, OpsModule, AgentMo
 
 // Who owns which handler (auth/handler-map.ts): core's modules, then each feature's root module.
 setHandlerRoots([...CORE_MODULES.map((module) => ({ owner: 'core', module })), ...SERVER_FEATURE_LIST.map((f) => ({ owner: f.id, module: f.module }))])
+
+// MCP sign-in (core mcp-auth.ts): at most one feature supplies the OAuth side of `/mcp`. Installed
+// here, before the adapter below mounts its discovery and OAuth routes.
+for (const feature of SERVER_FEATURE_LIST) if (feature.mcpAuth) installMcpAuth(feature.id, feature.mcpAuth())
+const mcpOAuth = mcpAuthExtension()?.auth() ?? null
 
 /** The tRPC transports: HTTP under /trpc, plus the live-feed WebSocket that main.ts upgrades on the same path. */
 export const trpcTransport = trpcWithSocket({ basePath: '/trpc' })
@@ -51,13 +56,16 @@ export const trpcTransport = trpcWithSocket({ basePath: '/trpc' })
           basePath: '/mcp',
           filterActions: filterMcpActions,
           auth: {
+            // The OAuth provider, resource and authorization-server URLs when the `mcp` recipe offers
+            // sign-in; without it `/mcp` takes access tokens only and serves no OAuth routes.
+            ...mcpOAuth,
             required: true,
             verifyToken: async (token: string) => {
-              const p = await authenticatePrincipal(token)
-              return p ? { token, sub: p.id } : undefined
+              const resolved = await resolveMcpCredential(token)
+              return resolved ? { token, sub: resolved.principal.id, ...(resolved.grantId && { grantId: resolved.grantId, oauthClientId: resolved.clientId }) } : undefined
             },
           },
-        })),
+        }), { transport: 'mcp' }),
         // … and the tRPC AppRouter type is emitted into the web app on every boot.
         // Emit as .d.ts so the consuming app's skipLibCheck ignores typegen's always-on
         // import list (avoids noUnusedLocals on TRPCMutation/Subscription for a query-only router).

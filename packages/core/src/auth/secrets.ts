@@ -1,5 +1,5 @@
 // Signing keys belong to the local configuration and are generated on first use.
-import { randomBytes } from 'node:crypto'
+import { hkdfSync, randomBytes } from 'node:crypto'
 import { boxJson } from '../box-config.js'
 import { configRoot } from '../io.js'
 import { writeBoxLocal } from '../box-json.js'
@@ -19,4 +19,12 @@ export function authSecret(name: SecretName): string {
   const value = randomBytes(32).toString('base64url')
   writeBoxLocal(configRoot(), { auth: { [key]: value } })
   return value
+}
+
+/**
+ * A purpose-bound 32-byte key derived from `auth.sessionSecret` (HKDF-SHA256, the purpose as info,
+ * `silkweave-box/<purpose>/v1` by convention). Rotating the session secret changes every derived key.
+ */
+export function sessionDerivedKey(info: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', authSecret('AUTH_SESSION_SECRET'), '', info, 32))
 }

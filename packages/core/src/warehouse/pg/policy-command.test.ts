@@ -10,7 +10,7 @@ import pg from 'pg'
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
 import { bumpPolicyRevision, policyRevision } from '../../auth/policy-revision.js'
 import { BUILTIN_ROLES, deleteRole, getRole, knownAreas, upsertRole } from '../../auth/roles.js'
-import { issuePrincipalToken, issueSigninLink, resolvePrincipalById, revokePrincipalToken, sessionPrincipalToken, setPrincipalRole } from '../../auth/principal.js'
+import { issuePrincipalToken, issueSigninLink, resolveDelegatedPrincipal, resolvePrincipalById, revokePrincipalToken, sessionPrincipalToken, setPrincipalRole } from '../../auth/principal.js'
 import { ensureBoxConfig } from '../../box-config.js'
 import type { DatabaseEngine } from '../../box-json.js'
 import { clusterOf, clusterPaths, initCluster, openCluster, type RunningCluster } from '../../db/cluster.js'
@@ -575,6 +575,34 @@ describe('revoke and delete are policy changes', { timeout: 60_000 }, () => {
     await expect(loginIn(natFrame)).rejects.toMatchObject({ code: 'NO_PRINCIPAL' })
     await deleteUser('oz')
     await expect(loginIn(ozFrame)).rejects.toMatchObject({ code: 'NO_PRINCIPAL' })
+  })
+
+  it('keeps a delegated frame bound to its epoch: a role change applies, a revoke and restore or a delete and recreate refuses it', async () => {
+    const delegatedFrameOf = async (id: string): Promise<ContextFrame> => {
+      const d = (await resolveDelegatedPrincipal(id))!
+      const principal = { ...d.principal, authEpoch: d.epoch }
+      const access = await accessOf(principal)
+      const frame = freshRequestFrame()
+      runInFrame(frame, () => fillRequest({ principal, access }))
+      return frame
+    }
+    await upsertRole({ id: 'dlg', label: 'Delegated', default: 'none', areas: { support: 'write' } })
+    await upsertUser({ id: 'ren', first_name: 'Ren', role: 'member' })
+    const same = await delegatedFrameOf('ren')
+    await setPrincipalRole('ren', 'dlg')
+    expect(await loginIn(same)).toBe(await loginOf('dlg'))
+
+    const restored = await delegatedFrameOf('ren')
+    await revokePrincipalToken('ren')
+    await issuePrincipalToken('ren')
+    expect(await resolvePrincipalById('ren')).not.toBeNull()
+    await expect(loginIn(restored)).rejects.toMatchObject({ code: 'NO_PRINCIPAL' })
+
+    await upsertUser({ id: 'sky', first_name: 'Sky' })
+    const recreated = await delegatedFrameOf('sky')
+    await deleteUser('sky')
+    await upsertUser({ id: 'sky', first_name: 'Sky' })
+    await expect(loginIn(recreated)).rejects.toMatchObject({ code: 'NO_PRINCIPAL' })
   })
 
   it('never removes the last admin when a revoke, a delete and a demotion race', async () => {

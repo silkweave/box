@@ -60,8 +60,8 @@ The `chat` tables are created by the schema runner at boot (models and `CHAT_BAS
 box dev
 ```
 
-Open `http://localhost:8190/chat`. With no rooms yet you get the empty shell; **+** creates one and
-the route forwards to it. Then, in one room: type a message (it appears without a refresh - that is
+Open `http://localhost:8190/chat`. With no rooms yet you get the empty shell; **+** opens the New room dialog (`/chat#new`), and creating a room
+forwards to it. Then, in one room: type a message (it appears without a refresh - that is
 the `chatFeed` subscription, not a poll), hover it and react, reply to it to open a thread, drag an
 image onto the composer, and open the same room in a second tab to watch the unread badge clear.
 Check `data/chat-uploads/` afterwards (the dropped image is there, named by its hash) and `box db status` (the `chat` tables count rows).

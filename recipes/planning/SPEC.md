@@ -256,7 +256,7 @@ hours progress only; initiative `health` is the milestones powerup.
   effort" (one addon group: the impact select, the effort select and the derived quadrant label) and
   Tags, in a grid of 2, 4, 6 or 8 columns by width. The description is the right-hand doc panel, not
   a preview under the title. Then the foldable **Tasks** section (the fold sticks per browser). The
-  tree (`ItemTree`) is a `section` DataGrid (`@silkweave/box-ui/datagrid`, its rules running to the
+  tree (`ItemTree`) is a `section` DataGrid (`@silkweave/box-ui/list`, its rules running to the
   pane's edges) with the heading left and its bar right (search, sort by plan order, due, priority
   or name, columns, typed filters by progress (open or finished), status, owner, due date, priority
   and estimate, no pins; a "Show done" toggle; columns, sort and Show done are kept per browser), no
@@ -271,6 +271,7 @@ hours progress only; initiative `health` is the milestones powerup.
   A row's "+" adds a task under it; the bottom row adds a task. Closing an item with open children asks
   first. Counts and effort roll up over work items. The milestones powerup adds outcome cards above
   the tree and the goals powerup a Goals section below it.
+- **Creating initiatives**: the New initiative dialog over the board (`/initiatives#new`, `InitiativeCreateForm` in a `RecordDialog`, rendered by `InitiativesGrid`); id helpers (`slugify`, `freeId`, `TITLE_MAX`) are in `web/lib/recordIds.ts`.
 - **Creating items**: `NewTaskDialog`, the tree's quick-add and a row's "+" create tasks.
 - **All tasks** (`TasksView`): every task flat, whichever initiative holds it, standalone tasks
   included (parent tasks stay), the In column a breadcrumb of the initiative and parent titles,

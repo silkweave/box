@@ -274,7 +274,12 @@ It is in core's action registry, so `automation` can schedule it and every invoc
 ## UI
 
 - **Routes**: `/chat` (`ChatLayout` - the room list as sidebar, one room through the `Outlet`) with
-  two children, the index and `$room`. `$room` is the room **slug**, not its id, because that is what
+  two children: the index and `$room`. New room is a dialog over the chat at `#new` (`RoomCreateForm`,
+  rendered by `ChatLayout`, so `/chat#new` and `/chat/<room>#new` both open it); a room's settings
+  are a dialog over the room at `#room-settings` (`RoomSettingsForm`, rendered by `ChatRoomView`,
+  opened from the header's gear), with Save and Delete room in its footer; Delete asks for the
+  room's address typed back, as the server demands it. Direct messages are
+  started from the New direct message picker (`NewDirectDialog`), which stays a dialog. `$room` is the room **slug**, not its id, because that is what
   every server procedure keys on and what people say out loud. Landing on `/chat` with no room
   forwards (`replace`) to the first channel, preferring a named room over a DM.
 - **Nav**: one entry, `Chat`, icon `MessagesSquare`, order band **500**.

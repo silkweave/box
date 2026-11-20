@@ -30,10 +30,10 @@ writes the ticket.
 
 | Path | Where | Needs |
 |---|---|---|
-| Manual | New ticket dialog, opened from the Support Tickets top bar | base |
+| Manual | the New ticket dialog (`/support#new`), opened from the Support Tickets top bar | base |
 | Agent | `support-ticket-log` (MCP, CLI, tRPC) from a call, meeting or chat summary | base |
-| Another feature | its own intake (a dialog or tool of its own) through `logSupportTicket`, with the ticket source it registered | that feature |
-| CRM touch | "Log support ticket" on a CRM touch or account (the New ticket dialog, prefilled) | `crm` powerup |
+| Another feature | its own intake (a page, dialog or tool of its own) through `logSupportTicket`, with the ticket source it registered | that feature |
+| CRM touch | "Log support ticket" on a CRM touch or account (the New ticket dialog in place on the account, prefilled from the account or the touch) | `crm` powerup |
 | Help Center contact form | the public site's form, through the automation relay | `help-center` powerup with its form |
 
 Each ticket records where it came from in `source` and `source_ref`. The pair is unique when
@@ -218,25 +218,28 @@ navigation for both.
   - **Presets** are the team's, shared in the `support-tickets` preset module and seeded the first
     time anybody opens the view: Open (pending, active and blocked, oldest first, the landing
     view), Mine (open, owned by whoever looks), Unassigned, Late (open past `lateAfterDays`, longest
-    waiting first: the late flag on), Blocked, Closed (done and dropped, most recently updated first) and Everything. Which preset is on is `?preset=<name>`; arriving
-    on `/support` without one lands on Open. The live view stays in this browser.
+    waiting first: the late flag on), Blocked, Closed (done and dropped, most recently updated first) and Everything. Which preset is on,
+    and the live view, stay in this browser; a browser that never picked one starts on Open.
   - The sidebar lists the presets under **Presets**, then **Recent Tickets**: the last ten tickets
     opened in this browser. The `support.tickets.banner` slot renders above the tickets whatever
     the preset (the `help-center` powerup's held submissions).
-  - `?requester=<id>` (with a preset) narrows the view to one requester's tickets, then the address
-    returns to `?preset=` alone.
+  - `?requester=<id>` narrows the view to one requester's tickets, then the address returns to
+    `/support` alone.
 - **A ticket** (`/support/tickets/<id>`): a page laid out like a Help Article. The breadcrumb is
   `Support Tickets > <subject>`, and the subject crumb is the subject field (click to edit). The top
   bar carries the status select (each status with its icon and color) and, for administrators,
-  Delete, beside New ticket. Left: the number, open and close dates and age, then the details card:
+  Delete (a labelled button), beside New ticket. Left of the split pane, in kit fields on the `RecordPage`: the number, open and close dates and age, then the details card:
   the **requester panel** (with the requester's organization), the requester's other tickets,
   owner (a user picker with avatars, as everywhere in Support), type, channel, the resolution once
   done or dropped, the `support.ticket.panel` slot (below) and the source. Right, in a split pane
   that can collapse: the summary, a markdown document saved as you type.
-- **New ticket** is a dialog styled like Planning's New initiative (`components/TicketDialog.tsx`),
-  opened from the Support Tickets top bar; there is no page for it. The `crm` powerup opens it
-  prefilled from an account or a touch. Creating the ticket opens its page.
-- **The requester field** (`components/RequesterField.tsx`), in the dialog and on the ticket page,
+- **New ticket** is a dialog (`/support#new`, `views/TicketCreateForm.tsx` in a `RecordDialog`,
+  rendered by the tickets layout so it also opens over a ticket), opened from the Support Tickets
+  top bar. The `crm` powerup opens it in place on an account's page, prefilled from the account
+  (`#new-ticket`) or from a touch (`#new-ticket-<activity id>`) through the form's `prefill`
+  (`subject`, `summary`, `channel`, `type`, `requester_id`, `organization`, `account_id`,
+  `crm_activity_id`). Creating the ticket opens its page.
+- **The requester field** (`components/RequesterField.tsx`), in the New ticket dialog and on the ticket page,
   is one autocomplete: type to search people (with `crm`, CRM contacts by name, email, phone or
   company), pick one, or choose **New requester** (**New CRM contact** with `crm`) from the typed
   text and fill name, email, phone and organization (company with `crm`). A new person whose email
@@ -257,17 +260,17 @@ navigation for both.
   group-by (status when grouped by nothing), and dropping a card writes that field. Presets are the
   team's, shared in the `support-articles` preset module; the built-ins are Drafts, Published, Needs
   update, Featured and Everything, none of which filters by type, and the bare `/support/help`
-  lands on Everything. A preset that filters by type puts an "FAQ" or "Getting started" lens in the
-  sidebar. Which preset is on is `?preset=<name>`. The sidebar lists Presets, then **Recent
+  starts on Everything. A preset that filters by type puts an "FAQ" or "Getting started" lens in the
+  sidebar. Which preset is on stays in this browser. The sidebar lists Presets, then **Recent
   Articles** (the last ten opened in this browser). The list's top bar carries the
   `support.help.actions` slot and New article; without a contribution the base shows a plain
   **Help Center** button that opens the Help Center tab of Settings > Support (see "Absence").
 - **An entry** (`/support/help/articles/<id>`), laid out like an initiative. The top bar holds the
-  status and, for admins, a delete button; the title is edited in the breadcrumb. The left side
+  status and, for admins, a labelled Delete button; the title is edited in the breadcrumb. The left side
   holds the details: the slug (read-only), Type, Owner, one-liner, flags, sort, team notes and the
   tickets it answered. The right side is the markdown editor, with media uploads ("Media").
-  **New article** opens a dialog with a Type select, the title, one-liner, status, owner and
-  Featured, then opens the new entry. On a ticket, the `support.ticket.panel` contribution
+  **New article** opens a dialog (`/support/help#new`, `articles/ArticleCreateForm.tsx`) with a
+  Type select, the title, one-liner, status, owner and Featured, then opens the new entry. On a ticket, the `support.ticket.panel` contribution
   (`web/articles/TicketArticlePanel.tsx`) picks the answering entry.
 - **Settings > Support** (order 825, `support/<tab>`), tabbed like Automation, with each tab's
   actions in the settings footer: **Working week** (working days, holidays; Save / Reset),

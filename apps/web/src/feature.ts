@@ -50,10 +50,15 @@ export interface NavEntry {
 }
 
 /** One section of the Settings view. */
+/** The Settings nav headings, in nav order. A section without one is listed under Workspace. */
+export type SettingsSectionGroup = 'account' | 'team' | 'agents' | 'signals' | 'workspace'
+
 export interface SettingsSection {
   id: string
   label: string
   icon: NavIcon
+  /** The nav heading it sits under (default `workspace`); `order` sorts within it. */
+  group?: SettingsSectionGroup
   /** False for a destination with no sub-navigation. */
   expandable?: boolean
   order: number

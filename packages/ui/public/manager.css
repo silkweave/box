@@ -23,7 +23,7 @@ html[data-sb-theme='light'] {
   --sb-surface: #fafafa; /* --bg-surface */
   --sb-border: #e8e8ec; /* --border */
   --sb-fg: #0e0e16; /* --fg-1 */
-  --sb-fg-muted: #6b6b7a; /* --fg-3 */
+  --sb-fg-muted: #5f5f6e; /* --fg-3 */
   color-scheme: light;
 }
 

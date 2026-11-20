@@ -33,25 +33,25 @@
   /* ---------- Foreground / Text ---------- */
   --fg-1: #0e0e16; /* primary text */
   --fg-2: #41414f; /* prose / secondary */
-  --fg-3: #6b6b7a; /* muted */
-  --fg-4: #8c8c98; /* dim / placeholder */
+  --fg-3: #5f5f6e; /* muted */
+  --fg-4: #727281; /* dim / placeholder */
   --fg-disabled: #c4c4cc;
 
   /* ---------- Accent (silk indigo) ---------- */
-  --accent: #5558e6;
-  --accent-hover: #4346d4;
+  --accent: #4a4dd9;
+  --accent-hover: #3d40c8;
   --accent-dim: #7b7ef5;
   --accent-bg: #eef0fe; /* tinted surface (active rows, soft fills) */
   --accent-ring: #5558e633;
 
   /* ---------- Semantic ---------- */
-  --success: #16a34a;
+  --success: #116d37;
   --success-bg: #ecfdf3;
-  --warning: #d97706;
+  --warning: #9a4a0a;
   --warning-bg: #fff7ed;
-  --danger: #dc2626;
+  --danger: #b91c1c;
   --danger-bg: #fef2f2;
-  --info: #0284c7;
+  --info: #075985;
   --info-bg: #eff8ff;
 
   /* ---------- Chart series (data-viz categorical palette) ----------
@@ -68,7 +68,7 @@
    * Re-run the checker after ANY change here - do not eyeball it.
    * Light slots 3, 4 and 5 sit below 3:1 against the light surface: a chart using them owes the
    * reader a visible label, a legend or the table view. It never leans on hue alone. */
-  --chart-1: #5558e6; /* indigo - the accent */
+  --chart-1: #4a4dd9; /* indigo - the accent */
   --chart-2: #eb6834; /* orange */
   --chart-3: #1baf7a; /* aqua */
   --chart-4: #eda100; /* yellow */
@@ -111,7 +111,7 @@
   --sidebar-group-bg: #ffffff;
   --sidebar-group-border: #dedee8;
   /* Override this primary to recolor the active header and its sub-item states together. */
-  --sidebar-primary: #7a7efe;
+  --sidebar-primary: #5558e6;
   --sidebar-primary-text: #ffffff;
   --sidebar-item-hover: color-mix(in srgb, var(--sidebar-primary) 10%, transparent);
   --sidebar-item-selected: color-mix(in srgb, var(--sidebar-primary) 18%, transparent);
@@ -127,6 +127,9 @@
   --text-muted: var(--fg-3);
   --accent-tint: var(--accent-bg);
   --accent-fg: #ffffff;
+  /* Solid accent fills under white text (the primary button): the accent itself in light. */
+  --accent-solid: var(--accent);
+  --accent-solid-hover: var(--accent-hover);
   --warn: var(--warning);
   --ring: var(--accent);
 }
@@ -164,7 +167,7 @@
   --success-bg: #022c1a;
   --warning: #f59e0b;
   --warning-bg: #2a1f04;
-  --danger: #ef4444;
+  --danger: #f87171;
   --danger-bg: #2a0d10;
   --info: #38bdf8;
   --info-bg: #082f3f;
@@ -216,7 +219,7 @@
   --sidebar-group-bg: #1d1d29;
   --sidebar-group-border: #30303f;
   /* Override this primary to recolor the active header and its sub-item states together. */
-  --sidebar-primary: #7a7efe;
+  --sidebar-primary: #5558e6;
   --sidebar-primary-text: #ffffff;
   --sidebar-item-hover: color-mix(in srgb, var(--sidebar-primary) 10%, transparent);
   --sidebar-item-selected: color-mix(in srgb, var(--sidebar-primary) 18%, transparent);
@@ -232,6 +235,9 @@
   --text-muted: var(--fg-3);
   --accent-tint: var(--accent-bg);
   --accent-fg: #ffffff;
+  /* The dark accent is light for text on the dark canvas; white text needs a deeper fill. */
+  --accent-solid: #5558e6;
+  --accent-solid-hover: #4346d4;
   --warn: var(--warning);
   --ring: var(--accent);
 }

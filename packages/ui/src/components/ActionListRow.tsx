@@ -14,6 +14,15 @@ import type { ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 import { NavAnchor } from './NavAnchor.tsx'
 
+/**
+ * A feed item on a card: glyph, meta line, headline, body and a strip of actions along the bottom.
+ * Use it for feeds and queues where each item is read and handled in place: an inbox, a review
+ * queue, notifications, a run list.
+ * Not for a list of records (`DataGrid`: rows that open a detail page) or rows with
+ * aligned columns that sort and filter (`DataGrid` and its row). If the item has columns, it is not a feed.
+ * Rule: the card itself is not clickable; the headline is the affordance (`onTitleClick`,
+ * `titleHref`), so a press on an action never also opens the item.
+ */
 export function ActionListRow({
   icon,
   meta,

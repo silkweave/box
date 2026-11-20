@@ -35,8 +35,8 @@ export interface User extends AvatarUser {
   channels: Record<string, string>
   /** Default agent profile (`<person>:<engine>`); null = Claude first. The agent runs on it only. */
   agent_profile: string | null
-  /** Trust tier and principal kind, as the server reports them (admins and agents have no Work guard). */
-  role?: 'admin' | 'member'
+  /** Role id (admin, member or a custom role) and principal kind, as the server reports them (admins and agents have no Work guard). */
+  role?: string
   kind?: 'human' | 'agent'
   /** Work capabilities; admin-set, defaults when the row never had any. */
   work?: WorkAccess

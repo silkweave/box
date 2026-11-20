@@ -35,6 +35,7 @@ export interface AccountMenuProps {
  * adapter, and every one of its inputs (who is signed in, what "sign out" means, where the active
  * user is persisted) is a policy the library should not hold an opinion about. Only the directory
  * itself comes from the context, which the pickers need anyway.
+ * Use it once, as the shell's trailing account control. Not for picking a user in a form (`UserPicker`).
  */
 export function AccountMenu({
   principal,
@@ -71,9 +72,10 @@ export function AccountMenu({
         )}
         title={user ? `Operating as ${userName(user)}` : signedIn ? `Signed in as ${principal.display}` : 'No active user - pick who is operating'}>
         {user ? (
-          <Avatar user={user} size='nav' />
+          // The initials would be the visible name; the trigger's label is the name, so hide them.
+          <span aria-hidden='true' className='contents'><Avatar user={user} size='nav' /></span>
         ) : (
-          <UserCircle2 className='size-7 text-muted-foreground' strokeWidth={1.5} />
+          <UserCircle2 aria-hidden='true' className='size-7 text-muted-foreground' strokeWidth={1.5} />
         )}
       </PopoverTrigger>
       <PopoverContent align='end' className='w-60 gap-1 p-1.5'>

@@ -25,6 +25,13 @@ export interface TimeSeriesPoint {
   value: number
 }
 
+/**
+ * One measure over time with real axes, a hover layer and an optional window selector.
+ * Use it for "which way is this going" on a detail page or a dashboard.
+ * Not for several series (`SeriesLineChart`) or a card-sized trend (`Sparkline`).
+ * The `header` and the formatters are the caller's. The window selector is controlled (`range` in,
+ * `onRangeChange` out) so a URL or a stored view can own it; pass `ranges` to show it.
+ */
 export function TimeSeriesChart({
   points,
   color = seriesColor(0),

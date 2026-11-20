@@ -176,7 +176,7 @@
      directly (e.g. Sonner). Each points at a Silkweave token so theme-swap still
      flows through. `--muted` is the sidebar surface (stock semantics); app text
      that used to mean "muted text" now uses `text-muted-foreground`. */
-  --primary: var(--accent);
+  --primary: var(--accent-solid);
   --primary-foreground: var(--accent-fg);
   --secondary: var(--surface);
   --secondary-foreground: var(--text);

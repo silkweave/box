@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import { SettingsDialogHost } from '../views/SettingsView.tsx'
-import { AppShell } from '@silkweave/box-ui'
+import { AppShell, NotifyHost } from '@silkweave/box-ui'
 import { navEntries, useGroupNav } from '../lib/nav.ts'
 import { createChromeController, RouteChromeContext, useShellIdentity } from '../lib/routeShell.tsx'
 import { selectRouteChrome } from '../lib/routeShellStore.ts'
@@ -11,6 +11,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return <RouteChromeContext.Provider value={controller}>
     <ShellHost controller={controller}>{children}</ShellHost>
     <SettingsDialogHost />
+    <NotifyHost />
   </RouteChromeContext.Provider>
 }
 

@@ -1,10 +1,10 @@
-// Coverage (PERMISSIONS 5.4): areas, admin authority and the audiences of the connections an agent
+// Coverage (PERMISSIONS 5.4): areas, admin authority and the audiences of the servers an agent
 // can use where its output lands. Pure: no database (knownAreas comes from the feature list).
 
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Access } from './access.js'
 import { coverageGaps, covers, coversAccess, describeGap } from './covers.js'
-import { registerMcpConnections } from '../mcp-connections.js'
+import { registerMcpServers } from '../mcp-servers.js'
 
 const access = (areas: Record<string, 'none' | 'read' | 'write'>, fallback: 'none' | 'read' | 'write' = 'none', admin = false): Access =>
   ({ role: 'x', areas: new Map(Object.entries(areas)), fallback, admin, revision: 1 })
@@ -36,11 +36,11 @@ describe('coverage', () => {
       .toEqual(['crm read', 'sink write'])
   })
 
-  it('needs the audience of every connection the agent can use there, and fails closed without the recipe', () => {
+  it('needs the audience of every server the agent can use there, and fails closed without the recipe', () => {
     const agent = access({ crm: 'read' })
     const ana = { id: 'ana', kind: 'human', access: access({ crm: 'write' }) }
-    expect(coverageGaps(ana, agent, ['stripe']).map(describeGap)).toEqual(['the stripe connection'])
-    off = registerMcpConnections('test', {
+    expect(coverageGaps(ana, agent, ['stripe']).map(describeGap)).toEqual(['the stripe MCP server'])
+    off = registerMcpServers('test', {
       list: () => [{ id: 'stripe', label: 'Stripe' }],
       sessionProblem: async () => null,
       personal: async () => [],
@@ -49,7 +49,7 @@ describe('coverage', () => {
     })
     expect(covers(ana, agent, ['stripe'])).toBe(true)
     expect(coverageGaps({ id: 'ben', kind: 'human', access: access({ crm: 'write' }) }, agent, ['stripe', 'linear']).map(describeGap))
-      .toEqual(['the stripe connection', 'the linear connection'])
+      .toEqual(['the stripe MCP server', 'the linear MCP server'])
     expect(covers({ id: 'boss', kind: 'human', access: access({}, 'write', true) }, agent, ['stripe'])).toBe(true)
   })
 })

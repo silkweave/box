@@ -17,7 +17,7 @@ function Controlled({ initial, ...rest }: { initial: string[] } & Partial<Parame
   const [value, setValue] = useState(initial)
   return (
     <div className='w-80'>
-      <TokenPicker options={SAMPLE_TAGS} {...rest} value={value} onChange={setValue} />
+      <TokenPicker aria-label='Tags' options={SAMPLE_TAGS} {...rest} value={value} onChange={setValue} />
     </div>
   )
 }
@@ -54,6 +54,29 @@ export const ClosedVocabulary: Story = {
       allowCreate={false}
       placeholder='add a dependency…'
       emptyLabel='Nothing left to depend on.'
+    />
+  ),
+}
+
+/**
+ * Records picked by name: `TokenOption`s keep the id as the value and show the label in the list,
+ * the chips and the search. A value no option names (a deleted record) shows as its id.
+ */
+export const Labelled: Story = {
+  args: { value: ['mrr'], options: [], onChange: () => {} },
+  render: () => (
+    <Controlled
+      initial={['mrr', 'retired-signal']}
+      aria-label='Drivers'
+      options={[
+        { value: 'mrr', label: 'Monthly recurring revenue' },
+        { value: 'signups', label: 'Signups' },
+        { value: 'trial-conversion', label: 'Trial conversion' },
+        { value: 'churned-customers', label: 'Churned customers' },
+      ]}
+      allowCreate={false}
+      placeholder='add a signal…'
+      emptyLabel='No signal matches.'
     />
   ),
 }

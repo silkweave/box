@@ -20,6 +20,13 @@ import type { FilterField, FilterValue, Filters } from './types.ts'
 export const offered = (f: FilterField): boolean =>
   f.type === 'options' ? f.options.length > 0 : f.type === 'person' ? f.options.length > 0 || f.meLabel !== false || f.noneLabel !== false : true
 
+/**
+ * The filter view the funnel opens: the fields down the left (a dot while narrowing, a star to pin
+ * when offered), the selected field's editor on the right, clear-field and clear-all below.
+ * Use it through `BoardViewBar` (and so `DataGrid`); render it directly only in a custom bar.
+ * Not for one field's editor in the bar (`PinnedFilterChip`) or a search box (`SearchInput`).
+ * Controlled: `value` in, the whole next filters record out. `onPinnedChange` offers the star.
+ */
 export function FilterPanel({
   fields,
   value,
@@ -56,13 +63,13 @@ export function FilterPanel({
 
   return (
     <div className={cn('flex flex-col', className)}>
-      <div className='flex min-h-0 flex-col sm:flex-row'>
+      {/* A fixed height on wide panels, so picking another field never resizes the popover. */}
+      <div className='flex min-h-0 flex-col sm:h-80 sm:flex-row'>
         {/* The field list. A row is the name (select it) and, beside it, the star (pin it) - two
             buttons, so the star never selects and the name never pins. */}
         <div
-          role='tablist'
+          role='group'
           aria-label='Filter fields'
-          aria-orientation='vertical'
           className='flex shrink-0 flex-wrap gap-0.5 border-b border-border p-1.5 sm:w-44 sm:flex-col sm:flex-nowrap sm:overflow-y-auto sm:border-r sm:border-b-0'>
           {shown.map((f) => {
             const on = f.key === field.key
@@ -71,8 +78,7 @@ export function FilterPanel({
               <div key={f.key} className={cn('group flex items-center rounded', on ? 'bg-accent-tint' : 'hover:bg-surface-hover')}>
                 <button
                   type='button'
-                  role='tab'
-                  aria-selected={on}
+                  aria-current={on || undefined}
                   onClick={() => setSelectedKey(f.key)}
                   className={cn(
                     'flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left text-body-sm transition-colors',
@@ -101,7 +107,7 @@ export function FilterPanel({
         </div>
 
         {/* The selected field's editor. Keyed by field so a half-typed draft never leaks across. */}
-        <div role='tabpanel' aria-label={field.title} className='flex min-w-0 flex-1 flex-col gap-1 overflow-y-auto p-1.5 sm:max-h-[60vh] sm:min-w-60'>
+        <div role='group' aria-label={field.title} className='flex min-w-0 flex-1 flex-col gap-1 overflow-y-auto p-1.5 sm:min-w-60'>
           <span className='px-1.5 pt-0.5 text-label font-medium text-muted-foreground'>{field.title}</span>
           <FilterEditor key={field.key} field={field} value={value[field.key]} onChange={(next) => set(field.key, next)} today={today} />
           {field.note && <span className='px-1.5 pt-1 text-label text-muted-foreground'>{field.note}</span>}

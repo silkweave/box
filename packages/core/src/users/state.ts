@@ -4,6 +4,7 @@
 // status, the has_token derivation (the public User shape never exposes token columns), and the
 // cascade-delete / reorder paths as raw SQL.
 
+import { notifyUserAccessEnded } from './access-ended.js'
 import { emitChange } from '../changes.js'
 import { withWrite } from '../warehouse/db.js'
 import { db } from '../warehouse/core-db.js'
@@ -387,6 +388,7 @@ export async function deleteUser(id: string): Promise<void> {
   })
   emitChange('table:users')
   forgetAgentDefault(id)
+  await notifyUserAccessEnded(id, 'deleted')
 }
 
 /** Assign sequential `sort` to users in the given id order (drag reorder). */

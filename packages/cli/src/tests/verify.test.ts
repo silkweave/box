@@ -26,6 +26,9 @@ test('verify keeps the ten-command order and package-manager entry point', () =>
   assert.deepEqual(forced.filter(t => t.command.endsWith('--force')).map(t => t.id), ['build', 'typecheck', 'package-tests', 'mobile'])
   assert.ok(tasks.every(t => t.executable === '/example/bun'))
   assert.deepEqual(tasks[0].args, ['--bun', '--no-env-file', 'run', 'build'])
+  // The rendered UI gate is the Stack developer's: a Box (and a Builder session) never runs it.
+  assert.ok(!tasks.some(t => t.id === 'rendered'))
+  assert.equal(verifyTasks('/example/bun', { stack: true }).at(-1)?.command, 'bun run test:rendered')
 })
 
 test('a Box with core unchanged since its upstream runs feature tests and the core smoke set', () => {

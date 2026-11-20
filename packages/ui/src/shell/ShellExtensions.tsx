@@ -3,7 +3,8 @@ import { createContext, useContext, type ComponentType, type MouseEventHandler, 
 /** What the shell hands the link that wraps the wordmark - the anchor's own props, nothing more. */
 export interface HomeLinkProps {
   className?: string
-  'aria-label': string
+  /** Omitted when the link's own content (the wordmark) already names it. */
+  'aria-label'?: string
   onClick?: MouseEventHandler
   children: ReactNode
 }
@@ -68,6 +69,11 @@ export interface ShellExtensions {
 
 const ShellExtensionsContext = createContext<ShellExtensions>({})
 
+/**
+ * Hangs the app's own parts on the shell (see `ShellExtensions`). Set it once at the app root, above
+ * `AppShell`; without it the shell renders with defaults, which is what Storybook does.
+ * Not for a view's own content: its actions go through `TopBarActions`.
+ */
 export function ShellExtensionsProvider({ value, children }: { value: ShellExtensions; children: ReactNode }) {
   return <ShellExtensionsContext.Provider value={value}>{children}</ShellExtensionsContext.Provider>
 }

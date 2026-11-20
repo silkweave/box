@@ -38,6 +38,14 @@ const PAGE_PAD = {
 
 export type PagePad = keyof typeof PAGE_PAD
 
+/**
+ * A page's width and padding, from the house scale.
+ * Use it as the outer box of a section canvas. `width`: `reading` for detail and reading pages,
+ * `wide` (default) for grids and boards, `full` for open-ended boards, `flush` (no padding) for a
+ * surface that is the page, like a full `DataGrid`. `pad`: `page` (default), or `detail` beside a
+ * side panel.
+ * Not for Settings (the pane owns the gutter) or a one-off width (extend the scale instead).
+ */
 export function PageContainer({
   width = 'wide',
   pad = 'page',

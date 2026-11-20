@@ -9,6 +9,14 @@
 import type { ReactNode } from 'react'
 import { cn } from '../lib/utils.ts'
 
+/**
+ * The "there is nothing here" page: a glyph in a tinted disc, a serif headline, a line of explanation
+ * and one action, centred in 60vh.
+ * Use it when a whole page is empty (inbox zero, no boards yet), with the action that fills it.
+ * Not for an empty list inside a page or settings section (`SettingsEmpty`), or a view that is still
+ * loading or failed (`CenteredNote`; `SettingsLoading` and `SettingsError` in Settings).
+ * The sentences are the caller's; give it the box the list would have had.
+ */
 export function EmptyState({
   icon,
   title,

@@ -10,7 +10,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const Filler = ({ label }: { label: string }) => (
-  <div className='h-full space-y-2 overflow-y-auto p-4'>
+  <div tabIndex={0} role='region' aria-label='Page' className='h-full space-y-2 overflow-y-auto p-4'>
     <h3 className='text-heading-3 text-text'>{label}</h3>
     {Array.from({ length: 24 }, (_, i) => (
       <p key={i} className='text-body-sm text-muted-foreground'>

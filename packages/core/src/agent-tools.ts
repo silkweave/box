@@ -4,13 +4,13 @@
 //
 // Settings live under `agentMcp.toolsets` (box.json for shared shape, box.local.json for edits made
 // in Settings):
-//   toolsets: id -> { label?, description?, servers: [connection id], allow: [tool], deny: [tool] }
+//   toolsets: id -> { label?, description?, servers: [server id], allow: [tool], deny: [tool] }
 // A null entry removes one (box.local.json overrides box.json by merge, which cannot delete).
 //
-// The servers a toolset attaches are connections of the `mcp` recipe (mcp-connections.ts): the
+// The servers a toolset attaches are the `mcp` recipe's MCP servers (mcp-servers.ts): the
 // recipe holds their credentials and relays every call, so a session gets a loopback URL and its
 // own principal's Box token, never an upstream credential. Without the recipe there are no
-// connections, and a toolset naming one is skipped with the reason.
+// servers, and a toolset naming one is skipped with the reason.
 //
 // `allow` lists tools that run without an approval (`mcp__<server>` or `mcp__<server>__<tool>`);
 // tools of an attached server that are not allowed still need one, which an unattended trigger
@@ -26,7 +26,7 @@
 import { boxJson } from './box-config.js'
 import { configRoot } from './io.js'
 import { writeBoxLocal } from './box-json.js'
-import { mcpConnectionList, mcpConnections, type McpConnectionEntry } from './mcp-connections.js'
+import { mcpServerList, mcpServerDirectory, type McpServerEntry } from './mcp-servers.js'
 
 export interface AgentToolset {
   id: string
@@ -65,10 +65,10 @@ export const mcpToolName = (name: string): string =>
   name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join('')
 
 export interface AgentToolsSettings {
-  /** The connections a toolset can attach (the `mcp` recipe's); empty without it. */
-  connections: McpConnectionEntry[]
-  /** Whether a feature provides connections at all (the `mcp` recipe is adapted). */
-  connectionsAvailable: boolean
+  /** The servers a toolset can attach (the `mcp` recipe's); empty without it. */
+  servers: McpServerEntry[]
+  /** Whether a feature provides servers at all (the `mcp` recipe is adapted). */
+  serversAvailable: boolean
   toolsets: AgentToolset[]
   /** Entries that are skipped, with the reason (a toolset that does not parse). */
   problems: string[]
@@ -76,7 +76,7 @@ export interface AgentToolsSettings {
 
 /** The session options a toolset adds (CreateSessionRequest's fields of the same names). */
 export interface ToolsetSessionOptions {
-  /** The connection ids the toolset attaches; box-mcp.ts turns each into a loopback server. */
+  /** The server ids the toolset attaches; box-mcp.ts turns each into a loopback server. */
   servers: string[]
   allowedTools: string[]
   disallowedTools: string[]
@@ -119,7 +119,7 @@ function parseToolset(id: string, raw: unknown, known: ReadonlySet<string>): Age
   if (!ID.test(id)) return `toolset "${id}": the id is a lowercase slug`
   if (!isRecord(raw)) return `toolset "${id}": not an object`
   const servers = strings(raw.servers)
-  for (const s of servers) if (!known.has(s)) return `toolset "${id}": no connection "${s}" (Settings > Connections)`
+  for (const s of servers) if (!known.has(s)) return `toolset "${id}": no server "${s}" (Settings > MCP Servers)`
   const allow = strings(raw.allow)
   const deny = strings(raw.deny)
   for (const tool of allow) {
@@ -134,14 +134,14 @@ function parseToolset(id: string, raw: unknown, known: ReadonlySet<string>): Age
   return { id, label: text(raw.label) || id, description: text(raw.description), servers, allow, deny, boxTools: null, builtIn: false }
 }
 
-function read(): { connections: McpConnectionEntry[]; toolsets: AgentToolset[]; problems: string[] } {
+function read(): { servers: McpServerEntry[]; toolsets: AgentToolset[]; problems: string[] } {
   const raw = section()
   const problems: string[] = []
   if (isRecord(raw.servers) && Object.values(raw.servers).some((v) => v !== null)) {
-    problems.push('agentMcp.servers is not read: a server is a connection of the mcp recipe (features.mcp.connections)')
+    problems.push('agentMcp.servers is not read: servers are MCP servers of the mcp recipe (features.mcp.servers)')
   }
-  const connections = mcpConnectionList()
-  const known = new Set(connections.map((c) => c.id))
+  const servers = mcpServerList()
+  const known = new Set(servers.map((c) => c.id))
   const toolsets: AgentToolset[] = []
   for (const b of builtins.values()) {
     toolsets.push({ id: b.id, label: b.label, description: b.description, servers: [], allow: [], deny: [...b.deny], boxTools: [...b.boxTools], builtIn: true })
@@ -157,13 +157,13 @@ function read(): { connections: McpConnectionEntry[]; toolsets: AgentToolset[]; 
     else toolsets.push(parsed)
   }
   const byId = <T extends { id: string }>(a: T, b: T): number => a.id.localeCompare(b.id)
-  return { connections: [...connections].sort(byId), toolsets: toolsets.sort(byId), problems }
+  return { servers: [...servers].sort(byId), toolsets: toolsets.sort(byId), problems }
 }
 
-/** The connections a toolset can attach and the toolsets, for Settings. */
+/** The servers a toolset can attach and the toolsets, for Settings. */
 export function readAgentTools(): AgentToolsSettings {
-  const { connections, toolsets, problems } = read()
-  return { connections, connectionsAvailable: mcpConnections() !== null, toolsets, problems }
+  const { servers, toolsets, problems } = read()
+  return { servers, serversAvailable: mcpServerDirectory() !== null, toolsets, problems }
 }
 
 /** One toolset, or null when none by that id is configured (or it does not parse). */
@@ -180,18 +180,18 @@ export function toolsetProblem(id: string | null): string | null {
 }
 
 /**
- * The outside MCP connections a toolset attaches (coverage judges readers against their
+ * The outside MCP servers a toolset attaches (coverage judges readers against their
  * audiences, auth/covers.ts). None for no toolset; a toolset that is not configured attaches none
  * (a session naming it is refused anyway, toolsetProblem).
  */
-export function toolsetConnections(id: string | null | undefined): string[] {
+export function toolsetServers(id: string | null | undefined): string[] {
   if (!id) return []
   return [...(agentToolset(id)?.servers ?? [])]
 }
 
 /**
- * What a toolset adds to a session: the connections it attaches, its allow list, its deny list.
- * Throws when the toolset is unknown or names a connection that does not exist.
+ * What a toolset adds to a session: the servers it attaches, its allow list, its deny list.
+ * Throws when the toolset is unknown or names a server that does not exist.
  */
 export function toolsetSessionOptions(id: string): ToolsetSessionOptions {
   const { toolsets } = read()
@@ -215,9 +215,9 @@ export interface AgentToolsetInput {
   deny?: string[]
 }
 
-/** The toolsets that attach a connection (the recipe refuses to delete one while any does). */
-export function toolsetsAttaching(connection: string): string[] {
-  return read().toolsets.filter((t) => t.servers.includes(connection)).map((t) => t.id)
+/** The toolsets that attach a server (the recipe refuses to delete one while any does). */
+export function toolsetsAttaching(server: string): string[] {
+  return read().toolsets.filter((t) => t.servers.includes(server)).map((t) => t.id)
 }
 
 /** A configured toolset's stored entry (box.local.json `agentMcp.toolsets`), or null. */
@@ -244,8 +244,8 @@ export interface ToolsetChangeOptions {
 
 /**
  * Create or replace a toolset. Refuses one that does not parse, before writing. Goes through the
- * policy service: the rooms whose agents get its connections are checked for coverage (each reader
- * in each connection's audience), and the file is written from the policy journal.
+ * policy service: the rooms whose agents get its servers are checked for coverage (each reader
+ * in each server's audience), and the file is written from the policy journal.
  */
 export async function saveAgentToolset(input: AgentToolsetInput, opts: ToolsetChangeOptions = {}): Promise<AgentToolset> {
   if (builtins.has(input.id)) throw new Error(`toolset "${input.id}" is built in and cannot be edited`)
@@ -256,7 +256,7 @@ export async function saveAgentToolset(input: AgentToolsetInput, opts: ToolsetCh
     allow: strings(input.allow),
     deny: strings(input.deny),
   }
-  const parsed = parseToolset(input.id, { ...entry, label: entry.label ?? undefined, description: entry.description ?? undefined }, new Set(mcpConnectionList().map((c) => c.id)))
+  const parsed = parseToolset(input.id, { ...entry, label: entry.label ?? undefined, description: entry.description ?? undefined }, new Set(mcpServerList().map((c) => c.id)))
   if (typeof parsed === 'string') throw new Error(parsed)
   // Live sessions under this toolset are ended by the journal step (a changed grant).
   const { applyPolicyChange } = await import('./auth/policy-service.js')

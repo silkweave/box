@@ -19,7 +19,7 @@ export const Default: Story = {
     const [value, setValue] = useState<string | null>('github')
     return (
       <Select value={value} onValueChange={setValue}>
-        <SelectTrigger className='w-48'>
+        <SelectTrigger aria-label='Status' className='w-48'>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

@@ -77,6 +77,8 @@ Copy and adapt the implementation's `core`, `server`, `web` and, when present, `
 the Box's `features/<id>/`, adapt imports and runtime wiring, add packages required by its imports
 to the workspace package, and update maintained registration in `src/generated/features.ts` and
 exports in `packages/core/src/generated/exports.ts`.
+Adapted web code follows `docs/DESIGN.md` (load `$ui`): keep local UI customizations, but build
+new or changed pages from the kit and the archetype the recipe's `AGENT.md` names.
 
 After the base recipe validates, add each chosen powerup by following its `INSTALL.md` in order:
 `## Detect`, `## Requires`, `## Owner decisions`, `## Owner-only steps` (ask for them when they are

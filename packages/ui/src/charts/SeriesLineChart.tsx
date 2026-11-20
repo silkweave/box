@@ -51,6 +51,14 @@ export interface SeriesTooltipRow {
   value: number | null
 }
 
+/**
+ * Two or more measures on one scale over a shared x: plan against actual, this period against last.
+ * Use it to compare series of the same unit; a legend draws for two or more.
+ * Not for one measure over time (`TimeSeriesChart`), a trend inside a card (`Sparkline`), or two
+ * measures of different magnitude (two charts; there is no second axis by design).
+ * A series may be `dashed` (the default choice for a reference line); a null is a hole unless the
+ * series sets `connectNulls`.
+ */
 export function SeriesLineChart<Row extends Record<string, unknown>>({
   data,
   xKey,

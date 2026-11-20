@@ -1,3 +1,8 @@
+import { parseTimestamp } from '@silkweave/box-ui/lib'
+
+// Time parsing and the relative form live in the kit; re-exported so app callers keep one path.
+export { parseTimestamp, relativeTime } from '@silkweave/box-ui/lib'
+
 export function formatNumber(n: number): string {
   return n.toLocaleString('en-US')
 }
@@ -56,11 +61,6 @@ export function formatDateTime(ts: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-/** Parse a server timestamp, ISO or "YYYY-MM-DD HH:MM:SS[.fff]" (Safari needs the T). */
-export function parseTimestamp(ts: string): Date {
-  return new Date(ts.includes('T') || !ts.includes(' ') ? ts : ts.replace(' ', 'T'))
-}
-
 /** "740ms" / "4s" / "1m 12s" / "1h 03m" - for automation run durations. */
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`
@@ -69,26 +69,4 @@ export function formatDuration(ms: number): string {
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m ${String(s % 60).padStart(2, '0')}s`
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
-}
-
-/** "just now" / "2h ago" / "in 5m" - for run start times and next cron fires. */
-export function relativeTime(ts: string): string {
-  const then = parseTimestamp(ts).getTime()
-  if (Number.isNaN(then)) return ts
-  const diff = then - Date.now()
-  const abs = Math.abs(diff)
-  if (abs < 30_000) return 'just now'
-  const units: [number, string][] = [
-    [86_400_000, 'd'],
-    [3_600_000, 'h'],
-    [60_000, 'm'],
-    [1_000, 's'],
-  ]
-  for (const [size, label] of units) {
-    if (abs >= size) {
-      const n = Math.round(abs / size)
-      return diff < 0 ? `${n}${label} ago` : `in ${n}${label}`
-    }
-  }
-  return 'just now'
 }

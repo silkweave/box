@@ -41,6 +41,11 @@ export const USERS = defineModel({
     // A BIGINT and not a timestamp: it compares exactly with the grant's `iat`, and no timestamp
     // conversion can ever move it backwards and re-arm a consumed link.
     link_watermark: { kind: 'bigint', nullable: true },
+    // The identity version for delegated credentials (MCP sign-in grants, mcp-auth.ts): random, set
+    // when the row is created and replaced when access is revoked. A grant records the epoch it was
+    // approved under and dies when it no longer matches, so restoring access or re-creating the same
+    // id never revives an old connection. Not a secret.
+    auth_epoch: { kind: 'text', default: 'gen_random_uuid()::text' },
     // The default agent profile (e.g. `toby:claude`), one of the person's agentProfiles; null keeps
     // the deployment rule. agent-defaults.ts.
     agent_profile: { kind: 'text', nullable: true },

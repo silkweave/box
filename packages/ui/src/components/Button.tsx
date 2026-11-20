@@ -16,7 +16,7 @@ const buttonVariants = cva(
       variant: {
         // Primary CTA carries the only flourish the brand allows: the indigo glow
         // (accent-ring + soft halo). Hover lifts toward accent-hover, never darker.
-        default: 'bg-primary text-primary-foreground shadow-(--shadow-glow) hover:bg-accent-hover',
+        default: 'bg-primary text-primary-foreground shadow-(--shadow-glow) hover:bg-(--accent-solid-hover)',
         outline:
           'border-border bg-background shadow-xs hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground aria-pressed:text-accent aria-pressed:border-accent/40',
         secondary:
@@ -24,7 +24,7 @@ const buttonVariants = cva(
         ghost:
           'hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground aria-pressed:text-accent',
         destructive: 'bg-destructive/10 text-destructive hover:bg-destructive/20',
-        link: 'text-primary underline-offset-4 hover:underline',
+        link: 'text-accent underline-offset-4 hover:underline',
       },
       size: {
         'default': 'h-9 gap-1.5 px-2.5',
@@ -41,6 +41,16 @@ const buttonVariants = cva(
   },
 )
 
+/**
+ * The house button, for every act a person presses.
+ * `variant`: `default` (primary) for the one main act, `outline` for the second, `ghost` for Cancel and
+ * quiet row or group actions, `destructive` for a confirmed delete, `link` inline in prose.
+ * `size`: `sm` in Settings and toolbars; the `icon*` sizes for an icon-only button.
+ * Not for an icon-only row action (`IconButton`: required label, row sizing), copying a value
+ * (`CopyButton`), or navigation that must stay a link (`NavAnchor`).
+ * A two-state button is this with `aria-pressed` set; the pressed style is built in.
+ * Rule: an icon-only Button needs `aria-label` (and `title`); no icon on Save or Cancel.
+ */
 export const Button: FunctionComponent<
   ButtonPrimitive.Props & VariantProps<typeof buttonVariants>
 > = ({ className, variant = 'default', size = 'default', ...props }) => {

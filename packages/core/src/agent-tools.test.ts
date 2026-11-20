@@ -13,12 +13,12 @@ import {
   toolsetSessionOptions,
   toolsetsAttaching,
 } from './agent-tools.js'
-import { registerMcpConnections } from './mcp-connections.js'
+import { registerMcpServers } from './mcp-servers.js'
 
 let root: string
 let unregister: (() => void) | null = null
 const directory = (ids: string[]) =>
-  registerMcpConnections('test', {
+  registerMcpServers('test', {
     list: () => ids.map((id) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) })),
     sessionProblem: async () => null,
     personal: async () => [],
@@ -51,22 +51,22 @@ afterEach(() => {
 })
 
 describe('reading', () => {
-  it('lists the connections a toolset can attach, and skips what does not parse with the reason', () => {
+  it('lists the servers a toolset can attach, and skips what does not parse with the reason', () => {
     const settings = readAgentTools()
-    expect(settings.connections).toEqual([{ id: 'google', label: 'Google' }, { id: 'stripe', label: 'Stripe' }])
-    expect(settings.connectionsAvailable).toBe(true)
+    expect(settings.servers).toEqual([{ id: 'google', label: 'Google' }, { id: 'stripe', label: 'Stripe' }])
+    expect(settings.serversAvailable).toBe(true)
     expect(settings.toolsets.map((t) => t.id)).toEqual(['external', 'team'])
-    expect(settings.problems).toEqual(['toolset "broken": no connection "nope" (Settings > Connections)'])
+    expect(settings.problems).toEqual(['toolset "broken": no server "nope" (Settings > MCP Servers)'])
   })
 
-  it('without a connection directory, toolsets naming a server are skipped and say why', () => {
+  it('without a server directory, toolsets naming a server are skipped and say why', () => {
     unregister?.()
     unregister = null
     const settings = readAgentTools()
-    expect(settings.connectionsAvailable).toBe(false)
-    expect(settings.connections).toEqual([])
+    expect(settings.serversAvailable).toBe(false)
+    expect(settings.servers).toEqual([])
     expect(settings.toolsets.map((t) => t.id)).toEqual(['external'])
-    expect(settings.problems).toContain('toolset "team": no connection "google" (Settings > Connections)')
+    expect(settings.problems).toContain('toolset "team": no server "google" (Settings > MCP Servers)')
   })
 
   it('reports a leftover agentMcp.servers instead of reading it', () => {
@@ -79,13 +79,13 @@ describe('reading', () => {
   it('reports why a toolset id cannot be used; none is always fine', () => {
     expect(toolsetProblem(null)).toBeNull()
     expect(toolsetProblem('team')).toBeNull()
-    expect(toolsetProblem('broken')).toBe('toolset "broken": no connection "nope" (Settings > Connections)')
+    expect(toolsetProblem('broken')).toBe('toolset "broken": no server "nope" (Settings > MCP Servers)')
     expect(toolsetProblem('missing')).toMatch(/no toolset "missing"/)
   })
 })
 
 describe('session options', () => {
-  it('names the connections and carries allow and deny, never a credential', () => {
+  it('names the servers and carries allow and deny, never a credential', () => {
     expect(toolsetSessionOptions('team')).toEqual({
       servers: ['google'],
       allowedTools: ['mcp__google__GmailRead'],
@@ -112,8 +112,8 @@ describe('session options', () => {
 })
 
 describe('writing', () => {
-  it('refuses a toolset that names an unknown connection, a tool of an unattached one, or allows a built-in', async () => {
-    await expect(saveAgentToolset({ id: 'x', servers: ['nope'] })).rejects.toThrow(/no connection "nope"/)
+  it('refuses a toolset that names an unknown server, a tool of an unattached one, or allows a built-in', async () => {
+    await expect(saveAgentToolset({ id: 'x', servers: ['nope'] })).rejects.toThrow(/no server "nope"/)
     await expect(saveAgentToolset({ id: 'x', servers: ['google'], allow: ['mcp__stripe__stripe_api_read'] })).rejects.toThrow(/does not attach/)
     await expect(saveAgentToolset({ id: 'x', servers: ['google'], allow: ['Bash'] })).rejects.toThrow(/built-in/)
     await expect(saveAgentToolset({ id: 'Bad Id' })).rejects.toThrow(/lowercase slug/)

@@ -93,12 +93,26 @@ export function InlineDialogScope({ children, scroll = true }: { children: React
   </InlineTarget.Provider>
 }
 
+/**
+ * A dialog that becomes a page when an `InlineDialogScope` is above it: the editor replaces the list
+ * in the same pane and the list keeps its state. Outside a scope it is the modal `Dialog`.
+ * Use it, with `InlineDialogContent`, `InlineDialogTitle` and `InlineDialogDescription`, for an
+ * editor or create form opened from a list outside Settings.
+ * Not inside a settings section (`SettingsPage` assembles these pieces with the breadcrumb and
+ * gutter) or for a copy-once result or a confirmation (`Dialog`, `confirm()`).
+ * Rule: title it with `InlineDialogTitle`; under an `InlineCrumbProvider` the title becomes the
+ * breadcrumb and the Back button is dropped.
+ */
 export function InlineDialog({ open, onOpenChange, children }: { open?: boolean; onOpenChange?: (open: boolean) => void; children: ReactNode }) {
   const scope = useInlineDialogTarget()
   if (!scope) return <Dialog open={open} onOpenChange={onOpenChange}>{children}</Dialog>
   return open ? <InlineClose.Provider value={() => onOpenChange?.(false)}>{children}</InlineClose.Provider> : null
 }
 
+/**
+ * The editor's body: a pane-wide page inside a scope (with a Back button unless a crumb provider
+ * shows the way back), `DialogContent` outside one. Takes focus on open and returns it on close.
+ */
 export function InlineDialogContent({ children, className, showClose = true, fill = true }: HTMLAttributes<HTMLDivElement> & {
   showClose?: boolean
   /** Inline, take the whole pane width (the default for editors). A confirmation keeps its own
@@ -126,6 +140,10 @@ export function InlineDialogContent({ children, className, showClose = true, fil
   return scope?.target ? createPortal(content, scope.target) : content
 }
 
+/**
+ * The editor's title: the pane's breadcrumb under an `InlineCrumbProvider` (kept as an sr-only h2),
+ * a serif h2 inline without one, `DialogTitle` in a modal. `crumb={false}` keeps it in the body.
+ */
 export function InlineDialogTitle({ className, crumb = true, trail, onRoot, children, ...props }: HTMLAttributes<HTMLHeadingElement> & {
   /** Under an InlineCrumbProvider, show this title as the pane's breadcrumb (default) instead of in
    *  the body. A confirmation keeps its question in the body. */
@@ -146,6 +164,9 @@ export function InlineDialogTitle({ className, crumb = true, trail, onRoot, chil
   if (!scope) return <DialogTitle className={className} {...props}>{children}</DialogTitle>
   return <h2 className={cn('font-serif text-display-sm leading-tight text-text', asCrumb && 'sr-only', className)} {...props}>{children}</h2>
 }
+/**
+ * The editor's description line under its title; `DialogDescription` in a modal.
+ */
 export function InlineDialogDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
   const scope = useInlineDialogTarget()
   if (!scope) return <DialogDescription className={className} {...props} />

@@ -779,7 +779,7 @@ counted (`SubjectActivity.areas`). Data sources belong to `signals`: `readDataSo
 
 Runs: `readRuns` and `readRun` return what row security lets through, and an agent job's run only
 to a reader who covers its `acts_as` principal (`auth/covers.ts`: every area at least the agent's
-level, admin for an admin agent; connection audiences are not part of this check).
+level, admin for an admin agent; MCP server audiences are not part of this check).
 Reader and agent are judged at one policy generation: the agent's role is read at the reader's
 access generation, the read is retried when the policy moves meanwhile, and an agent whose role
 that generation does not define (or who no longer resolves) is read by admins only. `readRuns`

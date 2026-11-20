@@ -1,7 +1,9 @@
-import { SETTINGS_GUTTER } from '@silkweave/box-ui'
+import { SettingsError, SettingsLoading } from '@silkweave/box-ui'
+import { canAccessArea, useAccess } from '@/lib/access'
 import { useSignalsDataWithArchived } from '../lib/useSignalsData.ts'
-import { SignalsGrid } from './SignalsGrid.tsx'
+import { SignalsList } from './SignalsList.tsx'
 import { SignalDetailView } from './SignalDetailView.tsx'
+import { SignalCreatePage, SignalEditPage } from './SignalEditPage.tsx'
 
 const decode = (part: string): string => {
   try {
@@ -11,15 +13,27 @@ const decode = (part: string): string => {
   }
 }
 
-/** The Signals settings section. `#settings/signals` is every signal, `#settings/signals/<channel>`
- *  one channel's, and `#settings/signals/<channel>/<slug>` one signal's detail. */
+/** The Signals settings section: the list at `#settings/signals`, the create page at
+ *  `#settings/signals/new`, one signal's detail at `#settings/signals/<id>` and its definition at
+ *  `.../edit`. */
 export function SignalsSection({ params }: { params: string[] }) {
   // The page reads archived signals too: a detail stays reachable, and the grid hides them unless
   // "Show archived" is on.
   const { data, error } = useSignalsDataWithArchived()
-  if (error) return <p className={`${SETTINGS_GUTTER} py-8 text-body-sm text-danger`}>Failed to reach the API: {error}</p>
-  if (!data) return <p className={`${SETTINGS_GUTTER} py-8 text-body-sm text-muted-foreground`}>Loading…</p>
-  const [channel, slug] = params
-  if (channel && slug) return <SignalDetailView channel={decode(channel)} slug={slug} />
-  return <SignalsGrid channel={channel ? decode(channel) : undefined} />
+  useAccess() // re-render when access changes
+  if (error) return <><SettingsError error={error} title='Signals could not load.' /></>
+  if (!data) return <><SettingsLoading label='Loading signals' /></>
+  const [part, page] = params
+  // Without write the create and edit routes fall back to the list and the detail.
+  // A new signal is stored under `signals` (or its tracker's feature, checked by the server).
+  if (part === 'new' && !page) return canAccessArea('signals', 'write') ? <SignalCreatePage /> : <SignalsList />
+  if (part) {
+    const id = decode(part)
+    const signal = data.signals.find((s) => s.id === id)
+    if (signal && page === 'edit' && canAccessArea(signal.area, 'write')) return <SignalEditPage signal={signal} />
+    if (signal) return <SignalDetailView signal={signal} data={data} />
+    // A route that names a missing signal shows a notice on the list.
+    return <SignalsList missing={id} />
+  }
+  return <SignalsList />
 }

@@ -59,9 +59,9 @@ contact, matching by email or phone or creating one.
 ## Verify
 
 1. `bun run schema:check` passes the enabled-later pass with CRM and Support.
-2. On a CRM touch, "Log support ticket" opens the New ticket dialog with the touch's contact as
+2. On a CRM touch, "Log support ticket" opens the New ticket page with the touch's contact as
    requester and the touch's channel, subject and summary; saving it and clicking the action again
-   opens the same ticket. On an account, the action opens the dialog with a new requester going
+   opens the same ticket. On an account, the action opens the page with a new requester going
    under that account.
 3. The account's Support tab lists the ticket; the accounts grid's column picker offers Open
    support tickets; a ticket older than `lateAfterDays` puts the account in Needs attention.

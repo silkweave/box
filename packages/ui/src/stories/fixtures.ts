@@ -18,7 +18,8 @@ export const SAMPLE_USERS: AvatarUser[] = [
     first_name: 'Alan',
     last_name: 'Turing',
     nickname: 'Alan',
-    image: 'https://i.pravatar.cc/96?u=alan',
+    // An inline picture: stories fetch nothing at runtime, and the rendered gate's shots stay stable.
+    image: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect width='96' height='96' fill='%23d9c7a7'/><circle cx='48' cy='38' r='18' fill='%237a5c3e'/><rect x='18' y='62' width='60' height='40' rx='30' fill='%237a5c3e'/></svg>",
   },
   { id: 'katherine', first_name: 'Katherine', last_name: 'Johnson', nickname: 'Kat', image: null },
 ]

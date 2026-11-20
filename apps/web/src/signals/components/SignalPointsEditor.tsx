@@ -1,20 +1,41 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Pencil, Plus, StickyNote, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Plus, StickyNote, Trash2 } from 'lucide-react'
 import type { SignalPointRow, SignalPointsPayload, Signal } from '../../types.ts'
 import { fetchSignalPoints, removeSignalPoint, saveSignalPoint, saveSignalPoints } from '../lib/useSignalsData.ts'
-import { formatBucket, formatNumber, relativeTime } from '../../lib/format.ts'
-import { UserChip, Button, DateInput, Popover, PopoverContent, PopoverTrigger, todayUtc } from '@silkweave/box-ui'
-import { cn } from '@/lib/utils'
+import { formatBucket, formatNumber } from '../../lib/format.ts'
+import {
+  ActionMenu,
+  Badge,
+  Button,
+  DateInput,
+  Field,
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  RelativeTime,
+  SettingsGroup,
+  SettingsHeaderActions,
+  SettingsNotice,
+  Textarea,
+  UserChip,
+  confirm,
+  usePersonName,
+  todayUtc,
+} from '@silkweave/box-ui'
+import { DataGrid } from '@silkweave/box-ui/list'
+import { PAST_WINDOWS } from '@silkweave/box-ui/filters'
+import { errorMessage } from '@silkweave/box-ui/lib'
 import { canAccessArea, useAccess } from '@/lib/access'
 
-const inputCls =
-  'rounded-md border border-border bg-bg px-2 py-1 text-body-sm text-text transition-colors hover:border-accent/40 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60'
+/** Runs one write at a time; `busy` is true while one is in flight and every write control waits. */
+type Run = (op: () => Promise<SignalPointsPayload>) => Promise<void>
 
 /**
- * The manual-points surface on a signal detail page (phase B2): a table of the signal's manual
- * points (bucket, value, note, who, when) with inline add/edit/delete, plus a bulk paste box -
- * one `date[, time], value[, note]` line per row, previewed before commit, committed via the bulk
- * tool so twelve monthly points are one paste and zero dialogs.
+ * The manual-points surface on a signal detail page: a grid of the signal's manual
+ * points (bucket, value, note, who, when) with add, edit and delete in place, plus a bulk paste
+ * box - one `date[, time], value[, note]` line per row, previewed before commit, committed via the
+ * bulk tool so twelve monthly points are one paste.
  *
  * A manual point a live value currently overrides renders as SHADOWED, not hidden - it resurfaces
  * if the live source retreats (the read-side merge, see docs/WAREHOUSE.md). Timestamps are UTC
@@ -23,291 +44,242 @@ const inputCls =
  */
 export function SignalPointsEditor({ signal }: { signal: Signal }) {
   useAccess() // re-render when access changes
-  // Points take write on the signal's owning area; a reader sees the table without its controls.
+  // Points take write on the signal's owning area; a reader sees the list without its controls.
   const canWrite = canAccessArea(signal.area, 'write')
   const [data, setData] = useState<SignalPointsPayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setData(null)
+    setError(null)
     fetchSignalPoints(signal.id)
       .then((d) => {
         if (!cancelled) setData(d)
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+        if (!cancelled) setError(e)
       })
     return () => {
       cancelled = true
     }
-  }, [signal.id])
+  }, [signal.id, reload])
 
-  const run = useCallback((op: () => Promise<SignalPointsPayload>) => {
+  /** Runs a write and shows its result. A failure propagates: the editing row or the paste box
+   *  reports it where the person is looking. */
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+  const run: Run = useCallback(async (op) => {
+    // Writes are serialized: a late answer to an earlier write could otherwise replace a newer list.
+    if (busyRef.current) throw new Error('Another change to these points is still saving.')
+    busyRef.current = true
     setBusy(true)
-    setError(null)
-    return op()
-      .then((d) => {
-        setData(d)
-        return true
-      })
-      .catch((e) => {
-        setError(e instanceof Error ? e.message : String(e))
-        return false
-      })
-      .finally(() => setBusy(false))
+    try {
+      setData(await op())
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }, [])
 
-  if (error && !data) return <p className='text-body-sm text-danger'>{error}</p>
-  if (!data) return null
-
   return (
-    <section className='mt-8'>
-      <h2 className='mb-1 text-label uppercase tracking-[0.07em] text-muted-foreground'>Manual points</h2>
-      <p className='mb-3 text-body-sm text-muted-foreground'>
-        Hand-entered values at {data.interval} grain (UTC). A live value wins its bucket; the manual
-        point stays underneath and resurfaces if the live source retreats.
-        {signal.data_source_id &&
-          ' This signal is connected, so its live buckets belong to its source’s sync - correcting one here shadows that value rather than replacing it.'}
-        {!canWrite && ' Your role can read this signal but not change its points.'}
-      </p>
-      <PointsTable signal={signal} data={data} busy={busy} run={run} canWrite={canWrite} />
-      {error && <p className='mt-2 text-label text-danger'>{error}</p>}
-      {canWrite && <BulkPasteBox signal={signal} busy={busy} run={run} />}
-    </section>
+    <>
+      {signal.data_source_id && (
+        <SettingsNotice title='Live buckets come from the data source'>
+          Its sync owns them, so correcting one here shadows that value rather than replacing it.
+        </SettingsNotice>
+      )}
+      {!canWrite && <SettingsNotice title='Your role can read this signal but not change its points.' />}
+      <PointsList signal={signal} data={data} error={error && !data ? error : undefined} onRetry={() => setReload((n) => n + 1)} run={run} busy={busy} canWrite={canWrite} />
+      {canWrite && data && <BulkPasteBox signal={signal} run={run} busy={busy} />}
+    </>
   )
 }
 
-// --- the table + inline add/edit ------------------------------------------------------------------
+// --- the list + inline add/edit -------------------------------------------------------------------
 
-function PointsTable({
-  signal,
-  data,
-  busy,
-  run,
-  canWrite,
-}: {
+/** The create row's id: the grid draws a row that does not exist yet under it. */
+const ADD_ID = '__add__'
+
+function PointsList({ signal, data, error, onRetry, run, busy, canWrite }: {
   signal: Signal
-  data: SignalPointsPayload
+  data: SignalPointsPayload | null
+  error: unknown
+  onRetry: () => void
+  run: Run
   busy: boolean
-  run: (op: () => Promise<SignalPointsPayload>) => Promise<boolean>
   canWrite: boolean
 }) {
-  const hourly = data.interval === 'hour'
+  const hourly = data?.interval === 'hour'
+  const personName = usePersonName()
   const [editing, setEditing] = useState<string | null>(null) // bucket being edited
   const [value, setValue] = useState('')
   const [note, setNote] = useState('')
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
-  // The inline add row.
+  // The add row.
+  const [adding, setAdding] = useState(false)
   const [addDate, setAddDate] = useState('')
   const [addTime, setAddTime] = useState('')
   const [addValue, setAddValue] = useState('')
   const [addNote, setAddNote] = useState('')
 
-  const rows = useMemo(() => [...data.points].sort((a, b) => b.bucket.localeCompare(a.bucket)), [data.points])
+  const rows = useMemo(() => [...(data?.points ?? [])].sort((a, b) => b.bucket.localeCompare(a.bucket)), [data?.points])
+  const draft: SignalPointRow = { bucket: ADD_ID, value: 0, note: null, shadowed_by: null, updated_at: '', created_by: null, updated_by: null }
+  const bucketLabel = (p: SignalPointRow): string => (hourly ? formatBucket(p.bucket) : p.bucket.slice(0, 10))
 
   const startEdit = (p: SignalPointRow) => {
     setEditing(p.bucket)
     setValue(String(p.value))
     setNote(p.note ?? '')
+    setAdding(false)
   }
-  const saveEdit = (p: SignalPointRow) => {
-    const v = Number(value)
-    if (value.trim() === '' || Number.isNaN(v)) return
-    void run(() => saveSignalPoint(signal.id, p.bucket, v, note)).then((ok) => {
-      if (ok) setEditing(null)
-    })
+  const validNumber = (raw: string) => raw.trim() !== '' && !Number.isNaN(Number(raw))
+  const saveEdit = async (bucket: string) => {
+    await run(() => saveSignalPoint(signal.id, bucket, Number(value), note))
+    // Close only the row this save was for.
+    setEditing((cur) => (cur === bucket ? null : cur))
   }
-  const add = () => {
-    const v = Number(addValue)
-    if (!addDate || addValue.trim() === '' || Number.isNaN(v)) return
+  const resetAdd = () => {
+    setAdding(false)
+    setAddDate('')
+    setAddTime('')
+    setAddValue('')
+    setAddNote('')
+  }
+  const add = async () => {
     const at = hourly && addTime ? `${addDate}T${addTime}:00Z` : addDate
-    void run(() => saveSignalPoint(signal.id, at, v, addNote || undefined)).then((ok) => {
-      if (ok) {
-        setAddDate('')
-        setAddTime('')
-        setAddValue('')
-        setAddNote('')
-      }
+    await run(() => saveSignalPoint(signal.id, at, Number(addValue), addNote || undefined))
+    resetAdd()
+  }
+  const remove = async (p: SignalPointRow) => {
+    const ok = await confirm({
+      title: `Delete the point for ${hourly ? formatBucket(p.bucket) : p.bucket.slice(0, 10)}?`,
+      message: 'Only this manual point is removed. A live value for the same bucket stays.',
+      confirmLabel: 'Delete point',
+      danger: true,
     })
+    if (!ok) return
+    setRemoveError(null)
+    try {
+      await run(() => removeSignalPoint(signal.id, p.bucket))
+    } catch (err) {
+      setRemoveError(errorMessage(err))
+    }
   }
 
   return (
-    // overflow-x-auto, not overflow-hidden: rows are single-line now (see NoteCell), so a narrow
-    // viewport or a shadowed row that runs long must SCROLL rather than be silently clipped -
-    // clipping loses the Updated column entirely with no way to reach it.
-    <div className='overflow-x-auto rounded-lg border border-border'>
-      <table className='w-full min-w-[36rem] text-body-sm'>
-        <thead>
-          <tr className='border-b border-border bg-surface text-left text-label uppercase tracking-[0.06em] text-muted-foreground'>
-            <th className='px-3 py-2 font-medium'>Bucket</th>
-            <th className='px-3 py-2 text-right font-medium'>Value</th>
-            <th className='w-10 px-2 py-2 text-center font-medium'>Note</th>
-            <th className='px-3 py-2 font-medium'>By</th>
-            <th className='px-3 py-2 font-medium'>Updated</th>
-            <th className='px-3 py-2' />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 && (
-            <tr className='border-b border-border bg-bg/40'>
-              <td colSpan={6} className='px-3 py-3 text-muted-foreground'>
-                {canWrite ? 'No manual points yet - add one below, or paste a batch.' : 'No manual points yet.'}
-              </td>
-            </tr>
-          )}
-          {rows.map((p) => {
-            const shadowed = p.shadowed_by != null
-            const isEditing = editing === p.bucket
-            return (
-              <tr key={p.bucket} className={cn('border-b border-border bg-bg/40', shadowed && 'opacity-70')}>
-                {/* Day-grain and coarser buckets drop the "00:00" - it is always midnight, and the
-                    six characters it costs are what pushed this row past the table's width. */}
-                <td className='px-3 py-1.5 whitespace-nowrap tabular-nums text-muted-foreground'>
-                  {hourly ? formatBucket(p.bucket) : p.bucket.slice(0, 10)}
-                </td>
-                <td className='px-3 py-1.5 text-right whitespace-nowrap tabular-nums text-text'>
-                  {isEditing ? (
-                    <input
-                      type='number'
-                      step='any'
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      className={cn(inputCls, 'w-28 text-right')}
-                    />
-                  ) : (
-                    <>
-                      {formatNumber(p.value)}
-                      {shadowed && (
-                        // Just "shadowed" - the live value moved into the tooltip. Spelled out it
-                        // was the longest thing in any row and the one that pushed the table wide.
-                        <span
-                          className='ml-2 inline-flex items-center rounded border border-border bg-surface px-1.5 py-0.5 text-label text-muted-foreground'
-                          title={`A live value of ${formatNumber(p.shadowed_by!)} currently wins this bucket; this manual point resurfaces if the live source retreats.`}>
-                          shadowed
-                        </span>
-                      )}
-                    </>
-                  )}
-                </td>
-                {isEditing ? (
-                  // Editing borrows the By + Updated columns for the note field: neither is editable,
-                  // and it keeps the row one line high instead of growing a second.
-                  <td className='px-3 py-1.5' colSpan={3}>
-                    <input
-                      value={note}
-                      onChange={(e) => setNote(e.target.value)}
-                      placeholder='note (optional)'
-                      className={cn(inputCls, 'w-full')}
-                      aria-label='Point note'
-                    />
-                  </td>
-                ) : (
-                  <>
-                    <td className='px-2 py-1.5 text-center'>
-                      <NoteCell note={p.note} />
-                    </td>
-                    <td className='px-3 py-1.5 whitespace-nowrap'>
-                      <UserChip userId={p.updated_by ?? p.created_by} showName />
-                    </td>
-                    <td
-                      className='px-3 py-1.5 whitespace-nowrap tabular-nums text-muted-foreground'
-                      title={`${formatBucket(p.updated_at.slice(0, 16))} UTC`}>
-                      {relativeTime(p.updated_at)}
-                    </td>
-                  </>
+    <>
+      {canWrite && (
+        <SettingsHeaderActions>
+          <Button
+            size='sm'
+            disabled={adding || busy}
+            onClick={() => {
+              setEditing(null)
+              setAdding(true)
+            }}>
+            <Plus /> Add point
+          </Button>
+        </SettingsHeaderActions>
+      )}
+      <DataGrid<SignalPointRow>
+        variant='section'
+        title='Manual points'
+        rows={rows}
+        muted={(p) => p.shadowed_by != null}
+        getId={(p) => p.bucket}
+        loading={!data && error == null}
+        error={error}
+        onRetry={onRetry}
+        empty={canWrite ? 'No manual points yet. Add the first with Add point, or paste a batch.' : 'No manual points yet.'}
+        bar={{ noun: 'points', fields: [{ key: 'when', title: 'Bucket', type: 'date', windows: PAST_WINDOWS, noneLabel: false }] }}
+        searchText={(p) => `${bucketLabel(p)} ${p.value} ${p.note ?? ''} ${personName(p.updated_by ?? p.created_by)}`}
+        filterValue={(p, key) => (key === 'when' ? p.bucket.slice(0, 10) : null)}
+        rowLabel={bucketLabel}
+        // The row starts editing; a write in flight holds every other write.
+        onOpen={canWrite && !busy ? startEdit : undefined}
+        openLabel={(p) => `Edit the point for ${bucketLabel(p)}`}
+        editing={
+          canWrite
+            ? adding
+              ? { id: ADD_ID, row: draft, saveLabel: 'Add point', canSave: !!addDate && validNumber(addValue) && !busy, onCancel: resetAdd, onSave: add }
+              : editing === null
+                ? undefined
+                : { id: editing, canSave: validNumber(value) && !busy, onCancel: () => setEditing(null), onSave: () => saveEdit(editing) }
+            : undefined
+        }
+        name={{
+          label: 'Bucket (UTC)',
+          render: (p) => <span className='text-body-sm tabular-nums text-muted-foreground'>{bucketLabel(p)}</span>,
+          edit: (p) =>
+            p.bucket === ADD_ID ? (
+              <div className='flex items-center gap-1.5'>
+                <DateInput value={addDate} onChange={setAddDate} ariaLabel='Point date (UTC)' today={todayUtc()} />
+                {hourly && <Input type='time' size='sm' value={addTime} onChange={(e) => setAddTime(e.target.value)} aria-label='Point time (UTC)' className='w-24' />}
+              </div>
+            ) : (
+              <span className='text-body-sm tabular-nums text-muted-foreground'>{bucketLabel(p)}</span>
+            ),
+        }}
+        columns={[
+          {
+            key: 'value',
+            label: 'Value',
+            width: 128,
+            render: (p) => (
+              <span className='flex w-full items-center justify-end gap-2 text-right text-body-sm tabular-nums text-text'>
+                {p.shadowed_by != null && (
+                  <Badge
+                    size='sm'
+                    title={`A live value of ${formatNumber(p.shadowed_by)} currently wins this bucket; this manual point resurfaces if the live source retreats.`}>
+                    Shadowed
+                  </Badge>
                 )}
-                <td className='px-3 py-1.5 text-right whitespace-nowrap'>
-                  {!canWrite ? null : isEditing ? (
-                    <>
-                      <Button size='xs' disabled={busy} onClick={() => saveEdit(p)}>
-                        Save
-                      </Button>
-                      <Button size='icon-xs' variant='ghost' disabled={busy} onClick={() => setEditing(null)} title='Cancel'>
-                        <X />
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button size='icon-xs' variant='ghost' disabled={busy} onClick={() => startEdit(p)} title='Edit point'>
-                        <Pencil />
-                      </Button>
-                      <Button
-                        size='icon-xs'
-                        variant='ghost'
-                        disabled={busy}
-                        onClick={() => void run(() => removeSignalPoint(signal.id, p.bucket))}
-                        title='Delete point'>
-                        <Trash2 />
-                      </Button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-          {/* The inline add row. */}
-          {canWrite && (
-          <tr className='bg-surface/60'>
-            <td className='px-3 py-2 whitespace-nowrap'>
-              <DateInput
-                value={addDate}
-                onChange={setAddDate}
-                ariaLabel='Point date (UTC)'
-                today={todayUtc()}
-              />
-              {hourly && (
-                <input
-                  type='time'
-                  value={addTime}
-                  onChange={(e) => setAddTime(e.target.value)}
-                  className={cn(inputCls, 'ml-1.5 w-24')}
-                  aria-label='Point time (UTC)'
-                />
-              )}
-            </td>
-            <td className='px-3 py-2 text-right'>
-              <input
-                type='number'
-                step='any'
-                placeholder='value'
-                value={addValue}
-                onChange={(e) => setAddValue(e.target.value)}
-                className={cn(inputCls, 'w-28 text-right')}
-                aria-label='Point value'
-              />
-            </td>
-            <td className='px-3 py-2' colSpan={3}>
-              <input
-                placeholder='note (optional)'
-                value={addNote}
-                onChange={(e) => setAddNote(e.target.value)}
-                className={cn(inputCls, 'w-full')}
-                aria-label='Point note'
-              />
-            </td>
-            <td className='px-3 py-2 text-right'>
-              <Button size='xs' variant='outline' disabled={busy || !addDate || addValue.trim() === ''} onClick={add}>
-                <Plus /> Add
-              </Button>
-            </td>
-          </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+                {formatNumber(p.value)}
+              </span>
+            ),
+            edit: (p) =>
+              p.bucket === ADD_ID ? (
+                <Input type='number' step='any' size='sm' placeholder='Value' value={addValue} onChange={(e) => setAddValue(e.target.value)} aria-label='Point value' className='text-right' />
+              ) : (
+                <Input type='number' step='any' size='sm' value={value} onChange={(e) => setValue(e.target.value)} aria-label='Point value' className='text-right' />
+              ),
+          },
+          {
+            key: 'note',
+            label: 'Note',
+            width: 192,
+            render: (p) => <NoteCell note={p.note} />,
+            edit: (p) =>
+              p.bucket === ADD_ID ? (
+                <Input size='sm' placeholder='Note' value={addNote} onChange={(e) => setAddNote(e.target.value)} aria-label='Point note' />
+              ) : (
+                <Input size='sm' value={note} onChange={(e) => setNote(e.target.value)} placeholder='Note' aria-label='Point note' />
+              ),
+          },
+          { key: 'by', label: 'By', width: 144, priority: 3, render: (p) => (p.bucket === ADD_ID ? null : <UserChip userId={p.updated_by ?? p.created_by} showName />) },
+          { key: 'updated', label: 'Updated', width: 96, priority: 2, render: (p) => (p.bucket === ADD_ID ? null : <RelativeTime value={p.updated_at} className='text-body-sm text-muted-foreground' />) },
+        ]}
+        rowActions={canWrite ? (p) => <ActionMenu size='sm' label={`Actions for the point ${bucketLabel(p)}`} items={[{ label: 'Delete point', icon: <Trash2 />, danger: true, disabled: busy, onSelect: () => void remove(p) }]} /> : undefined}
+      />
+      {removeError && (
+        <SettingsNotice tone='danger' title='The point was not deleted'>
+          {removeError}
+        </SettingsNotice>
+      )}
+    </>
   )
 }
 
 /**
  * A point's note as an icon that reveals the text on hover (or click/focus, which is what keeps it
- * reachable by keyboard and on touch). The note used to render inline, and a sentence like
- * a long import note ("imported from the vendor CLI daily snapshot") wrapped the row onto three lines - fifty of
- * those is an unreadable table. Nothing is truncated: the full note is in the popover.
+ * reachable by keyboard and on touch). A sentence like a long import note would wrap the row onto
+ * three lines; nothing is truncated: the full note is in the popover.
  */
 function NoteCell({ note }: { note: string | null }) {
-  if (!note) return <span className='text-muted-foreground/50'>-</span>
+  if (!note) return <span className='text-fg-4'>-</span>
   return (
     <Popover>
       <PopoverTrigger
@@ -365,16 +337,9 @@ function parseLine(raw: string, line: number): ParsedLine | null {
   }
 }
 
-function BulkPasteBox({
-  signal,
-  busy,
-  run,
-}: {
-  signal: Signal
-  busy: boolean
-  run: (op: () => Promise<SignalPointsPayload>) => Promise<boolean>
-}) {
+function BulkPasteBox({ signal, run, busy }: { signal: Signal; run: Run; busy: boolean }) {
   const [text, setText] = useState('')
+  const [error, setError] = useState<string | null>(null)
   const parsed = useMemo(
     () => text.split('\n').map((raw, i) => parseLine(raw, i + 1)).filter((p): p is ParsedLine => p !== null),
     [text],
@@ -382,76 +347,76 @@ function BulkPasteBox({
   const bad = parsed.filter((p) => p.error)
   const good = parsed.filter((p) => !p.error)
 
-  const commit = () => {
-    void run(() =>
-      saveSignalPoints(
-        signal.id,
-        good.map((p) => ({ at: p.at!, value: p.value!, ...(p.note ? { note: p.note } : {}) })),
-      ),
-    ).then((ok) => {
-      if (ok) setText('')
-    })
+  const commit = async () => {
+    setError(null)
+    try {
+      await run(() =>
+        saveSignalPoints(
+          signal.id,
+          good.map((p) => ({ at: p.at!, value: p.value!, ...(p.note ? { note: p.note } : {}) })),
+        ),
+      )
+      setText('')
+    } catch (err) {
+      setError(errorMessage(err))
+    }
   }
 
+  const status = bad.length > 0 ? `${bad.length} ${bad.length === 1 ? 'line needs' : 'lines need'} fixing before you commit` : good.length > 0 ? `${good.length} ${good.length === 1 ? 'point' : 'points'} ready` : null
+
   return (
-    <div className='mt-4 rounded-lg border border-border bg-surface/50 p-3'>
-      <div className='mb-1.5 text-label uppercase tracking-[0.06em] text-muted-foreground'>Bulk paste</div>
-      <p className='mb-2 text-body-sm text-muted-foreground'>
-        One <code>date[, time], value[, note]</code> line per row (UTC), e.g.{' '}
-        <code>2025-09-01, 118000</code>. Buckets are floored to the signal&apos;s {signal.interval} grain
-        on commit.
-      </p>
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        rows={5}
-        placeholder={'2025-09-01, 118000\n2025-10-01, 121500, after the annual invoice'}
-        className={cn(inputCls, 'w-full resize-y font-mono')}
-      />
+    <SettingsGroup title='Add several points' className='pb-6'>
+      <Field
+        label='Bulk paste'
+        error={error}
+        hint={
+          <>
+            One <code>date[, time], value[, note]</code> line per row (UTC), e.g. <code>2025-09-01, 118000</code>. Buckets are floored to the signal&apos;s {signal.interval} grain on commit.
+          </>
+        }>
+        <Textarea
+          mono
+          rows={5}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value)
+            setError(null)
+          }}
+          placeholder={'2025-09-01, 118000\n2025-10-01, 121500, after the annual invoice'}
+        />
+      </Field>
       {parsed.length > 0 && (
-        <div className='mt-2 overflow-hidden rounded-md border border-border'>
-          <table className='w-full text-body-sm'>
-            <thead>
-              <tr className='border-b border-border bg-surface text-left text-label uppercase tracking-[0.06em] text-muted-foreground'>
-                <th className='px-3 py-1.5 font-medium'>Line</th>
-                <th className='px-3 py-1.5 font-medium'>At (UTC)</th>
-                <th className='px-3 py-1.5 text-right font-medium'>Value</th>
-                <th className='px-3 py-1.5 font-medium'>Note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parsed.map((p) => (
-                <tr key={p.line} className='border-b border-border bg-bg/40 last:border-0'>
-                  <td className='px-3 py-1 tabular-nums text-muted-foreground'>{p.line}</td>
-                  {p.error ? (
-                    <td colSpan={3} className='px-3 py-1 text-danger'>
-                      {p.error} - <code className='text-label'>{p.raw}</code>
-                    </td>
-                  ) : (
-                    <>
-                      <td className='px-3 py-1 tabular-nums text-text'>{formatBucket(p.at!)}</td>
-                      <td className='px-3 py-1 text-right tabular-nums text-text'>{formatNumber(p.value!)}</td>
-                      <td className='px-3 py-1 text-muted-foreground'>{p.note ?? ''}</td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataGrid<ParsedLine>
+          variant='section'
+          title='Paste preview'
+          rows={parsed}
+          getId={(p) => String(p.line)}
+          bar={{ noun: 'lines' }}
+          rowLabel={(p) => `line ${p.line}`}
+          name={{
+            label: 'Line',
+            render: (p) =>
+              p.error ? (
+                <span className='truncate text-body-sm text-danger'>
+                  Line {p.line}: {p.error}: <code className='text-label'>{p.raw}</code>
+                </span>
+              ) : (
+                <span className='text-body-sm tabular-nums text-muted-foreground'>Line {p.line}</span>
+              ),
+          }}
+          columns={[
+            { key: 'at', label: 'At (UTC)', width: 144, render: (p) => (p.error ? null : <span className='text-body-sm tabular-nums text-text'>{formatBucket(p.at!)}</span>) },
+            { key: 'value', label: 'Value', width: 112, render: (p) => (p.error ? null : <span className='block w-full text-right text-body-sm tabular-nums text-text'>{formatNumber(p.value!)}</span>) },
+            { key: 'note', label: 'Note', width: 192, priority: 2, render: (p) => (p.error ? null : <span className='block truncate text-body-sm text-muted-foreground'>{p.note ?? ''}</span>) },
+          ]}
+        />
       )}
-      <div className='mt-2 flex items-center justify-between gap-2'>
-        <span className='text-label text-muted-foreground'>
-          {parsed.length === 0
-            ? ''
-            : bad.length > 0
-              ? `${bad.length} line(s) need fixing before commit`
-              : `${good.length} point(s) ready`}
-        </span>
-        <Button size='sm' disabled={busy || good.length === 0 || bad.length > 0} onClick={commit}>
-          Commit {good.length > 0 ? `${good.length} point(s)` : ''}
+      <div className='flex items-center justify-between gap-2'>
+        <span className='text-label text-fg-4'>{status}</span>
+        <Button size='sm' disabled={busy || good.length === 0 || bad.length > 0} onClick={() => void commit()}>
+          {busy ? 'Committing…' : good.length > 0 ? `Commit ${good.length} ${good.length === 1 ? 'point' : 'points'}` : 'Commit'}
         </Button>
       </div>
-    </div>
+    </SettingsGroup>
   )
 }

@@ -17,3 +17,4 @@
 export * from './BoardKanban.tsx'
 export * from './BoardViewBar.tsx'
 export * from './DraggableCard.tsx'
+export * from './boardSensors.ts'

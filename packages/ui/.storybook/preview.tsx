@@ -1,6 +1,7 @@
 import type { Decorator, Preview } from '@storybook/react-vite'
 import * as React from 'react'
 import { ConfirmHost } from '../src/components/Confirm.tsx'
+import { NotifyHost } from '../src/components/Notify.tsx'
 import { UsersProvider } from '../src/users/directory.tsx'
 import { SAMPLE_USERS } from '../src/stories/fixtures.ts'
 import './preview.css'
@@ -34,11 +35,13 @@ const withUsers: Decorator = (Story) => (
   </UsersProvider>
 )
 
-// `confirm()` resolves against whichever host is mounted, so one here makes it work in every story.
+// `confirm()` and `notify()` draw in whichever host is mounted, so one of each here makes them work
+// in every story.
 const withConfirmHost: Decorator = (Story) => (
   <>
     <Story />
     <ConfirmHost />
+    <NotifyHost />
   </>
 )
 
@@ -80,6 +83,7 @@ const preview: Preview = {
           'Brand',
           'Layout',
           'Base',
+          'Patterns',
           'Board',
           'Charts',
           'Grid',

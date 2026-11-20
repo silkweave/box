@@ -49,7 +49,8 @@ export function Wordmark({ size = 'full', className }: WordmarkProps) {
   const markSize = size === 'small' ? 20 : 24
   return (
     <span className={cn('flex items-center gap-2 text-text', className)}>
-      <Mark size={markSize} />
+      {/* Decorative beside the name it repeats, so the link's accessible name is the visible text. */}
+      <Mark size={markSize} title='' />
       <span className={cn('font-sans font-semibold tracking-tight', size === 'small' ? 'text-body' : 'text-heading-3')}>
         {brand.wordmark}
         {brand.suffix && <span className='ml-1 font-normal text-muted-foreground'>{brand.suffix}</span>}

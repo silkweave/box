@@ -29,6 +29,9 @@ export interface DocEditorProps {
   docKey: string
   variant?: 'card' | 'panel'
   placeholder?: string
+  /** Accessible name of the writing surface. Defaults to "Document editor"; name it for the document
+   *  when a page holds more than one. */
+  'aria-label'?: string
   /** A shorter writing area, for a surface that is not the whole page (a modal). */
   compact?: boolean
   /**

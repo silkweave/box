@@ -7,6 +7,7 @@ import { useState, type ReactNode } from 'react'
 import { Autocomplete as AutocompletePrimitive } from '@base-ui/react/autocomplete'
 import { ChevronsUpDown } from 'lucide-react'
 import { cn } from '../lib/utils.ts'
+import { useFieldControl } from './Field.tsx'
 
 export interface AutocompleteSuggestion {
   value: string
@@ -14,6 +15,12 @@ export interface AutocompleteSuggestion {
   hint?: ReactNode
 }
 
+/**
+ * A free-text input with a suggestion list; a value outside the suggestions is fine.
+ * Use it for an event kind, a route, a channel name: text the suggestions only help type.
+ * Not for one value from a closed set (`SelectField`) or several values (`TokenPicker`).
+ * `mono` sets identifiers in monospace. Inside a `Field` it takes the field's label, hint and error. Opening a filled field lists every suggestion; typing narrows it.
+ */
 export function Autocomplete({
   value,
   onValueChange,
@@ -39,6 +46,7 @@ export function Autocomplete({
   // Opening on a filled field lists every suggestion; typing narrows it. Filtering by the value
   // already in the field would show only that value (or nothing) when you click to change it.
   const [typed, setTyped] = useState(false)
+  const field = useFieldControl()
   return (
     <AutocompletePrimitive.Root
       items={suggestions}
@@ -56,8 +64,10 @@ export function Autocomplete({
       disabled={disabled}>
       <AutocompletePrimitive.InputGroup className={cn('relative flex w-full min-w-0 items-center', className)}>
         <AutocompletePrimitive.Input
-          id={id}
+          id={id ?? field?.id}
           aria-label={ariaLabel}
+          aria-describedby={field?.describedBy}
+          aria-invalid={field?.invalid || undefined}
           placeholder={placeholder}
           className={cn(
             'h-[34px] w-full min-w-0 rounded-md border border-border bg-bg py-1.5 pr-8 pl-2.5 text-body-sm text-text transition-colors outline-none',

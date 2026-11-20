@@ -39,7 +39,9 @@ const config: StorybookConfig = {
 
   // Still worth it without the docs addon: docgen is what fills the Controls panel with real prop
   // types and their TSDoc, which is how a story becomes explorable rather than just a screenshot.
-  typescript: { reactDocgen: 'react-docgen-typescript' },
+  // `react-docgen` (Babel) rather than `react-docgen-typescript`: the latter calls the TypeScript
+  // compiler API, which the workspace's TypeScript 7 no longer provides (`ts.sys` is gone).
+  typescript: { reactDocgen: 'react-docgen' },
 
   // Our own chrome, our own fonts. Same no-phone-home posture as the self-hosted fonts
   // (src/styles/fonts.css): nothing here fetches from a CDN at runtime.

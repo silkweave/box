@@ -1,281 +1,262 @@
-import { useEffect, useState } from 'react'
-import type * as React from 'react'
-import { AlertTriangle, Pencil, Plug, Plus, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { useMemo } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
 import {
   confirm,
+  ActionMenu,
   Badge,
   Button,
-  InlineDialog as Dialog,
-  InlineDialogContent as DialogContent,
-  InlineDialogDescription as DialogDescription,
-  InlineDialogTitle as DialogTitle,
-  SETTINGS_GUTTER,
-  SettingsActions,
-  SettingsField,
-  SettingsFooterBar,
+  Checkbox,
+  Field,
+  FieldGrid,
+  Input,
+  SettingsDeleteButton,
+  SettingsEmpty,
+  SettingsGroup,
+  SettingsHeaderActions,
   SettingsIntro,
-  SettingsList,
-  SettingsListHeading,
-  SettingsListRow,
-  settingsRowActionCls,
-  useSettingsFooter,
+  SettingsNotice,
+  SettingsPage,
+  SettingsReadOnly,
+  SettingsSaveBar,
+  Textarea,
+  useSettingsForm,
 } from '@silkweave/box-ui'
-import { deleteAgentToolset, saveAgentToolset, useAgentTools, type AgentMcpConnection, type AgentToolset } from '../lib/useAgentTools.ts'
+import { DataGrid, NameCell } from '@silkweave/box-ui/list'
+import { useAuth } from '../lib/useAuth.tsx'
+import { deleteAgentToolset, saveAgentToolset, useAgentTools, type AgentMcpServer, type AgentToolset } from '../lib/useAgentTools.ts'
 import { useSettingsDialog } from '../lib/settingsDialog.ts'
 
-// Settings > Agent tools: the toolsets that grant agent sessions more than the Box's own tools, and
-// the connections (outside MCP servers, the mcp recipe's Settings > Connections) they can attach. A
+// Settings > Agent tools: the toolsets that grant agent sessions more than the Box's own tools. A
 // chat room or an agent trigger names a toolset; one that names none gets the Box's own tools only.
+// The outside servers a toolset attaches live in Settings > MCP Servers (each server's page says
+// which toolsets use it).
+//
+// A List section (docs/DESIGN.md), with Detail `toolsets/<id>` and Create `toolsets/new`. Every
+// person reads it; administrators change it.
 
-const inputCls =
-  'w-full rounded-md border border-border bg-bg px-2.5 py-1.5 text-body-sm text-text transition-colors hover:border-accent/40 focus:border-accent focus:outline-none'
-
+const SECTION = 'agent-tools'
+const LIST = `${SECTION}/toolsets`
+const KIND_OPTIONS = [
+  { value: 'builtin', label: 'Built in' },
+  { value: 'custom', label: 'Custom' },
+]
 const lines = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter(Boolean)
 
-type Editor = { kind: 'toolset'; item: AgentToolset | null } | null
+const DELETE_MESSAGE = 'Rooms and triggers that name it get the Box’s own tools only until they pick another, and say so in their logs.'
 
-export function AgentToolsView() {
-  const { data, error } = useAgentTools()
-  const [editor, setEditor] = useState<Editor>(null)
-  const { open: openSettings } = useSettingsDialog()
+type Data = ReturnType<typeof useAgentTools>
 
-  useSettingsFooter(
-    editor || !data
-      ? null
-      : (shadowed) => (
-          <SettingsFooterBar shadowed={shadowed}>
-            <Button size='sm' onClick={() => setEditor({ kind: 'toolset', item: null })}>
-              <Plus /> New toolset
-            </Button>
-          </SettingsFooterBar>
-        ),
-    [Boolean(data)],
-  )
+export function AgentToolsView({ params }: { params: string[] }) {
+  const tools = useAgentTools()
+  const { principal } = useAuth()
+  const admin = principal?.role === 'admin'
+  return <Toolsets tools={tools} admin={admin} param={params[0] === 'toolsets' ? params[1] : undefined} />
+}
 
-  if (error) return <p className={cn(SETTINGS_GUTTER, 'text-body-sm text-danger')}>{error}</p>
-  if (!data) return <p className={cn(SETTINGS_GUTTER, 'text-body-sm text-muted-foreground')}>Loading…</p>
-
-  const removeToolset = async (t: AgentToolset) => {
-    if (
-      !(await confirm({
-        title: `Delete toolset "${t.label}"?`,
-        message: 'Rooms and triggers that name it get the Box’s own tools only until they pick another, and say so in their logs.',
-        confirmLabel: 'Delete',
-        danger: true,
-      }))
-    )
-      return
-    await deleteAgentToolset(t.id)
-  }
-
+/** The toolsets (List), with each toolset's page (`toolsets/<id>`) and the create page (`toolsets/new`). */
+function Toolsets({ tools: { data, error }, admin, param }: { tools: Data; admin: boolean; param: string | undefined }) {
+  const { open } = useSettingsDialog()
+  const toolsets = data?.toolsets ?? []
+  const serverIds = [...new Set(toolsets.flatMap((t) => t.servers))].sort()
+  const creating = admin && param === 'new'
+  const selected = param && !creating ? data?.toolsets.find((t) => t.id === param) : undefined
+  const missing = data && param && !creating && !selected ? param : null
   return (
-    <div className='pb-6'>
-      <SettingsIntro>
-        What an agent session can reach beyond this Box&rsquo;s own tools. A chat room or an agent trigger names a toolset;
-        one that names none gets the Box&rsquo;s tools only. A toolset&rsquo;s servers are connections: the Box relays their
-        calls with its own credential and logs who made each one. Toolsets need a Claude agent profile.
+    <>
+      {admin && (
+        <SettingsHeaderActions>
+          <Button size='sm' onClick={() => open(`${LIST}/new`)}>
+            <Plus /> New toolset
+          </Button>
+        </SettingsHeaderActions>
+      )}
+      <SettingsIntro
+        info={<>A chat room or an agent trigger names a toolset; one that names none gets the Box&rsquo;s own tools only. A toolset&rsquo;s servers are the mcp recipe&rsquo;s MCP servers: the Box relays their calls with its own credential and logs who made each one. Toolsets need a Claude agent profile.</>}>
+        What agent sessions can use beyond this Box&rsquo;s own tools.
       </SettingsIntro>
-
-      {data.problems.length > 0 && (
-        <div className={cn(SETTINGS_GUTTER, 'pb-4')}>
-          {data.problems.map((p) => (
-            <p key={p} className='flex items-start gap-1.5 text-label text-warning'>
-              <AlertTriangle className='mt-px size-3.5 shrink-0' />
-              <span>{p} (skipped)</span>
-            </p>
-          ))}
-        </div>
+      {missing && <SettingsNotice tone='warning' title={`There is no toolset "${missing}".`} />}
+      {data && data.problems.length > 0 && (
+        <SettingsNotice tone='warning' title={data.problems.length === 1 ? 'One toolset was skipped' : `${data.problems.length} toolsets were skipped`}>
+          <ul className='list-disc pl-4'>{data.problems.map((p) => <li key={p}>{p}</li>)}</ul>
+        </SettingsNotice>
       )}
-
-      <SettingsListHeading title='Toolsets' className='pt-0' />
-      {data.toolsets.length === 0 ? (
-        <p className={cn(SETTINGS_GUTTER, 'border-t border-border py-4 text-body-sm text-muted-foreground')}>
-          No toolsets yet.
-        </p>
-      ) : (
-        <SettingsList label='Toolsets'>
-          {data.toolsets.map((t) => (
-            <SettingsListRow key={t.id} onOpen={t.builtIn ? undefined : () => setEditor({ kind: 'toolset', item: t })} label={t.label} className='grid-cols-[1fr_auto]'>
-              <div className='flex min-w-0 flex-col gap-1'>
-                <span className='flex items-center gap-2'>
-                  <span className='text-body font-medium text-text'>{t.label}</span>
-                  <code className='text-label text-muted-foreground'>{t.id}</code>
-                  {t.builtIn && <Badge variant='neutral'>Built in</Badge>}
-                </span>
-                <span className='flex flex-wrap items-center gap-1.5 text-label text-muted-foreground'>
-                  {t.servers.map((s) => (
-                    <Badge key={s} variant='neutral'>{s}</Badge>
-                  ))}
-                  <span>
-                    {t.boxTools
-                      ? `${t.boxTools.length} Box tools only · ${t.deny.length} denied`
-                      : `${t.allow.length} allowed without approval · ${t.deny.length} denied`}
-                  </span>
-                </span>
-                {t.description && <span className='text-body-sm text-muted-foreground'>{t.description}</span>}
-              </div>
-              {t.builtIn ? <span /> : <RowActions label={t.label} onEdit={() => setEditor({ kind: 'toolset', item: t })} onDelete={() => void removeToolset(t)} />}
-            </SettingsListRow>
-          ))}
-        </SettingsList>
-      )}
-
-      <SettingsListHeading title='Connections' />
-      {!data.connectionsAvailable ? (
-        <p className={cn(SETTINGS_GUTTER, 'flex items-start gap-1.5 border-t border-border py-4 text-body-sm text-muted-foreground')}>
-          <Plug className='mt-0.5 size-4 shrink-0' />
-          <span>
-            Outside MCP servers (Stripe, Linear, ...) are set up with the MCP connections recipe, which this Box has not adapted. Toolsets can still deny
-            tools without it. An administrator can adapt it from the Recipe Gallery.
-          </span>
-        </p>
-      ) : data.connections.length === 0 ? (
-        <p className={cn(SETTINGS_GUTTER, 'border-t border-border py-4 text-body-sm text-muted-foreground')}>
-          No connections yet.{' '}
-          <button type='button' className='text-accent hover:underline' onClick={() => openSettings('connections')}>Add one in Connections</button>.
-        </p>
-      ) : (
-        <SettingsList label='Connections'>
-          {data.connections.map((c) => (
-            <SettingsListRow key={c.id} onOpen={() => openSettings(`connections/${c.id}`)} label={c.label} className='grid-cols-[1fr_auto]'>
-              <span className='flex items-center gap-2'>
-                <span className='text-body font-medium text-text'>{c.label}</span>
-                <code className='text-label text-muted-foreground'>mcp__{c.id}</code>
-              </span>
-              <span />
-            </SettingsListRow>
-          ))}
-        </SettingsList>
-      )}
-
-      <ToolsetDialog
-        open={editor?.kind === 'toolset'}
-        toolset={editor?.kind === 'toolset' ? editor.item : null}
-        servers={data.connections}
-        existingIds={data.toolsets.map((t) => t.id)}
-        onClose={() => setEditor(null)}
+      <DataGrid<AgentToolset>
+        rows={toolsets}
+        getId={(t) => t.id}
+        loading={!data && error == null}
+        error={error ?? undefined}
+        empty={<>No toolsets yet. {admin ? 'New toolset grants agent sessions their first outside tools.' : 'An administrator adds them.'}</>}
+        bar={{
+          noun: 'toolsets',
+          fields: [
+            { key: 'kind', title: 'Kind', type: 'options', options: KIND_OPTIONS.filter((o) => toolsets.some((t) => (t.builtIn ? 'builtin' : 'custom') === o.value)) },
+            { key: 'server', title: 'MCP server', type: 'options', options: serverIds.map((id) => ({ value: id, label: data?.servers.find((c) => c.id === id)?.label ?? id })) },
+          ],
+          sort: [{ value: 'name', label: 'Name' }],
+        }}
+        searchText={(t) => `${t.label} ${t.id} ${t.description} ${t.servers.join(' ')}`}
+        filterValue={(t, key) => (key === 'kind' ? (t.builtIn ? 'builtin' : 'custom') : key === 'server' ? t.servers : null)}
+        sortValue={(t) => t.label.toLowerCase()}
+        rowLabel={(t) => t.label}
+        onOpen={(t) => open(`${LIST}/${t.id}`)}
+        name={{
+          label: 'Toolset',
+          render: (t) => <NameCell primary={t.label} secondary={t.id} badge={t.builtIn ? { label: 'Built in' } : null} />,
+        }}
+        columns={[
+          { key: 'servers', label: 'MCP servers', width: 200, priority: 3, render: (t) => <span className='flex min-w-0 items-center gap-1.5 overflow-hidden'>{t.servers.map((s) => <Badge key={s} variant='neutral'>{s}</Badge>)}</span> },
+          {
+            key: 'access',
+            label: 'Access',
+            width: 260,
+            priority: 2,
+            render: (t) => {
+              const text = t.boxTools ? `${t.boxTools.length} Box tools only · ${t.deny.length} denied` : `${t.allow.length} allowed without approval · ${t.deny.length} denied`
+              return <span className='block truncate text-muted-foreground' title={text}>{text}</span>
+            },
+          },
+        ]}
+        rowActions={admin ? (t) => !t.builtIn && (
+          <ActionMenu
+            size='sm'
+            label={`Actions for ${t.label}`}
+            items={[{
+              label: 'Delete toolset',
+              icon: <Trash2 />,
+              danger: true,
+              onSelect: () => void confirm({ title: `Delete toolset "${t.label}"?`, message: DELETE_MESSAGE, confirmLabel: 'Delete toolset', danger: true })
+                .then((ok) => { if (ok) void deleteAgentToolset(t.id) }),
+            }]}
+          />
+        ) : undefined}
       />
-    </div>
+
+      {data && (creating || selected) && (
+        <ToolsetPage
+          key={selected?.id ?? 'new'}
+          toolset={selected ?? null}
+          servers={data.servers}
+          serversAvailable={data.serversAvailable}
+          existingIds={data.toolsets.map((t) => t.id)}
+          admin={admin}
+          onClose={() => open(LIST)}
+        />
+      )}
+    </>
   )
 }
 
-function RowActions({ label, onEdit, onDelete }: { label: string; onEdit: () => void; onDelete: () => void }) {
-  return (
-    <span className='flex items-center gap-0.5' onClick={(e) => e.stopPropagation()}>
-      <button type='button' aria-label={`Edit ${label}`} title='Edit' onClick={onEdit} className={settingsRowActionCls}>
-        <Pencil className='size-4' />
-      </button>
-      <button type='button' aria-label={`Delete ${label}`} title='Delete' onClick={onDelete} className={cn(settingsRowActionCls, 'hover:text-danger')}>
-        <Trash2 className='size-4' />
-      </button>
-    </span>
-  )
-}
-
-function useSubmit(onClose: () => void) {
-  const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const run = (work: () => Promise<void>) => {
-    setSaving(true)
-    setError(null)
-    void work()
-      .then(onClose)
-      .catch((err) => {
-        setSaving(false)
-        setError(String((err as Error)?.message ?? err))
-      })
-  }
-  const reset = () => {
-    setError(null)
-    setSaving(false)
-  }
-  return { error, saving, run, reset, setError }
-}
-
-function ToolsetDialog({
-  open,
-  toolset,
-  servers,
-  existingIds,
-  onClose,
-}: {
-  open: boolean
+/** A toolset's page ("Agent tools › Team chat") or the create page. Built-in toolsets and members
+ *  see it read-only. */
+function ToolsetPage({ toolset, servers, serversAvailable, existingIds, admin, onClose }: {
   toolset: AgentToolset | null
-  servers: AgentMcpConnection[]
+  servers: AgentMcpServer[]
+  serversAvailable: boolean
   existingIds: string[]
+  admin: boolean
   onClose: () => void
 }) {
-  const [f, setF] = useState({ id: '', label: '', description: '', servers: [] as string[], allow: '', deny: '' })
-  const submit = useSubmit(onClose)
-  useEffect(() => {
-    if (!open) return
-    setF({
-      id: toolset?.id ?? '',
-      label: toolset?.label ?? '',
-      description: toolset?.description ?? '',
-      servers: toolset?.servers ?? [],
-      allow: (toolset?.allow ?? []).join('\n'),
-      deny: (toolset?.deny ?? []).join('\n'),
-    })
-    submit.reset()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, toolset])
+  const { open } = useSettingsDialog()
   const editing = toolset !== null
-  const id = f.id.trim()
-
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editing && existingIds.includes(id)) return submit.setError(`Toolset "${id}" already exists.`)
-    submit.run(() => saveAgentToolset({ id, label: f.label, description: f.description, servers: f.servers, allow: lines(f.allow), deny: lines(f.deny) }))
-  }
-  const toggle = (sid: string) =>
-    setF((p) => ({ ...p, servers: p.servers.includes(sid) ? p.servers.filter((s) => s !== sid) : [...p.servers, sid] }))
+  const stored = useMemo(() => ({
+    id: toolset?.id ?? '',
+    label: toolset?.label ?? '',
+    description: toolset?.description ?? '',
+    servers: toolset?.servers ?? [],
+    allow: (toolset?.allow ?? []).join('\n'),
+    deny: (toolset?.deny ?? []).join('\n'),
+  }), [toolset])
+  const form = useSettingsForm({
+    stored,
+    create: !editing,
+    validate: (v) => {
+      const id = v.id.trim()
+      if (!id) return 'A toolset needs an id.'
+      if (!editing && existingIds.includes(id)) return `Toolset "${id}" already exists.`
+      return null
+    },
+    onSave: async (v) => {
+      await saveAgentToolset({ id: v.id.trim(), label: v.label, description: v.description, servers: v.servers, allow: lines(v.allow), deny: lines(v.deny) })
+      if (!editing) onClose()
+    },
+  })
+  const v = form.values
+  const toggle = (sid: string) => form.set('servers', v.servers.includes(sid) ? v.servers.filter((s) => s !== sid) : [...v.servers, sid])
+  const readOnly = !admin || (toolset?.builtIn ?? false)
+  const note = toolset?.builtIn ? 'A feature registers this toolset in code; it cannot be changed here.' : 'Only administrators can change toolsets.'
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className='max-w-lg'>
-        <div className='flex flex-col gap-1'>
-          <DialogTitle>{editing ? toolset.label : 'New toolset'}</DialogTitle>
-          <DialogDescription>Connections a session gets beside the Box&rsquo;s own tools, and which of their tools run without asking.</DialogDescription>
-        </div>
-        <form id='agent-toolset-form' onSubmit={onSubmit} className='flex flex-col gap-3'>
-          <div className='grid grid-cols-2 gap-3'>
-            <SettingsField label='Name'>
-              <input value={f.label} onChange={(e) => setF((p) => ({ ...p, label: e.target.value }))} placeholder='Team chat' className={inputCls} />
-            </SettingsField>
-            <SettingsField label={editing ? 'Id (fixed)' : 'Id'} hint='A lowercase slug'>
-              <input value={f.id} disabled={editing} onChange={(e) => setF((p) => ({ ...p, id: e.target.value }))} placeholder='team' className={inputCls} />
-            </SettingsField>
-          </div>
-          <SettingsField label='Description (optional)'>
-            <input value={f.description} onChange={(e) => setF((p) => ({ ...p, description: e.target.value }))} className={inputCls} />
-          </SettingsField>
-          <fieldset className='flex flex-col gap-1.5 rounded-md border border-border p-3'>
-            <legend className='px-1 text-label text-muted-foreground'>Connections</legend>
-            {servers.length === 0 && <p className='text-label text-muted-foreground'>No connections on this Box.</p>}
-            {servers.map((s) => (
-              <label key={s.id} className='inline-flex cursor-pointer items-center gap-2 text-body-sm text-text'>
-                <input type='checkbox' checked={f.servers.includes(s.id)} onChange={() => toggle(s.id)} className='accent-(--accent)' />
-                {s.label} <code className='text-label text-muted-foreground'>mcp__{s.id}</code>
-              </label>
-            ))}
-          </fieldset>
-          <SettingsField label='Run without approval' hint='One per line: mcp__stripe for a whole connection, or mcp__stripe__stripe_api_read (the upstream tool name). Other tools of an attached server ask first; an unattended trigger cannot be asked, so its call is refused.'>
-            <textarea rows={4} value={f.allow} onChange={(e) => setF((p) => ({ ...p, allow: e.target.value }))} className={cn(inputCls, 'font-mono text-label')} />
-          </SettingsField>
-          <SettingsField label='Never available' hint='One per line: an MCP tool or server, or a built-in such as Bash, Write or Edit.'>
-            <textarea rows={3} value={f.deny} onChange={(e) => setF((p) => ({ ...p, deny: e.target.value }))} className={cn(inputCls, 'font-mono text-label')} />
-          </SettingsField>
-          {submit.error && <p className='text-label text-danger'>{submit.error}</p>}
+    <SettingsPage title={editing ? toolset.label : 'New toolset'} info='MCP servers a session gets beside the Box’s own tools, and which of their tools run without asking.' onClose={onClose}>
+      <SettingsReadOnly active={readOnly} note={note}>
+        <form {...form.formProps} className='contents'>
+          <SettingsGroup title='Toolset'>
+            <FieldGrid columns={2}>
+              <Field label='Name'>
+                <Input value={v.label} onChange={(e) => form.set('label', e.target.value)} placeholder='Team chat' />
+              </Field>
+              <Field label='Id' hint={editing ? 'Fixed once created.' : 'A lowercase slug, fixed once created.'}>
+                <Input mono value={v.id} disabled={editing} onChange={(e) => form.set('id', e.target.value)} placeholder='team' />
+              </Field>
+              <Field label='Description' span='full'>
+                <Textarea autoGrow rows={1} value={v.description} onChange={(e) => form.set('description', e.target.value)} placeholder='What sessions with this toolset are for' />
+              </Field>
+            </FieldGrid>
+          </SettingsGroup>
+          <SettingsGroup title='MCP servers' description='The servers a session with this toolset can call.'>
+            {servers.length === 0 ? (
+              <SettingsEmpty>
+                {serversAvailable
+                  ? 'No MCP servers on this Box yet.'
+                  : 'Outside MCP servers (Stripe, Linear, ...) come with the mcp recipe’s MCP Servers powerup, which this Box has not adapted. An administrator can adapt it from the Recipe Gallery.'}
+                {admin && serversAvailable && (
+                  <Button size='sm' variant='outline' className='ml-3' onClick={() => open('mcp-servers/new')}>
+                    <Plus /> Add server
+                  </Button>
+                )}
+              </SettingsEmpty>
+            ) : (
+              <div className='flex flex-col gap-2'>
+                {servers.map((s) => (
+                  <label key={s.id} className='inline-flex items-center gap-2 text-body-sm text-text'>
+                    <Checkbox checked={v.servers.includes(s.id)} disabled={readOnly} onChange={() => toggle(s.id)} />
+                    {s.label} <code className='text-label text-muted-foreground'>mcp__{s.id}</code>
+                  </label>
+                ))}
+              </div>
+            )}
+          </SettingsGroup>
+          <SettingsGroup title='Tools'>
+            <FieldGrid columns={2}>
+              <Field label='Run without approval' hint='One per line: mcp__stripe for a whole server, or mcp__stripe__stripe_api_read. Other tools of an attached server ask first; an unattended trigger cannot be asked, so its call is refused.'>
+                <Textarea mono rows={5} value={v.allow} onChange={(e) => form.set('allow', e.target.value)} />
+              </Field>
+              {toolset?.boxTools && (
+                <Field label='Box tools' hint='Built in: the only Box tools its sessions keep.' span='full'>
+                  <Textarea mono readOnly autoGrow rows={2} value={toolset.boxTools.join('\n')} />
+                </Field>
+              )}
+              <Field label='Never available' hint='One per line: an MCP tool or server, or a built-in such as Bash, Write or Edit.'>
+                <Textarea mono rows={5} value={v.deny} onChange={(e) => form.set('deny', e.target.value)} />
+              </Field>
+            </FieldGrid>
+          </SettingsGroup>
         </form>
-        <SettingsActions>
-          <Button type='button' variant='ghost' size='sm' onClick={onClose}>Cancel</Button>
-          <Button type='submit' form='agent-toolset-form' size='sm' disabled={submit.saving || !id}>
-            {submit.saving ? 'Saving…' : editing ? 'Save changes' : 'Create toolset'}
-          </Button>
-        </SettingsActions>
-      </DialogContent>
-    </Dialog>
+        <SettingsSaveBar
+          form={form}
+          create={editing ? undefined : 'Create toolset'}
+          onCancel={onClose}
+          start={editing && (
+            <SettingsDeleteButton
+              label='Delete toolset'
+              confirm={{ title: `Delete toolset "${toolset.label}"?`, message: DELETE_MESSAGE }}
+              onDelete={async () => {
+                await deleteAgentToolset(toolset.id)
+                onClose()
+              }}
+            />
+          )}
+        />
+      </SettingsReadOnly>
+    </SettingsPage>
   )
 }

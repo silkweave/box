@@ -33,8 +33,16 @@ export interface AppShellProps {
   children: React.ReactNode
 }
 
-// App shell (ported from claudepad): sidebar + canvas on desktop; below md the
-// sidebar collapses to an off-canvas drawer toggled from the top bar.
+/**
+ * The application frame (ported from claudepad): sidebar and canvas on desktop; below md the sidebar
+ * becomes an off-canvas drawer toggled from the top bar.
+ * Use it once, at the app's root. Views render inside it and reach the bar through `TopBarActions`
+ * and `TopBarCenter`.
+ * Not for a layout inside a view (`PageContainer`, `SplitPane`) or a frame for a single component
+ * in a story (`Stage`).
+ * App-specific parts (who is signed in, the bar's trailing cluster, an aside panel, the home link)
+ * come through `ShellExtensionsProvider`, not props.
+ */
 export function AppShell({
   groupNav,
   items,

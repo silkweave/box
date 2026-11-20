@@ -15,6 +15,7 @@ import { describeSystemEntries, scanSystemEntries, WORKSPACE_ROOT } from './syst
 
 /** File -> its reasons, sorted; a template literal's `${...}` parts read as `*`. */
 const SYSTEM_ENTRIES: Record<string, string[]> = {
+  'apps/server/scripts/auth-connections.ts': ['cli: auth connections'],
   'apps/server/scripts/auth-login.ts': ['cli: auth login'],
   'apps/server/scripts/auth-replace.ts': ['cli: auth replace'],
   'apps/server/scripts/auth-reveal.ts': ['cli: auth reveal'],

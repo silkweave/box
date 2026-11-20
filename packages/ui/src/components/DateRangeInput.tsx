@@ -37,6 +37,9 @@ export interface DateRange {
 }
 
 /**
+ * A date window as one control: a from half and a to half, and one popover with two months.
+ * Use it where two dates are one fact (a sprint, a reporting period). Not for independent dates
+ * (two `DateInput`s).
  * The whole range commits at once. A half-made range (a start with no end yet) never reaches the
  * caller: the sprint it was built for refuses to slot a task outside its window, so publishing an
  * intermediate `{ start, end: '' }` would briefly assert a window nobody chose.

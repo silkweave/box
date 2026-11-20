@@ -39,8 +39,8 @@ export interface CoverageDestination {
   /** For people: `#pipeline`, `the artifacts`. */
   label: string
   readers: DestinationReaders
-  /** The agents that write there and the outside connections each can use there. */
-  agents: readonly { id: string; connections: readonly string[] }[]
+  /** The agents that write there and the outside servers each can use there. */
+  agents: readonly { id: string; servers: readonly string[] }[]
 }
 
 /** One reader who would not cover one agent at one destination. */
@@ -70,8 +70,8 @@ export interface CoverageProvider {
 export interface CoverageContext {
   /** Whether `id` is a configured, active agent after the change. */
   isAgent(id: string): boolean
-  /** The connections toolset `id` attaches after the change. */
-  connections(toolset: string | null | undefined): string[]
+  /** The servers toolset `id` attaches after the change. */
+  servers(toolset: string | null | undefined): string[]
 }
 
 const providers = new Map<string, CoverageProvider>()

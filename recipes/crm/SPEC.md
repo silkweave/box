@@ -220,11 +220,12 @@ event-driven.
 ## UI
 
 - **Routes**: `/crm` (`CrmRoot`) is the one load and error state over the shared accounts payload,
-  with three children, each a shell group of its own: the pathless `accounts` layout (`CrmLayout`,
-  shell group `crm`) holding `/` (`CrmAccountsTable`), `queue` (`CrmAssignQueue`) and `$id`
-  (`CrmAccountDetailView`); `deals` (`CrmDealsLayout`, `crm-deals`) holding `CrmDealsView`; and
+  with these children, each a shell group of its own: the pathless `accounts` layout (`CrmLayout`,
+  shell group `crm`) holding `/` (`CrmAccountsTable`, which opens New account as a dialog at `/crm#new`,
+  `CrmAccountCreateForm`), `queue` (`CrmAssignQueue`) and `$id`
+  (`CrmAccountDetailView`); `deals` (`CrmDealsLayout`, `crm-deals`) holding `CrmDealsView` (New deal as a dialog at `/crm/deals#new`, `CrmDealCreateForm`); and
   `contacts` (`CrmContactsLayout`, `crm-contacts`) holding `CrmContactsView`. The static segments
-  outrank `$id`, so an account slugged `queue`, `deals` or `contacts` is shadowed. A contact has no
+  outrank `$id`, so an account slugged `queue`, `deals` or `contacts` is shadowed; the server refuses `new` as an account id. A contact has no
   page of its own; it is worked on its account's page.
 - **Nav**: three entries in order band **600**: Accounts (`crm`, `Building2`, 600), Deals
   (`crm-deals`, `KanbanSquare`, 601) and Contacts (`crm-contacts`, `Contact`, 602).
@@ -258,7 +259,7 @@ event-driven.
   owner, falling back to its account's. Beside stage and owner the deal's MRR is a number field and
   its expected close a date field (won and lost deals are never overdue); the account's status,
   source, next action and tags filter too. Owner and Stage are pinned by default, Owner and Expected
-  close on Closing soon. **New deal** starts one at an existing account. A card or
+  close on Closing soon. **New deal** opens a dialog (`/crm/deals#new`) and starts one at an existing account. A card or
   row opens the account, where the deal is worked.
 - **Contacts** (`contactsView.ts`) is every person at every account as a list (role, email, phone,
   LinkedIn, last activity, the account's status and owner), filtered by role, primary flag (a

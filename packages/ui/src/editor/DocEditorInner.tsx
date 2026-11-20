@@ -42,6 +42,7 @@ export function DocEditor({
   variant = 'card',
   placeholder,
   compact = false,
+  'aria-label': ariaLabel = 'Document editor',
   upload,
 }: DocEditorProps) {
   const { content, status, path, editorUri, update } = doc
@@ -105,6 +106,7 @@ export function DocEditor({
     ],
     editorProps: {
       attributes: {
+        'aria-label': ariaLabel,
         class: `markdown-body tiptap ${compact ? 'min-h-[9rem]' : 'min-h-[24rem]'} ${variant === 'panel' ? 'px-5 py-4' : 'px-4 py-3'} focus:outline-none`,
       },
       handlePaste: (_view, event) => {

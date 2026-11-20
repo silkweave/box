@@ -37,15 +37,46 @@ function tintFor(seed: string): string {
   return TINTS[Math.abs(h) % TINTS.length]
 }
 
-export function Avatar({
-  user,
-  size = 'md',
-  className,
-}: {
-  user: AvatarUser
-  size?: keyof typeof SIZES
-  className?: string
-}) {
+/** The letter tile's sizes: rounded squares, so a service never reads as a person. */
+const LETTER_SIZES = {
+  sm: 'size-6 rounded-md text-[11px]',
+  md: 'size-8 rounded-lg text-body',
+  lg: 'size-12 rounded-lg text-display-sm',
+} as const
+
+type UserAvatarProps = { user: AvatarUser; size?: keyof typeof SIZES; label?: never; className?: string }
+type LetterAvatarProps = { label: string; size?: keyof typeof LETTER_SIZES; user?: never; className?: string }
+
+/**
+ * A user's avatar, or a letter tile for a thing that is not a person.
+ *
+ * `user`: their image, else initials on a tint chosen by a stable hash of the id. Use it wherever a
+ * person you already hold as an `AvatarUser` shows, beside or instead of the name. Not for a bare
+ * user id (`UserChip` resolves it through the directory).
+ * `label`: the first letter of the label on an accent-tinted rounded square, the media of a
+ * connected service, channel, mailbox or server (an MCP server row, its detail header). Not for a
+ * thing that has its own icon (draw the icon) or a state (`StatusDot`).
+ * `size`: users `xs`/`sm` in dense rows and chips, `nav` (28px) where the avatar is itself the
+ * button, `md` by default, `lg` for a detail header's media slot; letter tiles `sm`, `md`, `lg`.
+ * Rule: initials and letters are `aria-hidden`, so the name must be in text beside it or on its
+ * control.
+ */
+export function Avatar(props: UserAvatarProps | LetterAvatarProps) {
+  if (props.label !== undefined) {
+    const { label, size = 'md', className } = props
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          'inline-flex shrink-0 items-center justify-center border border-border bg-accent-tint font-medium text-accent',
+          LETTER_SIZES[size],
+          className,
+        )}>
+        {(label.trim()[0] ?? '?').toUpperCase()}
+      </span>
+    )
+  }
+  const { user, size = 'md', className } = props as UserAvatarProps
   const cls = cn('inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-medium', SIZES[size], className)
   if (user.image) return <img src={user.image} alt={userName(user)} className={cls} />
   return (

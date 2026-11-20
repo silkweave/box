@@ -8,3 +8,5 @@ export { readStored, usePersistedState, writeStored } from './usePersistedState.
 export { applyTheme, getTheme, setTheme, toggleTheme, THEME_STORAGE_KEY, type Theme } from './theme.ts'
 export { DEFAULT_STORAGE_PREFIX, storageKey } from './storage.ts'
 export { SWATCHES, swatchClass, userSwatch, type Swatch } from './swatches.ts'
+export { errorMessage } from './errorMessage.ts'
+export { fullTime, parseTimestamp, relativeTime, toDate } from './time.ts'

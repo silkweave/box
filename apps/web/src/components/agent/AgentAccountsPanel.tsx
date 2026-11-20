@@ -1,7 +1,7 @@
 import * as React from 'react'
-import { CheckCircle2, CircleAlert, CircleDashed } from 'lucide-react'
 import { AccountConnectDialog } from '@workerdeck/ui'
-import { Badge, Button, confirm } from '@silkweave/box-ui'
+import { ActionMenu, Badge, SettingsNotice, confirm, type ActionMenuItem } from '@silkweave/box-ui'
+import { DataGrid, NameCell } from '@silkweave/box-ui/list'
 import { agentClient, loadAgentAccounts, notifyAgentAccountsChanged, setAgentEngine, type AgentAccountProfile, type AgentAccountsResponse } from '../../lib/agentStore.ts'
 import { relativeTime } from '../../lib/format.ts'
 import { useAuth } from '../../lib/useAuth.tsx'
@@ -17,22 +17,34 @@ const connected = (p: AccountProfile): boolean => p.account !== null || p.availa
 
 const dateOnly = (iso: string): string => iso.slice(0, 10)
 
+/** What the Agent accounts list is for, for the page's info popover. */
+export function agentAccountsInfo(user: User, isAgent: boolean, self: boolean): string {
+  const name = user.nickname || user.id
+  return isAgent
+    ? `${name} runs only on the default profile: chat replies and every trigger that runs as ${name}.`
+    : `Sidebar sessions, triggers and Builder run on ${self ? 'your' : `${name}'s`} own accounts. The default is used when nothing names an engine; with none chosen, Claude is used first.`
+}
+
 /**
- * One user's agent accounts: their Claude and Codex profiles, Connect / Reconnect / Disconnect
- * (WorkerDeck runs the official sign-in and keeps the credential; the Box never sees it), and the
- * Default profile their runs use. Shown on Settings > Profile for yourself and in the Users detail
- * for an admin, the agent included: for the agent the default is the only profile it runs on.
+ * One user's agent accounts as a grid: their Claude and Codex profiles, Connect / Reconnect with
+ * Disconnect and the Default choice in the row menu (WorkerDeck runs the official sign-in and keeps
+ * the credential; the Box never sees it). `titled` draws it as a section with a heading, for a page
+ * that holds other lists too; alone in a tab it is the tab's plain grid. Shown on Settings > Profile
+ * for yourself and in the Users detail for an admin, the agent included: for the agent the default
+ * is the only profile it runs on.
  */
-export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boolean }) {
+export function AgentAccountsPanel({ user, titled = false }: { user: User; titled?: boolean }) {
   const { principal } = useAuth()
   const [data, setData] = React.useState<AgentAccountsResponse | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  // A failed action, shown above the list; `error` is the load failing.
+  const [failure, setFailure] = React.useState<string | null>(null)
   const [connecting, setConnecting] = React.useState<AccountProfile | undefined>(undefined)
   const [saving, setSaving] = React.useState(false)
   const self = principal?.id === user.id
 
   const load = React.useCallback(() => {
-    loadAgentAccounts(user.id).then(setData, (e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+    loadAgentAccounts(user.id).then((d) => { setError(null); setData(d) }, (e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [user.id])
   React.useEffect(load, [load])
 
@@ -47,25 +59,25 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
       danger: true,
     })
     if (!ok) return
-    setError(null)
+    setFailure(null)
     try {
       await agentClient.disconnectAccount(p.name)
       load()
       notifyAgentAccountsChanged()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setFailure(e instanceof Error ? e.message : String(e))
     }
   }
 
   const chooseDefault = async (p: AccountProfile | null): Promise<void> => {
     setSaving(true)
-    setError(null)
+    setFailure(null)
     try {
       await upsertUser({ id: user.id, agent_profile: p?.name ?? '' })
       // Your own new default also becomes the engine your next sidebar session starts on.
       if (self && p) setAgentEngine(p.engine)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setFailure(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
     }
@@ -76,96 +88,56 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
   // Choosing between accounts only means something once two are connected; with one, it is the
   // default. A chosen default that is no longer connected still shows, so its failing runs are fixable.
   const choosable = (data?.profiles.filter(connected).length ?? 0) > 1 || (chosen !== null && !connected(chosen))
+  const rows = data?.enabled ? data.profiles : []
+  const empty = !data?.enabled
+    ? 'Agent sessions are not set up on this Box yet. An administrator turns them on.'
+    : `${self ? 'You have' : `${name} has`} no agent accounts yet. An administrator adds them.`
   return (
-    <section className='flex flex-col gap-3' aria-label='Agent accounts'>
-      <div>
-        <h3 className='text-body-sm font-semibold text-text'>Agent accounts</h3>
-        <p className='mt-0.5 max-w-prose text-label text-muted-foreground'>
-          {isAgent
-            ? `${name} runs only on the default profile: chat replies and every trigger that runs as ${name}.`
-            : `Sidebar sessions, triggers and Builder run on ${self ? 'your' : `${name}'s`} own accounts. The default profile is used when nothing names an engine.`}
-        </p>
-      </div>
-      {error && <p className='text-label text-danger'>{error}</p>}
-      {!data ? (
-        !error && <p className='text-label text-muted-foreground'>Loading…</p>
-      ) : !data.enabled ? (
-        <p className='text-label text-muted-foreground'>The agent surface is not configured on this Box (box.json workerdeck).</p>
-      ) : data.profiles.length === 0 ? (
-        <p className='text-label text-muted-foreground'>{name} has no agent profiles. An admin maps them in box.json agentProfiles.</p>
-      ) : (
-        <ul className='flex flex-col divide-y divide-border border-y border-border'>
-          {data.profiles.map((p) => {
+    <>
+      {failure && <SettingsNotice tone='danger' title='That did not work.'>{failure}</SettingsNotice>}
+      <DataGrid<AccountProfile>
+        variant={titled ? 'section' : 'full'}
+        title={titled ? 'Agent accounts' : undefined}
+        rows={rows}
+        getId={(p) => p.name}
+        loading={!data && error == null}
+        error={error ?? undefined}
+        onRetry={load}
+        empty={empty}
+        bar={{ noun: 'accounts', one: 'account' }}
+        rowLabel={(p) => `${ENGINE_LABEL[p.engine] ?? p.engine} ${p.name}`}
+        name={{
+          label: 'Account',
+          render: (p) => {
             const isDefault = chosen?.name === p.name
             return (
-              <li key={p.name} className='flex flex-wrap items-center gap-x-4 gap-y-2 py-3'>
-                <div className='min-w-0 flex-1'>
-                  <p className='flex items-center gap-2 text-body-sm font-medium text-text'>
-                    {ENGINE_LABEL[p.engine] ?? p.engine}
-                    <code className='font-normal text-label text-muted-foreground'>{p.name}</code>
-                    {isDefault && <Badge variant='accent' size='sm'>Default</Badge>}
-                  </p>
-                  <p className='mt-0.5 flex items-start gap-1.5 text-label text-muted-foreground'>
-                    {p.account ? (
-                      <>
-                        <CheckCircle2 className='mt-px size-3.5 shrink-0 text-success' />
-                        <span>Connected {relativeTime(p.account.connectedAt)}, expires {dateOnly(p.account.expiresAt)}</span>
-                      </>
-                    ) : p.available === true ? (
-                      <>
-                        <CheckCircle2 className='mt-px size-3.5 shrink-0 text-success' />
-                        <span>{p.connectable ? 'Signed in' : 'Signed in on the Box host'}</span>
-                      </>
-                    ) : !p.connectable ? (
-                      <>
-                        <CircleDashed className='mt-px size-3.5 shrink-0' />
-                        <span>Not signed in. Sign in on the Box host.</span>
-                      </>
-                    ) : (
-                      <>
-                        <CircleAlert className='mt-px size-3.5 shrink-0 text-warning' />
-                        <span>Not connected</span>
-                      </>
-                    )}
-                  </p>
-                </div>
-                <div className='flex items-center gap-2'>
-                  {choosable && connected(p) && !isDefault && (
-                    <Button size='sm' variant='ghost' disabled={saving} onClick={() => void chooseDefault(p)}>
-                      Use as default
-                    </Button>
-                  )}
-                  {p.connectable && (p.account || (p.engine === 'codex' && p.available === true)) && (
-                    <Button size='sm' variant='ghost' className='text-muted-foreground' onClick={() => void disconnect(p)}>
-                      Disconnect
-                    </Button>
-                  )}
-                  {p.connectable && (
-                    <Button size='sm' variant={connected(p) ? 'outline' : 'default'} onClick={() => setConnecting(p)}>
-                      {connected(p) ? 'Reconnect' : 'Connect'}
-                    </Button>
-                  )}
-                </div>
-              </li>
+              <NameCell
+                primary={ENGINE_LABEL[p.engine] ?? p.engine}
+                secondary={isDefault && !connected(p) ? 'Its runs fail until it is connected' : p.name}
+                badge={isDefault ? { label: 'Default', variant: 'accent' } : null}
+              />
             )
-          })}
-        </ul>
-      )}
-      {data?.enabled && choosable && (
-        <p className='text-label text-muted-foreground'>
-          {chosen ? (
-            <>
-              Default: <code>{chosen.name}</code>
-              {!connected(chosen) && <span className='text-warning'> (not connected: its runs fail until it is)</span>}.{' '}
-              <button type='button' disabled={saving} className='underline underline-offset-2 hover:text-text' onClick={() => void chooseDefault(null)}>
-                Clear
-              </button>
-            </>
-          ) : (
-            'No default chosen: Claude is used first.'
-          )}
-        </p>
-      )}
+          },
+        }}
+        columns={[
+          { key: 'status', label: 'Status', width: 150, render: (p) => <ProfileStatus profile={p} /> },
+          { key: 'connected', label: 'Connected', width: 112, priority: 2, render: (p) => <span className='text-muted-foreground'>{p.account ? relativeTime(p.account.connectedAt) : ''}</span> },
+          { key: 'expires', label: 'Expires', width: 104, priority: 3, render: (p) => <span className='text-muted-foreground'>{p.account ? dateOnly(p.account.expiresAt) : ''}</span> },
+        ]}
+        rowActions={(p) => {
+          const isDefault = chosen?.name === p.name
+          // Connect, Reconnect and the rest share the row's one menu: the action slot is 64px.
+          const items: ActionMenuItem[] = [
+            ...(p.connectable ? [{ label: connected(p) ? 'Reconnect' : 'Connect', onSelect: () => setConnecting(p) }] : []),
+            ...(choosable && connected(p) && !isDefault ? [{ label: 'Use as default', disabled: saving, onSelect: () => void chooseDefault(p) }] : []),
+            ...(isDefault && choosable ? [{ label: 'Clear default', disabled: saving, onSelect: () => void chooseDefault(null) }] : []),
+            ...(p.connectable && (p.account || (p.engine === 'codex' && p.available === true))
+              ? [{ label: 'Disconnect', danger: true, onSelect: () => void disconnect(p) }]
+              : []),
+          ]
+          return items.length > 0 ? <ActionMenu size='sm' label={`Actions for ${p.name}`} items={items} /> : null
+        }}
+      />
       <AccountConnectDialog
         client={agentClient}
         profile={connecting?.name}
@@ -179,6 +151,14 @@ export function AgentAccountsPanel({ user, isAgent }: { user: User; isAgent: boo
           notifyAgentAccountsChanged()
         }}
       />
-    </section>
+    </>
   )
+}
+
+/** One profile's state as a badge: connected, signed in on the host, or not. */
+function ProfileStatus({ profile: p }: { profile: AccountProfile }) {
+  if (p.account) return <Badge variant='success'>Connected</Badge>
+  if (p.available === true) return <Badge variant='success'>{p.connectable ? 'Signed in' : 'Signed in on the Box host'}</Badge>
+  if (!p.connectable) return <Badge variant='neutral' title='Sign in on the Box host'>Not signed in</Badge>
+  return <Badge variant='warning'>Not connected</Badge>
 }

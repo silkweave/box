@@ -10,7 +10,7 @@
 
 import { HttpException } from '@nestjs/common'
 import { isStreamingAction, SilkweaveError, type Action } from '@silkweave/core'
-import { AreaAccessError, bindStream, freshRequestFrame, runInRequest } from '@silkweave/box-core'
+import { AreaAccessError, bindStream, freshRequestFrame, runInFrame } from '@silkweave/box-core'
 
 /** The message of a Nest exception, as the adapters word it. */
 function messageOf(e: HttpException): string {
@@ -58,7 +58,10 @@ function callerGone(context: unknown): { signal: AbortSignal | undefined; releas
 }
 
 /** `action` with its `run` opening a fresh request frame per call. */
-export function withCallContext<A extends Action>(action: A): A {
+/** Who opened a call's frame: `mcp` for the `/mcp` adapter (core mcp-auth.ts `isMcpCall`). */
+export interface CallContextOptions { transport?: 'mcp' }
+
+export function withCallContext<A extends Action>(action: A, options: CallContextOptions = {}): A {
   const run = action.run as (input: unknown, context: unknown) => unknown
   if (isStreamingAction(action)) {
     // An async generator function itself: adapters tell a stream by `run`'s constructor.
@@ -66,7 +69,7 @@ export function withCallContext<A extends Action>(action: A): A {
       ...action,
       run: async function* (input: unknown, context: unknown) {
         const gone = callerGone(context)
-        const frame = freshRequestFrame()
+        const frame = freshRequestFrame(options)
         if (gone.signal && frame.kind === 'request') frame.holder.closed = gone.signal
         try {
           yield* bindStream(frame, () => run(input, context) as AsyncIterable<unknown>)
@@ -82,7 +85,7 @@ export function withCallContext<A extends Action>(action: A): A {
     ...action,
     run: async (input: unknown, context: unknown) => {
       try {
-        return await runInRequest(() => run(input, context))
+        return await runInFrame(freshRequestFrame(options), () => run(input, context))
       } catch (e) {
         throw asRefusal(e)
       }
@@ -95,9 +98,9 @@ interface RegisteringAdapter<Args extends { actions: Action[] }> {
 }
 
 /** An adapter whose actions each run in their own request frame. */
-export function withCallContexts<Args extends { actions: Action[] }, T extends RegisteringAdapter<Args>>(adapter: T): T {
+export function withCallContexts<Args extends { actions: Action[] }, T extends RegisteringAdapter<Args>>(adapter: T, options: CallContextOptions = {}): T {
   return {
     ...adapter,
-    register: (args: Args) => adapter.register({ ...args, actions: args.actions.map(withCallContext) }),
+    register: (args: Args) => adapter.register({ ...args, actions: args.actions.map((action) => withCallContext(action, options)) }),
   }
 }

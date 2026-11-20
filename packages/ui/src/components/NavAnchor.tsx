@@ -21,6 +21,9 @@ export type NavAnchorProps = Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>,
  * app's `<Link>`; instead it draws `<a href>` and hands a plain click to the caller's handler (which
  * navigates client-side), while Cmd/Ctrl/Shift/middle click keep the browser's own behaviour of
  * opening the URL in a new tab or window. Without an `href` it falls back to a button.
+ * Use it for kit controls that lead somewhere: a crumb, a nav row, a feed headline. Not for an act
+ * that changes data (`Button`); inside the app, the router's own `<Link>` is the better choice.
+ * Rule: with a `target` set, the handler never runs and the browser follows the link.
  */
 export function NavAnchor({ href, onClick, children, ...rest }: NavAnchorProps) {
   if (href == null) {

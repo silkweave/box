@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from 'react'
-import type { AvatarUser } from './types.ts'
+import { userName, type AvatarUser } from './types.ts'
 
 /**
  * The users directory seam.
@@ -22,6 +22,13 @@ import type { AvatarUser } from './types.ts'
  */
 const UsersContext = createContext<readonly AvatarUser[] | null>(null)
 
+/**
+ * The users directory seam: the app fills it once at its root, and `UserChip`, `UserPicker`,
+ * `AccountMenu` and the person filter read it.
+ * Not for passing users to one component you render yourself (a prop is plainer).
+ * Rule: pass `null` while loading and `[]` only for a Box with no users; pickers show their empty
+ * hint for `[]` alone.
+ */
 export function UsersProvider({
   users,
   children,
@@ -41,4 +48,21 @@ export function useUser(id: string | null | undefined): AvatarUser | null {
   const users = useUsers()
   if (!id) return null
   return users?.find((u) => u.id === id) ?? null
+}
+
+/**
+ * A resolver from a user id to the text a person is shown as: the full name, or the raw id when the
+ * id is not in the directory (a deleted person, an outside actor).
+ *
+ * Use it for: a list's `searchText` and filter labels, so search matches the name the row shows,
+ * and for plain-text places (a confirm message, an aria-label).
+ * Not for drawing a person in a cell (use `UserChip` with `showName`, which uses the same text).
+ */
+export function usePersonName(): (id: string | null | undefined) => string {
+  const users = useUsers()
+  return (id) => {
+    if (!id) return ''
+    const u = users?.find((x) => x.id === id)
+    return u ? userName(u) : id
+  }
 }

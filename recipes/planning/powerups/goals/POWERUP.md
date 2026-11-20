@@ -160,18 +160,18 @@ goal; a `goal-value-set` on a signal the goal does not own or that a tracker com
   `goal_ids`) and the doc. The goal's status select sits in the top bar, as on an initiative.
   `GoalsLayout` is the shell with a sidebar of cycles.
 - **Nav**: `Goals` (icon `Goal`, order 200), first in the Operations section.
-- **The goal dialog** (`GoalDialog`) sets the title, the target (none; a number typed in, which
+- **The goal form** (`components/goalForm.tsx`) is shared by New goal (a dialog at `#new` over the goals overview or a cycle's page, which preselects that cycle; `GoalCreateForm`, rendered by `GoalsIndex`) and the edit dialog (`GoalDialog`, edit only). It sets the title, the target (none; a number typed in, which
   creates the goal's manual own signal with an optional unit; an existing signal; or a Box
   tracker from `signalsTrackers` with a field per parameter, `since` left to the goal's start),
   kind, target or bound, baseline, window, cycle, and owner. The status is set in the goal page's
-  top bar, not in the dialog.
+  top bar, not in the form. A new cycle is made in the New cycle dialog over the overview (`/goals#new-cycle`, `CycleCreateForm`); `CycleDialog` edits a cycle's window only. A new goal's id is the slug of its title, with a `-2` suffix (then `-3`) when taken.
 - **Inline value entry** (`GoalValueEntry`): a goal measuring its own manual signal takes one
   number, written as today's point through `goalsValueSet`. It shows on goal cards, the goal rows
   of an initiative page and the goal page; any other goal reads its signal.
 - **On the initiative page**: a foldable **Goals** section below Tasks with each linked goal's card;
   the heading's icon button opens a checklist of goals (`GoalPicker`). The fold sticks per browser.
 - **On the Initiatives board**: an optional goals column (`GoalsCell`, the goals it contributes to
-  with their health), on by default, and the seeded "Growth" preset. `InitiativeDialog` has a goals
+  with their health), on by default, and the seeded "Growth" preset. The New initiative dialog (`/initiatives#new`) has a goals
   field.
 - **The cycle actions slot**: `planning.cycle.actions` (`CYCLE_ACTIONS_SLOT` in
   `components/CycleBoardNote.tsx`) holds a cycle page's extra actions. Without the cycle-board

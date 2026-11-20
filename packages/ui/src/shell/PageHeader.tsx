@@ -6,6 +6,9 @@ import { cn } from '../lib/utils.ts'
  * title line). Every section canvas opens with this - item-detail views (a task, a ticket)
  * keep their own richer title blocks, but anything that is "an h1 + a blurb (+ buttons)" uses
  * this instead of hand-rolled markup.
+ * Not for Settings (the pane's title bar and the `SettingsPage` breadcrumb are the title; a record
+ * with more identity than its name gets `SettingsDetailHeader`) or a grid page whose top bar crumb
+ * already names it. Rule: never hand-write a page `<h1>`; this is the one.
  */
 export function PageHeader({
   title,

@@ -26,11 +26,9 @@
 //   bun run typegen --check   fail if the generated file is not already up to date (CI / pre-commit);
 //                          the file is restored, so a --check run never dirties the tree.
 //   bun run typegen --quiet   drop Nest's WARN level. The silkweave adapter warns once per procedure
-//                          whose output it could only reflect one level deep (~50 lines, constant,
-//                          nothing to act on today). `prepare` and `box verify` use this mode: a
-//                          fresh clone or a successful verification run greeting someone with 200+
-//                          yellow WARNs teaches them to stop reading the output. Direct
-//                          `bun run typegen` remains verbose when working on output precision.
+//                          whose output it could only reflect one level deep (fix: a Zod
+//                          `@Trpc({ output })`). `prepare` and `box verify` use this mode; direct
+//                          `bun run typegen` stays verbose, so a new warning shows there.
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'

@@ -74,7 +74,11 @@ export function createDataStore<T>(fetcher: () => Promise<T>): DataStore<T> {
     const [error, setError] = useState<string | null>(null)
     useEffect(() => {
       if (!enabled) return
-      const sync = (): void => setData(clone(cache))
+      // Data arriving (a Retry, a change-feed reload) also ends an earlier failure.
+      const sync = (): void => {
+        setData(clone(cache))
+        setError(null)
+      }
       listeners.add(sync)
       load()
         .then(sync)

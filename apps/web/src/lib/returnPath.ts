@@ -38,3 +38,13 @@ export function followReturnPath(): boolean {
   window.location.replace(target)
   return true
 }
+
+/**
+ * Remember a client route to return to after signing in, for a sign-in that may leave this URL (a
+ * sign-in link opened in the same tab). MCP sign-in's consent page (`/connect?request=`) uses it
+ * while signed out.
+ */
+export function rememberReturnPath(path: string): void {
+  const safe = safeReturnPath(path)
+  if (safe) store()?.setItem(KEY, safe)
+}

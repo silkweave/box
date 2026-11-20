@@ -385,9 +385,13 @@ async function reresolveFrameAccess(): Promise<void> {
   const holder = scope.kind === 'system' ? scope.requester?.holder ?? null : requestHolder()
   const principal = holder?.principal
   if (!holder || !principal) return
-  const { resolvePrincipalById } = await import('../../auth/principal.js')
+  const { resolvePrincipalById, resolveDelegatedPrincipal } = await import('../../auth/principal.js')
   const { accessOf } = await import('../../auth/access.js')
-  const fresh = await resolvePrincipalById(principal.id)
+  // A delegated credential holds only at the epoch it was checked against (MCP sign-in): a moved
+  // epoch is a different incarnation of the person, never the same principal with a new role.
+  const fresh = principal.authEpoch === undefined
+    ? await resolvePrincipalById(principal.id)
+    : await resolveDelegatedPrincipal(principal.id).then((d) => (d && d.epoch === principal.authEpoch ? d.principal : null))
   if (!fresh || fresh.kind !== principal.kind) {
     holder.principal = undefined
     holder.access = undefined

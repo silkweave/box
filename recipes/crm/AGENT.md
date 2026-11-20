@@ -89,9 +89,9 @@ box dev
 ```
 
 - `http://localhost:8190/crm` - the accounts board. Empty is fine on a fresh Box. **New account**
-  writes a row; the sidebar shows the saved views and (once you open one) recent accounts.
+  opens a dialog (`/crm#new`) and writes a row; the sidebar shows the saved views and (once you open one) recent accounts.
 - `http://localhost:8190/crm/deals` - the Deals board, where a deal card drags between stage
-  columns (drag one to Won and its lead account becomes a customer); **New deal** starts one at an
+  columns (drag one to Won and its lead account becomes a customer); **New deal** (a dialog, `/crm/deals#new`) starts one at an
   existing account, and the List layout shows every deal with its value and odds.
 - `http://localhost:8190/crm/contacts` - every person at every account; a row opens its account.
 - `http://localhost:8190/crm/<account-id>` - the detail page: the summary strip, **Add deal** and a

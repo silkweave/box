@@ -3,6 +3,14 @@ import { Select as SelectPrimitive } from '@base-ui/react/select'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { type FunctionComponent } from 'react'
 
+/**
+ * The select parts (base-ui): `Select`, `SelectTrigger`, `SelectValue`, `SelectContent`,
+ * `SelectItem`, `SelectItemText`.
+ * Use them only when the trigger or the items need custom content: an avatar or icon and a hint per
+ * item, a trigger that is not a form field.
+ * Not for an ordinary choice from a list: `SelectField` is the default (options as data, sized like
+ * the inputs, groups built in). Never a native `<select>`.
+ */
 export const Select = SelectPrimitive.Root
 /** The trigger's value, centred on the trigger's line: a block wrapper would leave room below the
  *  baseline and sit an icon-and-label value a pixel high. */
@@ -10,16 +18,18 @@ export const SelectValue: FunctionComponent<SelectPrimitive.Value.Props> = ({ cl
   <SelectPrimitive.Value className={(state) => cn('flex min-w-0 items-center', typeof className === 'function' ? className(state) : className)} {...props} />
 )
 
+/** The select trigger's look, shared with the searchable `SelectField` whose trigger opens a popover. */
+export const SELECT_TRIGGER = cn(
+  'inline-flex h-8 items-center justify-between gap-1.5 rounded-md border border-border bg-bg px-2.5 text-body-sm text-text',
+  'transition-colors outline-none hover:border-accent/40 focus-visible:border-ring data-popup-open:border-accent/60',
+  'disabled:pointer-events-none disabled:opacity-50',
+)
+
 export const SelectTrigger: FunctionComponent<SelectPrimitive.Trigger.Props> = ({ className, children, ...props }) => {
   return (
     <SelectPrimitive.Trigger
       data-slot='select-trigger'
-      className={cn(
-        'inline-flex h-8 items-center justify-between gap-1.5 rounded-md border border-border bg-bg px-2.5 text-body-sm text-text',
-        'transition-colors outline-none hover:border-accent/40 focus-visible:border-ring data-popup-open:border-accent/60',
-        'disabled:pointer-events-none disabled:opacity-50',
-        className,
-      )}
+      className={cn(SELECT_TRIGGER, className)}
       {...props}>
       {children}
       <SelectPrimitive.Icon className='text-muted-foreground'>

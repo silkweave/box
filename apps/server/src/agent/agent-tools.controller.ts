@@ -4,18 +4,18 @@ import { IsArray, IsOptional, IsString } from 'class-validator'
 import { Trpc } from '@silkweave/nestjs'
 import { deleteAgentToolset, readAgentTools, saveAgentToolset, type AgentToolsSettings } from '@silkweave/box-core'
 import { AuthGuard } from '../auth/auth.guard.js'
-import { Admin, type PrincipalRequest, Read } from '../auth/auth.decorators.js'
+import { Admin, Authenticated, type PrincipalRequest, Read } from '../auth/auth.decorators.js'
 import { inputError } from '../auth/input-error.js'
 
 // Agent tools (core agent-tools.ts): the toolsets that chat rooms and agent triggers grant to their
-// sessions, and the connections (the mcp recipe's) a toolset can attach. tRPC only, never MCP, and refused for the agent principal:
-// a session must not be able to widen its own grant.
+// sessions, and the servers (the mcp recipe's) a toolset can attach. tRPC only, never MCP, and refused for the agent principal:
+// a session must not be able to widen its own grant. People read; administrators change.
 
 class AgentToolsetInputDto {
   @ApiProperty({ description: 'Toolset id (lowercase slug)' }) @IsString() id!: string
   @ApiProperty({ required: false }) @IsOptional() @IsString() label?: string
   @ApiProperty({ required: false }) @IsOptional() @IsString() description?: string
-  @ApiProperty({ required: false, type: [String], description: 'Connection ids (the mcp recipe)' }) @IsOptional() @IsArray() @IsString({ each: true }) servers?: string[]
+  @ApiProperty({ required: false, type: [String], description: 'Server ids (the mcp recipe)' }) @IsOptional() @IsArray() @IsString({ each: true }) servers?: string[]
   @ApiProperty({ required: false, type: [String], description: 'MCP tools that run without approval' }) @IsOptional() @IsArray() @IsString({ each: true }) allow?: string[]
   @ApiProperty({ required: false, type: [String], description: 'Tools the session never gets' }) @IsOptional() @IsArray() @IsString({ each: true }) deny?: string[]
 }
@@ -39,12 +39,15 @@ async function attempt<T>(work: () => T | Promise<T>): Promise<T> {
 @Controller('agent-tools')
 @UseGuards(AuthGuard)
 export class AgentToolsController {
+  // Every person may read the toolsets (Settings shows them read-only to members); only an
+  // administrator changes them. No secrets here: ids, labels and tool names.
   @Get()
   @ApiOkResponse()
   @Trpc()
-  @Admin()
+  @Authenticated()
   @Read()
-  list(): AgentToolsSettings {
+  list(@Req() req: PrincipalRequest): AgentToolsSettings {
+    humanOnly(req)
     return readAgentTools()
   }
 

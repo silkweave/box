@@ -1,10 +1,10 @@
 // Coverage (PERMISSIONS 5.4, decision B): whether a reader may see what an agent produced. The
 // reader covers the agent when, on every area, the reader's level is at least the agent's (on the
 // destination's own area, when the destination is an area's readers, read is enough); an agent
-// with admin authority is read only by admins; and for every outside MCP connection the agent can
-// use where its output lands (its toolset's connections there), the reader is in that connection's
-// audience. Agent principals have no connections of their own (mcp-connections.ts `personal`), so
-// the connections always come from the destination's toolset.
+// with admin authority is read only by admins; and for every outside MCP server the agent can
+// use where its output lands (its toolset's servers there), the reader is in that server's
+// audience. Agent principals have no servers of their own (mcp-servers.ts `personal`), so
+// the servers always come from the destination's toolset.
 //
 // Reader and agent are judged at one generation (BOX-Review d613f4e finding 4): the agent's role is
 // read at the reader's access generation, and a definition that generation does not hold fails
@@ -15,15 +15,15 @@ import type { AccessLevel } from './levels.js'
 import { resolvePrincipalWithRevision } from './principal.js'
 import { accessForRoleAt, knownAreas } from './roles.js'
 import { policyRevision } from './policy-revision.js'
-import { mcpConnectionAudienceIncludes } from '../mcp-connections.js'
+import { mcpServerAudienceIncludes } from '../mcp-servers.js'
 
 /** One reason a reader does not cover an agent. */
 export type CoverageGap =
   | { kind: 'area'; area: string; needed: AccessLevel; held: AccessLevel }
   | { kind: 'admin' }
-  | { kind: 'connection'; connection: string }
+  | { kind: 'server'; server: string }
 
-/** A reader as coverage judges it: who (for connection audiences) and with what access. */
+/** A reader as coverage judges it: who (for server audiences) and with what access. */
 export interface CoverageReader {
   id: string
   kind: string
@@ -46,11 +46,11 @@ function neededLevel(area: string, agentLevel: AccessLevel, opts: CoverageOption
 }
 
 /**
- * Every reason `reader` does not cover an agent with `agent` access that can use `connections`
+ * Every reason `reader` does not cover an agent with `agent` access that can use `servers`
  * where its output lands; empty when the reader covers it. Areas in `knownAreas()` order, then
- * admin authority, then connections in the order given.
+ * admin authority, then servers in the order given.
  */
-export function coverageGaps(reader: CoverageReader, agent: Access, connections: readonly string[] = [], opts: CoverageOptions = {}): CoverageGap[] {
+export function coverageGaps(reader: CoverageReader, agent: Access, servers: readonly string[] = [], opts: CoverageOptions = {}): CoverageGap[] {
   const gaps: CoverageGap[] = []
   for (const area of knownAreas()) {
     const needed = neededLevel(area, levelOf(agent, area), opts)
@@ -58,28 +58,28 @@ export function coverageGaps(reader: CoverageReader, agent: Access, connections:
     if (!levelCovers(held, needed)) gaps.push({ kind: 'area', area, needed, held })
   }
   if (agent.admin && !reader.access.admin) gaps.push({ kind: 'admin' })
-  for (const connection of new Set(connections)) {
-    if (!mcpConnectionAudienceIncludes(connection, { id: reader.id, kind: reader.kind, admin: reader.access.admin })) gaps.push({ kind: 'connection', connection })
+  for (const server of new Set(servers)) {
+    if (!mcpServerAudienceIncludes(server, { id: reader.id, kind: reader.kind, admin: reader.access.admin })) gaps.push({ kind: 'server', server })
   }
   return gaps
 }
 
 /** Whether `reader` covers the agent (no gap). */
-export function covers(reader: CoverageReader, agent: Access, connections: readonly string[] = [], opts: CoverageOptions = {}): boolean {
-  return coverageGaps(reader, agent, connections, opts).length === 0
+export function covers(reader: CoverageReader, agent: Access, servers: readonly string[] = [], opts: CoverageOptions = {}): boolean {
+  return coverageGaps(reader, agent, servers, opts).length === 0
 }
 
-/** Whether `reader` covers `agent` on areas and admin authority (no connections at the destination). */
+/** Whether `reader` covers `agent` on areas and admin authority (no servers at the destination). */
 export function coversAccess(reader: Access, agent: Access): boolean {
   if (agent.admin && !reader.admin) return false
   return knownAreas().every((a) => levelCovers(levelOf(reader, a), levelOf(agent, a)))
 }
 
-/** A gap in words: "crm write", "admin authority", "the stripe connection". */
+/** A gap in words: "crm write", "admin authority", "the stripe MCP server". */
 export function describeGap(gap: CoverageGap): string {
   if (gap.kind === 'area') return `${gap.area} ${gap.needed}`
   if (gap.kind === 'admin') return 'admin authority'
-  return `the ${gap.connection} connection`
+  return `the ${gap.server} MCP server`
 }
 
 /**

@@ -25,6 +25,10 @@ export function useTopBarSlot(): { ref: (el: HTMLDivElement | null) => void; nod
   return { ref: setNode, node }
 }
 
+/**
+ * AppShell's side of the wire: hands the bar's action and centre slots to the views below.
+ * `AppShell` renders it; an app needs it only in a custom shell.
+ */
 export function TopBarSlotProvider({
   node,
   centerNode,
@@ -45,6 +49,8 @@ export function TopBarSlotProvider({
  * Render this view's primary actions into the top bar. Renders nothing on the first pass (the slot
  * element does not exist yet) and portals from the second - one extra frame, invisible, and the
  * alternative is a ref that never tells anybody it was filled in.
+ * Use it for a view's create actions, at most two, the primary last. Not inside a settings section
+ * (`SettingsHeaderActions` puts actions in the pane's title bar).
  */
 export function TopBarActions({ children }: { children: ReactNode }) {
   const node = useContext(SlotContext)

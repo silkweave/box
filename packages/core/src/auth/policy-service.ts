@@ -13,7 +13,7 @@
 //   resumes an unfinished entry (or rolls it back when its target no longer exists).
 // - Destinations come from coverage providers that features register (chat's rooms, the artifacts'
 //   area destinations): a reader set (member ids, or everyone with read on an area) and the
-//   agents that write there with the connections they can use there.
+//   agents that write there with the servers they can use there.
 //
 // A preview reports only the violations a change would add, including a tuple that was already
 // broken whose gaps grow; what already broke (agent config edited by hand) is found by the boot
@@ -22,7 +22,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { configuredAgents } from '../agents.js'
-import { toolsetConnections, toolsetEntry, toolsetEntryServers, writeToolsetEntry } from '../agent-tools.js'
+import { toolsetServers, toolsetEntry, toolsetEntryServers, writeToolsetEntry } from '../agent-tools.js'
 import { systemUserId } from '../box-config.js'
 import { policyCommand, policyRead, withAgentsLock, type PolicyTx } from '../warehouse/pg/boot.js'
 import { levelCovers, levelOf, type Access } from './access.js'
@@ -102,10 +102,10 @@ function accessOfRole(world: World, role: string): Access {
   return { role, areas: new Map(Object.entries(def.areas)), fallback: def.default, admin: role === 'admin', revision: 0 }
 }
 
-function connectionsIn(world: World, toolset: string | null | undefined): string[] {
+function serversIn(world: World, toolset: string | null | undefined): string[] {
   if (!toolset) return []
   if (Object.prototype.hasOwnProperty.call(world.toolsets, toolset)) return toolsetEntryServers(world.toolsets[toolset] ?? null)
-  return toolsetConnections(toolset)
+  return toolsetServers(toolset)
 }
 
 async function worldIn(tx: PolicyTx, change: PolicyChange): Promise<World> {
@@ -139,7 +139,7 @@ async function worldIn(tx: PolicyTx, change: PolicyChange): Promise<World> {
 function contextOf(world: World): CoverageContext {
   return {
     isAgent: (id) => world.agents.has(id) && ELIGIBLE.has(world.users.get(id)?.status ?? 'active'),
-    connections: (toolset) => connectionsIn(world, toolset),
+    servers: (toolset) => serversIn(world, toolset),
   }
 }
 
@@ -167,7 +167,7 @@ function violationsIn(world: World, destinations: readonly CoverageDestination[]
       const agentAccess = accessOfRole(world, role)
       for (const reader of readers) {
         const readerRole = reader.role ?? 'member'
-        const gaps = coverageGaps({ id: reader.id, kind: 'human', access: accessOfRole(world, readerRole) }, agentAccess, agent.connections, areaOf(d.readers))
+        const gaps = coverageGaps({ id: reader.id, kind: 'human', access: accessOfRole(world, readerRole) }, agentAccess, agent.servers, areaOf(d.readers))
         if (gaps.length === 0) continue
         out.push({ destination: d.key, label: d.label, reader: reader.id, readerRole, agent: agent.id, gaps, removable: d.readers.kind === 'members' && !joining.has(reader.id) })
       }
@@ -188,7 +188,7 @@ const keyOf = (v: CoverageViolation) => `${v.destination}\u0000${v.reader}\u0000
 /** Whether `gap` is missing from, or worse than anything in, the gaps a tuple already had. */
 function gapIsNew(gap: CoverageGap, had: readonly CoverageGap[]): boolean {
   if (gap.kind === 'admin') return !had.some((g) => g.kind === 'admin')
-  if (gap.kind === 'connection') return !had.some((g) => g.kind === 'connection' && g.connection === gap.connection)
+  if (gap.kind === 'server') return !had.some((g) => g.kind === 'server' && g.server === gap.server)
   const was = had.find((g): g is Extract<CoverageGap, { kind: 'area' }> => g.kind === 'area' && g.area === gap.area)
   return !was || !levelCovers(was.needed, gap.needed) || !levelCovers(gap.held, was.held)
 }
@@ -196,7 +196,7 @@ function gapIsNew(gap: CoverageGap, had: readonly CoverageGap[]): boolean {
 /**
  * The violations `change` would add (those the current policy already has are not its doing): a new
  * destination, reader and agent tuple, or an already broken tuple whose gaps grow (a further area,
- * a higher level needed, less held, another connection).
+ * a higher level needed, less held, another server).
  */
 async function newViolations(tx: PolicyTx, change: PolicyChange): Promise<CoverageViolation[]> {
   const before = await worldIn(tx, {})
@@ -608,11 +608,11 @@ export async function checkCoverageAtBoot(): Promise<CoverageCheck> {
 // ---- Write-time checks (PERMISSIONS 7.2 "every live output write checks its destination") ----
 
 /**
- * Who of `readers` would not cover agent `agentId` (with `connections` at the destination), judged
+ * Who of `readers` would not cover agent `agentId` (with `servers` at the destination), judged
  * now at one committed policy generation. An agent that does not resolve covers nobody: one entry
  * with reader '' and no gaps.
  */
-export async function destinationViolations(label: string, readers: DestinationReaders, agentId: string, connections: readonly string[] = []): Promise<CoverageViolation[]> {
+export async function destinationViolations(label: string, readers: DestinationReaders, agentId: string, servers: readonly string[] = []): Promise<CoverageViolation[]> {
   const all = await activeRecipients()
   const agent = all.find((r) => r.principal.id === agentId)
   if (!agent || !agent.access) return [{ destination: label, label, reader: '', readerRole: '', agent: agentId, gaps: [], removable: false }]
@@ -623,15 +623,15 @@ export async function destinationViolations(label: string, readers: DestinationR
     if (r.principal.kind !== 'human' || !r.access) continue
     if (members && !members.has(r.principal.id)) continue
     if (area && !levelCovers(levelOf(r.access, area), 'read')) continue
-    const gaps = coverageGaps({ id: r.principal.id, kind: 'human', access: r.access }, agent.access, connections, areaOf(readers))
+    const gaps = coverageGaps({ id: r.principal.id, kind: 'human', access: r.access }, agent.access, servers, areaOf(readers))
     if (gaps.length) out.push({ destination: label, label, reader: r.principal.id, readerRole: r.principal.role, agent: agentId, gaps, removable: false })
   }
   return out
 }
 
 /** The refusal for an agent's write to a destination whose readers it does not cover, or null. */
-export async function destinationWriteProblem(label: string, readers: DestinationReaders, agentId: string, connections: readonly string[] = []): Promise<string | null> {
-  const violations = await destinationViolations(label, readers, agentId, connections)
+export async function destinationWriteProblem(label: string, readers: DestinationReaders, agentId: string, servers: readonly string[] = []): Promise<string | null> {
+  const violations = await destinationViolations(label, readers, agentId, servers)
   if (violations.length === 0) return null
   if (violations[0]!.reader === '') return `${agentId} is not an active agent`
   const messages = await describeViolations(violations)
@@ -642,34 +642,34 @@ export async function destinationWriteProblem(label: string, readers: Destinatio
  * Why `readerId` may not read agent `agentId`'s output now, or null. A person is judged as a reader
  * (destinationWriteProblem); an agent as a relay (relayCoverageProblem).
  */
-export async function readerCoverageProblem(label: string, readerId: string, agentId: string, connections: readonly string[] = []): Promise<string | null> {
-  const relay = await relayCoverageProblem(label, readerId, agentId, connections)
+export async function readerCoverageProblem(label: string, readerId: string, agentId: string, servers: readonly string[] = []): Promise<string | null> {
+  const relay = await relayCoverageProblem(label, readerId, agentId, servers)
   if (relay !== undefined) return relay
-  return destinationWriteProblem(label, { kind: 'members', ids: [readerId] }, agentId, connections)
+  return destinationWriteProblem(label, { kind: 'members', ids: [readerId] }, agentId, servers)
 }
 
 /**
  * Why `reader` may not read the output of a delegated job (WikiAsk, WikiUpdate) run as `agentId`
- * with `connections` (its toolset's), or null. A person is judged as a reader, connections
- * included: they must be in each connection's audience. An agent relays the output into wherever
- * its session writes, and a connection audience of that destination's readers is only proven for
- * the connections the destination's toolset carries (coverage judges those against its readers).
- * So the agent must cover `agentId` on areas, and delegation adds no connection reach: every
- * connection of the job must be one of the reader session's toolset (`reader.toolset`; none for a
+ * with `servers` (its toolset's), or null. A person is judged as a reader, servers
+ * included: they must be in each server's audience. An agent relays the output into wherever
+ * its session writes, and a server audience of that destination's readers is only proven for
+ * the servers the destination's toolset carries (coverage judges those against its readers).
+ * So the agent must cover `agentId` on areas, and delegation adds no server reach: every
+ * server of the job must be one of the reader session's toolset (`reader.toolset`; none for a
  * call outside a session). `people: 'exempt'` passes a person (an update's report goes to whoever
  * sent the material).
  */
-export async function delegatedOutputProblem(label: string, reader: { id: string; toolset?: string | null }, agentId: string, connections: readonly string[], opts: { people?: 'judged' | 'exempt' } = {}): Promise<string | null> {
+export async function delegatedOutputProblem(label: string, reader: { id: string; toolset?: string | null }, agentId: string, servers: readonly string[], opts: { people?: 'judged' | 'exempt' } = {}): Promise<string | null> {
   const relay = await relayCoverageProblem(label, reader.id, agentId)
-  if (relay === undefined) return opts.people === 'exempt' ? null : destinationWriteProblem(label, { kind: 'members', ids: [reader.id] }, agentId, connections)
+  if (relay === undefined) return opts.people === 'exempt' ? null : destinationWriteProblem(label, { kind: 'members', ids: [reader.id] }, agentId, servers)
   // No exemption for the job's own principal: the same agent seated in a room reads through that
-  // room's session, whose readers were checked only for the room toolset's connections.
+  // room's session, whose readers were checked only for the room toolset's servers.
   if (relay !== null) return relay
-  const carried = new Set(toolsetConnections(reader.toolset))
-  const extra = [...new Set(connections)].filter((c) => !carried.has(c))
+  const carried = new Set(toolsetServers(reader.toolset))
+  const extra = [...new Set(servers)].filter((c) => !carried.has(c))
   if (extra.length === 0) return null
   const where = reader.toolset ? `its toolset ${reader.toolset}` : 'no toolset'
-  return `${reader.id} passes ${label} on to its own readers, and ${agentId}'s job can use ${extra.map((c) => `the ${c} connection`).join(', ')}, which ${reader.id}'s session (${where}) does not carry, so its readers were never checked against ${extra.length === 1 ? 'that audience' : 'those audiences'}`
+  return `${reader.id} passes ${label} on to its own readers, and ${agentId}'s job can use ${extra.map((c) => `the ${c} MCP server`).join(', ')}, which ${reader.id}'s session (${where}) does not carry, so its readers were never checked against ${extra.length === 1 ? 'that audience' : 'those audiences'}`
 }
 
 /**
@@ -678,7 +678,7 @@ export async function delegatedOutputProblem(label: string, reader: { id: string
  * who covers the relay then covers the source too. The refusal, or null when it covers it, or
  * undefined when `relayId` is a person (judged as a reader by the caller's own rule).
  */
-export async function relayCoverageProblem(label: string, relayId: string, agentId: string, connections: readonly string[] = []): Promise<string | null | undefined> {
+export async function relayCoverageProblem(label: string, relayId: string, agentId: string, servers: readonly string[] = []): Promise<string | null | undefined> {
   const all = await activeRecipients()
   const relay = all.find((r) => r.principal.id === relayId)
   if (!relay) return `${relayId} is not active`
@@ -687,7 +687,7 @@ export async function relayCoverageProblem(label: string, relayId: string, agent
   const agent = all.find((r) => r.principal.id === agentId)
   if (!agent?.access) return `${agentId} is not an active agent`
   if (!relay.access) return `${relayId} has no access at this policy generation`
-  const gaps = coverageGaps({ id: relayId, kind: relay.principal.kind, access: relay.access }, agent.access, connections)
+  const gaps = coverageGaps({ id: relayId, kind: relay.principal.kind, access: relay.access }, agent.access, servers)
   if (gaps.length === 0) return null
   const messages = await describeViolations([{ destination: label, label, reader: relayId, readerRole: relay.principal.role, agent: agentId, gaps, removable: false }])
   return `${relayId} passes ${label} on to its own readers, so it must cover ${agentId}: ${messages.join('; ')}`
@@ -707,10 +707,10 @@ export class DestinationCoverageError extends Error {
 }
 
 /** The refusal for agent `agentId` writing in area `area`, or null (not an area destination, or every reader covers it). */
-export async function areaDestinationProblem(area: string, agentId: string, connections: readonly string[] = []): Promise<string | null> {
+export async function areaDestinationProblem(area: string, agentId: string, servers: readonly string[] = []): Promise<string | null> {
   const label = areaDestinationLabel(area)
   if (!label) return null
-  return destinationWriteProblem(label, { kind: 'area', area }, agentId, connections)
+  return destinationWriteProblem(label, { kind: 'area', area }, agentId, servers)
 }
 
 /** Why a session serving `scope` as `agentId` may no longer run, or null. */

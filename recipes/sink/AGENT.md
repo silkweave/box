@@ -38,7 +38,7 @@ There is no vocabulary, no env and no table, so there is nothing else to migrate
 box dev
 ```
 
-Open `http://localhost:8190/sink`: the queue renders (empty is fine), **New** creates a file,
+Open `http://localhost:8190/sink`: the queue renders (empty is fine), **New** opens a dialog (`/sink#new`) and creates a file,
 typing autosaves, **Delete** removes it. Check `data/docs/sink/` afterwards - the file is
 really there. The feature's whole contract is that the folder and the view agree.
 

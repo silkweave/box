@@ -17,6 +17,12 @@ export interface RequestHolder {
   /** Aborts when the caller of a live stream goes away (a closed socket, a stopped subscription).
    *  A stream parked in a wait races it, so it releases its listeners at once. */
   closed?: AbortSignal
+  /** Set when the `/mcp` adapter's call wrapper opened this frame (server-side, never from the
+   *  caller): AuthGuard then resolves the call's token with the MCP resolver (mcp-auth.ts). */
+  transport?: 'mcp'
+  /** The caller's address (auth/security.ts `clientIp`), set by the HTTP transport when it opens
+   *  the frame, for rate limits and audit rows that run below the request (MCP sign-in). */
+  ip?: string
 }
 
 /**

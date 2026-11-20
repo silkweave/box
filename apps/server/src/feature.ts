@@ -3,6 +3,7 @@
 // See docs/core/SEAM.md for the runtime contracts and dependency direction.
 
 import type { Type } from '@nestjs/common'
+import type { McpAuthExtension } from '@silkweave/box-core'
 
 export interface ServerFeature {
   id: string
@@ -13,6 +14,11 @@ export interface ServerFeature {
    * diagnostics may name them. The id itself always counts.
    */
   routeRoots?: readonly string[]
+  /**
+   * OAuth sign-in for people's own MCP clients on `/mcp` (core mcp-auth.ts). At most one feature
+   * supplies it; read once while the app module builds the `/mcp` adapter.
+   */
+  mcpAuth?: () => McpAuthExtension
 }
 
 export function defineServerFeature<const T extends ServerFeature>(feature: T): T {

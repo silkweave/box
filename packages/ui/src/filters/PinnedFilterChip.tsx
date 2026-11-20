@@ -12,6 +12,13 @@ import { FilterEditor } from './editors.tsx'
 import { isActive, summarize } from './match.ts'
 import type { FilterField, FilterValue } from './types.ts'
 
+/**
+ * One filter field brought out of the funnel into the bar, as a chip with the field and its value
+ * ("Owner: Anna, Ben"). A click opens that field's editor; an active chip carries its own clear x.
+ * Use it through `BoardViewBar`, for the fields a preset pins.
+ * Not for a status label (`Badge`) or the full filter view (`FilterPanel`).
+ * `onChange(null)` clears the field.
+ */
 export function PinnedFilterChip({
   field,
   value,
@@ -30,7 +37,6 @@ export function PinnedFilterChip({
     <div className='inline-flex items-center'>
       <Popover>
         <PopoverTrigger
-          aria-label={`${field.title}: ${text}`}
           title={`${field.title}: ${text}`}
           className={cn(
             'inline-flex h-7 max-w-56 items-center gap-1 rounded-md border px-2 text-body-sm transition-colors',

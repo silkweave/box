@@ -88,7 +88,7 @@ captureReturnPath()
 // catch-all in prod (app.module.ts, whose `exclude` list is the contract) and Vite's SPA fallback
 // behind main.ts's dev proxy. The price is that the SPA now SHARES one URL namespace with the
 // server, which hash routing never did. A top-level client route may NOT collide with:
-//   - the reserved prefixes: /api, /trpc, /mcp, /agent (`RESERVED` in apps/server/src/main.ts and
+//   - the reserved prefixes: /api, /trpc, /mcp, /agent, /.well-known (`RESERVED` in apps/server/src/main.ts and
 //     the `exclude` list in app.module.ts are the two spellings of the same set);
 //   - a real file the SPA ships: /assets/* and everything under apps/web/public (/manifest.webmanifest,
 //     /push-icon.png, /apple-touch-icon.png, /app-icon-512.png);

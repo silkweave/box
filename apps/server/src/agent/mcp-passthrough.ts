@@ -14,7 +14,7 @@
 //    tool can never be shadowed.
 
 import type { Action } from '@silkweave/core'
-import { accessOf, authenticatePrincipal, levelCovers, levelOf, type Access, type Principal } from '@silkweave/box-core'
+import { accessOf, levelCovers, resolveMcpCredential, levelOf, type Access, type Principal } from '@silkweave/box-core'
 import { mcpToolPolicy, refusalFor } from '../auth/handler-map.js'
 
 export interface McpActionRequest {
@@ -64,11 +64,11 @@ export function passthroughOff(url: string): boolean {
   return new URLSearchParams(query).get('passthrough') === '0'
 }
 
-/** The bearer's principal, or null for a missing or invalid one. */
+/** The caller's principal (access or OAuth token, core mcp-auth.ts), or null for a missing or invalid one. */
 async function bearerPrincipal(headers: FilterRequest['headers']): Promise<Principal | null> {
   const authz = header(headers, 'authorization')
   if (!/^Bearer\s+/i.test(authz)) return null
-  return authenticatePrincipal(authz.replace(/^Bearer\s+/i, '').trim())
+  return (await resolveMcpCredential(authz.replace(/^Bearer\s+/i, '').trim()))?.principal ?? null
 }
 
 /** The `filterActions` option of core's `/mcp` adapter. */

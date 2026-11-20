@@ -34,10 +34,10 @@ part, unless that powerup is wanted.
 
 | Powerup | Files |
 |---|---|
-| goals | `core/goal-state.ts`, `core/goal-events.ts` and their tests; `server/planning/goals.controller.ts`; `web/goal-types.ts`, `web/lib/useGoalsData.ts`, `web/views/GoalsLayout.tsx`, `web/views/GoalsIndex.tsx`, `web/views/GoalDetailView.tsx`, `web/components/GoalCard.tsx`, `GoalDialog.tsx`, `CycleDialog.tsx`, `GoalSelect.tsx`, `GoalInitiatives.tsx`, `CycleBoardNote.tsx` |
+| goals | `core/goal-state.ts`, `core/goal-events.ts` and their tests; `server/planning/goals.controller.ts`; `web/goal-types.ts`, `web/lib/useGoalsData.ts`, `web/views/GoalsLayout.tsx`, `web/views/GoalsIndex.tsx`, `web/views/GoalDetailView.tsx`, `web/views/GoalCreateForm.tsx`, `web/views/CycleCreateForm.tsx`, `web/components/GoalCard.tsx`, `goalForm.tsx`, `GoalDialog.tsx`, `CycleDialog.tsx`, `GoalSelect.tsx`, `GoalInitiatives.tsx`, `CycleBoardNote.tsx` |
 | milestones | `web/components/milestone.tsx` (except `TaskMark`, which the base tree and grid use: keep it, for example in `components/rowParts.tsx`), `web/components/OutcomeCards.tsx` |
 | goals or milestones (keep with either) | `core/measure.ts` and `core/measure.test.ts`; the "target measurement" section of `core/types.ts`; `web/health.ts`; `web/components/HealthChip.tsx` |
-| sprints | `core/sprints.ts`, `core/sprints.test.ts`, `core/sprint-tasks.test.ts`; `web/sprint-types.ts`, `web/lib/useSprintsData.ts`, `web/views/SprintsLayout.tsx`, `SprintsIndex.tsx`, `SprintDetailView.tsx`, `web/components/sprint/` |
+| sprints | `core/sprints.ts`, `core/sprints.test.ts`, `core/sprint-tasks.test.ts`; `web/sprint-types.ts`, `web/lib/useSprintsData.ts`, `web/views/SprintsLayout.tsx`, `SprintsIndex.tsx`, `SprintDetailView.tsx`, `SprintCreateForm.tsx`, `web/components/sprint/` |
 | timeline | `web/components/InitiativesTimeline.tsx`, `web/lib/timeline.ts` |
 | cycle-board | `core/cycle-board/`, `server/cycle-board/`, `web/cycle-board/` |
 | mobile | `mobile/` |
@@ -139,7 +139,7 @@ Web:
   item line, `measure()`, the Kind, State, inherited dates and Measure lines (milestones); the
   Sprint line (sprints).
 - `web/components/cells.tsx`: `GoalsCell` and its imports (goals).
-- `web/components/InitiativeDialog.tsx`: the goals field (goals).
+- `web/views/InitiativeCreateForm.tsx`: the goals field (goals).
 - `web/components/RecordMenu.tsx`: `useGoalsData` (goals), the signals lookup for the measure line
   (milestones).
 - `web/components/status.tsx`: `GOAL_STATUS_UI`, `GoalStatusLabel`, `GoalStatusSelect` (goals).

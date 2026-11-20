@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { setDefaultMe } from '@silkweave/box-ui/filters'
 import { readStored, writeStored } from './usePersistedState.ts'
 import { useUsersData } from './useUsersData.ts'
 import type { User } from '../user-types.ts'
@@ -20,6 +21,9 @@ const emit = (): void => listeners.forEach((l) => l())
 
 /** The active users.id (or null) - for data-layer helpers stamping `actor` on mutations. */
 export const getActiveUserId = (): string | null => activeUserId
+
+// Every list's "Me" filter is the active person unless a list names its own.
+setDefaultMe(getActiveUserId)
 
 export function setActiveUser(id: string | null): void {
   activeUserId = id

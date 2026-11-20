@@ -77,7 +77,7 @@ with background work off and exercise the surface:
    type in the summary on the right.
 4. On the ticket page, edit the requester's phone to one another requester has: the panel offers
    the merge; keep one and the ticket follows. "All tickets from ..." opens the view filtered to
-   that requester. New ticket (the dialog from the top bar) with a known email offers the known requester instead of a second.
+   that requester. New ticket (the page from the top bar) with a known email offers the known requester instead of a second.
 5. Help Articles: create a draft article and a draft FAQ entry and publish both: `published_on`
    is today. Edit the article's body: `content_updated_on` is today; toggle Featured: it is not.
    Link the ticket to the article: the article's page counts it; deleting it is refused, retiring

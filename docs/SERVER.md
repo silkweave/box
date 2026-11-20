@@ -83,8 +83,8 @@ export class OpsController {
 - **Request context:** each tRPC and MCP action call runs in its own request frame
   (`auth/call-context.ts` wraps every action's `run`), and REST requests in the frame the first
   middleware opens; `AuthGuard` fills it.
-- **Connection endpoints:** `POST /mcp/connections/<id>` serves one connection's tools under their
-  upstream names to agent sessions (core port `mcp-connections.ts`, dispatched in `main.ts` with a
+- **MCP server endpoints:** `POST /mcp/servers/<id>` serves one outside MCP server's tools under their
+  upstream names to agent sessions (core port `mcp-servers.ts`, dispatched in `main.ts` with a
   bearer token, answered by the `mcp` recipe's relay; 404 without the recipe), over 2026-07-28 only.
 - **CLI:** `box <tool-name>` (`packages/cli/src/mcp-proxy.ts`) runs `@silkweave/mcp`'s `cliProxy` against
   a running server's `/mcp` - one subcommand per tool. Configure `mcp.url` and `mcp.token` in

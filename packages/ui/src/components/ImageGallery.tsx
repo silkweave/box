@@ -10,6 +10,8 @@ export interface GalleryImage {
 /**
  * One large image with previous/next controls and a thumbnail strip. Arrow keys move between
  * images while the gallery has focus. Renders nothing for an empty list.
+ * Use it for a record's set of screenshots or photos. Not for a single image (an `<img>`) or images
+ * inside a document (`DocEditor` media).
  */
 export function ImageGallery({ images, className }: { images: readonly GalleryImage[]; className?: string }) {
   const [index, setIndex] = useState(0)

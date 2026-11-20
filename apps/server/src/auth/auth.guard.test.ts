@@ -18,6 +18,9 @@ vi.mock('@silkweave/box-core', () => ({
   SESSION_COOKIE: 'box_session',
   parseCookies: (raw?: string) => (raw ? Object.fromEntries([raw.split('=')]) : {}),
   authenticatePrincipal: (...a: unknown[]) => authenticatePrincipal(...a),
+  // Not a call through the `/mcp` adapter (that path: mcp-auth.test.ts).
+  isMcpCall: () => false,
+  resolveMcpCredential: async () => { throw new Error('resolveMcpCredential outside /mcp') },
   resolvePrincipalById: (...a: unknown[]) => resolvePrincipalById(...a),
   verifySession: (...a: unknown[]) => verifySession(...a),
   // Built-ins write everywhere; `sales` reads crm only.
@@ -26,7 +29,7 @@ vi.mock('@silkweave/box-core', () => ({
     : { role: p.role, areas: new Map(), fallback: 'write', admin: p.role === 'admin', revision: 1 },
   fillRequest: () => true,
   areaDestinationProblem: (...a: unknown[]) => areaDestinationProblem(...a),
-  toolsetConnections: (toolset: string | null) => (toolset === 'crm-tools' ? ['stripe'] : []),
+  toolsetServers: (toolset: string | null) => (toolset === 'crm-tools' ? ['stripe'] : []),
   agentToolset: (id: string) => (id === 'crm-tools' ? { boxTools: null } : undefined),
   levelOf: (a: { areas: Map<string, string>; fallback: string }, area: string) => a.areas.get(area) ?? a.fallback,
   levelCovers: (held: string, needed: string) => ['none', 'read', 'write'].indexOf(held) >= ['none', 'read', 'write'].indexOf(needed),

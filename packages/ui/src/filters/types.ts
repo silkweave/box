@@ -27,6 +27,16 @@ export const PERSON_ME = 'me'
 /** The person field's value for "nobody". */
 export const PERSON_NONE = 'none'
 
+let defaultMe: () => string | null = () => null
+
+/** Set who `PERSON_ME` is when a list is given no `me` (the app sets the signed-in person). */
+export function setDefaultMe(me: () => string | null): void {
+  defaultMe = me
+}
+
+/** Who `PERSON_ME` is on the default (setDefaultMe): the signed-in person, or null before sign-in. */
+export const currentMe = (): string | null => defaultMe()
+
 /** `options`: any of these values. */
 export type OptionsFilterValue = readonly string[]
 /** `person`: any of these user ids, plus `PERSON_ME` and `PERSON_NONE`. */
@@ -71,7 +81,7 @@ export type FilterRowValue = string | readonly string[] | number | boolean | { d
 export interface FilterContext {
   /** Today, `YYYY-MM-DD`, on the clock the host reads dates on. */
   today: string
-  /** Who `PERSON_ME` is; without one it matches nobody. */
+  /** Who `PERSON_ME` is; without one it matches nobody. Lists default to `currentMe()`. */
   me?: string | null
 }
 
@@ -138,3 +148,17 @@ export type FilterField = OptionsField | PersonField | DateField | NumberField |
 
 /** The schema a list of fields implies. */
 export const schemaOf = (fields: readonly FilterField[]): FilterSchema => Object.fromEntries(fields.map((f) => [f.key, f.type]))
+
+/** Which way a sort runs. Split from the field it sorts by: fusing the two into one enum value is
+ *  what produces a sort called "Least recently contacted" with no way to ask it the other way. */
+export type SortDir = 'asc' | 'desc'
+
+/** One sort axis. The DIRECTION is a separate control, so an option names a field and nothing else -
+ *  "Last contact", not "Least recently contacted". */
+export interface SortOption extends FilterOption {
+  /** How this field reads when you switch to it: money and dates-of-record want the big end first,
+   *  names and deadlines want the small one. Defaults to ascending. */
+  defaultDir?: SortDir
+  /** This axis has no direction to speak of (manual order is whatever the drags left behind). */
+  undirected?: boolean
+}

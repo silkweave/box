@@ -72,10 +72,15 @@ const runGit = (root: string): Git => args => {
   return result.status === 0 ? result.stdout.trim() : null
 }
 
+const packageName = (root: string): unknown => {
+  try { return (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name?: unknown }).name } catch { return undefined }
+}
+
+/** Whether `root` is the Stack checkout (the developer's), named so; never a Box or a Builder session in one. */
+export const isStack = (root: string): boolean => packageName(root) === 'silkweave-stack'
+
 export function testScope(root: string, git: Git = runGit(root)): { scope: TestScope; reason: string } {
-  let name: unknown
-  try { name = (JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { name?: unknown }).name } catch { /* not a Box */ }
-  if (name !== 'silkweave-box') return { scope: 'full', reason: 'the Stack runs every test' }
+  if (packageName(root) !== 'silkweave-box') return { scope: 'full', reason: 'the Stack runs every test' }
   const upstream = git(['rev-parse', '--abbrev-ref', 'origin/HEAD'])
     ?? ['origin/master', 'origin/main', 'master', 'main'].find(ref => git(['rev-parse', '--verify', '--quiet', ref]) !== null)
     ?? null
@@ -89,16 +94,15 @@ export function testScope(root: string, git: Git = runGit(root)): { scope: TestS
   return { scope: 'box', reason: `core matches ${upstream}` }
 }
 
-export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun', { force = false, engine = 'pgrust' as VerifyEngine, scope = 'full' as TestScope } = {}): Task[] {
+export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun', { force = false, engine = 'pgrust' as VerifyEngine, scope = 'full' as TestScope, stack = false } = {}): Task[] {
   const definitions: [string, string, string, string[], string[]][] = [
     ['build', 'Build workspace', 'Build', ['build'], []],
     ['skills', 'Link skills', 'Prepare', ['skills'], ['build']],
     ['cli-tests', 'CLI tests', 'Prepare', ['test:cli'], ['build']],
     ['web-tests', 'Web tests', 'Prepare', ['test:web'], ['build']],
-    // The adapter currently reports every nested reflected DTO as `unknown` (212 procedures in
-    // the full Stack). Those are known type-precision debt, not run-specific verification
-    // findings. Keep direct `bun run typegen` verbose for schema work, but do not make every
-    // otherwise-clean verify permanently yellow.
+    // The adapter warns about a procedure whose nested DTO output reflects to `unknown` (fix: a Zod
+    // `@Trpc({ output })`). That is type-precision debt, not a verification failure, so verify runs
+    // typegen quietly; direct `bun run typegen` stays verbose for schema work.
     ['typegen', 'Generate types', 'Prepare', ['typegen', '--quiet'], ['build']],
     ['typecheck', 'Typecheck', 'Check', ['typecheck'], ['build', 'typegen']],
     ['lint', 'Lint', 'Check', ['lint'], ['build']],
@@ -109,6 +113,10 @@ export function verifyTasks(bun = process.versions.bun ? process.execPath : 'bun
     // the Flutter SDK is not installed. It needs nothing from the build, so it starts at once, and
     // skips a package whose inputs match its last passing check.
     ['mobile', 'Mobile app', 'Validate', ['test:mobile'], []],
+    // The kit's rendered gate (packages/ui/test/rendered): stories in headless Chromium, geometry
+    // and reviewed screenshots. The Stack's developer check only: a Box, and a Builder session in
+    // one, has no browser to run it in and no reason to re-check the kit it received.
+    ...(stack ? [['rendered', 'Rendered UI', 'Validate', ['test:rendered'], ['build']] as [string, string, string, string[], string[]]] : []),
   ]
   return definitions.map(([id, name, phase, script, needs]) => {
     const forced = force && FORCE_SCRIPTS.has(script[0]!) ? [...script, '--force'] : script
@@ -149,12 +157,12 @@ export async function main(argv: string[]): Promise<number> {
   const scoped = values.full ? { scope: 'full' as const, reason: '--full' } : testScope(repoRoot)
   const scope = scoped.scope
   if (values.help) {
-    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core and server tests, schema and the mobile app.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck, tests and the mobile check instead of replaying cached results\n  box verify --full      In a Box, run every core and server test (a Box whose core matches its upstream runs its feature tests and a core smoke set)\n  box verify --engine native  Run the core and server tests on native PostgreSQL instead of pgrust\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
+    process.stdout.write('Verify this checkout: build, skills, CLI tests, web tests, generated types, types, lint, core and server tests, schema and the mobile app; in the Stack also the rendered UI tests of the kit.\n\n  box verify             Live progress in a terminal; concise output in CI\n  box verify --plain     Append-only progress without ANSI\n  box verify --json      Progress snapshots as JSON lines, then the plain receipt\n  box verify --list      The checks as one JSON line, without running them\n  box verify --verbose   Append-only progress and full child output\n  box verify --force     Rerun build, typecheck, tests and the mobile check instead of replaying cached results\n  box verify --full      In a Box, run every core and server test (a Box whose core matches its upstream runs its feature tests and a core smoke set)\n  box verify --engine native  Run the core and server tests on native PostgreSQL instead of pgrust\n\nLive keys: d toggles output detail; Ctrl+C cancels the active command and descendants.\nMotion is always on. Complete command logs are retained in a private temporary directory.\n')
     return 0
   }
   if (values.list) {
     const history = readHistory(repoRoot)
-    process.stdout.write(JSON.stringify(verifyTasks(undefined, { engine, scope }).map(({ id, name, phase, command }) => ({ id, name, phase, command, expected: history[id]?.elapsed }))) + '\n')
+    process.stdout.write(JSON.stringify(verifyTasks(undefined, { engine, scope, stack: isStack(repoRoot) }).map(({ id, name, phase, command }) => ({ id, name, phase, command, expected: history[id]?.elapsed }))) + '\n')
     return 0
   }
   const out = process.stdout, input = process.stdin
@@ -200,7 +208,7 @@ export async function main(argv: string[]): Promise<number> {
     } else write(`silkweave / verify · ${target}\n`)
     if (!live && !values.json && scope === 'box') write(`Core and server tests: feature tests and core smoke (${scoped.reason}); --full runs them all\n`)
     const history = readHistory(repoRoot)
-    const tasks = verifyTasks(undefined, { force: values.force, engine, scope }).map(t => ({ ...t, expected: history[t.id] }))
+    const tasks = verifyTasks(undefined, { force: values.force, engine, scope, stack: isStack(repoRoot) }).map(t => ({ ...t, expected: history[t.id] }))
     let lastEvent = 0, lastShape = ''
     const result = await runTasks(tasks, {
       cwd: repoRoot, signal: controller.signal,

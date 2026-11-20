@@ -139,7 +139,7 @@ ask() {  # $1 = question, $2 = default, $3 = explanation; prints the answer
   if [ -n "$BOX_YES" ] || [ "$TTY" = 0 ]; then printf '%s' "$2"; return; fi
   [ "$EXPLAIN" = 1 ] && [ -n "$help" ] && explain "$help"
   while :; do
-    printf '  %s%s %s ' "$(tone text "$1")" "$(hint_for "$help")" "$(tone muted "[$2]")" >&2
+    printf '  %s%s %s ' "$(tone text "$1")" "$(hint_for "$help")" "$(if [ -n "$2" ]; then tone muted "[$2]"; fi)" >&2
     read -r answer <&3 || answer=
     if [ "$answer" = '?' ]; then explain "${help:-Press Enter to keep the suggestion.}"; continue; fi
     printf '%s' "${answer:-$2}"
@@ -264,7 +264,7 @@ linux_install() {  # $1 = reason, rest = packages
 }
 
 check_system() {
-  step 'Checking this computer' 'Makes sure this system can run a Box and has Git, which downloads it.'
+  step 'Checking this computer' 'Makes sure this system can run a Box and has Git, which downloads it and records its changes.'
   ok "$(platform_label)"
   have curl || die 'curl is missing.' 'Install curl with your package manager, then run the installer again.'
 
@@ -293,6 +293,36 @@ check_system() {
   done
   printf '\r\033[K'
   ok "Git $(git --version | awk '{print $3}')"
+}
+
+# Every change the Box saves (Builder's checkpoints, an agent's commits) is a Git commit, and Git
+# refuses to commit without a name and email. A fresh server has neither, so ask once, globally,
+# and never replace an identity that is already set.
+ensure_git_identity() {
+  local name email
+  name=$(git config --global user.name 2>/dev/null || true)
+  email=$(git config --global user.email 2>/dev/null || true)
+  if [ -n "$name" ] && [ -n "$email" ]; then ok "Git identity: $name <$email>"; return; fi
+  local help='Git records who made each change to your Box: when the Box saves work you built with it,\nand when an agent commits. It is stored in ~/.gitconfig for this computer account and stays on\nthis computer. Change it later with: git config --global user.name "…" / user.email "…"'
+  if [ -n "$BOX_YES" ] || [ "$TTY" = 0 ]; then
+    warn 'Git has no name and email yet, so the Box cannot save changes until you set them:'
+    printf '    %s\n' "$(tone accent 'git config --global user.name "Your Name" && git config --global user.email you@example.com')"
+    return
+  fi
+  line 'Git needs your name and email to record the changes you make in the Box.' muted
+  if [ -z "$name" ]; then
+    local suggested
+    if [ "$PLATFORM" = macos ]; then suggested=$(id -F 2>/dev/null || true)
+    else suggested=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f5 | cut -d, -f1); fi
+    name=$(ask 'Your name for Git' "${suggested:-$(id -un)}" "$help")
+    git config --global user.name "$name"
+  fi
+  while [ -z "$email" ]; do
+    email=$(ask 'Your email for Git' '' "$help")
+    case $email in *@*.*) ;; *) warn 'Enter an email address, like you@example.com.'; email= ;; esac
+  done
+  git config --global user.email "$email"
+  ok "Git identity: $name <$email>"
 }
 
 # On macOS /usr/bin/git is a stub that opens the install dialog itself, so probe the tools first.
@@ -518,6 +548,7 @@ main() {
   plan
   RESUME=0
   check_system
+  ensure_git_identity
   check_tools
   choose_directory
   install_box

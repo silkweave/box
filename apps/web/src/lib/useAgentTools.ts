@@ -1,11 +1,11 @@
 // Agent tools (Settings > Agent tools): the toolsets chat rooms and agent triggers grant to their
-// sessions (core agent-tools.ts), and the connections a toolset can attach (the mcp recipe's,
-// Settings > Connections). Admin settings in box.local.json.
+// sessions (core agent-tools.ts), and the servers a toolset can attach (the mcp recipe's,
+// Settings > MCP Servers). Admin settings in box.local.json.
 
 import { createDataStore } from './dataStore.ts'
 import { trpc } from './trpc.ts'
 
-export interface AgentMcpConnection {
+export interface AgentMcpServer {
   id: string
   label: string
 }
@@ -24,9 +24,9 @@ export interface AgentToolset {
 }
 
 export interface AgentToolsSettings {
-  connections: AgentMcpConnection[]
-  /** Whether this Box has the mcp recipe (connections at all). */
-  connectionsAvailable: boolean
+  servers: AgentMcpServer[]
+  /** Whether this Box has the mcp recipe (servers at all). */
+  serversAvailable: boolean
   toolsets: AgentToolset[]
   problems: string[]
 }
