@@ -11,7 +11,7 @@ import { boxSchemaOwners } from '../warehouse/schema.js'
 import type { OwnerRole, RunningCluster } from './cluster.js'
 import { openDatabase } from './index.js'
 import { mkdirSync } from 'node:fs'
-import { readIdentity } from './cluster.js'
+import { clusterPaths, readIdentity } from './cluster.js'
 import { takeRestorePoint } from './restore-point.js'
 import { backupName, backupsDir } from '../warehouse/restore-points.js'
 
@@ -39,11 +39,11 @@ export async function startDatabase(role: Exclude<OwnerRole, 'supervisor'>): Pro
         knownAreas: knownAreas(),
         checkFiles: clusterFiles(running),
         // R5: an existing database gets a pre-migrate restore point before any change; the
-        // migrator holds the schema lock, so the dump runs with `schemaLock: 'held'`.
+        // migrator holds the schema lock, so the snapshot runs with `schemaLock: 'held'`.
         beforeMigrate: async (pending) => {
           const name = backupName('pre-migrate')
           mkdirSync(backupsDir(), { recursive: true, mode: 0o700 })
-          await takeRestorePoint({ target: running, parent: backupsDir(), name, label: 'pre-migrate', schemaLock: 'held',
+          await takeRestorePoint({ target: { ...running, dataDir: clusterPaths(running.cluster).data }, parent: backupsDir(), name, label: 'pre-migrate', schemaLock: 'held',
             source: { cluster: running.cluster.name, identity: readIdentity(running.cluster) } })
           console.info(`[database] ${pending.length} pending change(s); restore point ${name} taken first`)
         },

@@ -4,7 +4,7 @@
 // remain in the runner (warehouse/pg/migrate.ts) because those protect the database rather than
 // enforce authoring style.
 //
-// What this proves, on one throwaway cluster (pgrust, or BOX_TEST_ENGINE=native) with one database
+// What this proves, on one throwaway pgrust cluster with one database
 // per pass:
 //
 //   1. FRESH + REBOOT - the schema of every owner on an empty database, then again on the same
@@ -23,7 +23,6 @@
 // the migration's WHERE clause. A migration's `run` is opaque to the lint; review it.
 
 import pg from 'pg'
-import type { DatabaseEngine } from '../src/box-json.js'
 import { OWNER_LOGIN } from '../src/db/cluster.js'
 import { startTestCluster } from '../src/db/testing.js'
 import { FEATURE_LIST as FEATURES } from '../src/generated/features.js'
@@ -59,8 +58,7 @@ function withDependents(id: string): Set<string> {
 }
 
 async function main(): Promise<number> {
-  const engine = (process.env.BOX_TEST_ENGINE ?? 'pgrust') as DatabaseEngine
-  const cluster = await startTestCluster(engine)
+  const cluster = await startTestCluster()
   const { socket, port } = cluster.running
   let n = 0
   /** A fresh database and an owner session on it. Caller closes. */
@@ -122,7 +120,7 @@ async function main(): Promise<number> {
       return 1
     }
     console.info(
-      `schema:check (${engine}): ${ordered.length} owners (core first), ${allTables.length} tables - fresh, reboot and ${FEATURES.length} enabled-later paths all apply` +
+      `schema:check: ${ordered.length} owners (core first), ${allTables.length} tables - fresh, reboot and ${FEATURES.length} enabled-later paths all apply` +
         (ownership.length ? `; ${ownership.length} ownership warning(s) above` : '; no ownership warnings'),
     )
     return 0

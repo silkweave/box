@@ -57,16 +57,6 @@ export interface BoxBackup {
   gcsBucket: string | null
 }
 
-/** The relational engine a Box initializes its first database cluster with. */
-export type DatabaseEngine = 'pgrust' | 'native'
-export const DATABASE_ENGINES: readonly DatabaseEngine[] = ['pgrust', 'native']
-
-export interface BoxDatabase {
-  /** Read once, when the Box creates its first cluster. Changing it later does not move data:
-   *  the Box refuses to start and names `box db switch`, the offline engine switch. */
-  engine: DatabaseEngine
-}
-
 /** Background work is OFF unless it is armed here. */
 export interface BoxBackground {
   /** Arms the cron scheduler. */
@@ -144,7 +134,6 @@ export interface BoxJson {
   brand: BoxBrand
   server: BoxServer
   backup: BoxBackup
-  database: BoxDatabase
   background: BoxBackground
   auth: BoxAuth
   mcp: BoxMcp
@@ -198,7 +187,6 @@ export function defaultBoxJson(): BoxJson {
     // one machine must never be one default away from the first - give it its own numbers here.
     server: { host: '127.0.0.1', port: 8190, vitePort: 5190, viteDevUrl: null, dashboardUrl: null, vscodeRemoteHost: null },
     backup: { gcsBucket: null },
-    database: { engine: 'pgrust' },
     background: { automation: false, chatAgent: false, relay: false, features: {} },
     auth: { sessionSecret: null, tokenSecret: null },
     mcp: { url: null, token: null },
@@ -327,7 +315,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   const defaults = defaultBoxJson()
   // Removed 2026-10-08: per-person Claude tokens are connected in Settings > Profile now.
   if (raw['workerdeckTokens'] !== undefined) refuse(where, 'workerdeckTokens was removed; connect Claude accounts in Settings > Profile and delete the key')
-  onlyKeys(raw, ['agent', 'timeZone', 'brand', 'server', 'backup', 'database', 'background', 'auth', 'mcp', 'http', 'stack', 'registry', 'recipes', 'features', 'signals', 'browsers', 'agentMcp', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
+  onlyKeys(raw, ['agent', 'timeZone', 'brand', 'server', 'backup', 'background', 'auth', 'mcp', 'http', 'stack', 'registry', 'recipes', 'features', 'signals', 'browsers', 'agentMcp', 'workerdeck', 'accounts', 'credentials', 'agentProfiles'], where)
 
   const agent = raw['agent'] === undefined ? defaults.agent : parseBoxAgent(raw['agent'], where)
   const timeZone = raw['timeZone'] === undefined ? defaults.timeZone : parseTimeZone(raw['timeZone'], where)
@@ -357,17 +345,6 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
   if (k) {
     onlyKeys(k, ['gcsBucket'], `${where} backup`)
     backup.gcsBucket = optionalText(k, 'gcsBucket', `${where} backup`)
-  }
-
-  const database = { ...defaults.database }
-  const d = section(raw, 'database', where)
-  if (d) {
-    onlyKeys(d, ['engine'], `${where} database`)
-    const engine = d['engine']
-    if (engine !== undefined) {
-      if (!DATABASE_ENGINES.includes(engine as DatabaseEngine)) refuse(`${where} database`, `engine must be one of ${DATABASE_ENGINES.map((e) => `"${e}"`).join(', ')}`)
-      database.engine = engine as DatabaseEngine
-    }
   }
 
   const background = { ...defaults.background }
@@ -463,7 +440,7 @@ export function parseBoxJson(raw: unknown, where = 'box.json'): BoxJson {
     agentProfiles[user] = entry
   }
 
-  return { agent, timeZone, brand, server, backup, database, background, auth, mcp, http, stack, registry, recipes, features, signals, browsers, agentMcp, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
+  return { agent, timeZone, brand, server, backup, background, auth, mcp, http, stack, registry, recipes, features, signals, browsers, agentMcp, workerdeck: workerdeckRaw as Record<string, unknown> | null ?? null, accounts, credentials, agentProfiles }
 }
 
 /** Parse a file's text, naming the file in the one error JSON.parse would otherwise leave vague. */

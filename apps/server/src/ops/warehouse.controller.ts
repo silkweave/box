@@ -13,7 +13,7 @@ class OpResultDto {
 class RestorePointDto {
   @ApiProperty({ description: 'Pass this to `box db restore <name>`' }) name!: string
   @ApiProperty({ description: 'Path under the Box instance dir' }) path!: string
-  @ApiProperty({ enum: ['pre-migrate', 'manual', 'pre-restore', 'pre-switch', 'seed'] }) label!: string
+  @ApiProperty({ enum: ['pre-migrate', 'manual', 'pre-restore', 'seed'] }) label!: string
   @ApiProperty({ description: 'ISO-8601 UTC' }) takenAt!: string
   @ApiProperty({ description: 'Size of the copy, including its WAL sidecar' }) bytes!: number
 }
@@ -24,7 +24,7 @@ const restorePointsOutput = z.object({
   points: z.array(z.object({
     name: z.string(),
     path: z.string(),
-    label: z.enum(['pre-migrate', 'manual', 'pre-restore', 'pre-switch', 'seed']),
+    label: z.enum(['pre-migrate', 'manual', 'pre-restore', 'seed']),
     takenAt: z.string(),
     bytes: z.number(),
   })),

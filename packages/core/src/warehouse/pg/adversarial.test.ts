@@ -1,5 +1,5 @@
 // The adversarial matrix (PHASE1.md W8 "A", PLAN.md phase-1 exit), on a clone of the migrated
-// template with the real schema (core and every feature), both engines (BOX_TEST_ENGINE). Cases
+// template with the real schema (core and every feature). Cases
 // that already have a home stay there and are listed, not duplicated:
 //
 //   A1 classifier: executor.test.ts "admits data statements and refuses lifecycle forms", "sets the

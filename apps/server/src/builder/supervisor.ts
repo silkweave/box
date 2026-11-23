@@ -8,7 +8,7 @@ import { createServer as createNetServer } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
-import { agentIdentity, boxJson, clientIp, dataPath, dumpRestorePointTo, openDatabase, restoreBuilderDatabase, type OpenDatabase, rateLimit, repoRoot, requestIsSecure, sameOrigin, sessionCookie, setSecurityHeaders } from '@silkweave/box-core'
+import { agentIdentity, boxJson, clientIp, dataPath, openDatabase, takeRestorePointAt, restoreBuilderDatabase, type OpenDatabase, rateLimit, repoRoot, requestIsSecure, sameOrigin, sessionCookie, setSecurityHeaders } from '@silkweave/box-core'
 import { BuilderSupervisorAuth, type BuilderSupervisorPrincipal } from './builder-auth.js'
 import { createBuilderBrowser } from './builder-browser.js'
 import { startBuilderBrowserLocal } from './builder-browser-local.js'
@@ -209,9 +209,9 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
   // Builder backups carry the database, and a Builder restore rebuilds the cluster (R3): the
   // supervisor owns the cluster, so it lets go for the restore and reopens the new active one.
   const databasePort: BuilderDatabasePort = {
-    async dump(dir) {
+    async snapshot(dir) {
       if (!database) throw new BuilderLifecycleError(503, 'Box database is not open; repair it before taking a Builder backup')
-      await dumpRestorePointTo(database.running, dir)
+      await takeRestorePointAt(database.running, dir)
     },
     async restore(input) {
       if (database) { await database.running.release(); database = null }

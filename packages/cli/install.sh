@@ -14,6 +14,7 @@
 #   BOX_REPO=<url>     Box repository to clone (default: https://github.com/silkweave/box.git)
 #   BOX_REF=<branch>   branch or tag to check out (default: the repository's default branch)
 #   BOX_YES=1          accept every default without asking; setup then runs with --yes
+#   BOX_EXPLAIN=1      explain every step and question as it comes; setup then runs with --explain
 #   NO_COLOR=1         plain output
 #
 # Source: https://github.com/silkweave/box/blob/master/packages/cli/install.sh
@@ -25,11 +26,12 @@ BOX_REPO=${BOX_REPO:-https://github.com/silkweave/box.git}
 BOX_REF=${BOX_REF:-}
 BOX_YES=${BOX_YES:-}
 START_PATH=$PATH  # the caller's PATH, before this script adds ~/.bun/bin and ~/.local/bin to its own
-EXPLAIN=0
+EXPLAIN=0; [ -n "${BOX_EXPLAIN:-}" ] && EXPLAIN=1
 MIN_BUN=1.4.2
-PG_MAJOR=18  # pg_dump/pg_restore for backups: packages/core/src/db/engines.ts SERVER_MAJOR
 LOG=
 TICK=0
+# Every step's output is kept here across runs, so a failure can be shared or handed to an agent.
+INSTALL_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/silkweave/install.log"
 
 # ---------- presentation (the box CLI palette: packages/cli/src/ui.ts) ----------
 
@@ -150,15 +152,16 @@ ask() {  # $1 = question, $2 = default, $3 = explanation; prints the answer
 # What happens, before anything does. Guided mode explains every step and question as it comes.
 plan() {
   printf '\n'
-  line 'This takes about 5 minutes, in 5 steps:'
+  line 'Five steps:'
   printf '    %s %s\n' "$(tone accent 1)" "$(tone text 'Check this computer')"
   printf '    %s %s\n' "$(tone accent 2)" "$(tone text 'Prepare the tools the Box runs on')"
   printf '    %s %s\n' "$(tone accent 3)" "$(tone text 'Choose a folder for your Box')"
   printf '    %s %s\n' "$(tone accent 4)" "$(tone text 'Download the Box and add the box command')"
   printf '    %s %s\n' "$(tone accent 5)" "$(tone text 'Set up your account; the Box then starts and gives you a sign-in link')"
-  line 'Nothing changes without asking first. Press Enter to take a suggested answer.' muted
+  line 'What the Box needs (Git and Bun) is installed or upgraded without asking.' muted
+  line 'Downloads take longer on a slow connection; each step shows what it is doing.' muted
+  line 'Press Enter to take a suggested answer, or type ? at any question to have it explained.' muted
   printf '\n'
-  if [ -z "$BOX_YES" ] && [ "$TTY" = 1 ] && confirm 'Explain each step and question as we go?' y; then EXPLAIN=1; fi
 }
 
 # ---------- long-running work ----------
@@ -167,30 +170,58 @@ plan() {
 cleanup() { if [ -n "$LOG" ] && [ -f "$LOG" ]; then rm -f "$LOG"; fi; }
 trap cleanup EXIT
 
-# Run a command with a spinner and keep its output in a log that is shown only on failure.
+# The last line a command printed (progress bars redraw with \r), trimmed to fit the terminal.
+last_output() {  # $1 = log file, $2 = width
+  tail -c 400 "$1" 2>/dev/null | tr '\r' '\n' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | grep -v '^[[:space:]]*$' | tail -n 1 | cut -c "1-$2"
+}
+
+# Append a finished command's output to the install log.
+keep_log() {  # $1 = label, $2 = status
+  mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || return 0
+  { printf '\n=== %s: %s (exit %s)\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2"; cat "$LOG"; } >>"$INSTALL_LOG" 2>/dev/null || true
+}
+
+# A failed step: its last output, where the full log is, and how to get help.
+step_failed() {  # $1 = label, $2 = status
+  printf '  %s %s\n\n' "$(tone bad '✕')" "$(tone bad "$1 failed")"
+  tail -n 30 "$LOG" | sed 's/^/    /' >&2
+  printf '\n  %s %s\n' "$(tone muted 'Full log:')" "$(tone accent "$INSTALL_LOG")" >&2
+  if have claude; then
+    printf '  %s\n    %s\n' "$(tone muted 'Ask Claude to fix it:')" "$(tone accent "claude \"The Silkweave Box installer failed. Read $INSTALL_LOG and fix the cause.\"")" >&2
+  fi
+  die "$1 failed (exit $2)." 'Run the installer again when it is fixed; finished steps are skipped. Share the log when you ask for help.'
+}
+
+# Run a command with a spinner, its latest output line beneath the label, and a note when it goes
+# quiet. Its output goes to the install log; the end of it is shown on failure.
 run() {  # $1 = label, rest = command
-  local label=$1 pid status frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' started elapsed
+  local label=$1 pid status frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' started elapsed=0 size=0 grew quiet=0 detail='' width
   shift
   LOG=$(mktemp "${TMPDIR:-/tmp}/silkweave-box.XXXXXX")
-  started=$(date +%s)
+  started=$(date +%s); grew=$started
   "$@" </dev/null >"$LOG" 2>&1 &
   pid=$!
   if [ -t 1 ]; then
+    width=$(( $(tput cols 2>/dev/null || echo 80) - 6 ))
+    printf '\n'
     while kill -0 "$pid" 2>/dev/null; do
-      elapsed=$(( $(date +%s) - started ))
-      printf '\r\033[K  %s %s %s' "$(tone accent "${frames:$((TICK % 10)):1}")" "$(tone text "$label")" "$(tone muted "${elapsed}s")"
+      if [ $((TICK % 5)) = 0 ]; then
+        local now; now=$(date +%s)
+        local current; current=$(wc -c <"$LOG" 2>/dev/null | tr -d ' ')
+        if [ "${current:-0}" != "$size" ]; then size=${current:-0}; grew=$now; detail=$(last_output "$LOG" "$width"); fi
+        elapsed=$((now - started)); quiet=$((now - grew))
+        if [ $quiet -ge 60 ]; then detail="No new output for ${quiet}s. Still running; large downloads can be quiet."; fi
+      fi
+      printf '\r\033[1A\033[K  %s %s %s\n\033[K    %s' "$(tone accent "${frames:$((TICK % 10)):1}")" "$(tone text "$label")" "$(tone muted "${elapsed}s")" "$(tone muted "$detail")"
       TICK=$((TICK + 1))
       sleep 0.1
     done
-    printf '\r\033[K'
+    printf '\r\033[K\033[1A\r\033[K'
   fi
   status=0
   wait "$pid" || status=$?
-  if [ "$status" -ne 0 ]; then
-    printf '  %s %s\n\n' "$(tone bad '✕')" "$(tone bad "$label failed")"
-    tail -n 30 "$LOG" | sed 's/^/    /' >&2
-    die "$label failed (exit $status)." 'The output above shows why. Fix it, then run the installer again; finished steps are skipped.'
-  fi
+  keep_log "$label" "$status"
+  [ "$status" -eq 0 ] || step_failed "$label" "$status"
   ok "$label"
   rm -f "$LOG"; LOG=
 }
@@ -204,11 +235,8 @@ run_foreground() {  # $1 = label, rest = command
   printf '  %s %s' "$(tone accent '…')" "$(tone text "$label")"
   "$@" </dev/null >"$LOG" 2>&1 || status=$?
   printf '\r\033[K'
-  if [ "$status" -ne 0 ]; then
-    printf '  %s %s\n\n' "$(tone bad '✕')" "$(tone bad "$label failed")"
-    tail -n 30 "$LOG" | sed 's/^/    /' >&2
-    die "$label failed (exit $status)." 'The output above shows why. Fix it, then run the installer again; finished steps are skipped.'
-  fi
+  keep_log "$label" "$status"
+  [ "$status" -eq 0 ] || step_failed "$label" "$status"
   ok "$label"
   rm -f "$LOG"; LOG=
 }
@@ -254,8 +282,7 @@ linux_install() {  # $1 = reason, rest = packages
   elif have zypper; then manager=zypper; command="sudo zypper install -y $*"
   else die "$reason needs: $*." 'Install them with your package manager, then run the installer again.'
   fi
-  line "$reason needs: $* (installed with $manager)." muted
-  confirm 'Install them now?' y "Git downloads the Box and keeps it up to date; unzip unpacks Bun.\nInstalling system packages asks for your computer password once." || die "$* required." "Install with: $command"
+  line "$reason needs: $* (installing with $manager)." muted
   if [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null; then
     line 'Your computer password is needed to install them.' muted
     sudo -v <&3 || die 'Could not get administrator rights.' "Install them yourself: $command"
@@ -343,11 +370,15 @@ ensure_bun() {  # $1 = minimum version
     return
   fi
   if [ -n "$current" ]; then
-    line "Bun $current is older than the $need this Box needs." muted
-    confirm "Upgrade Bun?" y 'Bun is the engine the Box runs on. Upgrading keeps your other Bun projects working.' || die "Bun $need or newer is required." 'Upgrade with: bun upgrade'
-    run "Upgrading Bun" bun upgrade
+    line "Bun $current is older than the $need this Box needs; upgrading it (your other Bun projects keep working)." muted
+    case $(command -v bun) in
+      "$BUN_INSTALL"/*) run "Upgrading Bun to $need or newer" bun upgrade ;;
+      # A Bun from Homebrew or elsewhere: install the current one into ~/.bun, which this script's
+      # PATH (and the profile persist_path writes) puts first.
+      *) run "Installing Bun into ~/.bun" bash -c 'curl -fsSL https://bun.sh/install | bash' ;;
+    esac
   else
-    confirm 'Install Bun, the engine the Box runs on?' y 'Bun runs the Box. It installs into ~/.bun, a folder in your home, and needs no\nadministrator password.' || die 'Bun is required.' 'Install it from https://bun.sh, then run the installer again.'
+    line 'Installing Bun, the engine the Box runs on, into ~/.bun (no administrator password).' muted
     run 'Installing Bun' bash -c 'curl -fsSL https://bun.sh/install | bash'
   fi
   current=$(bun_version)
@@ -355,51 +386,9 @@ ensure_bun() {  # $1 = minimum version
   ok "Bun $current"
 }
 
-# The newest pg_dump major on this host (PATH, Homebrew's libpq/postgresql, Debian's versioned dirs), or empty.
-pg_client_major() {
-  local best='' v bin
-  for bin in "$(command -v pg_dump 2>/dev/null)" /opt/homebrew/opt/libpq/bin/pg_dump /usr/local/opt/libpq/bin/pg_dump \
-    /opt/homebrew/opt/postgresql@$PG_MAJOR/bin/pg_dump /usr/local/opt/postgresql@$PG_MAJOR/bin/pg_dump /usr/lib/postgresql/*/bin/pg_dump; do
-    [ -n "$bin" ] && [ -x "$bin" ] || continue
-    v=$("$bin" --version 2>/dev/null | sed -n 's/^pg_dump (PostgreSQL) \([0-9][0-9]*\).*/\1/p' | head -1)
-    [ -n "$v" ] && { [ -z "$best" ] || [ "$v" -gt "$best" ]; } && best=$v
-  done
-  printf '%s' "$best"
-}
-
-# PostgreSQL's client tools: the Box backs its database up with pg_dump and pg_restore, which must be at
-# least as new as the server. Most Linux releases ship an older major, so on apt systems the
-# PostgreSQL apt repository (apt.postgresql.org, its own setup script) is added first when needed.
-ensure_pg_client() {
-  local have command
-  have=$(pg_client_major)
-  if [ -n "$have" ] && [ "$have" -ge "$PG_MAJOR" ]; then ok "PostgreSQL client tools $have"; return; fi
-  local why="The Box keeps its data in a PostgreSQL database and backs it up with pg_dump and pg_restore\n$PG_MAJOR or newer${have:+ (this computer has $have)}."
-  if [ "$PLATFORM" = macos ]; then
-    if ! have brew; then note "PostgreSQL client tools $PG_MAJOR: setup shows how to install them (Homebrew: brew install libpq)."; return; fi
-    confirm "Install the PostgreSQL client tools with Homebrew?" y "$why" || die "pg_dump $PG_MAJOR is required." 'Install with: brew install libpq'
-    run 'Installing the PostgreSQL client tools' brew install libpq
-  elif have apt-get; then
-    command="if ! apt-cache policy postgresql-client-$PG_MAJOR 2>/dev/null | grep -q 'Candidate: [0-9]'; then sudo apt-get update && sudo apt-get install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y; fi && sudo apt-get install -y postgresql-client-$PG_MAJOR"
-    confirm "Install the PostgreSQL $PG_MAJOR client tools (adds the PostgreSQL apt repository if needed)?" y "$why" || die "pg_dump $PG_MAJOR is required." "Install with: $command"
-    if [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null; then
-      line 'Your computer password is needed to install them.' muted
-      sudo -v <&3 || die 'Could not get administrator rights.' "Install them yourself: $command"
-    fi
-    run_foreground 'Installing the PostgreSQL client tools' bash -c "$command"
-  else
-    note "PostgreSQL client tools $PG_MAJOR: install them with your package manager (setup checks again)."
-    return
-  fi
-  have=$(pg_client_major)
-  { [ -n "$have" ] && [ "$have" -ge "$PG_MAJOR" ]; } || die "pg_dump $PG_MAJOR or newer is still not found."
-  ok "PostgreSQL client tools $have"
-}
-
 check_tools() {
-  step 'Preparing the tools' 'Installs Bun, the engine the Box runs on, the PostgreSQL client tools for backups, and an AI agent if none is on this computer.'
+  step 'Preparing the tools' 'Installs Bun, the engine the Box runs on, and an AI agent if none is on this computer.'
   ensure_bun "$MIN_BUN"
-  ensure_pg_client
   if have node; then note "Node.js $(node --version) found; the Box does not need it."; else note 'Node.js is not needed; the Box runs on Bun.'; fi
 
   if have claude || have codex || [ -d "$HOME/.claude" ] || [ -d "$HOME/.codex" ]; then

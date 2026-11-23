@@ -1,8 +1,8 @@
 // The Box's database cluster: where it lives, which one is active, and the one authority that
 // initializes, starts, adopts and stops it.
 //
-//   data/db/active.json          the active cluster (id, engine, exact build), written atomically
-//   data/db/<engine>-<n>/        one cluster: pgdata/, cache/, server.log, owner.lock, cluster.json
+//   data/db/active.json          the active cluster (id, exact build), written atomically
+//   data/db/pgrust-<n>/          one cluster: pgdata/, cache/, server.log, owner.lock, cluster.json
 //
 // Ownership: one process owns a running cluster (the instance lock). The supervisor (`box start` /
 // `box dev`) is the normal owner and keeps the cluster across application restarts. A CLI script
@@ -18,7 +18,6 @@ import { chmodSync, closeSync, existsSync, linkSync, mkdirSync, openSync, readFi
 import { userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import pg from 'pg'
-import type { DatabaseEngine } from '../box-json.js'
 import type { EngineInstall } from './engines.js'
 import { writeJsonDurable } from './durable.js'
 import { FileLockUnavailable, withFileLock } from './flock.js'
@@ -38,7 +37,6 @@ const BASE_SETTINGS = [
 
 export interface ClusterIdentity {
   id: string
-  engine: DatabaseEngine
   /** Exact server build at creation, e.g. `postgres (PostgreSQL) 18.6`. */
   build: string
   version: string
@@ -56,15 +54,14 @@ export interface Cluster {
 
 export interface ActiveCluster {
   cluster: string
-  engine: DatabaseEngine
   build: string
   version: string
   pgvector: string
   activated: string
-  /** The maintenance operation (restore, switch) that activated this cluster, if any. */
+  /** The restore that activated this cluster, if any. */
   operation?: string
   /** The cluster this one replaced, kept stopped for rollback until the next retirement. */
-  previous?: { cluster: string; engine: DatabaseEngine; retired: string }
+  previous?: { cluster: string; retired: string }
 }
 
 export function clusterPaths(c: Cluster) {
@@ -94,10 +91,10 @@ export function clusterOf(dbRoot: string, name: string, port = DEFAULT_PORT): Cl
   return { name, dir: join(dbRoot, name), port }
 }
 
-/** The next free `<engine>-<n>` directory name. */
-export function nextClusterName(dbRoot: string, engine: DatabaseEngine): string {
-  const used = existsSync(dbRoot) ? readdirSync(dbRoot).filter((n) => n.startsWith(`${engine}-`)).map((n) => Number(n.slice(engine.length + 1)) || 0) : []
-  return `${engine}-${Math.max(0, ...used) + 1}`
+/** The next free `pgrust-<n>` directory name. */
+export function nextClusterName(dbRoot: string): string {
+  const used = existsSync(dbRoot) ? readdirSync(dbRoot).filter((n) => n.startsWith('pgrust-')).map((n) => Number(n.slice('pgrust-'.length)) || 0) : []
+  return `pgrust-${Math.max(0, ...used) + 1}`
 }
 
 export function readIdentity(c: Cluster): ClusterIdentity {
@@ -157,11 +154,23 @@ export async function initCluster(c: Cluster, install: EngineInstall): Promise<C
   await runTool(join(install.binDir, 'initdb'), ['-D', p.data, '-U', OWNER_LOGIN, '-E', 'UTF8', '--no-locale',
     // TZ: the server always runs in UTC (the start arguments), so initdb writes UTC too rather than
     // reading the host's zone, which a minimal or misconfigured host names in a form it refuses.
-    '--auth-local=reject', '--auth-host=reject'], { ...install, env: { ...install.env, ...cacheEnv(install, p.cache), TZ: 'UTC' } })
-  writeFileSync(join(p.data, 'pg_hba.conf'), hbaContract())
-  writeFileSync(join(p.data, 'pg_ident.conf'), identContract())
+    '--auth-local=reject', '--auth-host=reject'], { ...install, env: { ...install.env, ...cacheEnv(p.cache), TZ: 'UTC' } })
+  return registerCluster(c, install)
+}
+
+/**
+ * Make the data directory already at `c`'s pgdata (fresh from initdb, or unpacked from a restore
+ * point) a cluster of this Box: the authentication contract for this host's OS account, the cache
+ * directory and a new identity.
+ */
+export function registerCluster(c: Cluster, install: EngineInstall): ClusterIdentity {
+  const p = clusterPaths(c)
+  if (existsSync(p.identity)) throw new Error(`refusing to register ${c.dir}: it already holds a cluster`)
+  mkdirSync(p.cache, { recursive: true, mode: 0o700 })
+  writeFileSync(join(p.data, 'pg_hba.conf'), hbaContract(), { mode: 0o600 })
+  writeFileSync(join(p.data, 'pg_ident.conf'), identContract(), { mode: 0o600 })
   const id: ClusterIdentity = {
-    id: randomUUID(), engine: install.engine, build: install.build, version: install.version, major: install.major,
+    id: randomUUID(), build: install.build, version: install.version, major: install.major,
     pgvector: install.pgvector, created: new Date().toISOString(),
   }
   writeFileSync(p.identity, JSON.stringify(id, null, 2) + '\n', { mode: 0o600 })
@@ -169,8 +178,8 @@ export async function initCluster(c: Cluster, install: EngineInstall): Promise<C
 }
 
 /** pgrust keeps its machine cost profile per cluster, not in the user's home cache. */
-function cacheEnv(install: EngineInstall, cache: string): Record<string, string> {
-  return install.engine === 'pgrust' ? { PGRUST_COST_CACHE_DIR: cache, XDG_CACHE_HOME: cache } : {}
+function cacheEnv(cache: string): Record<string, string> {
+  return { PGRUST_COST_CACHE_DIR: cache, XDG_CACHE_HOME: cache }
 }
 
 // ---- Instance lock ----
@@ -265,7 +274,7 @@ export interface RunningCluster {
 export type OwnerRole = 'supervisor' | 'cli' | 'test'
 
 // ---- Instance-wide maintenance gate ----
-// Restore, switch, prune and Builder restore hold `data/db/maintenance.lock` for their whole run
+// Restore, prune and Builder restore hold `data/db/maintenance.lock` for their whole run
 // and its recovery. Every open (owner or adopting) refuses while another live process holds it.
 
 export interface MaintenanceRecord { pid: number; operation: string; since: string }
@@ -324,7 +333,7 @@ export async function startMaintenanceServer(c: Cluster, install: EngineInstall)
   const p = clusterPaths(c)
   if (!existsSync(p.identity)) throw new Error(`no cluster at ${c.dir}`)
   const id = readIdentity(c)
-  if (id.engine !== install.engine || id.major !== install.major) throw new Error(`cluster ${c.name} is ${id.build}; ${install.build} cannot open it`)
+  if (id.major !== install.major) throw new Error(`cluster ${c.name} is ${id.build}; ${install.build} cannot open it`)
   const release = tryAcquire(c, 'maintenance')
   if (!release) throw new Error(`cluster ${c.name} is in use by ${lockHolder(c)?.role ?? 'another process'} (pid ${lockHolder(c)?.pid}); stop Box first`)
   try {
@@ -344,11 +353,9 @@ export async function startMaintenanceServer(c: Cluster, install: EngineInstall)
 }
 
 /**
- * Bring the active cluster up for this process. `install` must be the engine the cluster was
- * created with (same engine, same major): a config or binary change never opens a cluster with
- * another engine. Waits for a live owner's server when one is starting.
- */
-/**
+ * Bring the active cluster up for this process. `install` must be of the major the cluster was
+ * created with. Waits for a live owner's server when one is starting.
+ *
  * `settings` are extra server `-c` pairs, applied after the base settings when this call starts the
  * server (tests: the shared test cluster serves every parallel worker, each with its own budget).
  */
@@ -357,8 +364,7 @@ export async function openCluster(c: Cluster, install: EngineInstall, role: Owne
   if (!existsSync(p.identity)) throw new Error(`no cluster at ${c.dir}`)
   assertNoMaintenance(dirname(c.dir))
   const id = readIdentity(c)
-  if (id.engine !== install.engine) throw new Error(`cluster ${c.name} is ${id.engine}, but ${install.engine} was resolved: switch engines with \`box db switch\``)
-  if (id.major !== install.major) throw new Error(`cluster ${c.name} was created by ${id.build}; ${install.build} is a different major version: upgrade through \`box db switch\``)
+  if (id.major !== install.major) throw new Error(`cluster ${c.name} was created by ${id.build}; ${install.build} is a different major version and cannot open it`)
   const sock = socketDir(c)
   ensurePrivateDir(sock)
   const deadline = Date.now() + (opts.waitMs ?? 30_000)
@@ -368,7 +374,7 @@ export async function openCluster(c: Cluster, install: EngineInstall, role: Owne
     const release = tryAcquire(c, role)
     if (release) {
       try {
-        // The gate may have been taken while this process waited for the owner lock (a switch parks
+        // The gate may have been taken while this process waited for the owner lock (a restore parks
         // the source and lets its lock go): check again now that the lock is ours.
         assertNoMaintenance(dirname(c.dir))
         // A server left running by a dead maintenance run admits only maintenance logins: never
@@ -399,7 +405,7 @@ async function spawnServer(c: Cluster, install: EngineInstall, sock: string, ext
   const args = [join(install.binDir, 'postgres'), '-D', p.data, '-k', sock, '-p', String(c.port), ...BASE_SETTINGS, ...install.serverArgs, ...extra]
   const log = openSync(p.log, 'a', 0o600)
   const child = spawn('/bin/sh', ['-c', `${install.shellPrefix}exec "$@"`, 'sh', ...args], {
-    env: { ...process.env, ...install.env, ...cacheEnv(install, p.cache) },
+    env: { ...process.env, ...install.env, ...cacheEnv(p.cache) },
     stdio: ['ignore', log, log], detached: true,
   })
   closeSync(log)

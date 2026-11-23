@@ -1,27 +1,21 @@
-// The two database engines a Box can run, and where their binaries come from.
+// The database engine a Box runs, and where its binaries come from.
 //
-// pgrust (the default) is the publisher's checksummed release tarball, unpacked into
-// `data/engines/` (disposable: never backed up, fetched again when missing). It bundles pgvector.
-// Native PostgreSQL is installed on the host by its package manager (`box setup` offers the
-// command); the Box resolves it as ONE installation: a server binary, that installation's own
-// `pg_config` and its extension directory, never pieces from different places. The client tools
-// (`pg_dump`, `pg_restore`) come from the host too, for both engines, and are checked against the
-// actual servers they talk to.
+// pgrust is the publisher's checksummed release tarball, unpacked into `data/engines/`
+// (disposable: never backed up, fetched again when missing). It bundles pgvector. Nothing from a
+// host PostgreSQL installation is used: backups are physical snapshots taken over SQL
+// (restore-point.ts).
 //
-// Accepted ranges are policy, not evidence: the exact builds and versions resolved here are
-// recorded in `active.json`, diagnostics and every backup / switch manifest.
+// The exact build resolved here is recorded in `active.json`, `cluster.json` and every restore
+// point's manifest.
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, platform } from 'node:os'
 import { join } from 'node:path'
-import type { DatabaseEngine } from '../box-json.js'
 
-/** The server major every supported engine speaks (pgrust reports PostgreSQL 18 compatibility). */
+/** The server major pgrust speaks (it reports PostgreSQL 18 compatibility). */
 export const SERVER_MAJOR = 18
-/** Oldest pgvector accepted on native. An open-ended policy, not a claim that later releases are qualified. */
-export const MIN_PGVECTOR = '0.8.0'
 
 /** pgrust builds this Box accepts, with the publisher's checksums (pgrust.com/downloads/<tag>/MANIFEST.txt). */
 const PGRUST_RELEASES = {
@@ -47,7 +41,6 @@ export function hostPlatform(): HostPlatform | null {
 
 /** A resolved engine installation: everything the lifecycle needs to run and describe it. */
 export interface EngineInstall {
-  engine: DatabaseEngine
   binDir: string
   /** Server version, e.g. `18.6`. */
   version: string
@@ -63,13 +56,7 @@ export interface EngineInstall {
   shellPrefix: string
 }
 
-export interface ClientTools {
-  binDir: string
-  version: string
-  major: number
-}
-
-/** Thrown when an engine or the client tools are missing or out of range; `hint` is the install command. */
+/** Thrown when the engine cannot be fetched or run; `hint` names what to do. */
 export class EngineUnavailable extends Error {
   constructor(message: string, readonly hint: string) { super(`${message}\n${hint}`) }
 }
@@ -83,141 +70,9 @@ export function parseServerVersion(text: string): string | null {
   return /PostgreSQL\)?\s+(\d+(?:\.\d+)?)/.exec(text)?.[1] ?? null
 }
 
-/** Compare dotted versions numerically (`0.8.10` > `0.8.7`); pre-release tails are ignored. */
-export function compareVersions(a: string, b: string): number {
-  const pa = a.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0)
-  const pb = b.split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0)
-    if (d !== 0) return Math.sign(d)
-  }
-  return 0
-}
-
 function controlVersion(controlFile: string): string | null {
   if (!existsSync(controlFile)) return null
   return /default_version\s*=\s*'([^']+)'/.exec(readFileSync(controlFile, 'utf8'))?.[1] ?? null
-}
-
-// ---- Install hints (what `box setup` offers and refusals name) ----
-
-export function nativeInstallHint(): string {
-  if (platform() === 'darwin') return `Install it with Homebrew: brew install postgresql@${SERVER_MAJOR} pgvector`
-  return `Install it with the PostgreSQL apt repository (https://www.postgresql.org/download/linux/): sudo apt install postgresql-${SERVER_MAJOR} postgresql-${SERVER_MAJOR}-pgvector`
-}
-
-export function clientToolsHint(): string {
-  if (platform() === 'darwin') return `Install the client tools with Homebrew: brew install libpq (or postgresql@${SERVER_MAJOR})`
-  return `Install the client tools from the PostgreSQL apt repository (https://www.postgresql.org/download/linux/): sudo apt install postgresql-client-${SERVER_MAJOR}`
-}
-
-/** Whether `cmd` is on PATH. */
-function onPath(cmd: string): boolean {
-  try { execFileSync('sh', ['-c', `command -v ${cmd}`], { stdio: 'ignore', timeout: 5_000 }); return true } catch { return false }
-}
-
-/**
- * The host command `box setup` offers to run (on the owner's confirmation) for what is missing:
- * native PostgreSQL with pgvector (which brings the client tools too), or the client tools alone.
- * Null when this host has no supported package manager; the refusal's hint then names the steps.
- */
-export function hostInstallCommand(what: 'native' | 'client-tools', has: (cmd: string) => boolean = onPath): string[] | null {
-  if (platform() === 'darwin') {
-    if (!has('brew')) return null
-    return what === 'native' ? ['brew', 'install', `postgresql@${SERVER_MAJOR}`, 'pgvector'] : ['brew', 'install', 'libpq']
-  }
-  if (platform() === 'linux' && has('apt-get')) {
-    const packages = what === 'native' ? [`postgresql-${SERVER_MAJOR}`, `postgresql-${SERVER_MAJOR}-pgvector`] : [`postgresql-client-${SERVER_MAJOR}`]
-    // Most releases ship an older major: add the PostgreSQL apt repository (its own setup script from
-    // postgresql-common) when apt has no candidate for the package yet.
-    return ['sh', '-c', [
-      `if ! apt-cache policy ${packages[0]} 2>/dev/null | grep -q 'Candidate: [0-9]'; then`,
-      'sudo apt-get update && sudo apt-get install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y; fi',
-      `&& sudo apt-get install -y ${packages.join(' ')}`,
-    ].join(' ')]
-  }
-  return null
-}
-
-// ---- Native PostgreSQL: one installation, resolved deliberately ----
-
-function nativeCandidates(): string[] {
-  const dirs = [
-    `/opt/homebrew/opt/postgresql@${SERVER_MAJOR}/bin`,
-    `/usr/local/opt/postgresql@${SERVER_MAJOR}/bin`,
-    `/usr/lib/postgresql/${SERVER_MAJOR}/bin`,
-    `/usr/pgsql-${SERVER_MAJOR}/bin`,
-  ]
-  // Last resort: the pg_config on PATH, whose own --bindir names its installation.
-  try { dirs.push(run('pg_config', ['--bindir'])) } catch { /* not on PATH */ }
-  return [...new Set(dirs)]
-}
-
-/** Check one candidate bin dir as a complete installation; returns the reason it does not qualify. */
-export function inspectNative(binDir: string): EngineInstall | string {
-  const postgres = join(binDir, 'postgres'), pgConfig = join(binDir, 'pg_config')
-  if (!existsSync(postgres)) return `${binDir}: no postgres server binary`
-  if (!existsSync(pgConfig)) return `${binDir}: no pg_config beside the server (an incomplete installation)`
-  let build: string, configVersion: string, sharedir: string, pkglibdir: string
-  try {
-    build = run(postgres, ['--version'])
-    configVersion = run(pgConfig, ['--version'])
-    sharedir = run(pgConfig, ['--sharedir'])
-    pkglibdir = run(pgConfig, ['--pkglibdir'])
-  } catch (e) { return `${binDir}: could not run the server or pg_config (${(e as Error).message.split('\n')[0]})` }
-  const version = parseServerVersion(build)
-  if (!version) return `${binDir}: unrecognised server version "${build}"`
-  if (parseServerVersion(configVersion) !== version) return `${binDir}: pg_config reports ${configVersion}, the server ${build}: not one installation`
-  const major = Number.parseInt(version, 10)
-  if (major !== SERVER_MAJOR) return `${binDir}: PostgreSQL ${version}, this Box needs ${SERVER_MAJOR}.x`
-  const pgvector = controlVersion(join(sharedir, 'extension', 'vector.control'))
-  if (!pgvector) return `${binDir}: pgvector is not installed for this PostgreSQL`
-  if (compareVersions(pgvector, MIN_PGVECTOR) < 0) return `${binDir}: pgvector ${pgvector}, this Box needs ${MIN_PGVECTOR} or later`
-  if (!['vector.so', 'vector.dylib'].some((f) => existsSync(join(pkglibdir, f)))) return `${binDir}: pgvector's library is missing from ${pkglibdir}`
-  return { engine: 'native', binDir, version, major, build, pgvector, serverArgs: [], env: {}, shellPrefix: '' }
-}
-
-export function resolveNative(): EngineInstall {
-  const reasons: string[] = []
-  for (const dir of nativeCandidates()) {
-    const r = inspectNative(dir)
-    if (typeof r !== 'string') return r
-    if (existsSync(dir)) reasons.push(r)
-  }
-  throw new EngineUnavailable(
-    `Native PostgreSQL ${SERVER_MAJOR} with pgvector was not found on this host${reasons.length ? `:\n  ${reasons.join('\n  ')}` : '.'}`,
-    nativeInstallHint(),
-  )
-}
-
-// ---- Client tools: pg_dump / pg_restore at least as new as the servers they serve ----
-
-function toolCandidates(): string[] {
-  const dirs = [
-    ...nativeCandidates(),
-    '/opt/homebrew/opt/libpq/bin',
-    '/usr/local/opt/libpq/bin',
-  ]
-  return [...new Set(dirs)]
-}
-
-export function resolveClientTools(minMajor = SERVER_MAJOR): ClientTools {
-  const reasons: string[] = []
-  for (const dir of toolCandidates()) {
-    const dump = join(dir, 'pg_dump'), restore = join(dir, 'pg_restore')
-    if (!existsSync(dump) || !existsSync(restore)) continue
-    try {
-      const dv = parseServerVersion(run(dump, ['--version'])), rv = parseServerVersion(run(restore, ['--version']))
-      if (!dv || dv !== rv) { reasons.push(`${dir}: pg_dump ${dv} and pg_restore ${rv} differ`); continue }
-      const major = Number.parseInt(dv, 10)
-      if (major < minMajor) { reasons.push(`${dir}: client tools ${dv}, need ${minMajor} or later`); continue }
-      return { binDir: dir, version: dv, major }
-    } catch (e) { reasons.push(`${dir}: ${(e as Error).message.split('\n')[0]}`) }
-  }
-  throw new EngineUnavailable(
-    `pg_dump and pg_restore ${minMajor} or later were not found on this host${reasons.length ? `:\n  ${reasons.join('\n  ')}` : '.'}`,
-    clientToolsHint(),
-  )
 }
 
 // ---- pgrust: the publisher's tarball, verified and unpacked under data/engines ----
@@ -246,7 +101,7 @@ export function inspectPgrust(dir: string, cacheDir: string): EngineInstall | st
     ?? controlVersion(join(dir, 'share', 'extension', 'vector.control'))
   if (!pgvector) return `${dir}: bundled pgvector not found`
   return {
-    engine: 'pgrust', binDir: join(dir, 'bin'), version, major: SERVER_MAJOR, build, pgvector,
+    binDir: join(dir, 'bin'), version, major: SERVER_MAJOR, build, pgvector,
     serverArgs: [...PGRUST_SETTINGS],
     env: { RUST_MIN_STACK: '33554432', PGRUST_COST_CACHE_DIR: cacheDir, XDG_CACHE_HOME: cacheDir },
     shellPrefix: 'ulimit -s 65520; ',
@@ -268,7 +123,7 @@ export async function ensurePgrust(enginesDir: string, cacheDir: string, tag: Pg
   const ready = inspectPgrust(dir, cacheDir)
   if (typeof ready !== 'string') return ready
   const host = hostPlatform()
-  if (!host) throw new EngineUnavailable(`pgrust has no build for ${platform()}-${arch()}.`, 'Set "database": { "engine": "native" } in box.json and install PostgreSQL.')
+  if (!host) throw new EngineUnavailable(`pgrust has no build for ${platform()}-${arch()}.`, 'A Box runs on macOS or Linux, on arm64 or x86_64.')
   const file = PGRUST_RELEASES[tag].files[host]
   mkdirSync(enginesDir, { recursive: true, mode: 0o700 })
   const staging = join(enginesDir, `.staging-${process.pid}`)

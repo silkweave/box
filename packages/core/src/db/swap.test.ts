@@ -1,11 +1,11 @@
-// The commit's file swaps (db/switch.ts applySwap / undoSwap) on plain directories: every state a
+// The commit's file swaps (db/restore.ts applySwap / undoSwap) on plain directories: every state a
 // commit or a rollback can be interrupted in, undone repeatedly, must leave the original bytes.
 
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { applySwap, undoSwap, type JournalSwap } from './switch.js'
+import { applySwap, undoSwap, type JournalSwap } from './restore.js'
 
 let root: string
 

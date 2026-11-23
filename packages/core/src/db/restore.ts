@@ -1,66 +1,61 @@
-// Restore and engine switch (PHASE1.md "W7 design" items 4 and 5, R2 to R7): an offline maintenance
-// operation that builds a fresh cluster from a restore point, validates it, and only then makes it
-// active. The active cluster is never modified; a failure anywhere leaves it active.
+// Restore (PHASE1.md "W7 design" item 4, R2 to R6): an offline maintenance operation that builds a
+// fresh cluster from a restore point's snapshot, validates it, and only then makes it active. The
+// active cluster is never modified; a failure anywhere leaves it active.
 //
-// The operation journal `data/db/switch.json` is written (durably) before each mutation. Start-up
+// The operation journal `data/db/restore.json` is written (durably) before each mutation. Start-up
 // (`recoverMaintenance`, first thing in openDatabase) settles an interrupted operation by one rule:
 // `active.json` names the target with this operation id -> finish forward; names the source ->
 // roll back; anything else -> refuse with the journal's path. Lock order: maintenance gate, schema
 // lock, agents lock.
 //
-// Commit steps, each journalled before it starts: `commit` (every staged file set and the new
-// configuration flushed to disk; swaps applied; active.json written), then `cleanup` (only the
+// Commit steps, each journalled before it starts: `commit` (every staged file set flushed to disk;
+// swaps applied; active.json written), then `cleanup` (only the
 // parked old files are removed). Recovery in `cleanup` never touches live files; recovery in
 // `commit` re-applies swaps from each swap's recorded state, never from a missing path alone.
 
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
 import { BUILTIN_ROLES, knownAreas } from '../auth/roles.js'
-import { agentIdentity, agentIdentityFrom, boxJson, boxJsonPath } from '../box-config.js'
+import { agentIdentity, agentIdentityFrom, boxJsonPath } from '../box-config.js'
 import { readBoxConfig } from '../box-json.js'
-import type { DatabaseEngine } from '../box-json.js'
 import { configPath, configRoot, instanceDir } from '../io.js'
 import { agentsDir, parseAgentFile } from '../agents.js'
 import { captureAgentFilesFrom, interruptedAgentChange, parkedAgentsDir, stageAgentFiles, type AgentFiles } from '../warehouse/agent-snapshot.js'
 import { prepareDatabase } from '../warehouse/pg/boot.js'
-import { ensureClusterObjects, ensureDatabase, ensureDatabaseAcl, BOX_DATABASE, POLICY_LOGIN } from '../warehouse/pg/policy.js'
+import { BOX_DATABASE } from '../warehouse/pg/policy.js'
 import { boxSchemaOwners } from '../warehouse/schema.js'
-import { backupName, backupsDir, findRestorePoint, pruneBackupsQuietly, type BackupLabel } from '../warehouse/restore-points.js'
+import { backupName, backupsDir, findRestorePoint, pruneBackupsQuietly } from '../warehouse/restore-points.js'
 import {
-  acquireMaintenance, clusterOf, clusterPaths, initCluster, lockHolder, maintenanceHolder, MaintenanceRunning, nextClusterName,
-  OWNER_LOGIN, postmasterPid, readActive, readIdentity, startMaintenanceServer, stopServer, writeActive,
+  acquireMaintenance, clusterOf, clusterPaths, lockHolder, maintenanceHolder, MaintenanceRunning, nextClusterName,
+  OWNER_LOGIN, postmasterPid, readActive, readIdentity, registerCluster, startMaintenanceServer, stopServer, writeActive,
   type ActiveCluster, type RunningCluster,
 } from './cluster.js'
-import { fsyncDir, fsyncTree, replaceTextDurable, writeJsonDurable } from './durable.js'
+import { fsyncDir, fsyncTree, writeJsonDurable } from './durable.js'
 import type { EngineInstall } from './engines.js'
 import {
-  compareSnapshots, readSnapshot, runClientTool, takeRestorePoint, toolsFor, validateRestorePoint,
-  type RestorePointManifest, type Target, type ValidRestorePoint,
+  compareLedger, readLedger, takeRestorePoint, unpackRestorePoint, validateRestorePoint,
+  type ValidRestorePoint,
 } from './restore-point.js'
 
-const JOURNAL_FORMAT = 'box-db-operation/1'
-
-export type OperationKind = 'restore' | 'switch'
+const JOURNAL_FORMAT = 'box-db-operation/2'
 
 export interface OperationJournal {
   format: typeof JOURNAL_FORMAT
   id: string
-  kind: OperationKind
+  kind: 'restore'
   step: string
   startedAt: string
   /** The cluster active when the operation started (null on a Box without one). */
-  source: { cluster: string; engine: DatabaseEngine } | null
-  target: { cluster: string; engine: DatabaseEngine }
+  source: { cluster: string } | null
+  target: { cluster: string }
   restorePoint: string
   /** Restore points retention and prune must keep while this journal exists. */
   pins: string[]
   /** File sets replaced at commit: `staged` goes to `live`, the old `live` to `parked`. */
   swaps: JournalSwap[]
-  /** The effective configuration file and its text before and after (engine switch only). */
-  config: { file: string; before: string; after: string } | null
   /** The record `active.json` gets on activation. */
   expectedActive: ActiveCluster | null
   /** Id of the staged file sets (Builder names its staging directories with it). */
@@ -124,9 +119,9 @@ export function undoSwap(w: JournalSwap): void {
   if (w.hasStaged && existsSync(w.staged)) { rmSync(w.staged, { recursive: true, force: true }); fsyncDir(dirname(w.staged)) }
 }
 
-export interface ResolveEngine { (engine: DatabaseEngine, cacheDir: string): Promise<EngineInstall> }
+export interface ResolveEngine { (cacheDir: string): Promise<EngineInstall> }
 
-function journalPath(dbRoot: string): string { return join(dbRoot, 'switch.json') }
+function journalPath(dbRoot: string): string { return join(dbRoot, 'restore.json') }
 
 function writeJournal(dbRoot: string, j: OperationJournal): void { writeJsonDurable(journalPath(dbRoot), j) }
 
@@ -160,8 +155,7 @@ async function discardCluster(dbRoot: string, name: string): Promise<void> {
 export interface Recovery { outcome: 'none' | 'forward' | 'rolled-back'; summary?: string }
 
 /**
- * Settle an interrupted restore or switch. Runs before the engine check, fresh initialization,
- * boot and agent reconciliation. Refuses while the operation's own process is still alive.
+ * Settle an interrupted restore. Runs before fresh initialization, boot and agent reconciliation. Refuses while the operation's own process is still alive.
  */
 export async function recoverMaintenance(dbRoot: string): Promise<Recovery> {
   if (!existsSync(journalPath(dbRoot))) return { outcome: 'none' }
@@ -186,7 +180,6 @@ export async function recoverMaintenance(dbRoot: string): Promise<Recovery> {
 async function finishForward(dbRoot: string, j: OperationJournal): Promise<void> {
   if (j.step === 'commit') {
     for (const w of j.swaps) applySwap(w)
-    if (j.config && readFileSync(j.config.file, 'utf8') !== j.config.after) replaceTextDurable(j.config.file, j.config.after)
     j = { ...j, step: 'cleanup' }
     writeJournal(dbRoot, j)
   }
@@ -219,73 +212,40 @@ async function rollBack(dbRoot: string, j: OperationJournal): Promise<void> {
   // A plain restore's staged agent directory is never live: drop it even when the crash came
   // before its swap was journalled.
   if (j.stage) rmSync(join(dirname(agentsDir()), `agents.restoring-${j.stage}`), { recursive: true, force: true })
-  if (j.config && existsSync(j.config.file) && readFileSync(j.config.file, 'utf8') !== j.config.before) replaceTextDurable(j.config.file, j.config.before)
   await discardCluster(dbRoot, j.target.cluster)
   clearJournal(dbRoot)
 }
 
 // ---- The workflow ----
 
-function ownerClient(t: Target, database: string): pg.Client {
+function ownerClient(t: { socket: string; port: number }, database: string): pg.Client {
   const c = new pg.Client({ host: t.socket, port: t.port, user: OWNER_LOGIN, database })
   c.on('error', () => { /* surfaced by the next query */ })
   return c
 }
 
-async function withOwner<T>(t: Target, database: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
+async function withOwner<T>(t: { socket: string; port: number }, database: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
   const c = ownerClient(t, database)
   await c.connect()
   try { return await fn(c) } finally { await c.end().catch(() => {}) }
 }
 
-/** Derived (engine-specific) index entries stay out of a portable restore (rebuilt per engine). */
-function portableList(list: string): string {
-  return list.split('\n').filter((l) => !/ INDEX \S+ derived_/.test(l)).join('\n')
-}
-
 /**
- * Load a validated restore point into the fresh cluster at `t` (maintenance HBA), compare it with
- * the manifest BEFORE any forward migration (R6), then migrate, reconcile and check (R5). Throws
- * with every problem found.
+ * Check the recovered target at `t` (maintenance HBA) against the manifest BEFORE any forward
+ * migration (R6), then migrate, reconcile and check (R5). Returns every problem found.
  */
-async function loadTarget(t: Target, point: ValidRestorePoint, tools: ReturnType<typeof toolsFor>, cluster: { dir: string; data: string }): Promise<string[]> {
-  const scratch = cluster.dir
-  const m = point.manifest
-  const { core, features } = boxSchemaOwners()
-  // Cluster objects first (they are not in the dump): the contract's, then any group or login the
-  // restore point's grants name (a feature removed since keeps its group until reconciliation).
-  await withOwner(t, 'postgres', async (c) => {
-    await ensureClusterObjects(c, features.map((f) => f.id))
-    for (const r of m.snapshot.clusterRoles) {
-      if (!/^(area_[a-z0-9_]+_(read|write)|box_role_[1-9][0-9]*)$/.test(r.name)) throw new Error(`restore point names an invalid role ${r.name}`)
-      if ((await c.query('select 1 from pg_roles where rolname = $1', [r.name])).rowCount) continue
-      await c.query(`create role ${r.name} ${r.login ? 'login' : 'nologin'} nosuperuser nocreatedb nocreaterole noreplication nobypassrls`)
-      if (!r.login) await c.query(`grant ${r.name} to ${POLICY_LOGIN} with admin true, inherit false, set false`)
-    }
-    await ensureDatabase(c, BOX_DATABASE)
-  })
-  const listFile = join(scratch, 'restore.list')
-  const { stdout } = await runClientTool(tools, 'pg_restore', ['-l', point.dumpPath], 120_000)
-  writeFileSync(listFile, portableList(stdout))
-  await runClientTool(tools, 'pg_restore', ['-h', t.socket, '-p', String(t.port), '-U', OWNER_LOGIN, '-d', BOX_DATABASE,
-    '--exit-on-error', '--single-transaction', '-L', listFile, point.dumpPath], 60 * 60_000)
-  // Database-level settings are ours, never the dump's (R7).
-  await withOwner(t, BOX_DATABASE, (c) => ensureDatabaseAcl(c, m.snapshot.roleLogins.map((l) => l.login)))
-
-  const restored = await withOwner(t, BOX_DATABASE, async (c) => {
-    await c.query('begin isolation level repeatable read read only')
-    try { return await readSnapshot(c) } finally { await c.query('rollback') }
-  })
-  const problems = compareSnapshots(m.snapshot, restored)
+async function checkTarget(t: { socket: string; port: number }, point: ValidRestorePoint, dataDir: string): Promise<string[]> {
+  const restored = await withOwner(t, BOX_DATABASE, (c) => readLedger(c))
+  const problems = compareLedger(point.manifest.ledger, restored)
   if (problems.length) return problems
-
+  const { core, features } = boxSchemaOwners()
   await prepareDatabase(t, {
     core, features,
     builtinRoles: BUILTIN_ROLES.map((r) => ({ id: r.id, default: r.default, areas: r.areas })),
     knownAreas: knownAreas(),
     // The normal-mode files the next boot will use (the maintenance HBA is passed by path, so the
     // cluster's own pg_hba.conf and pg_ident.conf are the ones checked here).
-    checkFiles: { dataDir: cluster.data, socketDir: t.socket },
+    checkFiles: { dataDir, socketDir: t.socket },
   })
   return []
 }
@@ -295,7 +255,7 @@ async function loadTarget(t: Target, point: ValidRestorePoint, tools: ReturnType
  * live after the commit must parse, name roles the restored database has, and not name a person;
  * the configured system agent's role must exist there too.
  */
-async function admissionProblems(t: Target, files: AgentFiles, system: { id: string; role: string } | { problem: string }): Promise<string[]> {
+async function admissionProblems(t: { socket: string; port: number }, files: AgentFiles, system: { id: string; role: string } | { problem: string }): Promise<string[]> {
   if ('problem' in system) return [system.problem]
   const systemAgent = system
   const problems: string[] = []
@@ -364,12 +324,8 @@ function stagedSystemAgent(swaps: JournalSwap[]): { id: string; role: string } |
 }
 
 export interface RestoreOptions {
-  /** Restore point name (backups/db or seeds) or an absolute directory; null for a switch, which
-   *  restores the dump it takes of the active cluster. */
-  point: string | null
-  /** Engine of the new cluster; default `box.json` `database.engine`. */
-  engine?: DatabaseEngine
-  kind?: OperationKind
+  /** Restore point name (backups/db or seeds) or an absolute directory. */
+  point: string
   resolveEngine: ResolveEngine
   /** Builder: stage every file set the commit replaces (instance files, root config, agent files);
    *  when absent the restore point's agent files are staged. */
@@ -422,69 +378,65 @@ function checkSystemAgent(point: ValidRestorePoint): void {
 export async function restoreDatabase(dbRoot: string, o: RestoreOptions): Promise<RestoreResult> {
   const log = o.log ?? (() => {})
   await recoverMaintenance(dbRoot)
-  const kind = o.kind ?? 'restore'
-  const release = acquireMaintenance(dbRoot, kind)
+  const release = acquireMaintenance(dbRoot, 'restore')
   const crash = (step: string) => { if (o.crashAfter === step) throw Object.assign(new Error(`injected crash after ${step}`), { injected: true }) }
   let journal: OperationJournal | null = null
   let target: RunningCluster | null = null
   try {
     const interrupted = interruptedAgentChange()
-    if (interrupted) throw new Error(`${kind} refused: ${interrupted}`)
-    const engine = o.engine ?? boxJson().database.engine
+    if (interrupted) throw new Error(`restore refused: ${interrupted}`)
     const active = readActive(dbRoot)
-    if (o.point === null && !active) throw new Error('nothing to switch: this Box has no database yet')
-    const targetName = nextClusterName(dbRoot, engine)
+    const targetName = nextClusterName(dbRoot)
     const targetCluster = clusterOf(dbRoot, targetName)
-    const targetInstall = await o.resolveEngine(engine, clusterPaths(targetCluster).cache)
-    const validate = async (dir: string) => {
-      const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as RestorePointManifest
-      const tools = toolsFor(manifest.source?.major ?? targetInstall.major, targetInstall.major)
-      const point = await validateRestorePoint(dir, tools)
-      if (!o.identityFromBackup) checkSystemAgent(point)
-      return { point, tools }
-    }
-    // A restore validates its point in full before anything changes.
-    let checked = o.point === null ? null : await validate(resolvePointDir(o.point))
+    const targetPaths = clusterPaths(targetCluster)
+    const targetInstall = await o.resolveEngine(targetPaths.cache)
+    // The restore point is validated in full before anything changes.
+    const point = await validateRestorePoint(resolvePointDir(o.point))
+    if (!o.identityFromBackup) checkSystemAgent(point)
 
     const id = randomUUID()
     journal = {
-      format: JOURNAL_FORMAT, id, kind, step: 'park', startedAt: new Date().toISOString(),
-      source: active ? { cluster: active.cluster, engine: active.engine } : null,
-      target: { cluster: targetName, engine },
-      restorePoint: checked?.point.dir ?? '(the switch dump)', pins: checked ? [checked.point.manifest.name] : [], swaps: [], config: null, expectedActive: null,
+      format: JOURNAL_FORMAT, id, kind: 'restore', step: 'unpack', startedAt: new Date().toISOString(),
+      source: active ? { cluster: active.cluster } : null,
+      target: { cluster: targetName },
+      restorePoint: point.dir, pins: [point.manifest.name], swaps: [], expectedActive: null,
     }
     writeJournal(dbRoot, journal)
+    // Unpacked before the source is parked: an archive that does not unpack to a data directory
+    // with its backup label is refused before anything else happens.
+    mkdirSync(targetCluster.dir, { recursive: true, mode: 0o700 })
+    await unpackRestorePoint(point, targetPaths.data, targetInstall.major)
+    crash('unpack')
 
     // Park the active cluster as a restore point first (R4: under the maintenance HBA).
     let parked: string | null = null
     if (active) {
       const src = clusterOf(dbRoot, active.cluster)
-      const srcInstall = await o.resolveEngine(active.engine, clusterPaths(src).cache)
+      const srcInstall = await o.resolveEngine(clusterPaths(src).cache)
+      const name = backupName('pre-restore')
+      journal = { ...journal, step: 'park', pins: [...journal.pins, name] }
+      writeJournal(dbRoot, journal)
       const running = await startMaintenanceServer(src, srcInstall)
       try {
-        const label: BackupLabel = kind === 'switch' ? 'pre-switch' : 'pre-restore'
-        const name = backupName(label)
-        journal = { ...journal, pins: [...journal.pins, name] }
-        writeJournal(dbRoot, journal)
         // Test seam: real process death while the source runs under the maintenance HBA.
         if (o.crashAfter === 'kill-in-park') process.kill(process.pid, 'SIGKILL')
-        await takeRestorePoint({ target: running, parent: backupsDir(), name, label, source: { cluster: active.cluster, identity: readIdentity(src) } })
+        await takeRestorePoint({ target: { ...running, dataDir: clusterPaths(src).data }, parent: backupsDir(), name, label: 'pre-restore',
+          source: { cluster: active.cluster, identity: readIdentity(src) } })
         parked = name
         log(`parked ${active.cluster} as ${name}`)
       } finally { await running.release() }
     }
     crash('park')
-    if (!checked) checked = await validate(join(backupsDir(), parked!))
-    const { point, tools } = checked
 
+    // The server's backup recovery replays the archive's WAL as the maintenance server starts.
     journal = { ...journal, step: 'target' }
     writeJournal(dbRoot, journal)
-    const identity = await initCluster(targetCluster, targetInstall)
+    const identity = registerCluster(targetCluster, targetInstall)
     target = await startMaintenanceServer(targetCluster, targetInstall)
     crash('target')
     journal = { ...journal, step: 'load' }
     writeJournal(dbRoot, journal)
-    const problems = await loadTarget(target, point, tools, { dir: targetCluster.dir, data: clusterPaths(targetCluster).data })
+    const problems = await checkTarget(target, point, targetPaths.data)
     if (problems.length) throw new Error(`the restored database does not match ${point.manifest.name}:\n  ${problems.join('\n  ')}`)
     crash('load')
 
@@ -507,16 +459,14 @@ export async function restoreDatabase(dbRoot: string, o: RestoreOptions): Promis
     // Staged content is on disk before the journal relies on it.
     for (const w of swaps) if (w.hasStaged) { fsyncTree(w.staged); fsyncDir(dirname(w.staged)) }
     for (const w of swaps) if (w.hadLive) fsyncDir(dirname(w.parked))
-    const config = kind === 'switch' ? engineConfigChange(engine) : null
     const expectedActive: ActiveCluster = {
-      cluster: targetName, engine, build: identity.build, version: identity.version, pgvector: identity.pgvector,
+      cluster: targetName, build: identity.build, version: identity.version, pgvector: identity.pgvector,
       activated: new Date().toISOString(), operation: id,
-      ...(active ? { previous: { cluster: active.cluster, engine: active.engine, retired: new Date().toISOString() } } : {}),
+      ...(active ? { previous: { cluster: active.cluster, retired: new Date().toISOString() } } : {}),
     }
-    journal = { ...journal, step: 'commit', swaps, config, expectedActive }
+    journal = { ...journal, step: 'commit', swaps, expectedActive }
     writeJournal(dbRoot, journal)
     for (const w of swaps) applySwap(w)
-    if (config) replaceTextDurable(config.file, config.after)
     crash('swap')
     writeActive(dbRoot, expectedActive)
     crash('activate')
@@ -534,7 +484,7 @@ export async function restoreDatabase(dbRoot: string, o: RestoreOptions): Promis
     clearJournal(dbRoot)
     if (older && older !== targetName) await discardCluster(dbRoot, older).catch((e) => log(`could not delete retired cluster ${older}: ${(e as Error).message}`))
     pruneBackupsQuietly(instanceDir())
-    const summary = `${kind === 'switch' ? 'switched to' : 'restored'} ${point.manifest.name} into ${targetName} (${engine}); ` +
+    const summary = `restored ${point.manifest.name} into ${targetName}; ` +
       (active ? `${active.cluster} is retired (kept for rollback) and parked as ${parked}` : 'there was no previous cluster')
     return { operation: id, activated: expectedActive, parked, retired: active?.cluster ?? null, summary }
   } catch (e) {
@@ -553,24 +503,9 @@ export async function restoreDatabase(dbRoot: string, o: RestoreOptions): Promis
   } finally { release() }
 }
 
-/** The effective config file for `database.engine` and its text after the switch (R2). */
-function engineConfigChange(engine: DatabaseEngine): OperationJournal['config'] {
-  const local = join(configRoot(), 'box.local.json')
-  const sets = (file: string) => {
-    if (!existsSync(file)) return false
-    const raw = JSON.parse(readFileSync(file, 'utf8')) as { database?: { engine?: unknown } }
-    return typeof raw.database?.engine === 'string'
-  }
-  const file = sets(local) ? local : boxJsonPath()
-  const before = readFileSync(file, 'utf8')
-  const raw = JSON.parse(before) as Record<string, unknown>
-  raw.database = { ...(raw.database as object | undefined), engine }
-  return { file, before, after: `${JSON.stringify(raw, null, 2)}\n` }
-}
-
 // ---- Clusters on disk ----
 
-export interface ClusterEntry { name: string; engine: string; build: string; state: 'active' | 'retired' | 'unused' }
+export interface ClusterEntry { name: string; build: string; state: 'active' | 'retired' | 'unused' }
 
 /** Every cluster directory under `data/db/`, with its role. */
 export function listClusters(dbRoot: string): ClusterEntry[] {
@@ -579,7 +514,7 @@ export function listClusters(dbRoot: string): ClusterEntry[] {
   return readdirSync(dbRoot).filter((n) => /^[a-z]+-\d+$/.test(n) && existsSync(clusterPaths(clusterOf(dbRoot, n)).identity)).sort().map((name) => {
     const id = readIdentity(clusterOf(dbRoot, name))
     const state = name === active?.cluster ? 'active' : name === active?.previous?.cluster ? 'retired' : 'unused'
-    return { name, engine: id.engine, build: id.build, state }
+    return { name, build: id.build, state }
   })
 }
 

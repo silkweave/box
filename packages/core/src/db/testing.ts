@@ -5,9 +5,8 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { DatabaseEngine } from '../box-json.js'
 import { clusterOf, initCluster, openCluster, ownerClient, type RunningCluster } from './cluster.js'
-import { ensurePgrust, resolveNative, type EngineInstall } from './engines.js'
+import { ensurePgrust, type EngineInstall } from './engines.js'
 
 export function testEnginesDir(): string {
   const dir = join(tmpdir(), 'box-test-engines')
@@ -15,14 +14,8 @@ export function testEnginesDir(): string {
   return dir
 }
 
-export async function testEngine(engine: DatabaseEngine, cacheDir: string): Promise<EngineInstall> {
-  return engine === 'pgrust' ? ensurePgrust(testEnginesDir(), cacheDir) : resolveNative()
-}
-
-/** Whether an engine can run here; native needs the host installation. */
-export function engineAvailable(engine: DatabaseEngine): boolean {
-  if (engine === 'pgrust') return true
-  try { resolveNative(); return true } catch { return false }
+export async function testEngine(cacheDir: string): Promise<EngineInstall> {
+  return ensurePgrust(testEnginesDir(), cacheDir)
 }
 
 export interface TestCluster {
@@ -34,10 +27,10 @@ export interface TestCluster {
 }
 
 /** A private, throwaway cluster for one test file. */
-export async function startTestCluster(engine: DatabaseEngine): Promise<TestCluster> {
-  const dir = mkdtempSync(join(tmpdir(), `box-test-db-${engine}-`))
-  const c = clusterOf(dir, `${engine}-1`)
-  const install = await testEngine(engine, join(c.dir, 'cache'))
+export async function startTestCluster(): Promise<TestCluster> {
+  const dir = mkdtempSync(join(tmpdir(), 'box-test-db-'))
+  const c = clusterOf(dir, 'pgrust-1')
+  const install = await testEngine(join(c.dir, 'cache'))
   await initCluster(c, install)
   // One test cluster serves every parallel Vitest worker, and each worker's executor holds its own
   // connection budget; the production limit (40, one Box process) is too tight for that sum.

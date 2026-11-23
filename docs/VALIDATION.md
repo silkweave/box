@@ -12,9 +12,7 @@ everything. In a Box whose core matches its upstream, core and server tests are 
 tests plus a core smoke set; `box verify --full` runs them all (see [CLI.md](CLI.md)). See
 [CLI.md](CLI.md) for progress, dependencies, caching, warnings and log locations.
 
-The database tests run on one engine per run: pgrust by default, native PostgreSQL with
-`box verify --engine native` (needs PostgreSQL 18 and pgvector on the host). A change to core, the
-executor, the schema or a store is verified on both engines; record both results.
+The database tests run on pgrust, the Box's only engine.
 
 Use focused checks during development, then run the complete chain before calling work complete.
 A passing exit status with warning output is not a warning-free run. Record the actual revision,

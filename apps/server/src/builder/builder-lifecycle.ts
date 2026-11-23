@@ -44,7 +44,7 @@ export interface BuilderBackupManifest {
   files: BuilderBackupFile[]
   /** Root checkout configuration, currently box.json and optional box.local.json. */
   config?: BuilderBackupConfig
-  /** The database restore point (`root-database/`: box.dump, agents.json, manifest.json). */
+  /** The database restore point (`root-database/`: pgdata.tar.gz, agents.json, manifest.json). */
   database?: BuilderBackupConfig
 }
 
@@ -77,13 +77,13 @@ export interface BuilderFileSwap { live: string; staged: string; parked: string;
 
 /**
  * The database side of Builder backups, supplied by the supervisor that owns the cluster (this
- * module stays free of database imports). `dump` writes a database restore point into `dir`;
+ * module stays free of database imports). `snapshot` writes a database restore point into `dir`;
  * `restore` builds a fresh cluster from one and commits it together with the staged file sets
  * under one operation journal, so a crash anywhere settles forward or back as a whole.
  */
 export interface BuilderDatabasePort {
-  dump(dir: string): Promise<void>
-  restore(input: { point: string; engine: 'pgrust' | 'native'; stageFiles: (id: string) => BuilderFileSwap[] }): Promise<void>
+  snapshot(dir: string): Promise<void>
+  restore(input: { point: string; stageFiles: (id: string) => BuilderFileSwap[] }): Promise<void>
 }
 
 export interface BuilderOperationOptions {
@@ -440,6 +440,9 @@ const fileEntry = async (root: string, path: string): Promise<BuilderBackupFile>
   return { path: relativeSafe(root, path), bytes: stat.size, sha256: await sha256File(path), mode: stat.mode & 0o777 }
 }
 
+/** A Builder backup's database restore point: core's restore-point files. */
+const DATABASE_FILES = ['pgdata.tar.gz', 'agents.json', 'manifest.json']
+
 const validateManifestShape = (manifest: unknown, expectedId?: string): BuilderBackupManifest => {
   if (!isRecord(manifest) || manifest.version !== 1 || !isSafeId(manifest.id) || (expectedId && manifest.id !== expectedId) ||
       typeof manifest.createdAt !== 'string' || typeof manifest.reason !== 'string' || !isSha(manifest.codebaseSHA) ||
@@ -457,7 +460,7 @@ const validateManifestShape = (manifest: unknown, expectedId?: string): BuilderB
       const pathKey = `${namespace}:${isRecord(entry) ? String(entry.path) : ''}`
       if (!isRecord(entry) || !isRelativeFile(entry.path) || seen.has(pathKey) ||
           (namespace === 'config' && entry.path !== 'box.json' && entry.path !== 'box.local.json') ||
-          (namespace === 'database' && !['box.dump', 'agents.json', 'manifest.json'].includes(String(entry.path))) ||
+          (namespace === 'database' && !DATABASE_FILES.includes(String(entry.path))) ||
           typeof entry.bytes !== 'number' || entry.bytes < 0 || !Number.isSafeInteger(entry.bytes) || !isSha(entry.sha256) || typeof entry.mode !== 'number' || !Number.isInteger(entry.mode) || entry.mode < 0 || entry.mode > 0o777) {
         throw new BuilderLifecycleError(503, 'Builder backup manifest contains an invalid file entry')
       }
@@ -467,6 +470,9 @@ const validateManifestShape = (manifest: unknown, expectedId?: string): BuilderB
   }
   validateEntries(files, 'instance')
   validateEntries(configFiles, 'config')
+  if (databaseFiles.some((entry) => isRecord(entry) && entry.path === 'box.dump')) {
+    throw new BuilderLifecycleError(409, 'This Builder backup carries a pg_dump database from an earlier Box version; this version restores only database snapshots')
+  }
   validateEntries(databaseFiles, 'database')
   return manifest as unknown as BuilderBackupManifest
 }
@@ -560,9 +566,9 @@ const createBackup = async (options: BuilderOperationOptions, reason: string): P
     configFiles.sort((a, b) => a.path.localeCompare(b.path))
     let database: BuilderBackupConfig | undefined
     if (options.database) {
-      const dumpDir = resolve(directory, 'root-database')
-      await options.database.dump(dumpDir)
-      database = { files: await Promise.all(['box.dump', 'agents.json', 'manifest.json'].map((name) => fileEntry(dumpDir, join(dumpDir, name)))) }
+      const pointDir = resolve(directory, 'root-database')
+      await options.database.snapshot(pointDir)
+      database = { files: await Promise.all(DATABASE_FILES.map((name) => fileEntry(pointDir, join(pointDir, name)))) }
     }
     const manifest: BuilderBackupManifest = { version: 1, id, createdAt, reason, codebaseSHA, branch, files, config: { files: configFiles }, ...(database ? { database } : {}) }
     writeFileSync(join(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
@@ -715,20 +721,6 @@ const applyBackup = async (paths: BuilderLifecyclePaths, manifest: BuilderBackup
   }
 }
 
-/** The engine a Builder backup's configuration names (box.local.json over box.json; pgrust by default). */
-const backupEngine = (directory: string, manifest: BuilderBackupManifest): 'pgrust' | 'native' => {
-  let engine: unknown = 'pgrust'
-  for (const name of ['box.json', 'box.local.json']) {
-    if (!manifest.config?.files.some((file) => file.path === name)) continue
-    try {
-      const raw = JSON.parse(readFileSync(resolve(directory, 'root-config', name), 'utf8')) as { database?: { engine?: unknown } }
-      if (raw.database?.engine !== undefined) engine = raw.database.engine
-    } catch { /* validated by the restored boot */ }
-  }
-  if (engine !== 'pgrust' && engine !== 'native') throw new BuilderLifecycleError(503, `Builder backup names an unknown database engine ${String(engine)}`)
-  return engine
-}
-
 /**
  * Stage every file set the restore commit replaces, beside the live ones (same filesystems, so each
  * swap is a rename): each top-level instance entry Builder manages, and box.json / box.local.json.
@@ -787,15 +779,14 @@ export async function restoreBuilder(id: string, options: BuilderOperationOption
         try {
           await database.restore({
             point: resolve(source.directory, 'root-database'),
-            engine: backupEngine(source.directory, source.manifest),
             stageFiles: (stageId) => stageBuilderFiles(options.paths, source.manifest, source.directory, stageId),
           })
         } finally {
-          // Staging is removed only once the database journal is gone: while data/db/switch.json
+          // Staging is removed only once the database journal is gone: while data/db/restore.json
           // exists (a rollback that failed), it may name these paths as the only copy of the
           // previous or restored files, and the next start settles it. Without a journal nothing
           // references them (the Builder mutex and the maintenance gate exclude a concurrent run).
-          if (!existsSync(join(options.paths.instanceDir, 'db', 'switch.json'))) {
+          if (!existsSync(join(options.paths.instanceDir, 'db', 'restore.json'))) {
             for (const root of [options.paths.instanceDir, options.paths.repoRoot]) {
               for (const name of readdirSync(root)) if (/^\.builder-(restore|parked)-/.test(name)) rmSync(join(root, name), { recursive: true, force: true })
             }

@@ -1,18 +1,18 @@
 // The Box database's restore points and clusters, from the host shell. Restore points are
-// directories (box.dump, agents.json, manifest.json) of two kinds:
+// directories (pgdata.tar.gz, agents.json, manifest.json) of two kinds:
 //
 //   seeds/<name>/          named dev fixtures. Yours. Nothing ever prunes them.
-//   backups/db/<label>-... machine-generated safety net (manual, pre-migrate, pre-restore,
-//                          pre-switch), kept generationally (packages/core/src/warehouse/restore-points.ts).
+//   backups/db/<label>-... machine-generated safety net (manual, pre-migrate, pre-restore),
+//                          kept generationally (packages/core/src/warehouse/restore-points.ts).
 //
-// A backup and a snapshot run online (the running Box keeps serving). Restore, switch and prune
-// are offline maintenance: stop Box first (they refuse while it runs).
+// A backup and a snapshot run online (the running Box keeps serving): a physical snapshot of the
+// database cluster as a gzip tarball. Restore and prune are offline maintenance: stop Box first
+// (they refuse while it runs).
 //
 //   box db backup              a restore point under backups/db/ (+ the bucket when configured)
 //   box db snapshot [name]     a seed under seeds/<name>/ (default name: baseline)
 //   box db list                every restore point with its time and size
 //   box db restore <name>      restore a seed or a backup into a fresh cluster (previous parked)
-//   box db switch --engine <pgrust|native>   move the database to the other engine
 //   box db clusters            the cluster directories and which is active or retired
 //   box db prune               delete stopped clusters other than the active one
 
@@ -24,11 +24,10 @@ import {
   pruneDatabaseClusters,
   restoreWarehouse,
   snapshotSeed,
-  switchDatabaseEngine,
 } from '@silkweave/box-core'
 import { commandError, commandHeader, commandLine, commandSuccess } from '../../../packages/cli/src/command-ui.js'
 
-const USAGE = 'Usage: box db backup | snapshot [name] | list | restore <name> | switch --engine <pgrust|native> | clusters | prune'
+const USAGE = 'Usage: box db backup | snapshot [name] | list | restore <name> | clusters | prune'
 
 function mb(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1)
@@ -36,7 +35,7 @@ function mb(bytes: number): string {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
-  const [cmd, nameArg] = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--engine')
+  const [cmd, nameArg] = argv.filter((a) => !a.startsWith('--'))
 
   if (cmd === 'list') {
     commandHeader('db list')
@@ -76,15 +75,6 @@ async function main(): Promise<void> {
     commandHeader('db restore')
     commandSuccess(result.summary)
     commandLine('Start Box again to serve the restored database; boot reconciles the agents from the restored files.', 'muted')
-    return
-  }
-
-  if (cmd === 'switch') {
-    const engine = argv[argv.indexOf('--engine') + 1]
-    if (!argv.includes('--engine') || (engine !== 'pgrust' && engine !== 'native')) { commandError(USAGE); process.exit(1) }
-    const result = await switchDatabaseEngine(engine)
-    commandHeader('db switch')
-    commandSuccess(result.summary)
     return
   }
 

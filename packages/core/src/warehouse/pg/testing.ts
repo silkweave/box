@@ -14,7 +14,6 @@ import { randomBytes } from 'node:crypto'
 import pg from 'pg'
 import { OWNER_LOGIN } from '../../db/cluster.js'
 import { startTestCluster, type TestCluster } from '../../db/testing.js'
-import type { DatabaseEngine } from '../../box-json.js'
 import { closeExecutor, configureExecutor, setKnownAreas, type Executor } from '../executor.js'
 import { bootDatabase, clearPolicyService, installTestPolicyService, withClient, type BootOptions, type Target } from './boot.js'
 import { ensureDatabase, ensureDatabaseAcl, readRoleLogins } from './policy.js'
@@ -27,15 +26,14 @@ declare module 'vitest' {
 }
 
 export interface TemplateInfo {
-  engine: DatabaseEngine
   socket: string
   port: number
   database: string
   knownAreas: string[]
 }
 
-export async function startTemplateCluster(engine: DatabaseEngine, boot: Omit<BootOptions, 'database' | 'checkFiles'>): Promise<{ info: TemplateInfo; cluster: TestCluster }> {
-  const cluster = await startTestCluster(engine)
+export async function startTemplateCluster(boot: Omit<BootOptions, 'database' | 'checkFiles'>): Promise<{ info: TemplateInfo; cluster: TestCluster }> {
+  const cluster = await startTestCluster()
   const t: Target = { socket: cluster.running.socket, port: cluster.running.port }
   try {
     await bootDatabase(t, { ...boot, database: TEMPLATE_DATABASE, checkFiles: false })
@@ -43,7 +41,7 @@ export async function startTemplateCluster(engine: DatabaseEngine, boot: Omit<Bo
     clearPolicyService()
     await closeExecutor()
   } catch (e) { await cluster.stop(); throw e }
-  return { info: { engine, ...t, database: TEMPLATE_DATABASE, knownAreas: [...boot.knownAreas] }, cluster }
+  return { info: { ...t, database: TEMPLATE_DATABASE, knownAreas: [...boot.knownAreas] }, cluster }
 }
 
 export interface TestDatabase {

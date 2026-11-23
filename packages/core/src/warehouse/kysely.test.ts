@@ -1,5 +1,5 @@
 // Kysely on the executor (kysely.ts): the qualify plugin's SQL, and the executor's contract kept
-// for built queries on the run's engine (BOX_TEST_ENGINE): no context refuses, statements join the
+// for built queries: no context refuses, statements join the
 // open transaction (one commit, one rollback, afterCommit order), a lone SELECT runs read-only, the
 // classifier still applies to raw SQL, Kysely's own transactions and streaming are refused.
 import { describe, expect, it } from 'vitest'

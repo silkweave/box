@@ -11,15 +11,12 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `6ee5c60732f133da6b454e23ea9bbb8cda32c2c5` (2026-11-20: one
-DataGrid for every list of records with inline-editable columns, searchable pickers, favourites and
-self-kept views; kit number, text and date-time cells; create forms in hash-routed dialogs; every
-Settings section on the Box design system with WCAG AA colour tokens; MCP sign-in (the Box as the
-OAuth server for people's own MCP clients, Connected apps, consent page); delegated credentials end
-with the person's access; the installer asks for a Git name and email when none is set. Since
-3b05aae (2026-11-11): a fresh install runs the Box as a background service of its user and prints
-the sign-in link; the installer sets up the PostgreSQL 18 client tools; the warehouse on
-PostgreSQL; roles and areas with row security; trackers),
+Latest core refresh: Stack commit `9152ba1fcef11b0d8fa18ef7173366c1bed4a6e4` (2026-11-23: database
+backups are online folder snapshots (`pgdata.tar.gz`, no pg_dump or pg_restore); pgrust is the only
+engine, so a Box needs only Git and Bun; the installer asks no questions about required tools, shows
+each long step's latest output and keeps a log at `~/.local/state/silkweave/install.log`; setup takes
+a first backup before printing the sign-in link. Since 6ee5c60 (2026-11-20): one DataGrid with
+inline editing, design system Settings, MCP sign-in, the installer asks for a Git identity),
 materialized with `box:build`; `box verify` passed 10/10. Core carries signals, signal events,
 `run.error` and the event ports; delivery is the Automation recipe's `alerts` powerup, adapted
 like any other recipe.

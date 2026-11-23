@@ -47,8 +47,8 @@ bun --version       # must be 1.4.2 or newer; CI pins 1.4.2
 
 - **Bun 1.4.2+** is the runtime and package manager (`engines` and `packageManager` in root `package.json`).
 - **Nothing else is required to start.** The warehouse is one PostgreSQL-compatible database per Box
-  (`pgrust` by default, native PostgreSQL 18 as the alternative); `box setup` prepares the engine and
-  asks before installing any host package. There is no connection string to configure.
+  on pgrust, which the Box downloads and starts itself; no database software or client tools come
+  from the host. There is no connection string to configure.
 
 - **A Git identity.** `git config user.name` and `git config user.email` must both print a value:
   Builder's checkpoints and agents' commits fail without one. If either is empty, ask the owner

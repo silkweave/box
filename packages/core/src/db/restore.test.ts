@@ -1,18 +1,16 @@
-// Restore points and the restore / switch workflow against real clusters in a throwaway instance
+// Restore points and the restore workflow against real clusters in a throwaway instance
 // (PHASE1.md "W7 design"): a round trip with the agent files, refusals before anything changes,
-// crash recovery forward and back, the system-agent check, and a cross-engine restore when both
-// engines are installed.
+// crash recovery forward and back, and the system-agent check.
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { BUILTIN_ROLES, knownAreas } from '../auth/roles.js'
 import { agentsDir } from '../agents.js'
 import { agentIdentity, ensureBoxConfig } from '../box-config.js'
-import type { DatabaseEngine } from '../box-json.js'
 import { resetInstanceDir, setInstanceDir } from '../testing.js'
 import { readUser, upsertUser } from '../users/state.js'
 import { captureAgentFiles, writeAgentFiles } from '../warehouse/agent-snapshot.js'
@@ -23,11 +21,10 @@ import { bootDatabase, clearPolicyService } from '../warehouse/pg/boot.js'
 import { boxSchemaOwners } from '../warehouse/schema.js'
 import { clusterOf, clusterPaths, initCluster, openCluster, postmasterPid, readActive, writeActive, type RunningCluster } from './cluster.js'
 import { dbRoot } from './index.js'
-import { engineAvailable, testEngine } from './testing.js'
-import { readJournal, recoverMaintenance, restoreDatabase, setRollbackCrashForTests } from './switch.js'
+import { testEngine } from './testing.js'
+import { readJournal, recoverMaintenance, restoreDatabase, setRollbackCrashForTests } from './restore.js'
 
-const engine = inject('boxDb').engine as DatabaseEngine
-const resolveEngine = (e: DatabaseEngine, cache: string) => testEngine(e, cache)
+const resolveEngine = (cache: string) => testEngine(cache)
 let dir: string
 let running: RunningCluster | null = null
 
@@ -35,14 +32,14 @@ async function boot(): Promise<void> {
   const root = dbRoot()
   let active = readActive(root)
   if (!active) {
-    const c = clusterOf(root, `${engine}-1`)
-    const install = await resolveEngine(engine, clusterPaths(c).cache)
+    const c = clusterOf(root, 'pgrust-1')
+    const install = await resolveEngine(clusterPaths(c).cache)
     const id = await initCluster(c, install)
-    active = { cluster: c.name, engine, build: id.build, version: id.version, pgvector: id.pgvector, activated: new Date().toISOString() }
+    active = { cluster: c.name, build: id.build, version: id.version, pgvector: id.pgvector, activated: new Date().toISOString() }
     writeActive(root, active)
   }
   const c = clusterOf(root, active.cluster)
-  running = await openCluster(c, await resolveEngine(active.engine, clusterPaths(c).cache), 'test')
+  running = await openCluster(c, await resolveEngine(clusterPaths(c).cache), 'test')
   const { core, features } = boxSchemaOwners()
   await bootDatabase(running, {
     core, features, checkFiles: false, knownAreas: knownAreas(),
@@ -67,8 +64,6 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-switch-'))
   setInstanceDir(dir)
   ensureBoxConfig()
-  const box = JSON.parse(readFileSync(join(dir, 'box.json'), 'utf8')) as Record<string, unknown>
-  writeFileSync(join(dir, 'box.json'), JSON.stringify({ ...box, database: { engine } }, null, 2))
   await boot()
 }, 120_000)
 
@@ -92,21 +87,21 @@ describe('backup and restore', () => {
     await upsertUser({ id: 'alice', nickname: 'Alice' })
     const backup = await backupWarehouse({ remote: false })
     point = backup.local!.path
-    expect(readdirSync(point).sort()).toEqual(['agents.json', 'box.dump', 'manifest.json'])
+    expect(readdirSync(point).sort()).toEqual(['agents.json', 'manifest.json', 'pgdata.tar.gz'])
     const m = JSON.parse(readFileSync(join(point, 'manifest.json'), 'utf8'))
-    expect(m.snapshot.tables['core.users'].rows).toBeGreaterThan(0)
+    expect(m.format).toBe('box-db-restore-point/2')
+    expect(m.ledger.length).toBeGreaterThan(0)
     expect(m.agents.count).toBe(1)
-    expect(m.source.engine).toBe(engine)
   }, 120_000)
 
-  it('refuses a damaged dump before anything changes', async () => {
+  it('refuses a damaged archive before anything changes', async () => {
     await shutdown()
     const copy = join(dir, 'backups', 'db', 'manual-2026-01-01t00-00-00-000z-deadbeef')
     mkdirSync(copy, { recursive: true })
     for (const f of readdirSync(point)) writeFileSync(join(copy, f), readFileSync(join(point, f)))
-    const dump = readFileSync(join(copy, 'box.dump'))
-    dump[dump.length - 10] ^= 0xff
-    writeFileSync(join(copy, 'box.dump'), dump)
+    const archive = readFileSync(join(copy, 'pgdata.tar.gz'))
+    archive[archive.length - 10]! ^= 0xff
+    writeFileSync(join(copy, 'pgdata.tar.gz'), archive)
     const before = { active: readActive(dbRoot()), clusters: clusters() }
     await expect(restoreDatabase(dbRoot(), { point: copy, resolveEngine })).rejects.toThrow(/does not match its manifest/)
     expect(readActive(dbRoot())).toEqual(before.active)
@@ -277,7 +272,7 @@ describe('backup and restore', () => {
     const script = join(dir, 'kill-in-park.ts')
     writeFileSync(script, [
       `import { setInstanceDir } from ${src('testing.ts')}`,
-      `import { restoreDatabase } from ${src('db/switch.ts')}`,
+      `import { restoreDatabase } from ${src('db/restore.ts')}`,
       `import { testEngine } from ${src('db/testing.ts')}`,
       `setInstanceDir(process.argv[2])`,
       `await restoreDatabase(process.argv[3], { point: process.argv[4], resolveEngine: testEngine, crashAfter: 'kill-in-park' })`,
@@ -335,14 +330,4 @@ describe('backup and restore', () => {
     await expect(restoreDatabase(dbRoot(), { point: copy, resolveEngine })).rejects.toThrow(/replaced since/)
     expect(clusters()).toEqual(before)
   }, 120_000)
-
-  it.runIf(engineAvailable('native') && engineAvailable('pgrust'))('restores a dump into the other engine', async () => {
-    const other: DatabaseEngine = engine === 'pgrust' ? 'native' : 'pgrust'
-    const result = await restoreDatabase(dbRoot(), { point, resolveEngine, engine: other })
-    expect(result.activated.engine).toBe(other)
-    expect(readActive(dbRoot())!.engine).toBe(other)
-    // Back to this run's engine for whatever runs after.
-    await restoreDatabase(dbRoot(), { point, resolveEngine, engine })
-    expect(readActive(dbRoot())!.engine).toBe(engine)
-  }, 480_000)
 })

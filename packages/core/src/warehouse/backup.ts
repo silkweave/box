@@ -1,11 +1,11 @@
 // Database backup and restore: local first, remote optional (PHASE1.md "W7 design").
 //
 // A backup is a restore point directory in `<instance>/backups/db/` (format: db/restore-point.ts;
-// naming, listing and retention: restore-points.ts): the Box database as of one snapshot plus the
-// agent files. It covers the database only; chat and the artifact trees keep their own
+// naming, listing and retention: restore-points.ts): an online physical snapshot of the Box's
+// database cluster as a gzip tarball, plus the agent files. It covers the database only; chat and the artifact trees keep their own
 // backups, and the whole-Box copy is a Builder backup. When a bucket is set
 // the restore point is ALSO uploaded, as an immutable set, then a pointer:
-//   db/restore-points/<name>/{box.dump,agents.json,manifest.json}   manifest last
+//   db/restore-points/<name>/{pgdata.tar.gz,agents.json,manifest.json}   manifest last
 //   db/latest.json                                                  {"restorePoint": "<name>"}
 // Recovery from the bucket: copy one restore point's three files into backups/db/<name>/, then
 // `box db restore <name>`. No bucket is the normal, non-error case: the run is local-only.
@@ -22,13 +22,13 @@ import { promisify } from 'node:util'
 import { boxJson } from '../box-config.js'
 import { instanceDir, instanceRelative } from '../io.js'
 import { dbRoot, resolveEngine, openDatabase } from '../db/index.js'
-import { readActive, readIdentity, clusterOf } from '../db/cluster.js'
+import { clusterPaths, readActive, readIdentity, clusterOf } from '../db/cluster.js'
 import { takeRestorePoint, type Target } from '../db/restore-point.js'
 import { writeJsonDurable } from '../db/durable.js'
-import { listClusters, pruneClusters, restoreDatabase, type ClusterEntry, type FileSwap, type RestoreResult } from '../db/switch.js'
+import { listClusters, pruneClusters, restoreDatabase, type ClusterEntry, type FileSwap, type RestoreResult } from '../db/restore.js'
 import { bootedTarget } from './pg/boot.js'
 import {
-  AGENTS_FILE, DUMP_FILE, MANIFEST_FILE, POINT_NAME, UPLOAD_MAX_MS, UPLOAD_PIN_PREFIX,
+  AGENTS_FILE, ARCHIVE_FILE, MANIFEST_FILE, POINT_NAME, UPLOAD_MAX_MS, UPLOAD_PIN_PREFIX,
   backupName, backupsDir, findRestorePoint, pruneBackupsQuietly, seedsDir, settleSeedReplacements,
   type BackupLabel, type RestorePoint,
 } from './restore-points.js'
@@ -125,17 +125,18 @@ async function withBackupTarget<T>(fn: (t: Target, cluster: string) => Promise<T
   const root = dbRoot()
   const active = readActive(root)
   if (!active) throw new Error('this Box has no database yet; nothing to back up')
+  const dataDir = clusterPaths(clusterOf(root, active.cluster)).data
   const booted = bootedTarget()
-  if (booted) return fn(booted, active.cluster)
+  if (booted) return fn({ ...booted, dataDir }, active.cluster)
   const { running } = await openDatabase('cli')
-  try { return await fn(running, active.cluster) } finally { await running.release() }
+  try { return await fn({ ...running, dataDir }, active.cluster) } finally { await running.release() }
 }
 
 async function takePoint(parent: string, name: string, label: BackupLabel | 'seed', opts: { replace?: boolean } = {}): Promise<RestorePoint> {
   return withBackupTarget(async (target, cluster) => {
     const identity = readIdentity(clusterOf(dbRoot(), cluster))
     const m = await takeRestorePoint({ target, parent, name, label, source: { cluster, identity }, ...opts })
-    return { name, path: `${parent}/${name}`, label, takenAt: new Date(m.takenAt), bytes: m.dump.bytes }
+    return { name, path: `${parent}/${name}`, label, takenAt: new Date(m.takenAt), bytes: m.archive.bytes }
   })
 }
 
@@ -149,7 +150,7 @@ async function uploadRestorePoint(gs: string, point: RestorePoint): Promise<stri
   const deadline = Date.now() + UPLOAD_MAX_MS - 60_000
   const left = () => { const ms = deadline - Date.now(); if (ms <= 0) throw new Error(`upload did not finish within ${UPLOAD_MAX_MS / 3_600_000} h`); return ms }
   try {
-    for (const f of [DUMP_FILE, AGENTS_FILE, MANIFEST_FILE]) await uploadFileToGcs(`${point.path}/${f}`, `${prefix}/${f}`, {}, left())
+    for (const f of [ARCHIVE_FILE, AGENTS_FILE, MANIFEST_FILE]) await uploadFileToGcs(`${point.path}/${f}`, `${prefix}/${f}`, {}, left())
     const pointer = join(tmpdir(), `box-latest-${randomUUID().slice(0, 8)}.json`)
     try {
       writeFileSync(pointer, `${JSON.stringify({ restorePoint: point.name })}\n`)
@@ -210,7 +211,7 @@ export async function snapshotSeed(name: string): Promise<RestorePoint> {
 
 /**
  * Restore `name` (from `backups/db/` or `seeds/`) into a fresh cluster and make it active
- * (db/switch.ts). Offline: Box must be stopped. The previous cluster is parked as a `pre-restore`
+ * (db/restore.ts). Offline: Box must be stopped. The previous cluster is parked as a `pre-restore`
  * restore point and kept, stopped, as the retired cluster.
  */
 export async function restoreWarehouse(name: string): Promise<RestoreResult & { from: RestorePoint }> {
@@ -218,13 +219,6 @@ export async function restoreWarehouse(name: string): Promise<RestoreResult & { 
   const result = await restoreDatabase(dbRoot(), { point: from.path, resolveEngine })
   return { ...result, from }
 }
-
-/** Switch the database engine (`box db switch --engine <e>`): dump, restore into a fresh cluster of
- *  the other engine, then update `database.engine`. Offline. */
-export async function switchDatabaseEngine(engine: 'pgrust' | 'native'): Promise<RestoreResult> {
-  return restoreDatabase(dbRoot(), { point: null, engine, kind: 'switch', resolveEngine })
-}
-
 
 /** The cluster directories under `data/db/` (`box db clusters`). */
 export function listDatabaseClusters(): ClusterEntry[] {
@@ -238,13 +232,13 @@ export function pruneDatabaseClusters(): Promise<string[]> {
 
 /** Builder backups: a database restore point at `dir` (its parent must exist), from the
  *  supervisor-owned cluster, online. */
-export async function dumpRestorePointTo(running: { socket: string; port: number; cluster: { name: string; dir: string; port: number } }, dir: string): Promise<void> {
-  await takeRestorePoint({ target: running, parent: dirname(dir), name: basename(dir), label: 'manual',
+export async function takeRestorePointAt(running: { socket: string; port: number; cluster: { name: string; dir: string; port: number } }, dir: string): Promise<void> {
+  await takeRestorePoint({ target: { ...running, dataDir: clusterPaths(running.cluster).data }, parent: dirname(dir), name: basename(dir), label: 'manual',
     source: { cluster: running.cluster.name, identity: readIdentity(running.cluster) } })
 }
 
 /** Builder restores: the database from `point` and the staged instance files and root config,
  *  committed under one operation journal. The caller has released the cluster. */
-export function restoreBuilderDatabase(input: { point: string; engine: 'pgrust' | 'native'; stageFiles: (id: string) => FileSwap[] }): Promise<RestoreResult> {
-  return restoreDatabase(dbRoot(), { point: input.point, engine: input.engine, resolveEngine, stageFiles: input.stageFiles, identityFromBackup: true })
+export function restoreBuilderDatabase(input: { point: string; stageFiles: (id: string) => FileSwap[] }): Promise<RestoreResult> {
+  return restoreDatabase(dbRoot(), { point: input.point, resolveEngine, stageFiles: input.stageFiles, identityFromBackup: true })
 }

@@ -1,22 +1,21 @@
 // Matrix A5 (PHASE1.md W8 A, BOX-Review's tightening): a policy command whose PROCESS dies before
-// and after its commit, on the run's engine. Another process (policy-crash-child.ts) boots the
+// and after its commit. Another process (policy-crash-child.ts) boots the
 // policy service on this test's cluster, stops at the point and is killed with SIGKILL; then a
 // fresh process boots, and the role rows, logins, memberships, retirement and revision are
 // compared, and admission is exercised from this (other) process.
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Access } from '../../auth/access.js'
 import { policyRevision } from '../../auth/policy-revision.js'
 import { BUILTIN_ROLES, knownAreas, upsertRole } from '../../auth/roles.js'
 import type { Principal } from '../../auth/principal.js'
 import { ensureBoxConfig } from '../../box-config.js'
-import type { DatabaseEngine } from '../../box-json.js'
 import { clusterOf, clusterPaths, initCluster, openCluster, type RunningCluster } from '../../db/cluster.js'
 import { dbRoot } from '../../db/index.js'
 import { testEngine } from '../../db/testing.js'
@@ -28,7 +27,6 @@ import { boxSchemaOwners } from '../schema.js'
 import { bootDatabase, clearPolicyService, refreshPolicy } from './boot.js'
 import { BOX_DATABASE } from './policy.js'
 
-const engine = inject('boxDb').engine as DatabaseEngine
 const child = fileURLToPath(new URL('./policy-crash-child.ts', import.meta.url))
 const preload = fileURLToPath(new URL('./policy-crash-preload.ts', import.meta.url))
 const coreDir = fileURLToPath(new URL('../../../', import.meta.url))
@@ -97,11 +95,9 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-policy-crash-'))
   setInstanceDir(dir)
   ensureBoxConfig()
-  const box = JSON.parse(readFileSync(join(dir, 'box.json'), 'utf8')) as Record<string, unknown>
-  writeFileSync(join(dir, 'box.json'), JSON.stringify({ ...box, database: { engine } }, null, 2))
-  const c = clusterOf(dbRoot(), `${engine}-1`)
-  await initCluster(c, await testEngine(engine, clusterPaths(c).cache))
-  running = await openCluster(c, await testEngine(engine, clusterPaths(c).cache), 'test')
+  const c = clusterOf(dbRoot(), 'pgrust-1')
+  await initCluster(c, await testEngine(clusterPaths(c).cache))
+  running = await openCluster(c, await testEngine(clusterPaths(c).cache), 'test')
   const { core, features } = boxSchemaOwners()
   await bootDatabase(running, { core, features, checkFiles: false, knownAreas: knownAreas(), builtinRoles: BUILTIN_ROLES.map((r) => ({ id: r.id, default: r.default, areas: r.areas })) })
   owner = new pg.Client({ host: running.socket, port: running.port, user: 'box_owner', database: BOX_DATABASE })

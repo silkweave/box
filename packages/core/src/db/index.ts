@@ -1,18 +1,17 @@
-// Bringing the Box's database up for a process: resolve the requested engine, refuse a mismatch
-// with the active cluster, initialize a fresh Box's first cluster, then open it under the
-// ownership rules in cluster.ts. The supervisor, the server and CLI scripts all come through here.
+// Bringing the Box's database up for a process: resolve pgrust, initialize a fresh Box's first
+// cluster, then open it under the ownership rules in cluster.ts. The supervisor, the server and CLI
+// scripts all come through here.
 
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { boxJson, ensureBoxConfig } from '../box-config.js'
-import type { DatabaseEngine } from '../box-json.js'
+import { ensureBoxConfig } from '../box-config.js'
 import { dataPath } from '../io.js'
 import {
   assertNoMaintenance, clusterOf, clusterPaths, initCluster, nextClusterName, openCluster, readActive, writeActive,
   type ActiveCluster, type OwnerRole, type RunningCluster,
 } from './cluster.js'
-import { recoverMaintenance } from './switch.js'
-import { ensurePgrust, inspectPgrust, pgrustDir, resolveNative, type EngineInstall } from './engines.js'
+import { recoverMaintenance } from './restore.js'
+import { ensurePgrust, inspectPgrust, pgrustDir, type EngineInstall } from './engines.js'
 
 export * from './cluster.js'
 export * from './engines.js'
@@ -20,21 +19,18 @@ export * from './engines.js'
 export function dbRoot(): string { return dataPath('db') }
 export function enginesDir(): string { return dataPath('engines') }
 
-/** Resolve the binaries for an engine; pgrust is fetched into data/engines when missing. */
-export async function resolveEngine(engine: DatabaseEngine, cacheDir: string): Promise<EngineInstall> {
-  return engine === 'pgrust' ? ensurePgrust(enginesDir(), cacheDir) : resolveNative()
+/** Resolve the pgrust binaries; they are fetched into data/engines when missing. */
+export async function resolveEngine(cacheDir: string): Promise<EngineInstall> {
+  return ensurePgrust(enginesDir(), cacheDir)
 }
 
 /** Like resolveEngine, without downloading: for diagnostics. */
-export function inspectEngine(engine: DatabaseEngine, cacheDir: string): EngineInstall | string {
-  if (engine === 'native') { try { return resolveNative() } catch (e) { return (e as Error).message } }
+export function inspectEngine(cacheDir: string): EngineInstall | string {
   return inspectPgrust(pgrustDir(enginesDir()), cacheDir)
 }
 
-export class EngineMismatch extends Error {}
-
 /** A fresh Box's first cluster, created once even when the server and a CLI script start together. */
-async function initFirstCluster(root: string, engine: DatabaseEngine): Promise<ActiveCluster> {
+async function initFirstCluster(root: string): Promise<ActiveCluster> {
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const lock = join(root, 'init.lock')
   const deadline = Date.now() + 120_000
@@ -53,11 +49,11 @@ async function initFirstCluster(root: string, engine: DatabaseEngine): Promise<A
   try {
     const existing = readActive(root)
     if (existing) return existing
-    const name = nextClusterName(root, engine)
+    const name = nextClusterName(root)
     const c = clusterOf(root, name)
-    const install = await resolveEngine(engine, clusterPaths(c).cache)
+    const install = await resolveEngine(clusterPaths(c).cache)
     await initCluster(c, install)
-    const active: ActiveCluster = { cluster: name, engine, build: install.build, version: install.version, pgvector: install.pgvector, activated: new Date().toISOString() }
+    const active: ActiveCluster = { cluster: name, build: install.build, version: install.version, pgvector: install.pgvector, activated: new Date().toISOString() }
     writeActive(root, active)
     return active
   } finally { rmSync(lock, { force: true }) }
@@ -71,29 +67,23 @@ export interface OpenDatabase {
 
 /**
  * Open the Box's database for this process. A fresh Box (no `active.json`) initializes its first
- * cluster with `box.json` `database.engine`. On an existing Box the requested engine must match the
- * active cluster; editing the setting never moves data.
+ * cluster.
  */
 export async function openDatabase(role: OwnerRole): Promise<OpenDatabase> {
   const root = dbRoot()
-  // An interrupted restore or switch is settled before anything else reads the active record.
+  // An interrupted restore is settled before anything else reads the active record.
   const recovery = await recoverMaintenance(root)
   if (recovery.summary) console.warn(`[database] ${recovery.summary}`)
   assertNoMaintenance(root)
   let active = readActive(root)
   // A fresh Box writes its configuration (and binds the agent identity) before its first cluster
   // exists: from then on a database without box.json is an existing Box that lost it.
-  if (!active) ensureBoxConfig()
-  const requested = boxJson().database.engine
-  if (active && active.engine !== requested) {
-    throw new EngineMismatch(
-      `This Box's database runs on ${active.engine} (cluster ${active.cluster}), but box.json asks for ${requested}. ` +
-      `Editing the setting does not move data: switch engines with \`box db switch ${requested}\`, or set "database": { "engine": "${active.engine}" } again.`,
-    )
+  if (!active) {
+    ensureBoxConfig()
+    active = await initFirstCluster(root)
   }
-  if (!active) active = await initFirstCluster(root, requested)
   const c = clusterOf(root, active.cluster)
-  const install = await resolveEngine(active.engine, clusterPaths(c).cache)
+  const install = await resolveEngine(clusterPaths(c).cache)
   const running = await openCluster(c, install, role)
   return { running, active, install }
 }

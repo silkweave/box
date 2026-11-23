@@ -11,7 +11,6 @@ import { readBoxConfig, writeBoxJsonIfAbsent, writeBoxLocal, type BoxJson } from
 import { upsertUser } from '@silkweave/box-core/users/state'
 import { asSystem } from '@silkweave/box-core/request-context'
 import { withDatabase } from '@silkweave/box-core/db/runtime'
-import { EngineUnavailable, hostInstallCommand, resolveClientTools, resolveNative, SERVER_MAJOR } from '@silkweave/box-core/db/engines'
 import { commandError, commandHeader, commandLine, commandSuccess, commandValue, commandWarning, openBrowser } from '../../../packages/cli/src/command-ui.js'
 import { isMain, repoRoot } from '../../../packages/cli/src/repo.js'
 import { readSecret, setRegistryKey } from '../../../packages/cli/src/recipe.js'
@@ -255,47 +254,9 @@ sign-in link (box auth login). The suggestion comes from this computer's account
   engine: `The Box builds and runs its features with an AI agent. It gets a sign-in of its own inside
 this Box, so your own Claude or Codex login on this computer stays untouched. You connect the
 account in the Box afterwards: Settings › Profile › Connect.`,
-  database: `The Box keeps its data in a PostgreSQL database on this computer. Backups need the
-PostgreSQL client tools (pg_dump, pg_restore); the native engine also needs PostgreSQL itself with
-pgvector. Setup installs them with your package manager when you agree (it may ask for your
-password); otherwise it stops and shows the command to run yourself. On Linux the packages come
-from the PostgreSQL apt repository (https://www.postgresql.org/download/linux/), which must already
-be set up; setup does not add package repositories.`,
   key: `Recipes are the features you add to your Box. The open ones need no key. An access key, from
 whoever shares recipes with you, unlocks the rest. Paste it here: it shows as dots. No key? Press
 Enter; add one any time later with: box registry key`,
-}
-
-/**
- * The host packages the database needs, before anything opens it: native PostgreSQL with pgvector
- * for the native engine, the client tools for both (backups). pgrust itself is downloaded and
- * verified on the first start. Each install runs only on the owner's confirmation; without a
- * terminal, with --yes or when declined, setup stops with the install hint.
- */
-export async function ensureDatabaseHost(
-  engine: 'pgrust' | 'native',
-  ask: (question: string) => Promise<boolean>,
-  deps = { resolveNative, resolveClientTools, hostInstallCommand, install: (cmd: string[]) => spawnSync(cmd[0]!, cmd.slice(1), { stdio: 'inherit' }).status },
-): Promise<string[]> {
-  const installed: string[] = []
-  const needs: { what: 'native' | 'client-tools'; label: string; check: () => unknown }[] = [
-    ...(engine === 'native' ? [{ what: 'native' as const, label: `PostgreSQL ${SERVER_MAJOR} with pgvector`, check: () => deps.resolveNative() }] : []),
-    { what: 'client-tools', label: 'the PostgreSQL client tools (pg_dump, pg_restore)', check: () => deps.resolveClientTools() },
-  ]
-  for (const need of needs) {
-    let missing: EngineUnavailable
-    try { need.check(); continue } catch (e) {
-      if (!(e instanceof EngineUnavailable)) throw e
-      missing = e
-    }
-    const cmd = deps.hostInstallCommand(need.what)
-    if (!cmd || !(await ask(`Install ${need.label} now? This runs: ${cmd.join(' ')}`))) throw missing
-    const status = deps.install(cmd)
-    if (status !== 0) throw new Error(`${cmd.join(' ')} failed (exit ${status}).\n${missing.hint}`)
-    need.check()
-    installed.push(need.label)
-  }
-  return installed
 }
 
 async function collectAnswers(args: SetupArgs, candidates: ProviderCandidate[]): Promise<SetupAnswers> {
@@ -368,11 +329,6 @@ async function run(argv: string[]): Promise<void> {
   commandHeader('setup')
   const answers = await collectAnswers(args, candidates)
   if (answers.ownerId === systemUserId()) throw new Error(`owner id must differ from the machine principal ${JSON.stringify(systemUserId())}`)
-
-  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY && !args.yes)
-  const engine = readBoxConfig(repoRoot).database.engine
-  const installed = await ensureDatabaseHost(engine, (question) => interactive ? confirm(question, true, { explain: args.explain }, HELP.database) : Promise.resolve(false))
-  for (const label of installed) commandSuccess(`Installed ${label}`)
 
   // The database phase: one opening of the Box database (created on a fresh Box), closed before the
   // Box starts. Refuse before writing profile configuration or rotating anything. A partially
@@ -467,6 +423,7 @@ async function startServiceAndOpen(ownerId: string, next: () => void): Promise<n
     commandLine('A sign-in link once it runs: box auth login', 'muted')
     return 1
   }
+  proveFirstBackup()
   const { signIn, expires } = await issueOwnerSignIn(ownerId)
   openBrowser(signIn, { quiet: true })
   commandSuccess('Your Box is running')
@@ -488,6 +445,23 @@ async function startServiceAndOpen(ownerId: string, next: () => void): Promise<n
   commandLine('  New sign-in link: box auth login', 'muted')
   commandLine('')
   return 0
+}
+
+/**
+ * Take the Box's first restore point now, through the same snapshot path Builder uses before a
+ * session, so a broken database shows here, during install, and not as a Builder session that
+ * will not start. The Box keeps running either way; a failure is a loud warning with the cause.
+ */
+function proveFirstBackup(): void {
+  const result = spawnSync('bun', ['run', '--silent', 'db:backup'], { cwd: repoRoot, encoding: 'utf8', timeout: 180_000 })
+  if (result.status === 0) {
+    commandSuccess('Took a first backup of the Box database (Builder can undo its changes)')
+    return
+  }
+  commandWarning('The Box runs, but its first database backup failed. Builder cannot start sessions until this is fixed:')
+  const output = `${result.stderr ?? ''}${result.stdout ?? ''}`.trim() || (result.error?.message ?? `exit ${result.status}`)
+  for (const text of output.split('\n').slice(-12)) commandLine(`  ${text}`, 'muted')
+  commandLine('Check again after fixing it: box db backup', 'muted')
 }
 
 /**

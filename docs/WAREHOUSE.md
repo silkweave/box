@@ -4,22 +4,18 @@ One **PostgreSQL-compatible database** is the ground truth for everything a Box 
 Each Box runs its own cluster on the same machine, with no network listener; writes go straight
 into it. There is no JSON source, no seed and no rebuild step.
 
-- **Engines:** `pgrust` (the default for a new Box) or native PostgreSQL 18 with pgvector, chosen
-  by `database.engine` in `box.json` ([CONFIGURATION.md](CONFIGURATION.md)). pgrust is downloaded
-  on the first start, checked against its publisher's checksum and unpacked into `data/engines/`;
-  native PostgreSQL, pgvector and the client tools (`pg_dump`, `pg_restore`, needed by both engines)
-  come from the host's package manager: `box setup` runs the install command (Homebrew, or apt with
-  sudo) on the owner's confirmation, and a start without them refuses with that command. Version ranges are checked at every
-  start; exact builds are recorded in `data/db/active.json` and in every restore point.
-- **Where:** `data/db/<engine>-<n>/` holds one cluster (`pgdata/`, `server.log`, `cluster.json`);
+- **Engine:** pgrust, a PostgreSQL 18 compatible server. It is downloaded on the first start,
+  checked against its publisher's checksum and unpacked into `data/engines/`; the Box needs no
+  database software on the host, no package manager and no client tools. Its exact build is
+  recorded in `data/db/active.json` and in every restore point. Running native PostgreSQL instead
+  is a deliberate adaptation of a Box, not a setting: [NATIVE-POSTGRES.md](NATIVE-POSTGRES.md).
+- **Where:** `data/db/pgrust-<n>/` holds one cluster (`pgdata/`, `server.log`, `cluster.json`);
   `data/db/active.json` names the active one. The instance dir (`data/`) is always
   `<checkout>/data`; no environment variable moves it, so a second tenant or a scratch Box is a
   second checkout. **Gitignored**: the durable copies are the restore points below, never git.
 - **Lifecycle:** the supervisor (`box start` / `box dev`) owns the running cluster and keeps it
   across application restarts. A CLI script that finds a running owner only connects; one that
-  finds none starts the cluster under the instance lock and stops it on exit. Editing
-  `database.engine` never moves existing data: a mismatch with the active cluster refuses to start
-  and names `box db switch`.
+  finds none starts the cluster under the instance lock and stops it on exit.
 - **Ownership:** core owns the engine, the executor, the record layer, the schema lifecycle and its
   tables in schema `core`, declared in
   [`warehouse/core-models.ts`](../packages/core/src/warehouse/core-models.ts) (`CORE_MODELS`):
@@ -130,8 +126,8 @@ other logins fill the rest. In steady state one Box process uses at most:
 | policy snapshot | 1 `box_core` session while a refresh reads the policy (one repeatable-read transaction) |
 | policy lane | 1 `box_policy` session; further policy commands queue (bounded) |
 
-Maintenance adds its own sessions on top: a backup holds the owner's snapshot session plus
-`pg_dump`'s, and the schema runner one owner session at boot.
+Maintenance adds its own sessions on top: a backup holds one owner session for its duration, and
+the schema runner one owner session at boot.
 
 Pools are lazy, one per login. At the limit an acquire closes an idle connection of another login
 and waits until the close has completed; when too many callers already wait, it fails with
@@ -317,7 +313,7 @@ Each feature documents its own migrations.
 ## `bun run schema:check`
 
 Run `bun run schema:check` after changing a model, baseline or migration. It starts one throwaway
-cluster (pgrust; `BOX_TEST_ENGINE=native` for the other engine) with one database per pass, and
+cluster (pgrust) with one database per pass, and
 writes nothing to the tree.
 
 It proves three things:
@@ -506,9 +502,9 @@ A restore point is a directory holding three files:
 
 | File | What it is |
 |---|---|
-| `box.dump` | `pg_dump -Fc` of the Box database |
-| `agents.json` | the agent files (`data/config/agents/*.md`) as they were when the snapshot was taken |
-| `manifest.json` | written last: source cluster, engine and exact build, client tool version, SHA-256 of the other two, the migration ledger, roles and role logins, a content digest of every table and the sequence values, the system principal |
+| `pgdata.tar.gz` | an online physical snapshot of the cluster's data folder: the files, its `backup_label` and the write-ahead log segments recovery needs |
+| `agents.json` | the agent files (`data/config/agents/*.md`) as they were when the snapshot ended |
+| `manifest.json` | written last (format `box-db-restore-point/2`): source cluster and exact build, the archive's size, SHA-256, entry count and WAL range, the agent files' SHA-256, the migration ledger, the system principal |
 
 A restore point covers **the database and the agent files only** (chat's rows included). Chat's uploads and the artifact trees are files with their
 own backups (their recipes' INSTALL.md); a copy of the whole Box is a Builder backup
@@ -517,7 +513,7 @@ them:
 
 | | who writes it | pruned? |
 |---|---|---|
-| `data/backups/db/` | the machine: `manual`, `pre-migrate`, `pre-restore`, `pre-switch` | yes, generationally |
+| `data/backups/db/` | the machine: `manual`, `pre-migrate`, `pre-restore` | yes, generationally |
 | `data/seeds/` | you: `box db snapshot [name]` (an existing seed is replaced only once the new one is complete) | never |
 
 ### The commands
@@ -527,53 +523,64 @@ box db backup                           # a restore point in backups/db/ (+ the 
 box db list                             # every restore point: name, label, size, time
 box db snapshot [name]                  # a seed in seeds/<name>/ you own (default: baseline)
 box db restore <name>                   # Box stopped: restore one into a fresh cluster
-box db switch --engine <pgrust|native>  # Box stopped: move the database to the other engine
 box db clusters                         # the cluster directories: active, retired, unused
 box db prune                            # Box stopped: delete stopped clusters other than the active one
 ```
 
 `box db seeds` is an alias for `list`. A backup and a snapshot run **online**: the running Box keeps
-serving. Restore, switch and prune are **offline maintenance**: they refuse while Box runs.
+serving. Restore and prune are **offline maintenance**: they refuse while Box runs.
 
-### Consistency: one snapshot for the dump and the manifest
+### Consistency: an online physical snapshot
 
-`box db backup` opens one owner session, takes the schema lock in shared mode (no migration runs
-during the dump), takes the agents lock, starts a repeatable-read transaction and exports its
-snapshot. It reads the agent files, releases the agents lock, reads the sequence values, and runs
-`pg_dump --snapshot` on that snapshot while it reads the manifest's ledger, roles and table digests
-on the same one. Sequences are not transactional, so their values are read before the dump starts:
-the dump's are then never below the manifest's. So the dump and the manifest describe the same instant, and the agent files are never read halfway
-through an agent change made through the Box (creating an agent and `box auth replace` take the
-agents lock). The agent files are the agents' authority: boot reconciliation derives the users rows
-from them before work is admitted, so a restored Box always serves a consistent set.
+`box db backup` needs nothing but SQL and file reads. It opens one owner session and keeps it for
+the whole run:
+
+1. Takes the schema lock in shared mode (no migration runs during the backup; a `pre-migrate`
+   point runs under the lock the migrator already holds) and reads the migration ledger.
+2. Creates a temporary physical replication slot, so a checkpoint during the copy cannot recycle a
+   log segment the restore needs, and calls `pg_backup_start`.
+3. Streams the data folder into `pgdata.tar.gz` (gzip through Bun's zlib, nothing spawned),
+   leaving out the contents of `pg_wal` and the server's pid files.
+4. Takes the agents lock, reads the agent files, calls `pg_backup_stop` and releases the lock, so
+   the agent files and the database describe the same moment (creating an agent and `box auth
+   replace` take the agents lock).
+5. Adds the `backup_label` and exactly the log segments from the backup's start to its stop; a
+   missing segment fails the backup.
+6. Writes `agents.json`, then the manifest last, and moves the finished directory into place.
+
+A failure at any point ends the session, which aborts the backup and drops the slot and the locks.
+Files copied while the Box writes may be torn; that is expected: on restore, PostgreSQL replays the
+log from the label's start point and reaches the state at `pg_backup_stop`. Every transaction
+committed before the backup stopped is in the restore point. The agent files are the agents'
+authority: boot reconciliation derives the users rows from them before work is admitted, so a
+restored Box always serves a consistent set.
 
 A backup refuses while an agent replacement is incomplete (`data/config/agent-replace.json`
-exists); re-running the same `box auth replace` completes it. The client tools (`pg_dump`,
-`pg_restore`) come from the host, both from the same installation and at least as new as the
-server's major version; a backup without them fails with the install command.
+exists); re-running the same `box auth replace` completes it. Measured: the Team Box database
+(228 MB on disk) snapshots in about 4 seconds to about 60 MB.
 
 ### Restore
 
 `box db restore <name>` never modifies the active cluster. In order:
 
-1. **Validate** the restore point in full: the manifest's format, both SHA-256s, the agent files'
-   format, the dump's table of contents, the tool and engine versions (no restore into an older
-   major), and that the system principal and its identity lock are the live ones. A restore point taken before a
-   `box auth replace` of the system principal is refused: restore the whole Box from a Builder
-   backup taken before the replacement instead.
-2. **Park** the active cluster as a `pre-restore` restore point, started under a maintenance HBA
-   that admits no runtime login.
-3. **Build** a fresh cluster (`data/db/<engine>-<n>/`) with the configured engine, provision the
-   cluster roles the dump's grants name, and `pg_restore` into it in one transaction. Derived,
-   engine-specific indexes are left out and rebuilt for the target.
-4. **Compare** the restored database with the manifest before anything migrates: the ledger, every
-   table's content digest, roles and role logins; sequences may be ahead, never behind.
+1. **Validate** the restore point in full: exactly its three files, the manifest's format, the
+   archive's size and SHA-256, the agent files' SHA-256 and format, and that the system principal
+   and its identity lock are the live ones. A restore point taken before a `box auth replace` of
+   the system principal is refused: restore the whole Box from a Builder backup taken before the
+   replacement instead. A restore point in an earlier format is refused with that reason.
+2. **Unpack** the archive into a fresh cluster directory (`data/db/pgrust-<n>/`), refusing one
+   without a `backup_label`, with another `PG_VERSION`, a different entry count or a path outside
+   the directory, and give it a new `cluster.json` and its own authentication files.
+3. **Park** the active cluster as a `pre-restore` restore point, started under a maintenance HBA
+   that admits no runtime login. Then start the new cluster under the same HBA: it recovers from
+   the snapshot's log and reports a consistent state, or the restore fails.
+4. **Compare** the restored migration ledger with the manifest's before anything migrates.
 5. **Prepare**: pending migrations run forward, role logins are reconciled with the restored roles,
    the catalog check runs, and the cluster's own authentication files are checked.
 6. **Admit**: the agent files are staged beside the live ones, and each must parse, name a role the
    restored database has and not name a person; the configured system agent's role must exist too.
    Any problem in steps 4 to 6 refuses the restore and deletes the new cluster; nothing live changed.
-7. **Commit** under the operation journal `data/db/switch.json`: the staged files are flushed to disk,
+7. **Commit** under the operation journal `data/db/restore.json`: the staged files are flushed to disk,
    the agent files are swapped in and `active.json` names the new cluster; only then are the parked
    previous files removed. The previous cluster is **retired**, kept stopped for rollback until the
    next retirement; `box db prune` deletes it on request.
@@ -584,21 +591,13 @@ reads the active record: `active.json` already names the new cluster for this op
 commit finishes forward; or it still names the old one, so the new cluster is discarded and the
 agent files go back. Anything else refuses with the journal's path. If the rollback itself fails,
 the journal stays and the next start retries it; nothing the journal names may be deleted by hand.
-While a restore, switch or prune runs, `data/db/maintenance.lock` makes every other open refuse, and
+While a restore or prune runs, `data/db/maintenance.lock` makes every other open refuse, and
 a server a dead maintenance run left running (under the maintenance HBA) is restarted, never adopted.
 
 A restore always puts the restore point's agent files back with its database: the two were taken
 together and boot derives the agent rows from the files. To recover agent files alone, read them
 from the restore point's `agents.json` (a JSON object of file name to content) and write the ones
 you need into `data/config/agents/` with Box stopped; the next start reconciles them.
-
-`box db switch --engine <e>` is the same workflow with the live cluster as its source: it takes a
-`pre-switch` restore point, restores it into a fresh cluster of the other engine, and updates
-`database.engine` in the configuration file that sets it, under the same journal.
-
-Indexes named `derived_*` are engine-specific and optional (a feature's HNSW index on native
-PostgreSQL): a restore or switch leaves them out, and the feature's baseline builds them again on
-the next boot where the engine supports them.
 
 ### Retention: generational, and only in `backups/db/`
 
@@ -620,13 +619,13 @@ runs after each successful backup and restore; a failure is logged, never raised
 At boot, before the schema runner changes anything, it plans: when an existing database has pending
 migrations, a feature area without its schema, or models or baseline DDL that differ from those last
 applied (`core.schema_contract` holds their fingerprint), it takes a `pre-migrate` restore point first,
-while holding the migration lock. A failed dump fails the boot with its reason. Fresh databases get
+while holding the migration lock. A failed backup fails the boot with its reason. Fresh databases get
 none. A pre-migrate point covers the database only: migrations may not touch files or other stores.
 
 ### The MCP and tRPC surface
 
 `warehouse-backup` (core action), `WarehouseBackup` and `WarehouseRestorePoints` (MCP and tRPC, admin)
-take and list restore points. Restore, switch and prune are host commands only, run by someone who
+take and list restore points. Restore and prune are host commands only, run by someone who
 can see the machine, with Box stopped.
 
 ### The optional remote copy
@@ -636,7 +635,7 @@ private bucket as an immutable set, the manifest last, then moves a pointer:
 
 | Object | Holds |
 |---|---|
-| `db/restore-points/<name>/box.dump`, `agents.json`, `manifest.json` | one restore point, never overwritten |
+| `db/restore-points/<name>/pgdata.tar.gz`, `agents.json`, `manifest.json` | one restore point, never overwritten |
 | `db/latest.json` | `{"restorePoint": "<name>"}`, the newest uploaded |
 
 To restore from the bucket, copy one restore point's three files into `data/backups/db/<name>/` and

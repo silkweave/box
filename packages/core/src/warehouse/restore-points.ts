@@ -3,7 +3,7 @@
 // A restore point is a directory (db/restore-point.ts has the format):
 //   <instance>/backups/db/<label>-<stamp>-<id>/   machine-written. Retention prunes ONLY here.
 //   <instance>/seeds/<name>/                       human-named dev fixtures (`box db snapshot`). Never pruned.
-// Each holds box.dump, agents.json and manifest.json, the manifest written last. A directory being
+// Each holds pgdata.tar.gz, agents.json and manifest.json, the manifest written last. A directory being
 // written is `.staging-<id>` and only its writer or the staging sweep removes it; a directory
 // without a valid manifest is listed as damaged and left alone.
 //
@@ -14,12 +14,14 @@ import { randomUUID } from 'node:crypto'
 import { basename, join } from 'node:path'
 import { instanceDir } from '../io.js'
 
-export type BackupLabel = 'pre-migrate' | 'manual' | 'pre-restore' | 'pre-switch'
+export type BackupLabel = 'pre-migrate' | 'manual' | 'pre-restore'
 
-export const BACKUP_LABELS: readonly BackupLabel[] = ['pre-migrate', 'manual', 'pre-restore', 'pre-switch']
+export const BACKUP_LABELS: readonly BackupLabel[] = ['pre-migrate', 'manual', 'pre-restore']
 
 export const MANIFEST_FILE = 'manifest.json'
-export const DUMP_FILE = 'box.dump'
+export const ARCHIVE_FILE = 'pgdata.tar.gz'
+/** The manifest format this version writes and restores (db/restore-point.ts). */
+export const RESTORE_POINT_FORMAT = 'box-db-restore-point/2'
 export const AGENTS_FILE = 'agents.json'
 export const STAGING_PREFIX = '.staging-'
 
@@ -32,7 +34,7 @@ export interface RestorePoint {
   label: BackupLabel | 'seed'
   /** From the manifest; the name's stamp or the directory's mtime when it has none. */
   takenAt: Date
-  /** Bytes on disk (dump plus sidecars). */
+  /** Bytes on disk (archive plus sidecars). */
   bytes: number
   /** Why this directory is not restorable (no or unreadable manifest), when it is not. */
   damaged?: string
@@ -51,7 +53,7 @@ export function seedsDir(instance = instanceDir()): string {
 // non-alphanumeric replaced, so names sort lexicographically by time. The trailing id keeps two
 // restore points in the same millisecond from colliding.
 const STAMP = /^(\d{4})-(\d{2})-(\d{2})t(\d{2})-(\d{2})-(\d{2})-(\d{3})z(?:-[0-9a-f-]+)?$/
-const LABEL = /^(pre-migrate|pre-restore|pre-switch|manual)(?:-(.*))?$/
+const LABEL = /^(pre-migrate|pre-restore|manual)(?:-(.*))?$/
 
 export function backupStamp(now: Date): string {
   return now.toISOString().replace(/[^0-9a-z]/gi, '-').toLowerCase()
@@ -80,7 +82,7 @@ export const POINT_NAME = /^[a-z0-9][a-z0-9-]{0,127}$/
 
 function dirBytes(dir: string): number {
   let total = 0
-  for (const f of [DUMP_FILE, AGENTS_FILE, MANIFEST_FILE]) {
+  for (const f of [ARCHIVE_FILE, AGENTS_FILE, MANIFEST_FILE]) {
     const p = join(dir, f)
     if (existsSync(p)) total += statSync(p).size
   }
@@ -91,7 +93,10 @@ function manifestTakenAt(dir: string): { takenAt: Date } | { damaged: string } {
   const f = join(dir, MANIFEST_FILE)
   if (!existsSync(f)) return { damaged: 'no manifest.json (an interrupted or foreign directory)' }
   try {
-    const m = JSON.parse(readFileSync(f, 'utf8')) as { takenAt?: unknown }
+    const m = JSON.parse(readFileSync(f, 'utf8')) as { takenAt?: unknown; format?: unknown }
+    if (m.format !== RESTORE_POINT_FORMAT) {
+      return { damaged: m.format === 'box-db-restore-point/1' ? 'a pg_dump restore point from an earlier Box version; this version does not restore it' : 'manifest.json is not a restore point this version reads' }
+    }
     const at = typeof m.takenAt === 'string' ? new Date(m.takenAt) : null
     if (!at || Number.isNaN(at.getTime())) return { damaged: 'manifest.json has no takenAt' }
     return { takenAt: at }
@@ -175,11 +180,11 @@ function uploadPins(instance: string, now = Date.now()): { live: Set<string>; st
   return { live, stale }
 }
 
-/** Restore points never pruned now: those a maintenance journal names (data/db/switch.json) and
+/** Restore points never pruned now: those a maintenance journal names (data/db/restore.json) and
  *  those a live process is uploading. */
 export function pinnedRestorePoints(instance = instanceDir()): Set<string> {
   const pins = uploadPins(instance).live
-  const f = join(instance, 'db', 'switch.json')
+  const f = join(instance, 'db', 'restore.json')
   if (!existsSync(f)) return pins
   try {
     const j = JSON.parse(readFileSync(f, 'utf8')) as { pins?: unknown }

@@ -1,118 +1,71 @@
-// Database restore points (PHASE1.md "W7 design", R1 to R10): taking one online, and validating
-// one before a restore touches anything.
+// Database restore points: taking one online, and validating and unpacking one for a restore.
 //
-// A restore point is a directory: `box.dump` (`pg_dump -Fc` of the Box database), `agents.json`
-// (the agent files) and `manifest.json` (written last). Everything the manifest says about the
-// database (ledger, roles, per-table content digests, sequences) is read inside the SAME exported
-// snapshot the dump reads, so a restore can check that what it loaded is what was backed up.
-// The agent files are read while the agents advisory lock is held, between the snapshot export
-// and the dump, so a backup never splits an agent change made through the Box (R1). Files are the
-// agents' authority; boot reconciliation derives the users rows from them before admitting work.
+// A restore point is a directory: `pgdata.tar.gz` (an online physical snapshot of the cluster's
+// data directory), `agents.json` (the agent files) and `manifest.json` (written last).
+//
+// Taking one runs on ONE owner session held open throughout: a temporary replication slot keeps
+// the WAL the copy needs, `pg_backup_start` checkpoints, the data directory streams into the
+// archive (without the WAL directory's contents and the postmaster files), then `pg_backup_stop`
+// returns the backup label. The label and exactly the WAL segments from the backup's start to its
+// stop go in last. Unpacked into a fresh cluster directory, the server's backup recovery replays
+// that WAL and opens with every transaction committed before `pg_backup_stop`.
+//
+// The agent files are read while the agents advisory lock is held across `pg_backup_stop`, so a
+// backup never splits an agent change made through the Box (R1). Files are the agents'
+// authority; boot reconciliation derives the users rows from them before admitting work. The
+// migration ledger is read under the schema lock (shared, or held by the migrator for a
+// pre-migrate point), so it is exactly the restored database's.
 //
 // Lock order on every path: maintenance gate, then the schema lock, then the agents lock.
 
-import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import pg from 'pg'
 import { agentIdentity } from '../box-config.js'
 import { configPath } from '../io.js'
 import { captureAgentFiles, interruptedAgentChange, readAgentFiles, writeAgentFiles, type AgentFiles } from '../warehouse/agent-snapshot.js'
-import { CORE_SCHEMA, EXT_SCHEMA } from '../warehouse/pg/areas.js'
+import { CORE_SCHEMA } from '../warehouse/pg/areas.js'
 import { AGENTS_LOCK_KEY, SCHEMA_LOCK_KEY } from '../warehouse/pg/migrate.js'
 export { AGENTS_LOCK_KEY }
 import { BOX_DATABASE } from '../warehouse/pg/policy.js'
-import { AGENTS_FILE, DUMP_FILE, MANIFEST_FILE, POINT_NAME, REPLACED_PREFIX, STAGING_PREFIX, type BackupLabel } from '../warehouse/restore-points.js'
+import { AGENTS_FILE, ARCHIVE_FILE, MANIFEST_FILE, POINT_NAME, REPLACED_PREFIX, RESTORE_POINT_FORMAT, STAGING_PREFIX, type BackupLabel } from '../warehouse/restore-points.js'
 import { OWNER_LOGIN, type ClusterIdentity } from './cluster.js'
 import { fsyncDir, fsyncFile, writeJsonDurable } from './durable.js'
-import { resolveClientTools, type ClientTools } from './engines.js'
+import { extractTarGz, TarGzWriter } from './tarball.js'
 
-export const RESTORE_POINT_FORMAT = 'box-db-restore-point/1'
+export { RESTORE_POINT_FORMAT }
+/** The directory every archive holds the data directory under. */
+export const ARCHIVE_ROOT = 'pgdata'
 
-export interface Target { socket: string; port: number }
+/** A running cluster this process can read the data directory of. */
+export interface Target { socket: string; port: number; dataDir: string }
 
-export interface TableDigest { rows: number; sha256: string }
-
-export interface DatabaseSnapshot {
-  ledger: { name: string; checksum: string }[]
-  roles: { id: string; default_level: string; areas: Record<string, string> | null }[]
-  roleLogins: { role_id: string; login: string }[]
-  /** `schema.table` -> content digest. */
-  tables: Record<string, TableDigest>
-  /** `schema.sequence` -> last value (null when never called). */
-  sequences: Record<string, string | null>
-  /** Application schemas (core and the areas'). */
-  schemas: string[]
-  /** Cluster roles the dump's grants name: area groups and role logins (cluster objects are not dumped). */
-  clusterRoles: { name: string; login: boolean }[]
-}
+export interface LedgerEntry { name: string; checksum: string }
 
 export interface RestorePointManifest {
   format: typeof RESTORE_POINT_FORMAT
   name: string
   label: BackupLabel | 'seed'
   takenAt: string
-  source: { cluster: string; clusterId: string; engine: string; build: string; version: string; major: number; pgvector: string }
-  tools: { binDir: string; version: string; major: number }
-  dump: { file: typeof DUMP_FILE; bytes: number; sha256: string; tocEntries: number }
+  source: { cluster: string; clusterId: string; build: string; version: string; major: number; pgvector: string }
+  archive: {
+    file: typeof ARCHIVE_FILE
+    /** Compressed size and digest of the archive file. */
+    bytes: number
+    sha256: string
+    /** Files and directories in the archive, and their uncompressed content. */
+    entries: number
+    dataBytes: number
+    /** WAL the archive carries: the backup's start and stop segments (inclusive). */
+    wal: { start: string; stop: string; stopLsn: string; segments: number }
+  }
   agents: { file: typeof AGENTS_FILE; sha256: string; count: number }
   /** The system principal and its identity lock when the snapshot was taken (R1). */
   systemAgent: { id: string; identityLock: string | null }
-  snapshot: DatabaseSnapshot
-}
-
-// ---- Tools ----
-
-export interface ToolRun { stdout: string }
-
-/**
- * Run a client tool with a timeout; stderr becomes the error. The promise settles only after the
- * child has exited: a timeout or an abort sends SIGTERM, then SIGKILL after 5 s, and rejects once
- * the process is gone, so a caller can safely remove the files the tool was writing.
- */
-export function runClientTool(tools: ClientTools, tool: 'pg_dump' | 'pg_restore', args: string[], timeoutMs: number, signal?: AbortSignal): Promise<ToolRun> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(join(tools.binDir, tool), args, { stdio: ['ignore', 'pipe', 'pipe'] })
-    let out = '', err = '', stopped: string | null = null, killTimer: ReturnType<typeof setTimeout> | null = null
-    const stop = (why: string) => {
-      if (stopped || child.exitCode !== null) return
-      stopped = why
-      child.kill('SIGTERM')
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 5_000)
-    }
-    const timer = setTimeout(() => stop(`${tool} did not finish within ${Math.round(timeoutMs / 1000)} s`), timeoutMs)
-    const onAbort = () => stop(`${tool} was cancelled`)
-    if (signal?.aborted) onAbort()
-    else signal?.addEventListener('abort', onAbort, { once: true })
-    const done = () => { clearTimeout(timer); if (killTimer) clearTimeout(killTimer); signal?.removeEventListener('abort', onAbort) }
-    child.stdout.on('data', (d) => { out += d })
-    child.stderr.on('data', (d) => { err += d })
-    child.on('error', (e) => { done(); reject(e) })
-    child.on('close', (code) => {
-      done()
-      if (stopped) reject(new Error(stopped))
-      else if (code === 0) resolve({ stdout: out })
-      else reject(new Error(`${tool} exited ${code}: ${(err || out).trim().split('\n').slice(0, 5).join(' / ')}`))
-    })
-  })
-}
-
-/** Client tools able to talk to a server of `major` (and restore into `targetMajor`). R7: only
- *  supported pairs: tools of the same major as the newer side; source major never above target. */
-export function toolsFor(sourceMajor: number, targetMajor = sourceMajor): ClientTools {
-  if (sourceMajor > targetMajor) throw new Error(`a dump from PostgreSQL ${sourceMajor} cannot be restored into ${targetMajor} (no downgrades)`)
-  const tools = resolveClientTools(targetMajor)
-  if (tools.major !== targetMajor) {
-    throw new Error(`client tools ${tools.version} (${tools.binDir}) do not match server major ${targetMajor}; install the PostgreSQL ${targetMajor} client tools`)
-  }
-  return tools
-}
-
-export async function tocEntries(tools: ClientTools, dump: string): Promise<{ count: number; list: string }> {
-  const { stdout } = await runClientTool(tools, 'pg_restore', ['-l', dump], 120_000)
-  const count = stdout.split('\n').filter((l) => l.trim() && !l.startsWith(';')).length
-  return { count, list: stdout }
+  /** The migration ledger (`core.schema_migrations`) the restored database holds. */
+  ledger: LedgerEntry[]
 }
 
 export async function sha256File(file: string): Promise<string> {
@@ -121,83 +74,10 @@ export async function sha256File(file: string): Promise<string> {
   return hash.digest('hex')
 }
 
-// ---- Snapshot read ----
-
-const SYSTEM_SCHEMAS = new Set(['pg_catalog', 'information_schema', 'pg_toast', EXT_SCHEMA, 'public'])
-
-/** Session settings that make text output canonical across engines and hosts. */
-export const CANONICAL_SETTINGS = [
-  `set local timezone = 'UTC'`,
-  `set local datestyle = 'ISO, YMD'`,
-  `set local intervalstyle = 'postgres'`,
-  `set local extra_float_digits = 1`,
-  `set local bytea_output = 'hex'`,
-]
-
-/**
- * Per-table digest: rows in primary-key order (all columns when there is no key), each row's
- * record text with explicit length framing, streamed through a cursor (constant memory). A null
- * column prints as nothing and an empty string as `""` in record text, so the two never collide.
- */
-async function tableDigest(c: pg.Client, schema: string, table: string, order: string[]): Promise<TableDigest> {
-  const q = (s: string) => `"${s.replaceAll('"', '""')}"`
-  const rel = `${q(schema)}.${q(table)}`
-  const orderBy = order.length ? order.map((col) => `x.${q(col)}`).join(', ') : `x::text collate "C"`
-  const cursor = `box_digest_${randomUUID().replaceAll('-', '').slice(0, 12)}`
-  await c.query(`declare ${cursor} no scroll cursor for select x::text as r from ${rel} x order by ${orderBy}`)
-  const hash = createHash('sha256')
-  let rows = 0
-  try {
-    for (;;) {
-      const batch = (await c.query<{ r: string }>(`fetch forward 2000 from ${cursor}`)).rows
-      for (const { r } of batch) { const b = Buffer.from(r, 'utf8'); hash.update(`${b.length}:`); hash.update(b); hash.update('\n') }
-      rows += batch.length
-      if (batch.length < 2000) break
-    }
-  } finally { await c.query(`close ${cursor}`) }
-  return { rows, sha256: hash.digest('hex') }
-}
-
-/**
- * Every application sequence's last value. Sequences are not MVCC: this reads their state NOW,
- * whatever snapshot `c` is in. A restore point reads them BEFORE pg_dump starts, so the dump's
- * values (read later) are never below the manifest's; Box sequences only ascend.
- */
-export async function readSequences(c: pg.Client): Promise<Record<string, string | null>> {
-  const sequences: Record<string, string | null> = {}
-  for (const r of (await c.query<{ s: string; q: string; v: string | null }>(
-    `select schemaname s, sequencename q, last_value::text v from pg_sequences order by 1, 2`)).rows) {
-    if (!SYSTEM_SCHEMAS.has(r.s) && !r.s.startsWith('pg_')) sequences[`${r.s}.${r.q}`] = r.v
-  }
-  return sequences
-}
-
-/** Read the snapshot facts on `c`, which must be inside the snapshot's transaction. */
-export async function readSnapshot(c: pg.Client): Promise<DatabaseSnapshot> {
-  for (const s of CANONICAL_SETTINGS) await c.query(s)
-  const tables = (await c.query<{ s: string; t: string; oid: number }>(
-    `select n.nspname s, c.relname t, c.oid::int8 oid from pg_class c join pg_namespace n on n.oid = c.relnamespace
-      where c.relkind in ('r', 'p') order by 1, 2`)).rows.filter((r) => !SYSTEM_SCHEMAS.has(r.s) && !r.s.startsWith('pg_'))
-  const keys = new Map<number, string[]>()
-  const pk = (await c.query<{ rel: number; k: string }>(`select indrelid::int8 rel, indkey::text k from pg_index where indisprimary`)).rows
-  const attrs = (await c.query<{ rel: number; n: number; name: string }>(
-    `select attrelid::int8 rel, attnum::int n, attname name from pg_attribute where attnum > 0 and not attisdropped`)).rows
-  const attName = new Map(attrs.map((a) => [`${a.rel}:${a.n}`, a.name]))
-  for (const { rel, k } of pk) keys.set(Number(rel), k.trim().split(/\s+/).map((n) => attName.get(`${rel}:${n}`)!).filter(Boolean))
-
-  const digests: Record<string, TableDigest> = {}
-  for (const { s, t, oid } of tables) digests[`${s}.${t}`] = await tableDigest(c, s, t, keys.get(Number(oid)) ?? [])
-  const sequences = await readSequences(c)
-  const has = async (t: string) => (await c.query(`select 1 from pg_tables where schemaname = $1 and tablename = $2`, [CORE_SCHEMA, t])).rowCount! > 0
-  const ledger = await has('schema_migrations')
-    ? (await c.query<{ name: string; checksum: string }>(`select name, checksum from ${CORE_SCHEMA}.schema_migrations order by name`)).rows : []
-  const roles = await has('roles')
-    ? (await c.query<DatabaseSnapshot['roles'][number]>(`select id, default_level, areas from ${CORE_SCHEMA}.roles order by id`)).rows : []
-  const roleLogins = await has('role_logins')
-    ? (await c.query<{ role_id: string; login: string }>(`select role_id, login from ${CORE_SCHEMA}.role_logins order by login`)).rows : []
-  const clusterRoles = (await c.query<{ name: string; login: boolean }>(
-    `select rolname name, rolcanlogin login from pg_roles where rolname ~ '^(area_[a-z0-9_]+_(read|write)|box_role_[1-9][0-9]*)$' order by 1`)).rows
-  return { ledger, roles, roleLogins, tables: digests, sequences, schemas: [...new Set(tables.map((t) => t.s))].sort(), clusterRoles }
+/** The migration ledger, or empty when the database has none yet. */
+export async function readLedger(c: pg.Client): Promise<LedgerEntry[]> {
+  const has = (await c.query(`select 1 from pg_tables where schemaname = $1 and tablename = 'schema_migrations'`, [CORE_SCHEMA])).rowCount! > 0
+  return has ? (await c.query<LedgerEntry>(`select name, checksum from ${CORE_SCHEMA}.schema_migrations order by name`)).rows : []
 }
 
 // ---- Taking a restore point ----
@@ -214,12 +94,12 @@ export interface TakeOptions {
   timeoutMs?: number
   /** Replace an existing restore point of this name once the new one is complete (seeds). */
   replace?: boolean
-  /** Test seam: runs after pg_dump has started, before the snapshot facts are read, on the
-   *  exporter's session. */
-  duringDump?: (exporter: pg.Client) => Promise<void>
+  /** Test seam: runs on a separate connection after the data directory was copied, before
+   *  `pg_backup_stop` (writes here must be in the restored database). */
+  beforeStop?: () => Promise<void>
 }
 
-function client(t: Target, database = BOX_DATABASE): pg.Client {
+function client(t: { socket: string; port: number }, database = BOX_DATABASE): pg.Client {
   const c = new pg.Client({ host: t.socket, port: t.port, user: OWNER_LOGIN, database })
   c.on('error', () => { /* surfaced by the next query */ })
   return c
@@ -233,23 +113,51 @@ async function bounded(p: Promise<unknown>, ms = 10_000): Promise<void> {
   clearTimeout(timer)
 }
 
-/** Terminate backend `pid` from a fresh owner connection and wait (bounded) until it is gone. */
-async function terminateBackend(t: Target, pid: number): Promise<void> {
-  const c = client(t, 'postgres')
-  try {
-    await c.connect()
-    await c.query('select pg_terminate_backend($1)', [pid])
-    for (let i = 0; i < 100; i++) {
-      if (!(await c.query('select 1 from pg_stat_activity where pid = $1', [pid])).rowCount) return
-      await new Promise((r) => setTimeout(r, 50))
-    }
-    throw new Error(`backend ${pid} did not exit after termination`)
-  } finally { await c.end().catch(() => {}) }
-}
-
 function readIdentityLock(): string | null {
   const f = configPath('agent-identity.lock.json')
   return existsSync(f) ? readFileSync(f, 'utf8') : null
+}
+
+/** Never copied from a live data directory: the running server's own files. */
+const SKIP_FILES = new Set(['postmaster.pid', 'postmaster.opts'])
+const WAL_NAME = /^[0-9A-F]{24}$/
+
+/** Stream the live data directory into `w` under ARCHIVE_ROOT. pg_wal keeps only its directory
+ *  structure here; its segments are added after the backup stopped. */
+async function copyDataDir(w: TarGzWriter, dataDir: string, rel = ''): Promise<void> {
+  let entries
+  try { entries = await readdir(join(dataDir, rel), { withFileTypes: true }) } catch (e) {
+    // A directory dropped while the copy runs (a database's): WAL replay recreates what it must.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT' && rel) return
+    throw e
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name))
+  for (const e of entries) {
+    const path = rel ? `${rel}/${e.name}` : e.name
+    if (e.isDirectory()) {
+      await w.addDir(`${ARCHIVE_ROOT}/${path}`)
+      if (path === 'pg_wal' || rel === 'pg_wal') continue
+      await copyDataDir(w, dataDir, path)
+    } else if (e.isFile()) {
+      if ((!rel && SKIP_FILES.has(e.name)) || rel === 'pg_wal') continue
+      await w.addFile(`${ARCHIVE_ROOT}/${path}`, join(dataDir, path))
+    } else {
+      throw new Error(`${join(dataDir, path)} is not a regular file or directory (tablespaces and links are not supported)`)
+    }
+  }
+}
+
+/** Segment names from `start` to `stop` inclusive (same timeline). */
+export function walSegments(start: string, stop: string, segmentBytes: number): string[] {
+  if (!WAL_NAME.test(start) || !WAL_NAME.test(stop)) throw new Error(`unexpected WAL segment names ${start}, ${stop}`)
+  if (start.slice(0, 8) !== stop.slice(0, 8)) throw new Error(`the backup crossed a timeline (${start} to ${stop})`)
+  const perId = 0x100000000 / segmentBytes
+  const index = (n: string) => Number.parseInt(n.slice(8, 16), 16) * perId + Number.parseInt(n.slice(16, 24), 16)
+  const name = (i: number) => `${start.slice(0, 8)}${Math.floor(i / perId).toString(16).toUpperCase().padStart(8, '0')}${(i % perId).toString(16).toUpperCase().padStart(8, '0')}`
+  const out: string[] = []
+  for (let i = index(start); i <= index(stop); i++) out.push(name(i))
+  if (!out.length) throw new Error(`the backup stopped (${stop}) before it started (${start})`)
+  return out
 }
 
 /**
@@ -261,81 +169,74 @@ export async function takeRestorePoint(o: TakeOptions): Promise<RestorePointMani
   if (!POINT_NAME.test(o.name)) throw new Error(`invalid restore point name "${o.name}"`)
   const interrupted = interruptedAgentChange()
   if (interrupted) throw new Error(`backup refused: ${interrupted}`)
-  const tools = toolsFor(o.source.identity.major)
   const timeoutMs = o.timeoutMs ?? 30 * 60_000
   const final = join(o.parent, o.name)
   if (existsSync(final) && !o.replace) throw new Error(`${final} exists already`)
   const staging = join(o.parent, `${STAGING_PREFIX}${randomUUID().slice(0, 8)}`)
   mkdirSync(staging, { recursive: true, mode: 0o700 })
 
-  const exporter = client(o.target)
+  const session = client(o.target)
+  let writer: TarGzWriter | null = null
   let agentsLocked = false
+  const deadline = setTimeout(() => {
+    // Ending the session aborts the backup and drops the temporary slot; the pending query fails.
+    (session as unknown as { connection?: { stream?: { destroy(): void } } }).connection?.stream?.destroy()
+  }, timeoutMs)
   try {
-    await exporter.connect()
-    const exporterPid = (await exporter.query<{ pid: number }>('select pg_backend_pid() pid')).rows[0]!.pid
-    await exporter.query(`set statement_timeout = ${Math.min(timeoutMs, 600_000)}`)
-    if ((o.schemaLock ?? 'take') === 'take') await exporter.query('select pg_advisory_lock_shared($1)', [SCHEMA_LOCK_KEY])
-    await exporter.query('select pg_advisory_lock($1)', [AGENTS_LOCK_KEY])
+    await session.connect()
+    await session.query(`set statement_timeout = ${Math.min(timeoutMs, 600_000)}`)
+    if ((o.schemaLock ?? 'take') === 'take') await session.query('select pg_advisory_lock_shared($1)', [SCHEMA_LOCK_KEY])
+    const ledger = await readLedger(session)
+    const segmentBytes = Number((await session.query<{ v: string }>(`select setting v from pg_settings where name = 'wal_segment_size'`)).rows[0]!.v)
+    // The slot reserves WAL from now on: a checkpoint during the copy cannot recycle a segment the
+    // restore needs. Temporary: it goes with the session, however the session ends.
+    const slot = `box_backup_${randomUUID().replaceAll('-', '').slice(0, 12)}`
+    await session.query('select pg_create_physical_replication_slot($1, true, true)', [slot])
+    await session.query('select pg_backup_start($1, true)', [`box ${o.name}`])
+
+    const archive = join(staging, ARCHIVE_FILE)
+    writer = new TarGzWriter(archive)
+    await writer.addDir(ARCHIVE_ROOT)
+    await copyDataDir(writer, o.target.dataDir)
+    await o.beforeStop?.()
+
+    await session.query('select pg_advisory_lock($1)', [AGENTS_LOCK_KEY])
     agentsLocked = true
-    await exporter.query('begin isolation level repeatable read read only')
-    const snapshotId = (await exporter.query<{ s: string }>('select pg_export_snapshot() s')).rows[0]!.s
     const files: AgentFiles = captureAgentFiles()
     const systemAgent = { id: agentIdentity().id, identityLock: readIdentityLock() }
-    await exporter.query('select pg_advisory_unlock($1)', [AGENTS_LOCK_KEY])
+    const stop = (await session.query<{ lsn: string; labelfile: string; spcmapfile: string | null; wal: string }>(
+      'select lsn::text lsn, labelfile, spcmapfile, pg_walfile_name(lsn) wal from pg_backup_stop(false)')).rows[0]!
+    await session.query('select pg_advisory_unlock($1)', [AGENTS_LOCK_KEY])
     agentsLocked = false
+    if (stop.spcmapfile?.trim()) throw new Error('the cluster has tablespaces, which Box backups do not support')
 
-    // Sequences first: a lower bound for what the dump will read (see readSequences).
-    const sequences = await readSequences(exporter)
-    const dump = join(staging, DUMP_FILE)
-    const cancel = new AbortController()
-    const dumping = runClientTool(tools, 'pg_dump', ['-h', o.target.socket, '-p', String(o.target.port), '-U', OWNER_LOGIN,
-      '-Fc', `--snapshot=${snapshotId}`, '-f', dump, BOX_DATABASE], timeoutMs, cancel.signal)
-    // The facts are read on the exporter's own snapshot while the dump reads the same one. Both
-    // tasks settle before anything continues or is cleaned up: a failure of either cancels the
-    // other and waits for pg_dump to exit.
-    // A failed dump (or the overall deadline) ends the exporter's session. The server only notices a
-    // closed socket at its next socket interaction (client_connection_check_interval is 0 by
-    // default), so a running statement would keep the snapshot and the shared schema lock: the
-    // backend is terminated from an independent owner connection, and the socket is destroyed so
-    // the local query settles at once.
-    let ended: Promise<void> | null = null
-    const endReader = () => {
-      ended ??= (async () => {
-        (exporter as unknown as { connection?: { stream?: { destroy(): void } } }).connection?.stream?.destroy()
-        await bounded(terminateBackend(o.target, exporterPid))
-      })()
-      return ended
+    const start = /START WAL LOCATION: \S+ \(file ([0-9A-F]{24})\)/.exec(stop.labelfile)?.[1]
+    if (!start) throw new Error('pg_backup_stop returned a backup label without its start segment')
+    const segments = walSegments(start, stop.wal, segmentBytes)
+    await writer.addBuffer(`${ARCHIVE_ROOT}/backup_label`, Buffer.from(stop.labelfile.endsWith('\n') ? stop.labelfile : `${stop.labelfile}\n`))
+    for (const seg of segments) {
+      if (!(await writer.addFile(`${ARCHIVE_ROOT}/pg_wal/${seg}`, join(o.target.dataDir, 'pg_wal', seg)))) {
+        throw new Error(`WAL segment ${seg} was removed during the backup; take it again`)
+      }
     }
-    const deadline = setTimeout(() => { cancel.abort(); endReader() }, timeoutMs)
-    const reading = (async () => { await o.duringDump?.(exporter); return readSnapshot(exporter) })()
-    let first: { error: unknown } | null = null
-    const [, read] = await Promise.allSettled([
-      dumping.catch((e) => { first ??= { error: e }; endReader(); throw e }),
-      reading.catch((e) => { first ??= { error: e }; cancel.abort(); throw e }),
-    ]).finally(() => clearTimeout(deadline))
-    // Termination is part of failing: the caller may take the schema lock right after.
-    if (ended) await ended
-    // The failure that came first is the cause; the other task's is its cancellation.
-    if (first) throw (first as { error: unknown }).error
-    if (read.status !== 'fulfilled') throw new Error('snapshot read did not complete')
-    const snapshot: DatabaseSnapshot = { ...read.value, sequences }
-    await exporter.query('commit')
-    fsyncFile(dump)
+    await writer.addDir(`${ARCHIVE_ROOT}/pg_wal/archive_status`)
+    await bounded(session.query('select pg_drop_replication_slot($1)', [slot]))
+    const summary = await writer.finish()
+    writer = null
+    fsyncFile(archive)
 
-    const toc = await tocEntries(tools, dump)
     const agentsSha = writeAgentFiles(join(staging, AGENTS_FILE), files)
     const manifest: RestorePointManifest = {
       format: RESTORE_POINT_FORMAT,
       name: o.name,
       label: o.label,
       takenAt: new Date().toISOString(),
-      source: { cluster: o.source.cluster, clusterId: o.source.identity.id, engine: o.source.identity.engine, build: o.source.identity.build,
+      source: { cluster: o.source.cluster, clusterId: o.source.identity.id, build: o.source.identity.build,
         version: o.source.identity.version, major: o.source.identity.major, pgvector: o.source.identity.pgvector },
-      tools: { binDir: tools.binDir, version: tools.version, major: tools.major },
-      dump: { file: DUMP_FILE, bytes: statSync(dump).size, sha256: await sha256File(dump), tocEntries: toc.count },
+      archive: { file: ARCHIVE_FILE, ...summary, wal: { start, stop: stop.wal, stopLsn: stop.lsn, segments: segments.length } },
       agents: { file: AGENTS_FILE, sha256: agentsSha, count: Object.keys(files).length },
       systemAgent,
-      snapshot,
+      ledger,
     }
     writeJsonDurable(join(staging, MANIFEST_FILE), manifest)
     fsyncDir(staging)
@@ -346,67 +247,79 @@ export async function takeRestorePoint(o: TakeOptions): Promise<RestorePointMani
     if (replaced) rmSync(replaced, { recursive: true, force: true })
     return manifest
   } catch (e) {
-    await bounded(exporter.query('rollback'))
+    if (writer) await writer.abort()
     rmSync(staging, { recursive: true, force: true })
     throw new Error(`backup failed: ${(e as Error).message}`, { cause: e })
   } finally {
-    if (agentsLocked) await bounded(exporter.query('select pg_advisory_unlock($1)', [AGENTS_LOCK_KEY]))
-    // Ending the session releases its advisory locks and snapshot even when a query above hung.
-    await bounded(exporter.end())
+    clearTimeout(deadline)
+    if (agentsLocked) await bounded(session.query('select pg_advisory_unlock($1)', [AGENTS_LOCK_KEY]))
+    // Ending the session aborts an unfinished backup and releases its locks and slot.
+    await bounded(session.end())
   }
 }
 
-// ---- Validating a restore point ----
+// ---- Validating and unpacking a restore point ----
 
 export interface ValidRestorePoint {
   dir: string
   manifest: RestorePointManifest
   agents: AgentFiles
-  dumpPath: string
+  archivePath: string
 }
 
-/** Validate a restore point in full (R10) before anything live changes. Throws with the reason. */
-export async function validateRestorePoint(dir: string, tools: ClientTools): Promise<ValidRestorePoint> {
-  const entries = readdirSync(dir, { withFileTypes: true })
-  for (const e of entries) {
-    if (!e.isFile()) throw new Error(`${dir}: ${e.name} is not a regular file`)
-    if (![DUMP_FILE, AGENTS_FILE, MANIFEST_FILE].includes(e.name)) throw new Error(`${dir}: unexpected file ${e.name}`)
-  }
+/** Validate a restore point's files against its manifest (R10) before anything live changes. */
+export async function validateRestorePoint(dir: string): Promise<ValidRestorePoint> {
   const mf = join(dir, MANIFEST_FILE)
   if (!existsSync(mf)) throw new Error(`${dir} has no manifest.json`)
   const manifest = JSON.parse(readFileSync(mf, 'utf8')) as RestorePointManifest
-  if (manifest.format !== RESTORE_POINT_FORMAT) throw new Error(`${dir}: not a ${RESTORE_POINT_FORMAT} restore point`)
-  const dumpPath = join(dir, DUMP_FILE)
-  if (!existsSync(dumpPath)) throw new Error(`${dir}: box.dump is missing`)
-  if (statSync(dumpPath).size !== manifest.dump.bytes || await sha256File(dumpPath) !== manifest.dump.sha256) throw new Error(`${dir}: box.dump does not match its manifest (damaged or replaced)`)
+  if (manifest.format !== RESTORE_POINT_FORMAT) {
+    const old = (manifest.format as string) === 'box-db-restore-point/1' || existsSync(join(dir, 'box.dump'))
+    throw new Error(old
+      ? `${dir} is a pg_dump restore point from an earlier Box version; this version restores only physical snapshots (${RESTORE_POINT_FORMAT}). Take a new backup.`
+      : `${dir}: not a ${RESTORE_POINT_FORMAT} restore point`)
+  }
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (!e.isFile()) throw new Error(`${dir}: ${e.name} is not a regular file`)
+    if (![ARCHIVE_FILE, AGENTS_FILE, MANIFEST_FILE].includes(e.name)) throw new Error(`${dir}: unexpected file ${e.name}`)
+  }
+  const archivePath = join(dir, ARCHIVE_FILE)
+  if (!existsSync(archivePath)) throw new Error(`${dir}: ${ARCHIVE_FILE} is missing`)
+  if (statSync(archivePath).size !== manifest.archive.bytes || await sha256File(archivePath) !== manifest.archive.sha256) {
+    throw new Error(`${dir}: ${ARCHIVE_FILE} does not match its manifest (damaged or replaced)`)
+  }
   const af = join(dir, AGENTS_FILE)
   if (!existsSync(af)) throw new Error(`${dir}: agents.json is missing`)
   if (await sha256File(af) !== manifest.agents.sha256) throw new Error(`${dir}: agents.json does not match its manifest`)
-  const agents = readAgentFiles(af)
-  const toc = await tocEntries(tools, dumpPath)
-  if (toc.count !== manifest.dump.tocEntries) throw new Error(`${dir}: box.dump lists ${toc.count} entries, the manifest ${manifest.dump.tocEntries}`)
-  return { dir, manifest, agents, dumpPath }
+  return { dir, manifest, agents: readAgentFiles(af), archivePath }
 }
 
-/** Compare a restored database's snapshot with the manifest's (before any forward migration, R6). */
-export function compareSnapshots(want: DatabaseSnapshot, got: DatabaseSnapshot): string[] {
-  const problems: string[] = []
-  const key = (l: { name: string; checksum: string }) => `${l.name}=${l.checksum}`
-  const a = want.ledger.map(key).join('\n'), b = got.ledger.map(key).join('\n')
-  if (a !== b) problems.push('migration ledger differs from the restore point')
-  for (const t of new Set([...Object.keys(want.tables), ...Object.keys(got.tables)])) {
-    const w = want.tables[t], g = got.tables[t]
-    if (!w || !g) problems.push(`table ${t}: ${w ? 'missing after restore' : 'not in the restore point'}`)
-    else if (w.rows !== g.rows || w.sha256 !== g.sha256) problems.push(`table ${t}: ${g.rows} rows restored, ${w.rows} backed up${w.rows === g.rows ? ' (content differs)' : ''}`)
+/**
+ * Unpack a validated restore point's archive as `dataDir` (which must not exist): through a
+ * sibling staging directory, renamed into place only once it holds a data directory with a backup
+ * label of `major`.
+ */
+export async function unpackRestorePoint(point: ValidRestorePoint, dataDir: string, major: number): Promise<void> {
+  if (existsSync(dataDir)) throw new Error(`refusing to unpack into ${dataDir}: it exists`)
+  const staging = `${dataDir}.unpacking`
+  rmSync(staging, { recursive: true, force: true })
+  try {
+    const { entries } = await extractTarGz(point.archivePath, staging)
+    if (entries !== point.manifest.archive.entries) throw new Error(`the archive holds ${entries} entries, the manifest ${point.manifest.archive.entries}`)
+    const pgdata = join(staging, ARCHIVE_ROOT)
+    if (!existsSync(join(pgdata, 'backup_label'))) throw new Error('the archive has no backup_label: not an online snapshot')
+    const version = existsSync(join(pgdata, 'PG_VERSION')) ? readFileSync(join(pgdata, 'PG_VERSION'), 'utf8').trim() : null
+    if (version !== String(major)) throw new Error(`the archive is a PostgreSQL ${version ?? '(unknown)'} data directory; this engine runs ${major}`)
+    for (const name of readdirSync(staging)) if (name !== ARCHIVE_ROOT) throw new Error(`the archive holds ${name} beside ${ARCHIVE_ROOT}/`)
+    renameSync(pgdata, dataDir)
+  } catch (e) {
+    throw new Error(`${point.dir}: ${(e as Error).message}`, { cause: e })
+  } finally {
+    rmSync(staging, { recursive: true, force: true })
   }
-  // Sequences are not MVCC: the manifest's were read before pg_dump started and pg_dump reads its
-  // own later, so a restored value may be ahead of the manifest's, never behind.
-  for (const [s, v] of Object.entries(want.sequences)) {
-    const g = got.sequences[s]
-    if (!(s in got.sequences)) problems.push(`sequence ${s}: missing after restore`)
-    else if (v !== null && (g === null || g === undefined || BigInt(g) < BigInt(v))) problems.push(`sequence ${s}: restored at ${g}, backed up at ${v}`)
-  }
-  const roles = (r: DatabaseSnapshot) => JSON.stringify(r.roles) + JSON.stringify(r.roleLogins)
-  if (roles(want) !== roles(got)) problems.push('roles or role logins differ from the restore point')
-  return problems
+}
+
+/** Compare a restored database's ledger with the manifest's (before any forward migration, R6). */
+export function compareLedger(want: LedgerEntry[], got: LedgerEntry[]): string[] {
+  const key = (l: LedgerEntry) => `${l.name}=${l.checksum}`
+  return want.map(key).join('\n') === got.map(key).join('\n') ? [] : ['migration ledger differs from the restore point']
 }

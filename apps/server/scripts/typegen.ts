@@ -46,12 +46,10 @@ async function main(): Promise<number> {
   // server is lazy (inside a function), so a setter called here has the same ordering guarantee the
   // environment variable had, and unlike the variable it cannot arrive from a shell.
   const { setInstanceDir } = await import('@silkweave/box-core/testing')
-  const { boxJson } = await import('@silkweave/box-core/box-config')
-  const engine = boxJson().database.engine
   setInstanceDir(dataDir)
   // The app boots for real, so it gets a real, throwaway database: a private cluster outside the
   // Box (engine cache under the system temp dir), migrated like a Box's, stopped at the end.
-  const database = await startTypegenDatabase(engine)
+  const database = await startTypegenDatabase()
   try {
     return await generate()
   } finally {
@@ -59,13 +57,13 @@ async function main(): Promise<number> {
   }
 }
 
-async function startTypegenDatabase(engine: 'pgrust' | 'native'): Promise<{ stop(): Promise<void> }> {
+async function startTypegenDatabase(): Promise<{ stop(): Promise<void> }> {
   const { startTestCluster } = await import('@silkweave/box-core/db/testing')
   const { bootDatabase } = await import('@silkweave/box-core/warehouse/pg/boot')
   const { closeExecutor } = await import('@silkweave/box-core/warehouse/executor')
   const { boxSchemaOwners } = await import('@silkweave/box-core/warehouse/schema')
   const { BUILTIN_ROLES, knownAreas } = await import('@silkweave/box-core/auth/roles')
-  const cluster = await startTestCluster(engine)
+  const cluster = await startTestCluster()
   try {
     await bootDatabase({ socket: cluster.running.socket, port: cluster.running.port }, {
       ...boxSchemaOwners(),

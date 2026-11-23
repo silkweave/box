@@ -1,18 +1,16 @@
 // The policy service on a booted database (PERMISSIONS 11.3, 9.2; PHASE1.md W8 P and BOX-Review
 // findings 2 and 9): a role change, its login memberships and the revision commit together or not
 // at all; only box_policy writes policy rows; role assignment keeps its refusals under concurrency.
-// Runs on the run's engine (the second engine suite covers the other).
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import pg from 'pg'
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bumpPolicyRevision, policyRevision } from '../../auth/policy-revision.js'
 import { BUILTIN_ROLES, deleteRole, getRole, knownAreas, upsertRole } from '../../auth/roles.js'
 import { issuePrincipalToken, issueSigninLink, resolveDelegatedPrincipal, resolvePrincipalById, revokePrincipalToken, sessionPrincipalToken, setPrincipalRole } from '../../auth/principal.js'
 import { ensureBoxConfig } from '../../box-config.js'
-import type { DatabaseEngine } from '../../box-json.js'
 import { clusterOf, clusterPaths, initCluster, openCluster, type RunningCluster } from '../../db/cluster.js'
 import { dbRoot } from '../../db/index.js'
 import { testEngine } from '../../db/testing.js'
@@ -32,7 +30,6 @@ import { boxSchemaOwners } from '../schema.js'
 import { bootDatabase, clearPolicyService, policyCommand, policyLaneState, POLICY_QUEUE_MAX, policyListenerState, refreshPolicy, setPolicyTestHooks, startPolicyListener, stopPolicyListener } from './boot.js'
 import { BOX_DATABASE } from './policy.js'
 
-const engine = inject('boxDb').engine as DatabaseEngine
 const asSystemForTest = <T>(fn: () => Promise<T>) => asSystem('test: core command', fn)
 let dir: string
 let running: RunningCluster
@@ -86,11 +83,9 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'box-policy-'))
   setInstanceDir(dir)
   ensureBoxConfig()
-  const box = JSON.parse(readFileSync(join(dir, 'box.json'), 'utf8')) as Record<string, unknown>
-  writeFileSync(join(dir, 'box.json'), JSON.stringify({ ...box, database: { engine } }, null, 2))
-  const c = clusterOf(dbRoot(), `${engine}-1`)
-  await initCluster(c, await testEngine(engine, clusterPaths(c).cache))
-  running = await openCluster(c, await testEngine(engine, clusterPaths(c).cache), 'test')
+  const c = clusterOf(dbRoot(), 'pgrust-1')
+  await initCluster(c, await testEngine(clusterPaths(c).cache))
+  running = await openCluster(c, await testEngine(clusterPaths(c).cache), 'test')
   const { core, features } = boxSchemaOwners()
   await bootDatabase(running, { core, features, checkFiles: false, knownAreas: knownAreas(), builtinRoles: BUILTIN_ROLES.map((r) => ({ id: r.id, default: r.default, areas: r.areas })) })
   owner = await connect('box_owner')
