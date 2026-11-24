@@ -11,7 +11,10 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `1a9e931482d4e115cba19c234c74d9f14f05c0f4` (2026-11-24: the Builder
+Latest core refresh: Stack commit `9a42592ca355a37942d896089c4c1f5c562485df` (2026-11-25: on macOS
+the service starts `data/service/Box.app` when Box Setup put it there, so Login Items lists the Box
+as "Box" by Atomic BI instead of Bun's signer. Since 1a9e931482d4e115cba19c234c74d9f14f05c0f4 on
+2026-11-24: the Builder
 start panel no longer shows a just-connected account as signed out; sign-in links opened on a loopback
 address continue without the "Continue as" click; the installer URL is box.silkweave.ai. Since
 d07482477f313e9f3b6f6adc87581d482eb60709 on 2026-11-23: the wiki

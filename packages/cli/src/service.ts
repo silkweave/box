@@ -22,6 +22,12 @@ export interface ServiceSpec {
   /** systemd unit name without `.service`, or launchd label. */
   name: string
   bun: string
+  /**
+   * launchd only: Box.app's executable in data/service/, copied there by Box Setup. The agent starts
+   * it with Bun as its first argument; macOS names a background item after the signer of the program
+   * an agent starts, so this one is listed as "Box" instead of under Bun's signer.
+   */
+  launcher?: string
   path: string
   /** launchd only: systemd writes to the journal. */
   log: string
@@ -38,6 +44,9 @@ export interface ServiceState {
 /** The supervisor command, relative to the Box root: the same entry point as `bun run start`. */
 export const SUPERVISOR_ARGS = ['--no-env-file', '--no-orphans', '--conditions=@silkweave/box-source', 'apps/server/src/builder/supervisor.ts']
 
+/** Box.app's executable, relative to the Box root (apps/setup/launcher). */
+export const SERVICE_LAUNCHER = 'data/service/Box.app/Contents/MacOS/box-service'
+
 /** One name per checkout: the folder name plus a short hash of its path, so two Boxes never collide. */
 export function serviceName(root: string, platform: ServicePlatform): string {
   const slug = basename(root).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'box'
@@ -45,14 +54,16 @@ export function serviceName(root: string, platform: ServicePlatform): string {
   return platform === 'systemd' ? `silkweave-box-${slug}-${hash}` : `dev.silkweave.box.${slug}-${hash}`
 }
 
-export function serviceSpec(root: string, platform: ServicePlatform, env: { bun?: string; path?: string } = {}): ServiceSpec {
+export function serviceSpec(root: string, platform: ServicePlatform, env: { bun?: string; path?: string; launcher?: string | null } = {}): ServiceSpec {
   const bun = env.bun ?? process.execPath
   // The service starts with a bare environment: keep this shell's PATH (git, the PostgreSQL client
   // tools, claude, codex) and make sure the Bun running this command is on it.
   const parts = (env.path ?? process.env.PATH ?? '').split(':').filter(Boolean)
   const bunDir = dirname(bun)
   const path = [...(parts.includes(bunDir) ? [] : [bunDir]), ...parts, ...['/usr/local/bin', '/usr/bin', '/bin'].filter(dir => !parts.includes(dir))].join(':')
-  return { root, name: serviceName(root, platform), bun, path, log: join(root, 'data', 'logs', 'service.log') }
+  const found = join(root, SERVICE_LAUNCHER)
+  const launcher = platform === 'launchd' ? (env.launcher === undefined ? (existsSync(found) ? found : undefined) : env.launcher ?? undefined) : undefined
+  return { root, name: serviceName(root, platform), bun, ...(launcher ? { launcher } : {}), path, log: join(root, 'data', 'logs', 'service.log') }
 }
 
 /** systemd unit values: `%` is a specifier, and arguments with spaces or quotes need quoting. */
@@ -86,7 +97,7 @@ WantedBy=default.target
 const xml = (value: string): string => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 export function launchdPlist(spec: ServiceSpec): string {
-  const args = [spec.bun, ...SUPERVISOR_ARGS].map(arg => `\t\t<string>${xml(arg)}</string>`).join('\n')
+  const args = [...(spec.launcher ? [spec.launcher] : []), spec.bun, ...SUPERVISOR_ARGS].map(arg => `\t\t<string>${xml(arg)}</string>`).join('\n')
   // ProcessType Standard: Background would put the Box, its agents and box verify on efficiency
   // cores with throttled I/O (docs/GOTCHAS.md).
   return `<?xml version="1.0" encoding="UTF-8"?>

@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, existsSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { launchdPlist, rotateLog, parseLaunchdPrint, parseSystemdShow, serviceName, servicePlatform, serviceSpec, systemdUnit, SUPERVISOR_ARGS } from '../service.ts'
+import { dirname, join } from 'node:path'
+import { launchdPlist, rotateLog, parseLaunchdPrint, parseSystemdShow, serviceName, servicePlatform, serviceSpec, systemdUnit, SERVICE_LAUNCHER, SUPERVISOR_ARGS } from '../service.ts'
 
 test('service names are per checkout and safe for systemd and launchd', () => {
   const a = serviceName('/home/toby/My Box', 'systemd')
@@ -40,6 +40,24 @@ test('the launchd agent runs in the Standard band and escapes XML', () => {
   assert.match(plist, /<key>SuccessfulExit<\/key>\n\t\t<false\/>/)
   assert.match(plist, /<string>apps\/server\/src\/builder\/supervisor\.ts<\/string>/)
   assert.doesNotMatch(plist, /--dev/)
+})
+
+test('the launchd agent starts Box.app with Bun when Box Setup put it in data/service', () => {
+  const root = mkdtempSync(join(tmpdir(), 'box-service-'))
+  try {
+    const bare = serviceSpec(root, 'launchd', { bun: '/opt/homebrew/bin/bun', path: '/usr/bin' })
+    assert.equal(bare.launcher, undefined)
+    assert.match(launchdPlist(bare), /<array>\n\t\t<string>\/opt\/homebrew\/bin\/bun<\/string>/)
+    const launcher = join(root, SERVICE_LAUNCHER)
+    mkdirSync(dirname(launcher), { recursive: true })
+    writeFileSync(launcher, '')
+    const spec = serviceSpec(root, 'launchd', { bun: '/opt/homebrew/bin/bun', path: '/usr/bin' })
+    assert.equal(spec.launcher, launcher)
+    assert.ok(launchdPlist(spec).includes(`<array>\n\t\t<string>${launcher}</string>\n\t\t<string>/opt/homebrew/bin/bun</string>\n\t\t<string>--no-env-file</string>`))
+    assert.equal(serviceSpec(root, 'systemd', { bun: '/usr/bin/bun', path: '/usr/bin' }).launcher, undefined)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('service state parsing', () => {
