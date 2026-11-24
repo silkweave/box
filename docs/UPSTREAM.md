@@ -11,7 +11,10 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `d07482477f313e9f3b6f6adc87581d482eb60709` (2026-11-23: the wiki
+Latest core refresh: Stack commit `1a9e931482d4e115cba19c234c74d9f14f05c0f4` (2026-11-24: the Builder
+start panel no longer shows a just-connected account as signed out; sign-in links opened on a loopback
+address continue without the "Continue as" click; the installer URL is box.silkweave.ai. Since
+d07482477f313e9f3b6f6adc87581d482eb60709 on 2026-11-23: the wiki
 recipe is public and its docs ship in `recipes/wiki/`; chat's coverage test runs in any Box. Since
 9152ba1f the same day: database
 backups are online folder snapshots (`pgdata.tar.gz`, no pg_dump or pg_restore); pgrust is the only

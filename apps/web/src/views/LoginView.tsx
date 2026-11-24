@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Copy, LogIn, Terminal } from 'lucide-react'
 import { Wordmark, Badge, Button } from '@silkweave/box-ui'
 import { useAuth } from '../lib/useAuth.tsx'
-import { dropSigninGrant, grantSubject, pendingSigninGrant, pendingSigninNotice } from '../lib/signinGrant.ts'
+import { continuesWithoutClick, dropSigninGrant, grantSubject, pendingSigninGrant, pendingSigninNotice } from '../lib/signinGrant.ts'
 import { rememberReturnPath } from '../lib/returnPath.ts'
 
 // The sign-in gate, shown whenever there is no session. Two ways in, and they are different
@@ -62,9 +62,10 @@ export function LoginView() {
     if (!res.ok) setError(res.error ?? 'Sign in failed')
   }
 
-  // Deliberately NOT called from an effect. The click is the control that stops a link unfurler or a
-  // URL scanner from spending a single-use grant before the human ever sees it - auto-submitting on
-  // mount would hand that back to any headless browser that renders the page.
+  // Not called from an effect on a public address: the click is the control that stops a link
+  // unfurler or a URL scanner from spending a single-use grant before the human ever sees it -
+  // auto-submitting on mount would hand that back to any headless browser that renders the page. On
+  // a loopback address no scanner reaches the page, so it continues at once (continuesWithoutClick).
   const useLink = async (): Promise<void> => {
     if (!grant || busy) return
     setBusy(true)
@@ -78,6 +79,14 @@ export function LoginView() {
       setGrant(null) // a spent or bad grant is not worth a second button
     }
   }
+
+  const autoContinue = useRef(grant !== null && continuesWithoutClick(window.location.hostname))
+  useEffect(() => {
+    if (!autoContinue.current) return
+    autoContinue.current = false
+    void useLink()
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
+  }, [])
 
   const subject = grant ? grantSubject(grant) : null
   const bootstrapCommand = 'bun setup'

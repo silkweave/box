@@ -28,6 +28,8 @@ import {
   type BuilderApplicationStatus,
   type BuilderControlState,
   type BuilderPendingChanges,
+  loadFreshVerdicts,
+  withFreshVerdicts,
 } from '../lib/builderStore.ts'
 
 configureBuilderMonacoWorker()
@@ -277,7 +279,14 @@ export function BuilderView() {
   const refresh = React.useCallback(async () => {
     if (polling.current) return
     polling.current = true
-    try { setState(await loadBuilderControlState()) }
+    try {
+      const next = await loadBuilderControlState()
+      // Before a session exists, correct the supervisor's cached verdicts (up to a minute old) with
+      // the application's fresh ones, so an account connected moments ago is not shown signed out.
+      const stale = !next.session && next.profiles.some(profile => profile.available !== true)
+      const fresh = stale ? await loadFreshVerdicts(next.principal.id) : []
+      setState(fresh.length ? { ...next, profiles: withFreshVerdicts(next.profiles, fresh) } : next)
+    }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Builder is unavailable.') }
     finally { polling.current = false; setLoading(false) }
   }, [])

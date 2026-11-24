@@ -50,7 +50,10 @@ client: chat's destructive operations key their approval gate on it.
   the grant out of the address bar into memory and normalizes the path to `/`
   (`apps/web/src/lib/signinGrant.ts`), signed in or not, so a grant never stays in the URL or the
   history. Signed out, `LoginView` shows "Continue as &lt;user&gt;" behind a button and never
-  auto-submits: the click is what a scanner will not do. Signed in, see § 1.7 "Opened while signed
+  auto-submits on a public address: the click is what a scanner will not do. Opened on a loopback
+  address (`localhost`, `127.x`, `::1`, as Box Setup and `box auth login` open it), it continues
+  without the click, since no unfurler or scanner can reach that address
+  (`continuesWithoutClick` in `apps/web/src/lib/signinGrant.ts`). Signed in, see § 1.7 "Opened while signed
   in".
 - `GET /api/auth/instance` - this process's random per-boot id, and deliberately nothing else. Its
   only consumer is the loopback guard, which asks `127.0.0.1` "are you me?" before the chat agent

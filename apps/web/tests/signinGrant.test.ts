@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { grantSubject, readSigninEntry, signedInGrantAction } from '../src/lib/signinGrant.ts'
+import { continuesWithoutClick, grantSubject, readSigninEntry, signedInGrantAction } from '../src/lib/signinGrant.ts'
 
 /** A bl2-shaped grant for `id`: 10 header bytes, then the UTF-8 id. Unsigned: display only. */
 function bl2(id: string): string {
@@ -35,5 +35,14 @@ describe('signed-in grant action', () => {
   })
   test('an unreadable grant asks rather than being dropped', () => {
     expect(signedInGrantAction('bl2.@@@.x', 'alice')).toBe('switch')
+  })
+})
+
+describe('continuesWithoutClick', () => {
+  test('loopback addresses continue at once: no scanner reaches them', () => {
+    for (const host of ['localhost', 'LOCALHOST', 'box.localhost', '127.0.0.1', '127.1.2.3', '[::1]', '::1']) expect(continuesWithoutClick(host)).toBe(true)
+  })
+  test('every other address keeps the click', () => {
+    for (const host of ['box.example.com', '192.168.1.20', '100.64.0.7', 'localhost.example.com', '127.0.0.1.nip.io', '']) expect(continuesWithoutClick(host)).toBe(false)
   })
 })

@@ -204,23 +204,44 @@ export function stopBuilder(): Promise<void> {
   return request('/stop', { method: 'POST', body: '{}' }).then(() => undefined)
 }
 
+/** A profile verdict from the Box application's worker (loadAgentAccounts). */
+export type FreshProfileVerdict = { name: string; available: boolean | null; unavailableReason: string | null }
+
 /**
- * Derive provider readiness from the supervisor's WorkerDeck profile probe. The supervisor's worker
- * re-checks credentials at most once a minute and is not told about account changes; the Box
- * application's worker is re-probed on every connect and disconnect. So pass that worker's verdicts
- * (`fresh`, by profile name, from loadAgentAccounts) and they win wherever they are known.
+ * The supervisor's WorkerDeck worker re-checks credentials at most once a minute and is not told
+ * about account changes (Box Setup connects the account right before the Box opens); the Box
+ * application's worker is re-probed on every connect and disconnect. So its verdicts (`fresh`, by
+ * profile name) win wherever they are known.
  */
-export function builderReadiness(
-  state: BuilderControlState,
-  fresh: ReadonlyArray<{ name: string; available: boolean | null; unavailableReason: string | null }> = [],
-): BuilderReadiness {
-  if (state.profiles.length === 0) return { provider: 'unknown', message: 'No Builder provider profile is available.' }
-  const profiles = state.profiles.map((candidate) => {
+export function withFreshVerdicts(profiles: BuilderProfile[], fresh: ReadonlyArray<FreshProfileVerdict>): BuilderProfile[] {
+  return profiles.map((candidate) => {
     const known = fresh.find((f) => f.name === candidate.name)
     return typeof known?.available === 'boolean'
-      ? { ...candidate, available: known.available, unavailableReason: known.unavailableReason ?? candidate.unavailableReason }
+      ? { ...candidate, available: known.available, unavailableReason: known.available ? undefined : known.unavailableReason ?? candidate.unavailableReason }
       : candidate
   })
+}
+
+/**
+ * The application's verdicts for one person (GET /api/agent/accounts, as loadAgentAccounts reads
+ * it). Fetched here so the Builder shell stays free of the app's agent store. Empty while the
+ * application is down: the supervisor's verdicts then stand.
+ */
+export async function loadFreshVerdicts(userId: string): Promise<FreshProfileVerdict[]> {
+  try {
+    const res = await fetch(`/api/agent/accounts?user=${encodeURIComponent(userId)}`, { credentials: 'same-origin' })
+    if (!res.ok) return []
+    const body = await res.json() as { profiles?: FreshProfileVerdict[] }
+    return Array.isArray(body.profiles) ? body.profiles : []
+  } catch {
+    return []
+  }
+}
+
+/** Provider readiness from the supervisor's profile probe, corrected by `fresh` (withFreshVerdicts). */
+export function builderReadiness(state: BuilderControlState, fresh: ReadonlyArray<FreshProfileVerdict> = []): BuilderReadiness {
+  if (state.profiles.length === 0) return { provider: 'unknown', message: 'No Builder provider profile is available.' }
+  const profiles = withFreshVerdicts(state.profiles, fresh)
   const profile = profiles.find((candidate) => candidate.available === true) ?? profiles[0]
   if (profile.available === true) return { provider: 'ready', message: `${profile.name} is ready on this Box host.` }
   const reason = profile.unavailableReason ?? 'The selected provider profile is not currently available.'

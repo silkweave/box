@@ -88,3 +88,14 @@ export function grantSubject(grant: string): string | null {
 export function signedInGrantAction(grant: string, principalId: string): 'same' | 'switch' {
   return grantSubject(grant) === principalId ? 'same' : 'switch'
 }
+
+/**
+ * A sign-in link opened on this computer's own address (`localhost`, `127.x`, `::1`) needs no click:
+ * the click on "Continue as" only stops link unfurlers and URL scanners, and none of them can reach
+ * a loopback address. Box Setup and `box auth login` open such links; shared links on a public
+ * address keep the button.
+ */
+export function continuesWithoutClick(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  return host === 'localhost' || host.endsWith('.localhost') || /^127(\.\d{1,3}){3}$/.test(host) || host === '::1'
+}

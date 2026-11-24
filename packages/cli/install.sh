@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Silkweave Box installer:  curl -fsSL https://box.silkweave.dev/install | bash
+# Silkweave Box installer:  curl -fsSL https://box.silkweave.ai/install | bash
 #
 # Prepares macOS, Linux or Windows (WSL) for a Box, then hands over to guided setup:
 #   1. Git: Apple's Command Line Tools on macOS (system dialog), the package manager on Linux/WSL.

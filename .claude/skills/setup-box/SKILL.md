@@ -88,7 +88,7 @@ Before first boot, review the machine principal in `box.json`. Its default is No
 bun setup --no-start
 ```
 
-An owner who runs plain `bun setup` (or the `box.silkweave.dev` installer) in their own terminal
+An owner who runs plain `bun setup` (or the `box.silkweave.ai` installer) in their own terminal
 gets the same steps, after which setup installs the Box as a background service of their user
 (`box service install`), prints the sign-in link when the Box is ready and opens it in the browser. An agent passes `--no-start` and boots the Box itself in step 4, so the
 server stays visible and stoppable in the owner's shell tools.
