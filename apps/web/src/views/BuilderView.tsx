@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { AlertCircle, Brain, Check, ChevronDown, ChevronRight, Download, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, Rocket, ShieldCheck, Square } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Brain, Check, ChevronDown, ChevronRight, Download, ExternalLink, FileText, Hammer, LogOut, Pause, Play, RefreshCw, RotateCcw, Rocket, ShieldCheck, Square } from 'lucide-react'
 import { ContextDialog, ModelSelect, PermissionModeSelect, ProgressRing, SessionPanel, UsageDialog, formatTokens, type SessionControls, type SessionVitals } from '@workerdeck/ui'
 import type { UsageWindowRow } from '@workerdeck/protocol'
 import { BuilderFiles } from '../components/builder/BuilderFiles.tsx'
@@ -7,7 +7,7 @@ import { BuilderWrapUp } from '../components/builder/BuilderWrapUp.tsx'
 import { BuilderExportDialog } from '../components/builder/BuilderExport.tsx'
 import { useBuilderBrowser } from '../lib/useBuilderBrowser.ts'
 import { builderModelOptions } from '../lib/builderModels.ts'
-import { safePreviewPath } from '../lib/builderPreview.ts'
+import { previewOutsideApp, safePreviewPath } from '../lib/builderPreview.ts'
 import { BUILDER_BRIEF_MESSAGE, clearPendingBrief, readPendingBrief, storePendingBrief, validBrief } from '../lib/builderBrief.ts'
 import { Badge, Button, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, confirm } from '@silkweave/box-ui'
 import { configureBuilderMonacoWorker } from '../lib/monacoWorker.ts'
@@ -262,6 +262,8 @@ export function BuilderView() {
   const [exporting, setExporting] = React.useState(false)
   const [previewLocation, setPreviewLocation] = React.useState(() => safePreviewPath(new URLSearchParams(location.search).get('preview')))
   const [initialPreview] = React.useState(previewLocation)
+  // Set while the Preview shows a page outside the Box app (an artifact, a browser error page).
+  const [outside, setOutside] = React.useState<{ path: string | null } | null>(null)
   const [openFile, setOpenFile] = React.useState<string>()
   const [unsaved, setUnsaved] = React.useState(false)
   const [panelWidth, setPanelWidth] = React.useState(460)
@@ -369,6 +371,13 @@ export function BuilderView() {
     try { iframe.current?.contentWindow?.location.reload() }
     catch { if (iframe.current) iframe.current.src = previewLocation }
   }
+  const previewLoaded = (): void => {
+    browser.reset()
+    setOutside(previewOutsideApp(iframe.current))
+  }
+  // The last app route, unless that route is the page that failed to load.
+  const backTarget = outside && outside.path === previewLocation ? '/' : previewLocation
+  const backToApp = (): void => { if (iframe.current) iframe.current.src = backTarget }
   const revealFile = (path: string): void => { setOpenFile(path); setView('files') }
   const resize = (event: React.PointerEvent<HTMLDivElement>): void => {
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -378,7 +387,7 @@ export function BuilderView() {
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop, { once: true })
   }
   if (loading || !state) return <main className='grid min-h-dvh place-items-center bg-bg p-6 text-text'><div className='max-w-lg space-y-4'><h1 className='text-2xl font-semibold'>Box Builder</h1>{error ? <><ErrorNotice message={error} /><a className='text-accent underline' href='/'>Open Box to sign in</a><Button onClick={() => void refresh()}>Retry</Button></> : <p>Connecting to your Builder host…</p>}</div></main>
-  const breadcrumb = view === 'preview' ? previewLocation : view === 'files' ? (openFile ?? 'Select a file') : null
+  const breadcrumb = view === 'preview' ? (outside ? outside.path ?? 'Page did not load' : previewLocation) : view === 'files' ? (openFile ?? 'Select a file') : null
   return <div className='flex h-dvh flex-col gap-3 overflow-hidden bg-sidebar p-3 text-text lg:flex-row'>
     <main className='frame-shine flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-bg shadow-(--frame-shadow)'>
       <header className='flex h-12 shrink-0 items-center gap-3 border-b border-border px-4'>
@@ -402,9 +411,14 @@ export function BuilderView() {
           <Button size='sm' disabled={!state.session} onClick={() => setWrapUp(true)} title='Review, verify and commit this session'><Check />Wrap Up</Button>
         </div>
       </header>
-      <div className={view === 'preview' ? 'relative min-h-0 flex-1' : 'hidden'}>
+      <div className={view === 'preview' ? 'relative flex min-h-0 flex-1 flex-col' : 'hidden'}>
         {state.application.status === 'failed' && <div className='absolute inset-x-0 top-0 z-10 bg-danger-bg p-3 text-body-sm text-danger'>The Box needs repair. Builder is still available.</div>}
-        <iframe ref={iframe} onLoad={browser.reset} name='box-builder-preview' title='Live Box preview' src={initialPreview} className='h-full w-full border-0 bg-bg' />
+        {outside && <div className='flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2 text-body-sm' role='status'>
+          <span className='min-w-0 flex-1 text-fg-2'>{outside.path ? 'This page is not part of the Box app, so Builder cannot follow it here.' : 'The preview could not load this page.'}</span>
+          {outside.path && <Button variant='ghost' size='sm' onClick={() => window.open(outside.path!, '_blank', 'noopener')}><ExternalLink />Open in new tab</Button>}
+          <Button variant='secondary' size='sm' onClick={backToApp}><ArrowLeft />Back to {backTarget === '/' ? 'Home' : backTarget}</Button>
+        </div>}
+        <iframe ref={iframe} onLoad={previewLoaded} name='box-builder-preview' title='Live Box preview' src={initialPreview} className='min-h-0 w-full flex-1 border-0 bg-bg' />
       </div>
       {state.session && <div className={view === 'files' ? 'min-h-0 flex-1' : 'hidden'}><BuilderFiles key={state.session.id} cwd={state.session.cwd} readOnly={false} openPath={openFile} onUnsaved={setUnsaved} /></div>}
       {state.session && <BuilderWrapUp open={wrapUp} onOpenChange={setWrapUp} cwd={state.session.cwd} unsaved={unsaved} onUpdated={refresh} onOpenFile={revealFile} onFinished={() => location.assign(previewLocation)}

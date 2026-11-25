@@ -11,6 +11,8 @@ describe('runtime diagnostics', () => {
     expect(requestRoute('/login/bl2.secret')).toBe('/login/:path')
     expect(requestRoute('/?token=secret')).toBe('/')
     expect(requestRoute('/chat/private-room')).toBe('/:path')
+    expect(requestRoute('/chat/private-room', 'text/html,application/xhtml+xml')).toBe('/:page')
+    expect(requestRoute('/@react-refresh')).toBe('/@react-refresh')
     addRouteRoots(['chat'])
     expect(requestRoute('/chat/private-room')).toBe('/chat/:path')
     expect(requestRoute('/@fs/Users/private/secret')).toBe('/@fs/:path')

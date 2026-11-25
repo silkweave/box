@@ -56,7 +56,7 @@ export function errorKind(error: unknown): string {
 
 /** Top-level path segments core serves itself, or that its tooling serves in development. */
 const CORE_ROUTE_ROOTS = ['api', 'trpc', 'mcp', 'agent', 'builder', 'builder-agent', 'builder-browser', 'builder-assets',
-  'settings', 'recipes', 'login', 'assets', 'src', 'node_modules', '@vite', '@fs', '@id']
+  'settings', 'recipes', 'login', 'assets', 'src', 'node_modules', '@vite', '@fs', '@id', '@react-refresh']
 /** Route roots the registered features bring (main.ts: each feature's id and `routeRoots`). */
 const featureRouteRoots = new Set<string>()
 
@@ -65,8 +65,12 @@ export function addRouteRoots(roots: Iterable<string>): void {
   for (const root of roots) featureRouteRoots.add(root)
 }
 
-/** Route categories deliberately omit query strings, document IDs and filesystem paths. */
-export function requestRoute(url: string | undefined): string {
+/**
+ * Route categories deliberately omit query strings, document IDs and filesystem paths. Under a root
+ * nobody added, a page load (`accept` names HTML) is `/:page` and anything else `/:path`, so a
+ * reload loop and an asset storm read differently.
+ */
+export function requestRoute(url: string | undefined, accept?: string | string[]): string {
   const path = (url ?? '/').split(/[?#]/, 1)[0]
   if (path === '/') return '/'
   if (/^\/api\/builder-control\/[a-z-]+$/.test(path)) return path
@@ -74,7 +78,8 @@ export function requestRoute(url: string | undefined): string {
   if (/^\/trpc\/[a-zA-Z0-9_.,]+$/.test(path)) return path
   const root = path.split('/')[1]
   const known = CORE_ROUTE_ROOTS.includes(root) || featureRouteRoots.has(root)
-  return known ? `/${root}${path === `/${root}` ? '' : '/:path'}` : '/:path'
+  if (known) return `/${root}${path === `/${root}` ? '' : '/:path'}`
+  return String(accept ?? '').includes('text/html') ? '/:page' : '/:path'
 }
 
 const requestIds = new WeakMap<IncomingMessage, string>()
@@ -88,7 +93,7 @@ export function requestId(req: IncomingMessage): string {
 export function traceHttp(component: string, req: IncomingMessage, res: ServerResponse, forwarded = false): void {
   const inherited = req.headers['x-box-request-id']
   if (forwarded && typeof inherited === 'string' && /^[a-f0-9-]{36}$/.test(inherited)) requestIds.set(req, inherited)
-  const fields = { requestId: requestId(req), method: req.method, route: requestRoute(req.url) }
+  const fields = { requestId: requestId(req), method: req.method, route: requestRoute(req.url, req.headers.accept) }
   const started = performance.now()
   const elapsed = () => Math.round(performance.now() - started)
   diagnostic(component, 'http.start', fields)

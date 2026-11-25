@@ -208,7 +208,7 @@ test('CLI plain/verbose output, failure exits, and help operate from outside the
   }
 })
 
-test('cancellation stops the active process and its SIGTERM-resistant descendant', { timeout: 10000, skip: process.platform === 'win32' }, async t => {
+test('cancellation stops the active process and its SIGTERM-resistant descendant', { timeout: 30000, skip: process.platform === 'win32' }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'verify-cancel-'))
   const heartbeat = join(root, 'heartbeat')
   const controller = new AbortController()

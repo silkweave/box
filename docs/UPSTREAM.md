@@ -11,7 +11,12 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `9a42592ca355a37942d896089c4c1f5c562485df` (2026-11-25: on macOS
+Latest core refresh: Stack commit `f770bc61623f87b9d67dac82cc45acd85b4c6447` (2026-11-25: a
+Builder Preview that leaves the Box app, such as an artifact or a failed load, shows a bar with Open
+in new tab and Back; the Builder journal condenses request storms and records host load every
+minute, and the session export adds a load snapshot; a pgrust download tolerates a concurrent install;
+CLI tests allow for a loaded machine; the artifacts recipe publishes a welcome page and removes its
+test pages. Since 9a42592ca355a37942d896089c4c1f5c562485df the same day: on macOS
 the service starts `data/service/Box.app` when Box Setup put it there, so Login Items lists the Box
 as "Box" by Atomic BI instead of Bun's signer. Since 1a9e931482d4e115cba19c234c74d9f14f05c0f4 on
 2026-11-24: the Builder

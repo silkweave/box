@@ -23,7 +23,7 @@ so the documents and the code come from the same version.
 
 ## Integration
 
-1. Copy/adapt `<fetched recipe>/features/artifacts/{core,server,web,toolbar,skills}` into the Box's
+1. Copy/adapt `<fetched recipe>/features/artifacts/{core,server,web,toolbar,skills,welcome}` into the Box's
    `features/artifacts/`. `cloudflare/` and `mobile/` belong to powerups; leave them out.
    Replace the placeholder web route if the Box carried it.
 2. Register the feature in `packages/core/src/generated/features.ts`,
@@ -67,7 +67,8 @@ Run `box verify`, then boot a disposable instance (background work disabled) and
 
 - publish an HTML page and a gzipped tree over `box artifact-publish`, and a large tree over the
   multipart upload; open both at `/artifacts/<slug>/` signed in, and signed out (expect the sign-in
-  round trip back to the page);
+  round trip back to the page). Name every check page `test-<what>` and delete each one when its
+  checks are done, so the owner's gallery holds no test pages;
 - `artifact.kv` from the page (a reader's view counts, a reader's write is refused), the toolbar (share dialog, copy link, a pinned comment and a reply);
 - rename, delete, folder create/delete, filters in the gallery at `/artifacts`;
 - the import dry run against a copy of the standalone data dir, when relevant;
@@ -76,3 +77,19 @@ Run `box verify`, then boot a disposable instance (background work disabled) and
 - with the Public sharing powerup: its Verify steps.
 
 Record the commands and results in _docs/VALIDATION.md.
+
+## Welcome page
+
+The last step on the owner's Box, after validation: publish the welcome page, the owner's guide to
+what artifacts are and how to ask Work, Chat, MCP and Builder agents for one.
+
+```
+box artifact-publish --slug welcome-to-artifacts --dir "$PWD/features/artifacts/welcome" \
+  --title "Your Artifacts app is ready" --description "How artifacts work and how to ask your agents for one" \
+  --icon party-popper --kind doc
+```
+
+`--dir` needs an absolute path and an administrator. Open `/artifacts/welcome-to-artifacts/` signed
+in, and hand the owner that link as the result of the adaptation. Leave it in place; the owner
+deletes it when they no longer need it. Adapt its wording when the Box has renamed or left out a
+surface it mentions (Chat, Builder, MCP).

@@ -32,6 +32,8 @@ skew").
   the `owner` field or a chat room. Without Automation's Alerts powerup the events are still recorded.
 - **Toolbar.** `features/artifacts/toolbar/`. It renders in a shadow root with its own CSS string;
   Tailwind classes do not exist there.
+- **Welcome page.** `features/artifacts/welcome/index.html`, a self-contained page published once at
+  the end of the adaptation (INSTALL.md "Welcome page"). Restyle or reword it for the Box.
 - **Public sharing.** The Public sharing powerup
   ([powerups/public-sharing](powerups/public-sharing/INSTALL.md)) deploys the Worker and sets
   `features.artifacts.public`; its domain is `routes` in the Box's

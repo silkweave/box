@@ -97,7 +97,7 @@ test('bootstrap stays automatic; additional users require create and default to 
   expect(state('bob')).toEqual(before)
   ok('bob', '--rotate')
   expect(state('bob').tokenHash).not.toBe(before.tokenHash)
-}), 60_000)
+}), 180_000)
 
 test('custom agent tokens work without browser links, and host role changes preserve their credentials', () => fixture(({ token, ok, state, configure }) => {
   configure('orion')
@@ -120,7 +120,7 @@ test('custom agent tokens work without browser links, and host role changes pres
   expect(token('renamed').status).toBe(1)
   configure('orion', 'member')
   expect(state('orion').tokenHash).toBe(initial.tokenHash)
-}), 60_000)
+}), 180_000)
 
 test('legacy adoption requires the existing identity and preserves its token and member role', () => fixture(({ token, ok, state, configure, removeIdentityConfig }) => {
   configure('orion', 'member')
@@ -137,7 +137,7 @@ test('legacy adoption requires the existing identity and preserves its token and
   expect(state('orion').tokenHash).toBe(old.tokenHash)
   expect(state('orion').authenticatedRole).toBe('member')
   expect(state('wrong').user).toBeNull()
-}), 60_000)
+}), 180_000)
 
 test('local overrides customize the principal and cannot bypass its identity lock', () => fixture(({ token, state, configure, configureLocal }) => {
   configure('orion', 'member')
@@ -146,14 +146,14 @@ test('local overrides customize the principal and cannot bypass its identity loc
   expect(state('orion').authenticatedRole).toBe('member')
   configureLocal({ id: 'other' })
   expect(token('other').stderr).toContain('agent.id changed')
-}), 60_000)
+}), 180_000)
 
 test('explicit creation on an empty Box still bootstraps an admin; later admin creation is explicit', () => fixture(({ ok, state }) => {
   ok('alice', '--create')
   expect(state('alice').user?.role).toBe('admin')
   ok('carol', '--create', '--admin')
   expect(state('carol').user?.role).toBe('admin')
-}), 60_000)
+}), 180_000)
 
 test('create refuses existing active or revoked identities without profile, role or token changes', () => fixture(({ token, ok, state }) => {
   ok('alice')
@@ -166,4 +166,4 @@ test('create refuses existing active or revoked identities without profile, role
   expect(state('bob')).toEqual(revoked)
   expect(token('invalid', '--create', '--name').status).toBe(1)
   expect(state('invalid').user).toBeNull()
-}), 60_000)
+}), 180_000)

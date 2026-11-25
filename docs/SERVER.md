@@ -632,7 +632,9 @@ normal Nest, Vite and Builder command output. Each record includes UTC time, PID
 In built mode (`box start` and the service) standard output leaves out debug records: request
 traces (`http.*`, `proxy.*`, `ws.*`) and heartbeats, except a 5xx `http.finish`, `http.wait` (no
 headers after 10 seconds) and premature closes. The supervisor's journal
-(`data/builder/journal.ndjson`, see [BUILDER.md](BUILDER.md)) keeps slow and failed requests;
+(`data/builder/journal.ndjson`, see [BUILDER.md](BUILDER.md)) keeps slow and failed requests.
+A request under a root no feature registered is traced as `/:page` when it asks for HTML (a page
+load) and `/:path` otherwise;
 `box dev --log-level debug` shows every record.
 Capture a diagnostic session with `box dev > _docs/box-runtime.log 2>&1` after creating `_docs/`.
 The capture belongs in local developer notes, not committed product documentation. Stop the process

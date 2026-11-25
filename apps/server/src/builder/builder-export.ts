@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { arch, homedir, release, type } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import type { SessionEvent, SessionInfo } from '@workerdeck/protocol'
-import { readJournal } from './builder-journal.js'
+import { hostLoad, readJournal } from './builder-journal.js'
 import { readTurns, type TurnRecord } from './builder-turns.js'
 import { createRedactor, envFileValues, keysOnly, secretValues, type Redactor } from './redact.js'
 import { createZip, type ZipEntry } from './zip.js'
@@ -13,7 +13,7 @@ import { createZip, type ZipEntry } from './zip.js'
  * "Export session": one zip a field tester sends when a Builder session goes wrong. It holds what a
  * supporter needs to see what happened, and nothing of the Box's own data:
  *
- * - `manifest.json`: session, Box and tool versions, recipes ledger, application state
+ * - `manifest.json`: session, Box and tool versions, recipes ledger, application state, host load
  * - `transcript.md` and `transcript.ndjson`: the conversation, tool calls and results (long values
  *   shortened), from WorkerDeck; `conversations/<n>.ndjson` for earlier conversations of the session
  * - `engine-transcript.jsonl`: the engine's own transcript (Claude or Codex), only when WorkerDeck no
@@ -298,6 +298,8 @@ export function buildSessionExport(sources: ExportSources): SessionExport {
       workerdeck: workerdeckVersion(root),
       os: `${type()} ${release()} ${arch()}`,
     },
+    // The machine at export time; journal.ndjson has a host.load entry for every minute before it.
+    host: hostLoad(),
     application: sources.application,
     files: [] as ExportFile[],
   }

@@ -9,7 +9,7 @@
 // point's manifest.
 
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, platform } from 'node:os'
 import { join } from 'node:path'
@@ -126,8 +126,7 @@ export async function ensurePgrust(enginesDir: string, cacheDir: string, tag: Pg
   if (!host) throw new EngineUnavailable(`pgrust has no build for ${platform()}-${arch()}.`, 'A Box runs on macOS or Linux, on arm64 or x86_64.')
   const file = PGRUST_RELEASES[tag].files[host]
   mkdirSync(enginesDir, { recursive: true, mode: 0o700 })
-  const staging = join(enginesDir, `.staging-${process.pid}`)
-  rmSync(staging, { recursive: true, force: true })
+  const staging = join(enginesDir, `.staging-${process.pid}-${randomUUID()}`)
   mkdirSync(staging, { mode: 0o700 })
   try {
     const tarball = join(staging, file.name)
@@ -139,8 +138,17 @@ export async function ensurePgrust(enginesDir: string, cacheDir: string, tag: Pg
     const out = join(staging, 'out')
     mkdirSync(out)
     run('tar', ['xzf', tarball, '-C', out, '--strip-components=1'])
-    rmSync(dir, { recursive: true, force: true })
-    renameSync(out, dir)
+    // Another process (parallel verify steps, two Boxes sharing engines) may have installed the
+    // same build meanwhile, so the rename can find `dir` taken. A working install wins and is
+    // never deleted; only a broken one is replaced.
+    try {
+      renameSync(out, dir)
+    } catch {
+      const won = inspectPgrust(dir, cacheDir)
+      if (typeof won !== 'string') return won
+      rmSync(dir, { recursive: true, force: true })
+      renameSync(out, dir)
+    }
   } finally {
     rmSync(staging, { recursive: true, force: true })
   }

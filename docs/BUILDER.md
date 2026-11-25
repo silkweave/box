@@ -180,7 +180,7 @@ lists every file and its size before the download; both paths build the export t
 
 | File | Contents |
 |---|---|
-| `manifest.json` | Session (engine, profile, model, engine session id, turns, cost), Box HEAD and branch, Stack core SHA from `docs/UPSTREAM.md`, the `recipes` ledger, WorkerDeck, Bun and OS versions, application state |
+| `manifest.json` | Session (engine, profile, model, engine session id, turns, cost), Box HEAD and branch, Stack core SHA from `docs/UPSTREAM.md`, the `recipes` ledger, WorkerDeck, Bun and OS versions, application state, the machine's load and memory at export time |
 | `transcript.md`, `transcript.ndjson` | The conversation, tool calls and results from WorkerDeck, long values shortened; `conversations/<n>.ndjson` for earlier conversations of the session |
 | `engine-transcript.jsonl` | Claude's own transcript, only when WorkerDeck no longer knows the session (ended, then the supervisor restarted) |
 | `turns.ndjson` | HEAD, branch, `git status` and the diff summary at the end of each turn (paths and counts, no contents) |
@@ -199,7 +199,10 @@ before sending.
 
 The export draws on two records the supervisor keeps under `data/builder/`: `journal.ndjson` (its
 diagnostics and reports plus application, Vite and build output, rotated to `journal.1.ndjson` at
-4 MiB; request-level events are kept only when they fail) and `turns/<session>.ndjson` (one line per
+4 MiB; request-level events are kept only when they fail, and a burst of one failure keeps its
+first 20 entries a minute and counts the rest in a `journal.condensed` entry, so a storm cannot
+rotate away how it began; a `host.load` entry each minute records load average, memory and, on
+macOS, the memory-pressure level and swap in use) and `turns/<session>.ndjson` (one line per
 finished turn, removed after 30 days). The supervisor pipes the application's output so the journal
 sees it; under `box start` it passes each line on to stdout or stderr unchanged.
 
@@ -309,6 +312,11 @@ through the same-origin preview bridge, and advertises a versioned browser-contr
 The shell binds a selected tab to the supervisor's separate browser-control channel. That channel
 supports bounded DOM snapshots and references, inspect, click, type, select, scroll, style,
 navigation, and DOM screenshot commands automatically for the first available Builder Preview.
+
+The app marks its document with `<meta name="box-app">`. When the Preview shows anything else, such
+as an artifact at `/artifacts/<slug>/` or a browser error page, the shell shows a bar above it
+with **Open in new tab** (for a readable page) and **Back to** the last app route, so the
+Preview never needs a reload of the whole Builder page to return.
 
 Navigation is queued and then changes the iframe document. The route notification invalidates the
 old generation and its references; the agent must take a fresh snapshot. Navigation does not return
