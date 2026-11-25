@@ -11,6 +11,43 @@ export type BrowserCommand =
   | { op: 'navigate'; path: string }
   | { op: 'style'; ref: string; styles?: Record<string, string> }
   | { op: 'screenshot'; ref?: string }
+  | { op: 'state' }
+  | { op: 'reset' }
+
+/**
+ * Operations the Builder shell (the owner of the Preview iframe) runs itself, whatever the frame
+ * shows: an app page, an artifact, a browser error page or a blank document. They are the agent's
+ * way to see where the Preview is and to bring it back. Every other operation needs the app's DOM.
+ */
+export type BrowserShellCommand = Extract<BrowserCommand, { op: 'state' | 'navigate' | 'reset' }>
+export type BrowserDomCommand = Exclude<BrowserCommand, BrowserShellCommand>
+export const isBrowserShellCommand = (command: BrowserCommand): command is BrowserShellCommand =>
+  command.op === 'state' || command.op === 'navigate' || command.op === 'reset'
+
+/** Version of the shell-command exchange a Builder shell announces with `{ type: 'shell' }`. */
+export const BROWSER_SHELL_PROTOCOL = 1 as const
+
+/** What the Builder shell reports for `state`, and after `navigate` and `reset`. */
+export interface BrowserPreviewState {
+  /** `app`: a Box app document; `outside`: a readable same-origin page outside the app, such as an artifact; `error`: a page the shell cannot read, like a browser error page; `loading`: no document yet. */
+  page: 'app' | 'outside' | 'error' | 'loading'
+  /** Same-origin path of the frame, or null when it cannot be read. */
+  path: string | null
+  title: string | null
+  /** Whether DOM operations (snapshot, click, screenshot, ...) can run on this page now. */
+  domControl: boolean
+  /** Why the page is not usable, when it is not. */
+  problem: string | null
+  /** The last Box app route the Preview showed. */
+  lastAppRoute: string
+  /** Where `reset` would go: the last app route, or Home when that route is the page that failed. */
+  resetTarget: string
+  /** Whether the frame finished loading within the command's wait (navigate and reset only). */
+  loaded?: boolean
+}
+
+/** The DOM operations' answer on a page that is not a usable Box app page. */
+export const BROWSER_NOT_APP_PAGE = 'The Preview is not showing a Box app page it can control (an artifact, a browser error page, a protected route or a page still loading). Run `state` to see where it is, then `reset` to return to the last app route or `navigate /` to open Home; DOM operations work again once `state` reports domControl: true.'
 
 export interface BrowserGrant {
   sessionId: string
@@ -40,6 +77,7 @@ export type BrowserServerMessage =
   | { type: 'command'; id: string; grant: BrowserGrant; command: BrowserCommand; deadline: number }
   | { type: 'settled'; id: string; nonce: string; generation: string; ok: boolean }
   | { type: 'error'; message: string }
+  | { type: 'shell-command'; id: string; command: BrowserShellCommand; deadline: number }
 
 export function parseBrowserCommand(value: unknown): BrowserCommand {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a browser command object')
@@ -65,6 +103,7 @@ export function parseBrowserCommand(value: unknown): BrowserCommand {
       return { op: v.op, ref: ref(), styles: v.styles as Record<string, string> | undefined }
     }
     case 'screenshot': return { op: v.op, ref: v.ref === undefined ? undefined : ref() }
+    case 'state': case 'reset': return { op: v.op }
     default: throw new Error('Unknown browser operation')
   }
 }

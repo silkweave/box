@@ -18,7 +18,11 @@ errors are expected integration work. Record local exceptions in the Box's docs/
   keys too. The publish skill says so; review pages that ignore it.
 - **`/artifacts/<slug>/` is not a client route.** Link to it with a plain `<a href>` (new tab), never a
   TanStack `Link`: the router would render a 404 inside the SPA. The SPA owns only the bare
-  `/artifacts`.
+  `/artifacts`, which shows one inline with `?open=<slug>`. In dev, open artifacts through the
+  server port: the bare Vite port does not proxy `/artifacts/<slug>/`.
+- **Inside the inline viewer, `window.frameElement` is the parent's.** The toolbar detects the
+  viewer with `frameElement.hasAttribute('data-artifact-viewer')`; an `instanceof HTMLIFrameElement`
+  check is always false across the frame boundary.
 - **The mount is authenticated in `main.ts`, not by the Nest guard.** A signed-out browser gets a
   302 to `/?next=<path>`; the SPA follows it after sign-in (`apps/web/src/lib/returnPath.ts`). A
   bearer token works too (rate limited like the API).

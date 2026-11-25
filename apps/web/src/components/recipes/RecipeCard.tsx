@@ -1,6 +1,6 @@
 import { Check, Hammer, ImageIcon, Lock, Zap } from 'lucide-react'
 import { Badge, Button, DialogContent, DialogDescription, DialogTitle, ImageGallery } from '@silkweave/box-ui'
-import { allRecipes, RECOMMENDED_RECIPES, powerupBrief, recipeBrief, recipeTitles, type Powerup, type PowerupState, type Recipe, type Requirement } from '../../lib/recipes.ts'
+import { allRecipes, RECOMMENDED_RECIPES, powerupBuilderBrief, recipeBuilderBrief, recipeTitles, type Powerup, type PowerupState, type Recipe, type Requirement } from '../../lib/recipes.ts'
 import { recipeBook } from '../../lib/recipeLedger.ts'
 import { openBuilderWithBrief } from '../../lib/builderBrief.ts'
 
@@ -11,10 +11,10 @@ import { openBuilderWithBrief } from '../../lib/builderBrief.ts'
  */
 
 export const adaptRecipe = (recipe: Recipe): void =>
-  openBuilderWithBrief(recipeBrief(recipe, recipeTitles, recipeBook.adapted(recipe.id), recipe.powerups))
+  openBuilderWithBrief(recipeBuilderBrief(recipe, recipeTitles, recipeBook.adapted(recipe.id), recipe.powerups))
 
 const addPowerup = (powerup: Powerup): void =>
-  openBuilderWithBrief(powerupBrief(powerup, recipeTitles.get(powerup.recipe) ?? powerup.recipe))
+  openBuilderWithBrief(powerupBuilderBrief(powerup, recipeTitles.get(powerup.recipe) ?? powerup.recipe))
 
 const powerupTitle = (recipe: string, id: string): string =>
   allRecipes().find(entry => entry.id === recipe)?.powerups.find(entry => entry.id === id)?.title ?? id

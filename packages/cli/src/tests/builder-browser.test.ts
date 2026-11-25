@@ -14,6 +14,13 @@ test('browser command parsing requires a session and a known operation', () => {
   assert.deepEqual(parseArgs(['--session', 's', 'snapshot']), { sessionId: 's', operation: 'snapshot', params: {} })
 })
 
+test('the shell recovery operations parse, and navigate takes a bare path', () => {
+  assert.deepEqual(parseArgs(['--session', 's', 'state']), { sessionId: 's', operation: 'state', params: {} })
+  assert.deepEqual(parseArgs(['--session', 's', 'reset']), { sessionId: 's', operation: 'reset', params: {} })
+  assert.deepEqual(parseArgs(['--session', 's', 'navigate', '/artifacts/welcome/']), { sessionId: 's', operation: 'navigate', params: { path: '/artifacts/welcome/' } })
+  assert.deepEqual(parseArgs(['--session', 's', 'navigate', '{"path":"/recipes"}']), { sessionId: 's', operation: 'navigate', params: { path: '/recipes' } })
+})
+
 test('browser Unix HTTP errors become useful CLI errors', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'builder-browser-cli-'))
   const socket = join(directory, 'browser.sock')

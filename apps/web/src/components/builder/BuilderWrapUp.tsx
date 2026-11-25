@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Badge, Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, Popover, PopoverContent, PopoverTrigger } from '@silkweave/box-ui'
+import { Badge, Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, Field, Popover, PopoverContent, PopoverTrigger, Textarea } from '@silkweave/box-ui'
 import { AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronRight, Circle, FileDiff, GitBranch, LoaderCircle, Minus, RefreshCw, Save, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { checkpointBuilderReview, finishBuilderReview, loadBuilderReview, verifyBuilderReview, type BuilderReviewState, type BuilderVerificationState, type BuilderVerificationStep } from '../../lib/builderStore.ts'
 
@@ -7,6 +7,9 @@ import { checkpointBuilderReview, finishBuilderReview, loadBuilderReview, verify
  * Wrap Up: the one guided path from "the Builder changed things" to "it is committed and live".
  * Review what changed, verify that exact Git state, then commit and integrate. Every step reads
  * the server's review fingerprint, so a file changed after a check sends the owner back to verify.
+ *
+ * The commit message is the agent's by default: its ready report carries one (`box builder ready`),
+ * and reaching Commit without one asks the agent to draft it. The owner edits or accepts it.
  */
 type Step = 'review' | 'verify' | 'commit'
 const STEPS: readonly { id: Step; label: string }[] = [
@@ -16,7 +19,7 @@ const STEPS: readonly { id: Step; label: string }[] = [
 ]
 const DIFF_LINES = 2500
 
-export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onOpenFile, onFinished, onAskAgent }: {
+export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onOpenFile, onFinished, onAskAgent, proposedMessage }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** The session worktree, to turn a changed path into an editor path. */
@@ -27,6 +30,8 @@ export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onO
   onFinished: () => void
   /** Send a turn to the Builder session. Absent until a session exists. */
   onAskAgent?: (text: string) => Promise<void>
+  /** The agent's proposed commit message, from its latest ready report. */
+  proposedMessage?: string | undefined
 }) {
   const [step, setStep] = useState<Step>('review')
   const [data, setData] = useState<BuilderReviewState>()
@@ -35,6 +40,9 @@ export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onO
   const [action, setAction] = useState<string>()
   const [message, setMessage] = useState('')
   const [done, setDone] = useState<string>()
+  // The proposal the field last took, so a newer one replaces it unless the owner has edited it.
+  const taken = useRef<string | undefined>(undefined)
+  const [drafting, setDrafting] = useState<'asked' | 'failed'>()
   // Between clicking Verify and the server's first running record.
   const [starting, setStarting] = useState(false)
   const polling = useRef(false)
@@ -54,6 +62,21 @@ export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onO
   }, [open, refresh, running, starting])
   // Every opening starts at the beginning: the owner looks at what changed before anything else.
   useEffect(() => { if (open) { setStep('review'); setDone(undefined); setError(undefined) } }, [open])
+  useEffect(() => {
+    if (!proposedMessage || proposedMessage === taken.current) return
+    setMessage(currentMessage => (currentMessage.trim() === '' || currentMessage === taken.current ? proposedMessage : currentMessage))
+    taken.current = proposedMessage
+    setDrafting(undefined)
+  }, [proposedMessage])
+  // No proposal when the owner reaches Commit: ask the agent once per opening; the field stays editable.
+  const askedThisOpening = useRef(false)
+  useEffect(() => { if (!open) askedThisOpening.current = false }, [open])
+  useEffect(() => {
+    if (!open || step !== 'commit' || proposedMessage || !onAskAgent || askedThisOpening.current) return
+    askedThisOpening.current = true
+    setDrafting('asked')
+    onAskAgent(DRAFT_PROMPT).catch(() => setDrafting('failed'))
+  }, [open, step, proposedMessage, onAskAgent])
 
   const run = async (name: string, operation: () => Promise<unknown>): Promise<boolean> => {
     setAction(name); setError(undefined)
@@ -141,9 +164,9 @@ export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onO
           : step === 'verify' ? <VerifyStep verification={shown} stale={stale && !starting} fetchedAt={fetchedAt} busy={busy} onAskAgent={askAgent} />
           : <section className='space-y-4 px-5 py-4'>
               {done ? <StatusLine tone='success' title={done} /> : <>
-                <label className='block text-label font-medium text-fg-2' htmlFor='builder-wrapup-message'>Commit message
-                  <input id='builder-wrapup-message' autoFocus value={message} onChange={e => setMessage(e.target.value)} maxLength={1000} placeholder='What changed and why?' className='mt-1.5 w-full rounded-lg border border-border bg-bg px-3 py-2 text-body-sm font-normal text-text' />
-                </label>
+                <Field label='Commit message' hint={draftHint(drafting, !!proposedMessage && message === proposedMessage)}>
+                  <Textarea autoFocus autoGrow rows={2} maxRows={10} value={message} onChange={e => setMessage(e.target.value)} maxLength={4000} placeholder={drafting === 'asked' ? 'The agent is drafting it…' : 'What changed and why?'} />
+                </Field>
                 <p className='text-body-sm text-fg-3'>
                   <strong className='font-medium text-text'>Finish</strong> commits any remaining changes, moves {review.targetBranch ? <code>{review.targetBranch}</code> : 'the target branch'} forward, restarts the Box and ends this Builder session.
                   {' '}<strong className='font-medium text-text'>Checkpoint only</strong> commits on the Builder branch and keeps the session open.
@@ -174,6 +197,14 @@ export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onO
     </DialogContent>
   </Dialog>
 }
+
+const DRAFT_PROMPT = 'I am wrapping up. Draft the commit message for this session from its turns and its diff (`git diff` against the base, plus untracked files): a conventional subject line under 72 characters, then a short body on what changed and why. Do not commit. Send it with `box builder ready --session <this session id>` and the ready report fields (summary, built, try, open, commitMessage); it fills the Wrap Up field for me to edit or accept.'
+
+const draftHint = (drafting: 'asked' | 'failed' | undefined, proposed: boolean): string | undefined =>
+  proposed ? 'Drafted by the agent. Edit it or accept it.'
+    : drafting === 'asked' ? 'Asked the agent to draft it from this session. It appears here; you can also write your own.'
+    : drafting === 'failed' ? 'The agent could not be asked for a draft. Write the message yourself.'
+    : undefined
 
 const seconds = (ms: number): string => ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.floor(ms / 60_000)}m ${Math.round(ms % 60_000 / 1000)}s`
 const fence = (lines: string[]): string => `\`\`\`\n${lines.join('\n')}\n\`\`\``

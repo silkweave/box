@@ -12,24 +12,34 @@ const HELP = `box builder browser - control the Builder's local browser session
 
 Usage:
   box builder browser --session <session-id> <operation> [JSON object]
+  box builder browser --session <session-id> navigate <path>
 
 The session id is required for every command. The optional JSON object contains
 the fields for the selected operation. Quote it for your shell, for example:
 
+  box builder browser --session abc123 state
+  box builder browser --session abc123 reset
+  box builder browser --session abc123 navigate /recipes
   box builder browser --session abc123 snapshot
   box builder browser --session abc123 inspect '{"ref":"e12"}'
   box builder browser --session abc123 type '{"ref":"e12","text":"hello","append":true}'
-  box builder browser --session abc123 navigate '{"path":"/recipes"}'
   box builder browser --session abc123 screenshot
 
+Start with state. state, navigate and reset run in the Builder shell and work on
+any page, including an artifact, a browser error page or a blank app; use reset
+or navigate to bring the Preview back. The other operations need a Box app page
+(state reports domControl: true).
+
 Operations and fields:
+  state                            no fields; where the Preview is and whether DOM control is available
+  reset                            no fields; reload the last app route, or Home if that route failed
+  navigate                         path (string, or a bare /path argument); an app or /artifacts/ path
   snapshot                         no fields
   inspect                          ref (string)
   click                            ref (string)
   type                             ref (string), text (string), append (boolean, optional)
   select                           ref (string), value (string)
   scroll                           x (number), y (number), ref (string, optional)
-  navigate                         path (string)
   style                            ref (string), styles (object of string values, optional)
   screenshot                       ref (string, optional)
 
@@ -37,10 +47,10 @@ Screenshot results are saved as PNG files in <repo>/_docs/browser and the
 returned image.dataUrl is replaced with the saved absolute path.
 `
 
-type BrowserOperation = 'snapshot' | 'inspect' | 'click' | 'type' | 'select' | 'scroll' | 'navigate' | 'style' | 'screenshot'
+type BrowserOperation = 'state' | 'navigate' | 'reset' | 'snapshot' | 'inspect' | 'click' | 'type' | 'select' | 'scroll' | 'style' | 'screenshot'
 
 const operations = new Set<BrowserOperation>([
-  'snapshot', 'inspect', 'click', 'type', 'select', 'scroll', 'navigate', 'style', 'screenshot',
+  'state', 'navigate', 'reset', 'snapshot', 'inspect', 'click', 'type', 'select', 'scroll', 'style', 'screenshot',
 ])
 
 function fail(message: string): never {
@@ -73,7 +83,9 @@ function parseArgs(argv: string[]): { sessionId: string; operation: BrowserOpera
   }
   if (positionals.length > 1) fail('Expected one optional JSON object after the operation')
   const params: Record<string, unknown> = {}
-  if (positionals.length === 1) {
+  if (positionals.length === 1 && operation === 'navigate' && (positionals[0] as string).startsWith('/')) {
+    params.path = positionals[0]
+  } else if (positionals.length === 1) {
     let parsed: unknown
     try { parsed = JSON.parse(positionals[0] as string) }
     catch { fail('The operation fields must be valid UTF-8 JSON') }

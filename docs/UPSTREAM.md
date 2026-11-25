@@ -11,7 +11,13 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `f770bc61623f87b9d67dac82cc45acd85b4c6447` (2026-11-25: a
+Latest core refresh: Stack commit `cbf0d6e9662124e09fea846d07fba1bbbfe6f512` (2026-11-25: a
+brief from Adapt waits as a card above the Builder conversation with Send, Edit as text and Discard;
+the agent pins its task plan with progress and time left (`box builder tasks`) and sends a ready card
+with Wrap Up and a proposed commit message (`box builder ready`); Wrap Up asks the agent to draft the
+commit message; `box builder browser state|navigate|reset` recover the Preview on any page; the
+artifacts recipe opens artifacts inline and checks itself with a self-check page. Since
+f770bc61623f87b9d67dac82cc45acd85b4c6447 the same day: a
 Builder Preview that leaves the Box app, such as an artifact or a failed load, shows a bar with Open
 in new tab and Back; the Builder journal condenses request storms and records host load every
 minute, and the session export adds a load snapshot; a pgrust download tolerates a concurrent install;

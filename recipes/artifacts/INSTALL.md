@@ -23,7 +23,7 @@ so the documents and the code come from the same version.
 
 ## Integration
 
-1. Copy/adapt `<fetched recipe>/features/artifacts/{core,server,web,toolbar,skills,welcome}` into the Box's
+1. Copy/adapt `<fetched recipe>/features/artifacts/{core,server,web,toolbar,skills,welcome,checks}` into the Box's
    `features/artifacts/`. `cloudflare/` and `mobile/` belong to powerups; leave them out.
    Replace the placeholder web route if the Box carried it.
 2. Register the feature in `packages/core/src/generated/features.ts`,
@@ -65,11 +65,19 @@ Adapt and validate the recipe first; each powerup can be added then or later.
 
 Run `box verify`, then boot a disposable instance (background work disabled) and exercise:
 
-- publish an HTML page and a gzipped tree over `box artifact-publish`, and a large tree over the
-  multipart upload; open both at `/artifacts/<slug>/` signed in, and signed out (expect the sign-in
-  round trip back to the page). Name every check page `test-<what>` and delete each one when its
-  checks are done, so the owner's gallery holds no test pages;
-- `artifact.kv` from the page (a reader's view counts, a reader's write is refused), the toolbar (share dialog, copy link, a pinned comment and a reply);
+The owner watches the gallery while you work, so the checks use pages that belong there. Do not
+publish ad-hoc test pages on the owner's Box:
+
+- publish the welcome page (below) as the tree publish check, and open it at
+  `/artifacts/welcome-to-artifacts/` signed in, and signed out (expect the sign-in round trip back
+  to the page). It is the toolbar check too: share dialog, copy link, a pinned comment and a reply
+  (delete both afterwards);
+- `artifact.kv`: publish the self-check page `features/artifacts/checks` as `test-artifacts-check`
+  (title "Checking Artifacts"), open it in the Preview, wait for `body[data-check]` to read
+  `passed` (the page lists each step) and delete it at once. It has the welcome page's look and
+  tells the owner what it is doing. A reader's view counts and refused reader writes are covered
+  by the server tests;
+- the multipart upload and a single HTML page: the disposable instance only, never the owner's Box;
 - rename, delete, folder create/delete, filters in the gallery at `/artifacts`;
 - the import dry run against a copy of the standalone data dir, when relevant;
 - without public sharing: the Share dialog shows the setup notice (admins get "Set up public
@@ -80,7 +88,8 @@ Record the commands and results in _docs/VALIDATION.md.
 
 ## Welcome page
 
-The last step on the owner's Box, after validation: publish the welcome page, the owner's guide to
+Publish it on the owner's Box as the first publish check (Validation above) and keep it: it is the
+result of the adaptation. Publish the welcome page, the owner's guide to
 what artifacts are and how to ask Work, Chat, MCP and Builder agents for one.
 
 ```

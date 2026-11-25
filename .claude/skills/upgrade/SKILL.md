@@ -125,7 +125,7 @@ taking over the cluster. Never point a second server at this `data/`.
 
 1. `box verify` (the full chain). Fix failures in this Box; do not skip a check.
 2. `box app restart`. Then `box app status`, and load the pages of every upgraded recipe and Settings
-   in the Builder Preview (`box builder browser --session <id> navigate|snapshot|screenshot`) or a
+   in the Builder Preview (`box builder browser --session <id> state|navigate|snapshot|screenshot`; `reset` brings it back) or a
    browser: typechecking cannot catch every runtime registration problem. Check that the owner's
    data is there (counts before and after).
 3. `box builder refresh` updates the Builder shell. The supervisor itself (it serves Builder and the

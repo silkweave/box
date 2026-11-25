@@ -53,6 +53,8 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box builder refresh                        refresh Builder UI without restarting its session
   box builder browser --session <session-id> <operation> [JSON object]
   box builder export [--session <id>] [--out <file>]  zip of a Builder session for support
+  box builder tasks --session <session-id> <JSON>   pin the agent's task plan in Builder
+  box builder ready --session <session-id> <JSON>   show the ready-to-wrap-up card in Builder
   box start                                  start the Box: promoted web release, Vite for Builder Preview
   box service install|uninstall               run the Box in the background (systemd user unit, launchd agent)
   box service start|stop|restart|status|logs  control that background Box; logs -f follows
@@ -121,7 +123,8 @@ function main(argv: string[]): void {
     if (rest.length === 1 && rest[0] === 'refresh') runScript(root, 'packages/cli/src/builder-refresh.ts', [])
     if (rest[0] === 'browser') runScript(root, 'packages/cli/src/builder-browser.ts', rest.slice(1))
     if (rest[0] === 'export') runScript(root, 'packages/cli/src/builder-export.ts', rest.slice(1))
-    die('Expected: box builder refresh, box builder export [--session <id>] [--out <file>] or box builder browser --session <id> <operation> [JSON]')
+    if (rest[0] === 'tasks' || rest[0] === 'ready') runScript(root, 'packages/cli/src/builder-report.ts', rest)
+    die('Expected: box builder refresh, box builder export [--session <id>] [--out <file>], box builder browser --session <id> <operation> [JSON] or box builder tasks|ready --session <id> <JSON>')
   }
 
   if (verb === 'stack') runScript(root, 'packages/cli/src/stack.ts', rest)

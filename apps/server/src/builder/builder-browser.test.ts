@@ -170,6 +170,66 @@ describe('Builder browser broker', () => {
     await expect(first).rejects.toThrow(/(?:Browser control authority|Builder lifecycle) changed/)
   })
 
+  async function shell(socket: WebSocket): Promise<void> {
+    socket.send(JSON.stringify({ type: 'shell', version: 1 }))
+    await new Promise(resolve => setTimeout(resolve, 20))
+  }
+
+  it('runs shell commands on a Preview that shows no app page', async () => {
+    const { broker, connect } = await setup()
+    const socket = await connect()
+    await shell(socket)
+    socket.send(JSON.stringify({ type: 'unavailable' }))
+    await expect(broker.execute('session-1', { op: 'snapshot' })).rejects.toThrow(/Run `state`.*`reset`.*`navigate \/`/)
+    const resultPromise = broker.execute('session-1', { op: 'state' })
+    const command = await nextMessage(socket, message => message.type === 'shell-command')
+    expect(command.command).toEqual({ op: 'state' })
+    socket.send(JSON.stringify({ type: 'shell-result', id: command.id, ok: true, result: { page: 'error', domControl: false } }))
+    await expect(resultPromise).resolves.toEqual({ page: 'error', domControl: false })
+  })
+
+  it('keeps a pending navigate while the page it runs on changes, and checks its path', async () => {
+    const { broker, connect } = await setup()
+    const socket = await connect()
+    await shell(socket)
+    await ready(socket)
+    await expect(broker.execute('session-1', { op: 'navigate', path: '/settings' })).rejects.toThrow('path is unavailable')
+    const resultPromise = broker.execute('session-1', { op: 'navigate', path: '/artifacts/welcome/' })
+    const command = await nextMessage(socket, message => message.type === 'shell-command')
+    socket.send(JSON.stringify({ type: 'unavailable' }))
+    await ready(socket, 'generation-2', '/signals')
+    socket.send(JSON.stringify({ type: 'shell-result', id: command.id, ok: true, result: { page: 'outside', path: '/artifacts/welcome/' } }))
+    await expect(resultPromise).resolves.toMatchObject({ page: 'outside' })
+  })
+
+  it('binds shell commands to the session and asks for a reload of a Builder page without shell support', async () => {
+    const { broker, connect, setCurrent } = await setup()
+    await expect(broker.execute('session-1', { op: 'reset' })).rejects.toThrow('No Builder window is open')
+    const socket = await connect()
+    await expect(broker.execute('session-1', { op: 'reset' })).rejects.toThrow('predates Preview recovery')
+    await shell(socket)
+    await expect(broker.execute('other-session', { op: 'reset' })).rejects.toThrow('another session')
+    const first = broker.execute('session-1', { op: 'reset' })
+    await nextMessage(socket, message => message.type === 'shell-command')
+    await expect(broker.execute('session-1', { op: 'state' })).rejects.toThrow('already pending')
+    setCurrent({ session: null })
+    await expect(first).rejects.toThrow('Builder lifecycle changed')
+    await expect(broker.execute('session-1', { op: 'state' })).rejects.toThrow('No Builder session is open')
+  })
+
+  it('rejects a shell result from another connection and a shell command that times out', async () => {
+    const { broker, connect } = await setup(undefined, { commandMs: 100, grantMs: 1_000, heartbeatMs: 50, pollMs: 1_000 })
+    const socket = await connect()
+    await shell(socket)
+    const other = await connect('bob-token')
+    const resultPromise = broker.execute('session-1', { op: 'state' })
+    const failure = resultPromise.then(() => new Error('resolved'), (error: Error) => error)
+    const command = await nextMessage(socket, message => message.type === 'shell-command')
+    other.send(JSON.stringify({ type: 'shell-result', id: command.id, ok: true, result: 'wrong browser' }))
+    await expect(nextMessage(other, message => message.type === 'error')).resolves.toMatchObject({ message: 'Stale or unauthorized browser result' })
+    expect((await failure).message).toBe('Browser command timed out')
+  })
+
   it('requires a same-origin admin handshake and filters sensitive page paths', async () => {
     const { url } = await setup()
     const foreign = new WebSocket(url, { headers: { origin: 'https://evil.example', cookie: 'sid=1' } })
@@ -181,7 +241,7 @@ describe('Builder browser broker', () => {
     const state = await nextMessage(socket, message => message.type === 'state' && (message.state as Message).tabs !== undefined)
     const tab = ((state.state as Message).tabs as Message[])[0]
     expect(tab.path).toBe('/unavailable')
-    await expect(current.broker.execute('session-1', { op: 'snapshot' })).rejects.toThrow('No Builder Preview tab')
+    await expect(current.broker.execute('session-1', { op: 'snapshot' })).rejects.toThrow('not showing a Box app page')
     const member = await setup()
     member.setIdentity({ id: 'alice', display: 'alice', role: 'member', kind: 'human' })
     const memberSocket = new WebSocket(member.url, { headers: { origin: member.origin, cookie: 'sid=1' } })

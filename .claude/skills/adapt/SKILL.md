@@ -131,6 +131,15 @@ the editable application and waits for health while preserving the supervisor an
 Use `box app status` to inspect the child. If application control cannot reach the supervisor, stop
 and ask the host operator to restore it.
 
+In Builder, keep the owner with you. After the plan is settled (section 3), send the work as tasks
+with estimates (`box builder tasks --session <id> '<JSON>'`, re-sent as each task starts or
+finishes). At milestones, address the owner by first name in a sentence or two and navigate the
+Preview to what already works (the new list page, the welcome page), unless they are using the
+Preview themselves. Keep checks out of their sight: no ad-hoc test records or pages on the owner's
+Box when the recipe's INSTALL.md offers a check that belongs there. When the chain passes and the
+owner should try it, send `box builder ready --session <id> '<JSON>'` with what was built, what to
+try, what is left and a proposed commit message; Builder shows it as a card with Wrap Up.
+
 If a previous upstream SHA is missing, recover it from adoption records or historical tags where
 possible; otherwise record an unknown baseline and inspect local differences explicitly. Do not
 invent ancestry or infer that a local difference is safe to overwrite. If the target source has

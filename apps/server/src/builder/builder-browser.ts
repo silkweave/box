@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { BROWSER_MAX_RESULT_BYTES, browserPreviewPath, parseBrowserCommand, type BrowserCommand, type BrowserControlState, type BrowserGrant, type BrowserServerMessage } from '@silkweave/box-core/builder-browser'
+import { BROWSER_MAX_RESULT_BYTES, BROWSER_NOT_APP_PAGE, BROWSER_SHELL_PROTOCOL, browserPreviewPath, isBrowserShellCommand, parseBrowserCommand, type BrowserCommand, type BrowserControlState, type BrowserGrant, type BrowserServerMessage, type BrowserShellCommand } from '@silkweave/box-core/builder-browser'
 import { WebSocket, WebSocketServer } from 'ws'
 import type { BuilderSupervisorAuthResult } from './builder-auth.js'
 
@@ -46,15 +46,19 @@ interface BrowserConnection {
   generation: string | null
   path: string
   pathAllowed: boolean
+  /** The Builder shell announced it runs shell commands (state, navigate, reset) itself. */
+  shell: boolean
   lastPong: number
   queue: Promise<void>
 }
 
-interface PendingBrowserCommand {
+/** `dom` runs in the app page under a grant; `shell` runs in the Builder shell on any page. */
+type PendingBrowserCommand = PendingCommandBase & ({ kind: 'dom'; grant: BrowserGrant } | { kind: 'shell' })
+
+interface PendingCommandBase {
   id: string
   connection: BrowserConnection
   sessionId: string
-  grant: BrowserGrant
   command: BrowserCommand
   timer: ReturnType<typeof setTimeout>
   resolve: (value: unknown) => void
@@ -73,6 +77,9 @@ function validText(value: unknown, name: string): string {
 function isAdmin(result: BuilderSupervisorAuthResult): result is Extract<BuilderSupervisorAuthResult, { ok: true }> {
   return result.ok && result.principal.role === 'admin'
 }
+
+const NO_SHELL = 'No Builder window is open in a browser, so there is no Preview to control. Ask the owner to open Builder.'
+const OLD_SHELL = 'The open Builder page predates Preview recovery. Ask the owner to reload the Builder page.'
 
 /**
  * Browser control is deliberately a small broker. It owns the tab/grant binding and forwards one
@@ -163,10 +170,14 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
     current.reject(new Error(message))
   }
 
-  /** Revoke is synchronous so lifecycle callers can invalidate control before mutating state. */
-  function revoke(nextReason: string): void {
+  /**
+   * Revoke is synchronous so lifecycle callers can invalidate control before mutating state. A page
+   * change (`pageOnly`) ends the DOM grant but not a pending shell command: navigate and reset are
+   * expected to change the page they run on.
+   */
+  function revoke(nextReason: string, pageOnly = false): void {
     clearGrantTimer()
-    rejectPending(nextReason)
+    if (!pageOnly || pending?.kind !== 'shell') rejectPending(nextReason)
     preparing = null
     selected = null
     grant = null
@@ -217,7 +228,7 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
     const id = randomUUID()
     const deadline = Date.now() + commandMs
     return new Promise<unknown>((resolve, reject) => {
-      const current: PendingBrowserCommand = { id, connection, sessionId, grant: { ...binding }, command, timer: undefined as never, resolve, reject }
+      const current: PendingBrowserCommand = { kind: 'dom', id, connection, sessionId, grant: { ...binding }, command, timer: undefined as never, resolve, reject }
       pending = current
       touchGrant()
       current.grant = { ...grant! }
@@ -243,6 +254,7 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
     const command = parseBrowserCommand(value)
     if (!commandPathAllowed(command)) throw new Error('Browser navigation path is unavailable')
     if (pending || preparing) throw new Error('A browser command is already pending')
+    if (isBrowserShellCommand(command)) return executeShell(sessionId, command)
     let currentGrant = grant
     let connection = selected
     if (!currentGrant || !connection) {
@@ -260,7 +272,7 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
         broadcast()
       }
     }
-    if (!currentGrant || !connection) throw new Error('No Builder Preview tab is available for browser control')
+    if (!currentGrant || !connection) throw new Error(sockets.size === 0 ? NO_SHELL : BROWSER_NOT_APP_PAGE)
     if (currentGrant.sessionId !== sessionId) throw new Error('Browser control is bound to another session')
     const preparation = Symbol('browser-command')
     preparing = preparation
@@ -279,10 +291,83 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
     }
   }
 
+  /** Shell commands need the session, an admin's connected Builder shell and no other pending command, not a ready app page. */
+  function shellBinding(connection: BrowserConnection, sessionId: string): boolean {
+    return !closed && !options.busy?.() && options.current().session?.id === sessionId && sockets.has(connection) && connection.shell && connection.socket.readyState === WebSocket.OPEN
+  }
+
+  async function executeShell(sessionId: string, command: BrowserShellCommand): Promise<unknown> {
+    const lifecycle = options.current()
+    if (!lifecycle.session) throw new Error('No Builder session is open')
+    if (lifecycle.session.id !== sessionId || (grant && grant.sessionId !== sessionId)) throw new Error('Browser control is bound to another session')
+    if (options.busy?.()) throw new Error('Builder is changing the application; try again in a moment')
+    const shells = [...sockets].filter(item => item.shell)
+    // The bound Preview first, then a ready one, then the most recently connected Builder window.
+    const connection = (selected && selected.shell && sockets.has(selected) ? selected : undefined) ??
+      shells.find(item => item.ready) ?? shells.at(-1)
+    if (!connection) throw new Error(sockets.size === 0 ? NO_SHELL : OLD_SHELL)
+    const preparation = Symbol('browser-shell-command')
+    preparing = preparation
+    try {
+      let allowed = false
+      try {
+        const checked = await options.auth.authenticate(connection.cookie)
+        allowed = isAdmin(checked) && checked.principal.id === connection.principalId
+      } catch { allowed = false }
+      if (!allowed) throw new Error('Browser control authority changed')
+      if (pending || !shellBinding(connection, sessionId)) throw new Error('Browser control authority changed')
+      const id = randomUUID()
+      const deadline = Date.now() + commandMs
+      return await new Promise<unknown>((resolve, reject) => {
+        const current: PendingBrowserCommand = { kind: 'shell', id, connection, sessionId, command, timer: undefined as never, resolve, reject }
+        pending = current
+        current.timer = setTimeout(() => {
+          if (pending !== current) return
+          lastAction = { op: command.op, ok: false, at: Date.now() }
+          rejectPending('Browser command timed out')
+          broadcast()
+        }, commandMs)
+        unref(current.timer)
+        broadcast()
+        const message: BrowserServerMessage = { type: 'shell-command', id, command, deadline }
+        try {
+          connection.socket.send(JSON.stringify(message), error => {
+            if (error && pending === current) { lastAction = { op: command.op, ok: false, at: Date.now() }; rejectPending('Browser tab disconnected'); broadcast() }
+          })
+        } catch {
+          lastAction = { op: command.op, ok: false, at: Date.now() }
+          rejectPending('Browser tab disconnected')
+          broadcast()
+        }
+      })
+    } finally {
+      if (preparing === preparation) preparing = null
+    }
+  }
+
+  async function handleShellResult(connection: BrowserConnection, frame: Record<string, unknown>): Promise<void> {
+    const command = pending
+    if (!command || command.kind !== 'shell' || frame.id !== command.id || connection !== command.connection) { sendError(connection, 'Stale or unauthorized browser result'); return }
+    if (typeof frame.ok !== 'boolean') { sendError(connection, 'Invalid browser result'); return }
+    let allowed = false
+    try {
+      const checked = await options.auth.authenticate(connection.cookie)
+      allowed = isAdmin(checked) && checked.principal.id === connection.principalId && shellBinding(connection, command.sessionId)
+    } catch { allowed = false }
+    if (pending !== command) return
+    pending = null
+    clearTimeout(command.timer)
+    lastAction = { op: command.command.op, ok: allowed && frame.ok, at: Date.now() }
+    broadcast()
+    if (!allowed) command.reject(new Error('Browser control authority changed'))
+    else if (frame.ok) command.resolve(frame.result)
+    else command.reject(new Error(typeof frame.error === 'string' && frame.error ? frame.error.slice(0, 2000) : 'Browser command failed'))
+  }
+
   async function handleResult(connection: BrowserConnection, frame: Record<string, unknown>): Promise<void> {
     const command = pending
     if (!command) { sendError(connection, 'No browser command is pending'); return }
-    if (frame.type !== 'result' || frame.id !== command.id || frame.nonce !== command.grant.nonce || frame.generation !== command.grant.generation || connection !== command.connection) {
+    if (command.kind !== 'dom' || frame.type !== 'result' || frame.id !== command.id || frame.nonce !== command.grant.nonce || frame.generation !== command.grant.generation || connection !== command.connection) {
       sendError(connection, 'Stale or unauthorized browser result')
       return
     }
@@ -327,7 +412,7 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
         const generation = validText(frame.generation, 'generation')
         const path = safePath(frame.path)
         const changed = connection.ready && (connection.generation !== generation || connection.path !== (path ?? '/unavailable'))
-        if (changed && selected === connection) revoke('Browser page changed')
+        if (changed && selected === connection) revoke('Browser page changed', true)
         connection.ready = path !== null
         connection.pathAllowed = path !== null
         connection.generation = path === null ? null : generation
@@ -337,7 +422,7 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
         return
       }
       case 'unavailable': {
-        if (selected === connection) revoke('Browser page is unavailable')
+        if (selected === connection) revoke('Browser page is unavailable', true)
         connection.ready = false
         connection.pathAllowed = false
         connection.generation = null
@@ -352,6 +437,13 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
       case 'result':
         await handleResult(connection, frame)
         return
+      case 'shell':
+        if (frame.version !== BROWSER_SHELL_PROTOCOL) { sendError(connection, 'Unsupported Builder shell version'); return }
+        connection.shell = true
+        return
+      case 'shell-result':
+        await handleShellResult(connection, frame)
+        return
       default:
         // In particular, tool_result/tool_call_result frames are never part of this protocol.
         sendError(connection, 'Unknown browser frame')
@@ -361,7 +453,10 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
   function removeConnection(connection: BrowserConnection): void {
     if (!sockets.delete(connection)) return
     if (selected === connection) revoke('Browser tab disconnected')
-    else broadcast()
+    else {
+      if (pending?.connection === connection) rejectPending('Browser tab disconnected')
+      broadcast()
+    }
   }
 
   async function poll(): Promise<void> {
@@ -372,6 +467,10 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
       const current = options.current()
       if (grant && (!current.session || current.session.id !== grant.sessionId || options.busy?.() || grant.expiresAt <= now)) {
         revoke(grant.expiresAt <= now ? 'Browser grant expired' : 'Builder lifecycle changed')
+      }
+      if (pending?.kind === 'shell' && (current.session?.id !== pending.sessionId || options.busy?.())) {
+        rejectPending('Builder lifecycle changed')
+        broadcast()
       }
       for (const connection of Array.from(sockets)) {
         if (now - connection.lastPong > Math.min(MAX_LIVENESS_MS, heartbeatMs * 3)) {
@@ -423,6 +522,7 @@ export function createBuilderBrowser(options: BuilderBrowserOptions) {
         generation: null,
         path: '/unavailable',
         pathAllowed: false,
+        shell: false,
         lastPong: Date.now(),
         queue: Promise.resolve(),
       }

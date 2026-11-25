@@ -1,6 +1,6 @@
 import { toPng } from 'html-to-image'
 
-import type { BrowserCommand } from '@silkweave/box-core/builder-browser'
+import type { BrowserDomCommand } from '@silkweave/box-core/builder-browser'
 import { browserPreviewPath } from '@silkweave/box-core/builder-browser'
 
 import { safePreviewPath } from './builderPreview'
@@ -93,11 +93,11 @@ type Snapshot = {
 export interface BrowserDomExecutorOptions {
   generation: string
   isActive: () => boolean
-  scheduleNavigation?: (path: string) => void
 }
 
 export interface BrowserDomExecutor {
-  execute(command: BrowserCommand): Promise<unknown>
+  /** DOM operations only; `state`, `navigate` and `reset` run in the Builder shell. */
+  execute(command: BrowserDomCommand): Promise<unknown>
   dispose(): void
 }
 
@@ -360,7 +360,7 @@ function assertSafeStyle(name: string, value: string): string {
   return cssName
 }
 
-export function createBrowserDomExecutor({ generation, isActive, scheduleNavigation }: BrowserDomExecutorOptions): BrowserDomExecutor {
+export function createBrowserDomExecutor({ generation, isActive }: BrowserDomExecutorOptions): BrowserDomExecutor {
   const refs = new Map<string, RefEntry>()
   const refsByElement = new WeakMap<HTMLElement, string>()
   const refPrefix = (() => {
@@ -445,23 +445,6 @@ export function createBrowserDomExecutor({ generation, isActive, scheduleNavigat
     return { op, result, before, after }
   }
 
-  const navigate = (path: string): { scheduled: true; path: string } => {
-    assertActive()
-    const corePath = browserPreviewPath(path)
-    const safePath = corePath ? safePreviewPath(corePath) : '/'
-    if (!corePath || safePath !== corePath || isProtectedRoute(new URL(corePath, window.location.origin).pathname)) throw new Error('Navigation path is unavailable')
-    if (scheduleNavigation) {
-      assertActive()
-      scheduleNavigation(safePath)
-    } else {
-      setTimeout(() => {
-        if (disposed || !isActive()) return
-        window.location.assign(safePath)
-      }, 0)
-    }
-    return { scheduled: true, path: safePath }
-  }
-
   const screenshot = async (ref?: string): Promise<Record<string, unknown>> => {
     assertActive()
     assertPublicPage()
@@ -500,7 +483,7 @@ export function createBrowserDomExecutor({ generation, isActive, scheduleNavigat
     }
   }
 
-  const execute = async (command: BrowserCommand): Promise<unknown> => {
+  const execute = async (command: BrowserDomCommand): Promise<unknown> => {
     assertActive()
     assertPublicPage()
     switch (command.op) {
@@ -552,7 +535,6 @@ export function createBrowserDomExecutor({ generation, isActive, scheduleNavigat
           return { ref: command.ref, x: command.x, y: command.y }
         })
       }
-      case 'navigate': return navigate(command.path)
       case 'style': {
         const element = resolveRef(command.ref)
         const styles = command.styles ?? {}

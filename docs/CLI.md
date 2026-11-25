@@ -278,6 +278,12 @@ offer a reload after success. See [Builder](BUILDER.md#refresh-the-builder-ui).
 current session, else the latest recorded one) through the same local supervisor socket and lists
 its files. See [Builder](BUILDER.md#export-a-session-for-support).
 
+`box builder tasks --session <id> '<JSON>'` and `box builder ready --session <id> '<JSON>'` are for
+the Builder agent: its task plan (pinned above the conversation with progress and time left) and its
+ready-to-wrap-up report (a card with Wrap Up and the proposed commit message). They go over the same
+local supervisor socket and are accepted for the open session only; `--help` prints the JSON shape.
+See [Builder](BUILDER.md#session-tasks-and-the-ready-card).
+
 ## Builder browser control
 
 `box builder browser` controls the first available Builder Preview from the local host. Use
@@ -286,6 +292,9 @@ the engine. It uses the owner-only `data/builder/browser.sock` transport and kee
 separate from WorkerDeck frames.
 
 ```sh
+box builder browser --session <session-id> state
+box builder browser --session <session-id> reset
+box builder browser --session <session-id> navigate /recipes
 box builder browser --session <session-id> snapshot
 box builder browser --session <session-id> inspect '{"ref":"dom-preview-1"}'
 box builder browser --session <session-id> click '{"ref":"dom-preview-1"}'
@@ -293,11 +302,13 @@ box builder browser --session <session-id> type '{"ref":"dom-preview-1","text":"
 box builder browser --session <session-id> select '{"ref":"dom-preview-2","value":"active"}'
 box builder browser --session <session-id> scroll '{"x":0,"y":600}'
 box builder browser --session <session-id> style '{"ref":"dom-preview-1","styles":{"backgroundColor":"#eef"}}'
-box builder browser --session <session-id> navigate '{"path":"/recipes"}'
 box builder browser --session <session-id> screenshot
 ```
 
-Operations return bounded JSON. `snapshot` creates bounded DOM references for `inspect`, `click`,
+Operations return bounded JSON. `state`, `navigate` and `reset` run in the Builder shell and work on
+any page, including an artifact or a browser error page: `state` reports where the Preview is and
+whether DOM control is available, `navigate` opens an app or artifact path, and `reset` returns to
+the last app route (Home when that route failed). The other operations need a Box app page. `snapshot` creates bounded DOM references for `inspect`, `click`,
 `type`, `select`, `scroll`, and `style`; `screenshot` saves a DOM PNG under `_docs/browser/` and
 returns its absolute path. Preview control is revoked by navigation or reload, disconnecting the
 selected browser, or five minutes without an action. Switching to Files or opening Wrap Up keeps Preview

@@ -7,8 +7,10 @@ import { BuilderWrapUp } from '../components/builder/BuilderWrapUp.tsx'
 import { BuilderExportDialog } from '../components/builder/BuilderExport.tsx'
 import { useBuilderBrowser } from '../lib/useBuilderBrowser.ts'
 import { builderModelOptions } from '../lib/builderModels.ts'
-import { previewOutsideApp, safePreviewPath } from '../lib/builderPreview.ts'
-import { BUILDER_BRIEF_MESSAGE, clearPendingBrief, readPendingBrief, storePendingBrief, validBrief } from '../lib/builderBrief.ts'
+import { previewOutsideApp, previewResetTarget, safePreviewPath } from '../lib/builderPreview.ts'
+import { briefFromMessage, clearPendingBrief, readPendingBrief, storePendingBrief, type BuilderBrief } from '../lib/builderBrief.ts'
+import { BuilderCard } from '../components/builder/BuilderCard.tsx'
+import { BuilderTasks } from '../components/builder/BuilderTasks.tsx'
 import { Badge, Button, Popover, PopoverContent, PopoverTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, confirm } from '@silkweave/box-ui'
 import { configureBuilderMonacoWorker } from '../lib/monacoWorker.ts'
 import { usePersistedState } from '@silkweave/box-ui/lib'
@@ -28,6 +30,7 @@ import {
   type BuilderApplicationStatus,
   type BuilderControlState,
   type BuilderPendingChanges,
+  type BuilderReadyReport,
   loadFreshVerdicts,
   withFreshVerdicts,
 } from '../lib/builderStore.ts'
@@ -163,7 +166,7 @@ function ProviderPills({ value, onChange, state }: { value: string; onChange: (v
   </div>
 }
 
-function SessionEmpty({ state, engine, setEngine, busy, brief, onDiscardBrief, onStart, onStop }: { state: BuilderControlState; engine: string; setEngine: (engine: string) => void; busy: boolean; brief: string | null; onDiscardBrief: () => void; onStart: () => void; onStop: () => void }) {
+function SessionEmpty({ state, engine, setEngine, busy, brief, onDiscardBrief, onStart, onStop }: { state: BuilderControlState; engine: string; setEngine: (engine: string) => void; busy: boolean; brief: BuilderBrief | null; onDiscardBrief: () => void; onStart: () => void; onStop: () => void }) {
   const unavailable = state.unavailableSession !== null
   const selectedProfile = state.profiles.find(profile => profile.engine.toLowerCase() === engine)
   const canStart = !busy && !unavailable && selectedProfile !== undefined
@@ -185,13 +188,46 @@ function SessionEmpty({ state, engine, setEngine, busy, brief, onDiscardBrief, o
   )
 }
 
-/** A handed-over brief waits here until a session exists; it is then inserted, never sent. */
-function BriefWaiting({ brief, onDiscard }: { brief: string; onDiscard: () => void }) {
+/** A handed-over brief waits here until a session exists; it then shows as a card for the owner to send. */
+function BriefWaiting({ brief, onDiscard }: { brief: BuilderBrief; onDiscard: () => void }) {
   return <div className='mt-5 w-full max-w-md rounded-lg border border-accent/30 bg-accent-tint p-3 text-left'>
-    <div className='flex items-center gap-2 text-label font-medium text-text'><FileText className='size-3.5 text-accent' />Draft brief ready<Button variant='ghost' size='xs' className='ml-auto' onClick={onDiscard}>Discard</Button></div>
-    <p className='mt-1.5 line-clamp-4 text-label leading-relaxed text-fg-3'>{brief}</p>
-    <p className='mt-2 text-label text-fg-3'>It is placed in the composer when the session starts. You review and send it.</p>
+    <div className='flex items-center gap-2 text-label font-medium text-text'><FileText className='size-3.5 text-accent' />{brief.card?.title ?? 'Brief ready'}<Button variant='ghost' size='xs' className='ml-auto' onClick={onDiscard}>Discard</Button></div>
+    <p className='mt-1.5 line-clamp-3 text-label leading-relaxed text-fg-3'>{brief.card?.summary ?? brief.text}</p>
+    <p className='mt-2 text-label text-fg-3'>It waits above the conversation when the session starts. You send it.</p>
   </div>
+}
+
+/** The first sentence of a plain brief, as the card's title when the brief brings no card. */
+const briefHeadline = (text: string): string => {
+  const first = text.trim().split(/(?<=[.!?])\s/)[0] ?? text
+  return first.length > 120 ? `${first.slice(0, 117)}...` : first
+}
+
+/** A handed-over brief, pinned above the conversation: the owner sends it, edits it as text, or discards it. */
+function BriefCard({ brief, busy, onSend, onEdit, onDiscard }: { brief: BuilderBrief; busy: boolean; onSend: () => void; onEdit: () => void; onDiscard: () => void }) {
+  const card = brief.card
+  return <BuilderCard icon={<FileText className='size-3.5' />} eyebrow='Brief' title={card?.title ?? briefHeadline(brief.text)} summary={card?.summary} groups={card?.groups} steps={card?.steps} stepsLabel='What the agent will do'
+    raw={brief.text} rawLabel='Full prompt'
+    actions={<>
+      <Button variant='ghost' size='sm' disabled={busy} onClick={onDiscard}>Discard</Button>
+      <Button variant='outline' size='sm' disabled={busy} onClick={onEdit}>Edit as text</Button>
+      <Button size='sm' disabled={busy} onClick={onSend}><Play />{busy ? 'Sending…' : 'Send'}</Button>
+    </>} />
+}
+
+/** The agent's "ready to wrap up" report (`box builder ready`): what was built, what to try, what is open. */
+function ReadyCard({ ready, onWrapUp, onDismiss }: { ready: BuilderReadyReport; onWrapUp: () => void; onDismiss: () => void }) {
+  const groups = [
+    ...(ready.built.length ? [{ label: 'Built', items: ready.built }] : []),
+    ...(ready.open.length ? [{ label: 'Still open', items: ready.open }] : []),
+  ]
+  return <BuilderCard tone='success' icon={<Check className='size-3.5' />} eyebrow='Ready to wrap up' title={ready.summary} groups={groups}
+    steps={ready.try} stepsLabel='Try it'
+    raw={ready.commitMessage} rawLabel='Proposed commit message'
+    actions={<>
+      <Button variant='ghost' size='sm' onClick={onDismiss}>Dismiss</Button>
+      <Button size='sm' onClick={onWrapUp}><Check />Wrap Up</Button>
+    </>} />
 }
 
 const pendingStatusLabel = (status: string): string =>
@@ -259,6 +295,8 @@ export function BuilderView() {
   const [error, setError] = React.useState<string | null>(null)
   const [view, setView] = React.useState<'preview' | 'files'>('preview')
   const [wrapUp, setWrapUp] = React.useState(false)
+  // The ready report the owner dismissed, by its time: a newer report shows again.
+  const [readyDismissed, setReadyDismissed] = usePersistedState<string | null>(appKey('builder', 'readyDismissed'), null, (v) => v === null || typeof v === 'string')
   const [exporting, setExporting] = React.useState(false)
   const [previewLocation, setPreviewLocation] = React.useState(() => safePreviewPath(new URLSearchParams(location.search).get('preview')))
   const [initialPreview] = React.useState(previewLocation)
@@ -301,9 +339,9 @@ export function BuilderView() {
   React.useEffect(() => {
     const receive = (event: MessageEvent): void => {
       if (event.origin !== location.origin || event.source !== iframe.current?.contentWindow) return
-      if (event.data?.type === BUILDER_BRIEF_MESSAGE) {
-        const text = event.data.v === 1 ? validBrief(event.data.text) : null
-        if (text) { storePendingBrief(text); setBrief(text) }
+      if (event.data?.type === 'box:builder-brief') {
+        const handed = briefFromMessage(event.data)
+        if (handed) { storePendingBrief(handed); setBrief(handed) }
         return
       }
       if (event.data?.type !== 'box:preview-location') return
@@ -317,21 +355,21 @@ export function BuilderView() {
     return () => window.removeEventListener('message', receive)
   }, [])
   const discardBrief = (): void => { clearPendingBrief(); setBrief(null) }
-  // Insert a handed-over brief once the composer exists. Insertion only: the owner sends the turn.
-  React.useEffect(() => {
+  const [sendingBrief, setSendingBrief] = React.useState(false)
+  // The owner's acts on a handed-over brief: send the full prompt, or move it into the composer.
+  const sendBrief = async (): Promise<void> => {
+    if (!brief || !state?.session) return
+    setSendingBrief(true); setError(null)
+    try { await sendBuilderMessage(state.session.id, brief.text); discardBrief() }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'The brief could not be sent.') }
+    finally { setSendingBrief(false) }
+  }
+  const editBrief = (): void => {
     if (!brief || !sessionControls) return
-    let tries = 0
-    const timer = window.setInterval(() => {
-      const ready = document.querySelector('[aria-label="Shared Builder conversation"] [data-slot="composer"] [contenteditable="true"]')
-      if (!ready && ++tries < 60) return
-      window.clearInterval(timer)
-      if (!ready) return
-      sessionControls.insertComposerText(brief)
-      sessionControls.focusComposer()
-      discardBrief()
-    }, 150)
-    return () => window.clearInterval(timer)
-  }, [brief, sessionControls])
+    sessionControls.insertComposerText(brief.text)
+    sessionControls.focusComposer()
+    discardBrief()
+  }
   const run = async (name: string, operation: () => Promise<void>): Promise<void> => {
     setAction(name); setError(null)
     try { await operation(); await refresh() }
@@ -339,7 +377,7 @@ export function BuilderView() {
     finally { setAction(null) }
   }
   const busy = action !== null
-  const browser = useBuilderBrowser(iframe, !!state)
+  const browser = useBuilderBrowser(iframe, !!state, () => previewLocation)
   const maintenance = async (): Promise<void> => {
     if (!state) return
     if (!await confirm({ title: state.maintenance ? 'End maintenance?' : 'Enable maintenance?', message: 'Maintenance blocks members and pauses configured background work.', confirmLabel: 'Continue' })) return
@@ -376,7 +414,7 @@ export function BuilderView() {
     setOutside(previewOutsideApp(iframe.current))
   }
   // The last app route, unless that route is the page that failed to load.
-  const backTarget = outside && outside.path === previewLocation ? '/' : previewLocation
+  const backTarget = previewResetTarget({ path: outside?.path ?? null, usable: !outside }, previewLocation)
   const backToApp = (): void => { if (iframe.current) iframe.current.src = backTarget }
   const revealFile = (path: string): void => { setOpenFile(path); setView('files') }
   const resize = (event: React.PointerEvent<HTMLDivElement>): void => {
@@ -422,7 +460,7 @@ export function BuilderView() {
       </div>
       {state.session && <div className={view === 'files' ? 'min-h-0 flex-1' : 'hidden'}><BuilderFiles key={state.session.id} cwd={state.session.cwd} readOnly={false} openPath={openFile} onUnsaved={setUnsaved} /></div>}
       {state.session && <BuilderWrapUp open={wrapUp} onOpenChange={setWrapUp} cwd={state.session.cwd} unsaved={unsaved} onUpdated={refresh} onOpenFile={revealFile} onFinished={() => location.assign(previewLocation)}
-        onAskAgent={text => sendBuilderMessage(state.session!.id, text)} />}
+        onAskAgent={text => sendBuilderMessage(state.session!.id, text)} proposedMessage={state.report?.ready?.commitMessage} />}
     </main>
     <div role='separator' aria-label='Resize Builder conversation' aria-orientation='vertical' tabIndex={0} aria-valuemin={340} aria-valuemax={800} aria-valuenow={panelWidth} onPointerDown={resize} onKeyDown={e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); setPanelWidth(w => Math.max(340, Math.min(800, w + (e.key === 'ArrowLeft' ? 20 : -20)))) } }} className='hidden w-1 shrink-0 cursor-col-resize touch-none rounded bg-border/40 hover:bg-accent lg:block' />
     <aside style={{ '--builder-width': `${panelWidth}px` } as React.CSSProperties} className='flex h-[45vh] min-h-0 shrink-0 flex-col lg:h-full lg:w-(--builder-width)' aria-label='Shared Builder conversation'>
@@ -435,6 +473,12 @@ export function BuilderView() {
         {state.web.mode === 'built' && state.web.error && <span className='text-danger' title={state.web.error}>Promote failed; everyone keeps the previous release.</span>}
       </div>
       {state.session ? <>
+        {/* Pinned above the conversation, together never more than 45% of it: the transcript and composer keep the rest. */}
+        {(state.report?.plan || (state.report?.ready && state.report.ready.at !== readyDismissed) || brief) && <div className='flex max-h-[45%] shrink-0 flex-col overflow-y-auto'>
+          {state.report?.plan && <BuilderTasks plan={state.report.plan} />}
+          {state.report?.ready && state.report.ready.at !== readyDismissed && <ReadyCard ready={state.report.ready} onWrapUp={() => setWrapUp(true)} onDismiss={() => setReadyDismissed(state.report!.ready!.at)} />}
+          {brief && <BriefCard brief={brief} busy={sendingBrief} onSend={() => void sendBrief()} onEdit={editBrief} onDiscard={discardBrief} />}
+        </div>}
         <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' statusSurface='external' controlsSurface='external' hideThinking={!showThinking} onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
         <BuilderSessionBar vitals={sessionVitals} controls={sessionControls} />
       </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} brief={brief} onDiscardBrief={discardBrief} onStart={() => void start()} onStop={() => void stop()} /></div>}

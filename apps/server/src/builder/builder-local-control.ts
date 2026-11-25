@@ -17,6 +17,8 @@ export interface BuilderLocalControls {
   maintenance?: { read: () => unknown; change: (patch: unknown) => Promise<unknown> }
   /** The Builder session export (`box builder export`): the current session unless one is named. */
   exportSession?: (sessionId: string | undefined) => Promise<{ fileName: string; files: unknown[]; zip: Buffer }>
+  /** The agent's task plan or ready report for the current session (`box builder tasks|ready`). */
+  sessionReport?: (sessionId: string, kind: unknown, payload: unknown) => Promise<unknown>
 }
 
 const MAX_BODY = 64 * 1024
@@ -54,6 +56,23 @@ export async function startBuilderLocalControl(instance: string, controls: Build
         exported => res.end(JSON.stringify({ ok: true, fileName: exported.fileName, files: exported.files, zip: exported.zip.toString('base64') })),
         error => { res.writeHead(failureStatus(error)); res.end(JSON.stringify({ message: error instanceof Error ? error.message : 'Session export failed' })) },
       )
+      return
+    }
+    if (req.method === 'POST' && req.url === '/session-report') {
+      const sessionReport = controls.sessionReport
+      if (!sessionReport) { res.writeHead(404); res.end(JSON.stringify({ message: 'Unknown local supervisor control' })); return }
+      let text = ''
+      req.setEncoding('utf8')
+      req.on('data', chunk => { text += chunk; if (text.length > MAX_BODY) req.destroy() })
+      req.on('end', () => {
+        let body: { sessionId?: unknown; kind?: unknown; payload?: unknown }
+        try { body = JSON.parse(text) as typeof body } catch { res.writeHead(400); res.end(JSON.stringify({ message: 'Invalid JSON body' })); return }
+        if (typeof body.sessionId !== 'string' || !body.sessionId) { res.writeHead(400); res.end(JSON.stringify({ message: 'A session id is required' })); return }
+        void sessionReport(body.sessionId, body.kind, body.payload).then(
+          report => res.end(JSON.stringify({ ok: true, report })),
+          error => { res.writeHead(failureStatus(error)); res.end(JSON.stringify({ message: error instanceof Error ? error.message : 'Session report failed' })) },
+        )
+      })
       return
     }
     const maintenance = controls.maintenance

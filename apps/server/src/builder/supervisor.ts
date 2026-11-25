@@ -27,6 +27,7 @@ import { DevView, parseDevLogLevel } from './dev-view.js'
 import { createBuilderJournal } from './builder-journal.js'
 import { readTurns, recordedSessions, recordTurn } from './builder-turns.js'
 import { buildSessionExport } from './builder-export.js'
+import { applySessionReport, readSessionReport } from './builder-session-report.js'
 import { readWorkerdeckConfig } from '../agent/workerdeck.config.js'
 import type { SessionEvent } from '@workerdeck/protocol'
 import { createDevAccessCache, FRONTEND_HEADER, isPreviewDocument, isViteOnlyRequest, isViteSocket, shouldCompressDevResponse } from './frontend-routing.js'
@@ -326,7 +327,7 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       mode: 'built' as const, promoting: webPromoting, error: webError,
       release: release ? { version: release.version, createdAt: release.createdAt, sourceSha: release.sourceSha, dirty: release.dirty } : null,
     }
-    return { ...current, maintenance: readMaintenance(paths.instanceDir), session, unavailableSession: current.session && !session ? current.session : null, application: app.status, ui: { version: builderUiVersion(ui), building: uiBuilding, error: uiError }, web, principal, profiles: await host.availableProfiles(principal.id) }
+    return { ...current, maintenance: readMaintenance(paths.instanceDir), session, unavailableSession: current.session && !session ? current.session : null, report: current.session ? readSessionReport(paths.instanceDir, current.session.id) : null, application: app.status, ui: { version: builderUiVersion(ui), building: uiBuilding, error: uiError }, web, principal, profiles: await host.availableProfiles(principal.id) }
   }
   async function requireIdle(): Promise<void> {
     const current = readBuilderControl(paths)
@@ -617,6 +618,11 @@ export async function startBuilderSupervisor(options: { signals?: boolean; devVi
       promote: promoteLocal,
       maintenance: { read: () => readMaintenance(paths.instanceDir), change: patch => changeMaintenance(patch, null, 'host') },
       exportSession,
+      sessionReport: async (sessionId, kind, payload) => {
+        const current = readBuilderControl(paths).session
+        if (!current || current.id !== sessionId) throw new BuilderLifecycleError(409, 'That is not the open Builder session')
+        return applySessionReport(paths.instanceDir, sessionId, kind, payload)
+      },
     })
     if (closing) throw new Error('Box supervisor is stopping')
     if (app.dev) await app.startVite().catch(error => report('error', `Box frontend needs repair: ${String(error)}`))

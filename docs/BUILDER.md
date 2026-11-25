@@ -52,16 +52,20 @@ Closing the Builder panel returns to the previewed page without ending the share
 
 ## Draft briefs from the app
 
-The onboarding dashboard can hand Builder a draft brief, for example when the owner chooses
-**Adapt recipe** in the Recipe Gallery or on an onboarding recommendation. The brief is text for the composer and nothing more. It
-never starts a session and is never sent automatically.
+The onboarding dashboard can hand Builder a brief, for example when the owner chooses
+**Adapt recipe** in the Recipe Gallery or on an onboarding recommendation. A brief is the full
+prompt plus an optional card: a title, a line of context, named lists (the recipes it builds on,
+the powerups to choose from) and the steps the agent will take. It never starts a session and is
+never sent automatically.
 
 Outside Builder, the dashboard stores the draft in the tab's session storage and navigates to
 Builder. Inside the Builder Preview, it posts the draft to the containing Builder window instead.
 Builder accepts only a bounded, non-empty draft from the same origin, and a stored draft expires
-after an hour. When no session is open, Builder shows the waiting draft in the start panel with a
-**Discard** control. Once a session is open, Builder inserts the draft into the composer. The owner
-reviews, edits and sends it like any other turn. See [RECIPES.md](RECIPES.md#onboarding-and-the-recipe-gallery).
+after an hour. When no session is open, Builder shows the waiting brief in the start panel with a
+**Discard** control. Once a session is open, the brief waits as a card above the conversation, with
+the full prompt in a fold: **Send** sends the full prompt as the owner's turn, **Edit as text** moves
+it into the composer, **Discard** drops it. A brief without a card shows its first sentence as the
+title. See [RECIPES.md](RECIPES.md#onboarding-and-the-recipe-gallery).
 
 All administrators can send turns and respond to requests in the shared conversation. The shared
 session keeps one provider profile, credential and billing context while multiple browsers can
@@ -83,6 +87,28 @@ or after five minutes without a browser action. Switching to Files or opening Wr
 embedded Preview. The next command uses the first available Preview. Each administrator can still
 navigate their own Preview manually.
 
+There are two kinds of operation:
+
+- **Shell operations** `state`, `navigate` and `reset` run in the Builder shell, which owns the
+  Preview iframe and holds the control connection. They work whatever the frame shows: a Box app
+  page, an artifact at `/artifacts/<slug>/`, a wrong URL, a browser error page after a server
+  restart, or an app that failed to render. `state` reports the page kind (`app`, `outside` for a
+  readable page outside the app such as an artifact, `error` for a page the shell cannot read,
+  `loading`), its path and title, `domControl` (whether DOM operations can run now), the problem
+  when the page is not usable, the last app route and the `reset` target. `navigate` opens a
+  same-origin app or artifact path; `reset` reloads the last app route, or Home when that route is
+  the page that failed (the same target as the **Back to** bar). Both wait for the page to load,
+  and for an app page to become controllable, then return the new state.
+- **DOM operations** (`snapshot`, `inspect`, `click`, `type`, `select`, `scroll`, `style`,
+  `screenshot`) run inside a Box app page under the binding above. On any other page they fail
+  with a message that names `state`, `reset` and `navigate` as the way back.
+
+An agent therefore starts with `state`, recovers with `reset` or `navigate` when `domControl` is
+false, and never needs the owner to reload Builder to regain control. Shell operations follow the
+same rules as DOM operations: the session id must match the open session, the connection must
+belong to an administrator, one command runs at a time within a bounded time, and navigation
+refuses authentication, settings, Builder and infrastructure paths and secret-bearing queries.
+
 The control channel supports both Codex and Claude Builder sessions. It is separate from the
 WorkerDeck conversation and does not inject an MCP server into either engine. An agent with the
 session id supplied by Builder can use the owner-local CLI:
@@ -100,18 +126,20 @@ when the owner asks; it must never stop, kill, replace or relaunch the superviso
 process owns the Builder host and the agent's own session.
 
 ```sh
+box builder browser --session <session-id> state
+box builder browser --session <session-id> reset
+box builder browser --session <session-id> navigate /recipes
 box builder browser --session <session-id> snapshot
 box builder browser --session <session-id> inspect '{"ref":"dom-preview-1"}'
 box builder browser --session <session-id> type '{"ref":"dom-preview-1","text":"hello"}'
 box builder browser --session <session-id> select '{"ref":"dom-preview-2","value":"active"}'
 box builder browser --session <session-id> scroll '{"x":0,"y":600}'
 box builder browser --session <session-id> style '{"ref":"dom-preview-1","styles":{"backgroundColor":"#eef"}}'
-box builder browser --session <session-id> navigate '{"path":"/recipes"}'
 box builder browser --session <session-id> screenshot
 ```
 
-The available operations are `snapshot`, `inspect`, `click`, `type`, `select`, `scroll`, `style`,
-`navigate`, and `screenshot`. Snapshots expose bounded DOM references for later inspect, click,
+The available operations are `state`, `navigate`, `reset`, `snapshot`, `inspect`, `click`, `type`,
+`select`, `scroll`, `style`, and `screenshot`. `navigate` takes a bare path or `'{"path":"/recipes"}'`. Snapshots expose bounded DOM references for later inspect, click,
 write, select, scroll, and style actions. Screenshots are DOM captures saved by the CLI as private
 PNG files in `_docs/browser/`; they are not OS-level screen captures. The capture omits marked
 private fields, secret-like controls, authentication and settings routes, scripts, frames, media,
@@ -119,8 +147,8 @@ and cross-origin assets. It is capped at 1600 pixels per side and 4 MB and does 
 Clicks reject native form submission, links that open a new tab, and downloads. Secret detection
 is heuristic, DOM capture is bounded, and this feature is not an OS sandbox.
 
-The CLI talks to the owner-only local browser socket and requires the supplied session id and an
-active Preview grant for every command. Its local transport is separate from WorkerDeck frames;
+The CLI talks to the owner-only local browser socket and requires the supplied session id for every
+command, and an active Preview grant for every DOM command. Its local transport is separate from WorkerDeck frames;
 WorkerDeck messages are never accepted as browser-control commands.
 
 ## Host controls
@@ -218,6 +246,24 @@ every user shares the one application process, so they go live with each applica
 status popover shows the live release. See
 [SERVER.md](SERVER.md#built-mode-one-release-for-everyone-vite-for-the-builder-preview).
 
+## Session tasks and the ready card
+
+The agent reports to the Builder shell beside the transcript with two host-local commands, accepted
+for the open session only (over the supervisor's local control socket):
+
+- `box builder tasks --session <id> '<JSON>'` sends its plan: owner-readable tasks with a status
+  (`pending`, `running`, `done`) and an estimate in minutes. Builder pins it above the conversation
+  with the task now running, progress, time elapsed since the plan arrived and the time the open
+  estimates leave; it expands to the list. The agent re-sends the whole plan as tasks start and
+  finish; a task keeps the time it started and finished.
+- `box builder ready --session <id> '<JSON>'` says the work is ready for the owner: a summary, what
+  was built, what to try, what is still open and a proposed commit message. Builder shows it as a
+  card with a **Wrap Up** button; **Dismiss** hides it until a newer report arrives.
+
+The report lives in `data/builder/session-report.json` for the current session and is replaced when
+another session reports. The session instructions tell the agent to send both, to address the owner
+by first name at milestones and to navigate the Preview to what already works.
+
 ## Wrap Up
 
 Wrap Up is a server-backed gate over the current Git state, presented as three steps:
@@ -227,8 +273,11 @@ Wrap Up is a server-backed gate over the current Git state, presented as three s
 2. **Verify** runs the complete validation chain (`box verify`) for that exact state and streams its
    output. When it fails, **Ask Builder to fix** puts the failure into the conversation composer for
    the owner to send. A file changed after a check makes the result stale and asks for a new run.
-3. **Commit** takes a message. **Finish** integrates and ends the session; **Checkpoint only**
-   commits on the Builder branch and keeps the session open.
+3. **Commit** takes a message, drafted by the agent by default: the ready report's commit message
+   fills it, and reaching Commit without one asks the agent once to draft it from the session's
+   turns and diff (it arrives through `box builder ready`). A message the owner has edited is never
+   replaced. **Finish** integrates and ends the session; **Checkpoint only** commits on the Builder
+   branch and keeps the session open.
 
 Verification records the exact review fingerprint only after the repository verification command
 passes. If a dependency
@@ -309,18 +358,20 @@ Assistant panel preserves its session and is not the same as ending it.
 
 The embedded editable application sends the Builder shell its current route and document title
 through the same-origin preview bridge, and advertises a versioned browser-control readiness state.
-The shell binds a selected tab to the supervisor's separate browser-control channel. That channel
-supports bounded DOM snapshots and references, inspect, click, type, select, scroll, style,
-navigation, and DOM screenshot commands automatically for the first available Builder Preview.
+The shell, not the embedded page, holds the connection to the supervisor's separate
+browser-control channel, so the connection survives the frame navigating away, failing to load or
+rendering nothing. The shell announces that it runs the shell operations (`state`, `navigate`,
+`reset`) itself, and binds a selected tab for bounded DOM snapshots and references, inspect, click,
+type, select, scroll, style and DOM screenshot commands, which the page bridge executes.
 
 The app marks its document with `<meta name="box-app">`. When the Preview shows anything else, such
 as an artifact at `/artifacts/<slug>/` or a browser error page, the shell shows a bar above it
 with **Open in new tab** (for a readable page) and **Back to** the last app route, so the
 Preview never needs a reload of the whole Builder page to return.
 
-Navigation is queued and then changes the iframe document. The route notification invalidates the
-old generation and its references; the agent must take a fresh snapshot. Navigation does not return
-a full after snapshot. The bridge still rejects arbitrary
+Navigation sets the iframe's address from the shell. The new page's route notification invalidates
+the old generation and its references; the agent must take a fresh snapshot. Navigation returns the
+Preview state, not a snapshot. The bridge still rejects arbitrary
 JavaScript, eval, script injection, shell commands, unrestricted selectors, network proxying and
 WorkerDeck frames as browser commands.
 

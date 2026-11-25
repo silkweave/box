@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BROWSER_PROTOCOL, browserPreviewPath, parseBrowserCommand, type BrowserGrant } from '@silkweave/box-core/builder-browser'
+import { BROWSER_PROTOCOL, browserPreviewPath, isBrowserShellCommand, parseBrowserCommand, type BrowserGrant } from '@silkweave/box-core/builder-browser'
 import { isBuilderPreview } from './builderPreview.ts'
 import { createBrowserDomExecutor } from './builderBrowserDom.ts'
 
@@ -13,15 +13,13 @@ export function BuilderPreviewBridge() {
     let previousTitle = ''
     let running = false
     let execution: { id: string; nonce: string; deadline: number } | null = null
-    let navigation: { id: string; nonce: string; generation: string; path: string; deadline: number } | null = null
     let disposed = false
     let cancelExecution: (() => void) | undefined
     const send = (message: unknown): void => window.parent.postMessage(message, location.origin)
-    const revoke = (): void => { grant = null; navigation = null; executor.dispose(); cancelExecution?.() }
+    const revoke = (): void => { grant = null; executor.dispose(); cancelExecution?.() }
     const createExecutor = () => createBrowserDomExecutor({
       generation,
       isActive: () => !disposed && grant !== null && grant.generation === generation && grant.expiresAt > Date.now() && (!execution || (execution.nonce === grant.nonce && execution.deadline > Date.now())) && browserPreviewPath(location.pathname + location.search + location.hash) !== null,
-      scheduleNavigation: path => { if (execution) navigation = { ...execution, generation, path } },
     })
     let executor = createExecutor()
     const notify = (force = false): void => {
@@ -53,13 +51,6 @@ export function BuilderPreviewBridge() {
         grant = next
         return
       }
-      if (message.type === 'box:browser-settled') {
-        const next = navigation
-        if (!next || message.id !== next.id || message.nonce !== next.nonce || message.generation !== next.generation) return
-        navigation = null
-        if (message.ok && grant?.nonce === next.nonce && generation === next.generation && next.deadline > Date.now() && grant.expiresAt > Date.now() && browserPreviewPath(next.path)) location.assign(next.path)
-        return
-      }
       if (message.type !== 'box:browser-command' || message.protocol !== BROWSER_PROTOCOL) return
       notify()
       const current = grant
@@ -75,7 +66,10 @@ export function BuilderPreviewBridge() {
           cancelExecution = () => reject(new Error('Preview control was revoked'))
           timer = setTimeout(() => { revoke(); send({ type: 'box:browser-stop' }) }, Math.max(1, message.deadline - Date.now()))
         })
-        const result = await Promise.race([executor.execute(parseBrowserCommand(message.command)), interrupted])
+        const command = parseBrowserCommand(message.command)
+        // The Builder shell runs these itself; they never reach the page.
+        if (isBrowserShellCommand(command)) throw new Error('This operation runs in the Builder shell, not in the page')
+        const result = await Promise.race([executor.execute(command), interrupted])
         if (grant?.nonce !== current.nonce || disposed || message.deadline <= Date.now()) throw new Error('Preview control was revoked or expired')
         reply(result, true)
       } catch (error) { reply(error instanceof Error ? error.message : 'Preview operation failed', false) }

@@ -46,6 +46,8 @@ export interface BuilderUnavailableSession {
 export interface BuilderControlState {
   session: SessionInfo | null
   unavailableSession: BuilderUnavailableSession | null
+  /** The agent's task plan and ready report for the open session (`box builder tasks|ready`). */
+  report: BuilderSessionReport | null
   maintenance: boolean
   branch: string | null
   baseRevision: string | null
@@ -55,6 +57,42 @@ export interface BuilderControlState {
   web: BuilderWebState
   principal: { id: string; display: string; role: 'admin' | 'member' }
   profiles: BuilderProfile[]
+}
+
+export type BuilderTaskStatus = 'pending' | 'running' | 'done'
+export interface BuilderTask { title: string; status: BuilderTaskStatus; estimateMinutes?: number; startedAt?: string; doneAt?: string }
+export interface BuilderTaskPlan { tasks: BuilderTask[]; startedAt: string; updatedAt: string }
+export interface BuilderReadyReport { summary: string; built: string[]; try: string[]; open: string[]; commitMessage?: string; at: string }
+export interface BuilderSessionReport { plan?: BuilderTaskPlan; ready?: BuilderReadyReport }
+
+const textList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item !== '') : []
+
+/** The session report as the supervisor sent it, keeping only well-formed parts. */
+export function parseSessionReport(value: unknown): BuilderSessionReport | null {
+  if (!isRecord(value)) return null
+  const report: BuilderSessionReport = {}
+  const plan = value.plan
+  if (isRecord(plan) && Array.isArray(plan.tasks) && typeof plan.startedAt === 'string' && typeof plan.updatedAt === 'string') {
+    const tasks = plan.tasks.filter(isRecord).flatMap((task): BuilderTask[] => {
+      const status = task.status
+      if (typeof task.title !== 'string' || (status !== 'pending' && status !== 'running' && status !== 'done')) return []
+      return [{
+        title: task.title, status,
+        ...(typeof task.estimateMinutes === 'number' ? { estimateMinutes: task.estimateMinutes } : {}),
+        ...(typeof task.startedAt === 'string' ? { startedAt: task.startedAt } : {}),
+        ...(typeof task.doneAt === 'string' ? { doneAt: task.doneAt } : {}),
+      }]
+    })
+    if (tasks.length) report.plan = { tasks, startedAt: plan.startedAt, updatedAt: plan.updatedAt }
+  }
+  const ready = value.ready
+  if (isRecord(ready) && typeof ready.summary === 'string' && typeof ready.at === 'string') {
+    report.ready = {
+      summary: ready.summary, built: textList(ready.built), try: textList(ready.try), open: textList(ready.open), at: ready.at,
+      ...(typeof ready.commitMessage === 'string' && ready.commitMessage ? { commitMessage: ready.commitMessage } : {}),
+    }
+  }
+  return report.plan || report.ready ? report : null
 }
 
 export interface BuilderWebRelease { version: string; createdAt: string; sourceSha: string | null; dirty: boolean }
@@ -115,6 +153,7 @@ const normalizeState = (raw: unknown): BuilderControlState => {
     ui: { version: isRecord(body.ui) ? asText(body.ui.version) ?? null : null, building: isRecord(body.ui) && body.ui.building === true, error: isRecord(body.ui) ? asText(body.ui.error) ?? null : null },
     web: normalizeWeb(body.web),
     unavailableSession,
+    report: parseSessionReport(body.report),
     maintenance: body.maintenance === true,
     branch: asText(body.branch) ?? null,
     baseRevision: asText(body.baseRevision) ?? null,

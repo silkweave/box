@@ -28,3 +28,38 @@ export function previewOutsideApp(frame: HTMLIFrameElement | null): { path: stri
   } catch { path = null }
   return { path }
 }
+
+/**
+ * Where `reset` and **Back to** go: the last app route, or Home when the frame is at that route and
+ * the page there is not usable (it failed to load or never became a controllable app page).
+ */
+export function previewResetTarget(current: { path: string | null; usable: boolean }, lastAppRoute: string): string {
+  return !current.usable && current.path === lastAppRoute ? '/' : lastAppRoute
+}
+
+/**
+ * A path the agent may open in the Preview: the broker's rules (no infrastructure, sign-in,
+ * settings or secret-bearing queries) and the shell's own `safePreviewPath` must agree. Artifact
+ * pages (`/artifacts/<slug>/`) are allowed. Null when the path is refused.
+ */
+export function previewNavigationPath(value: unknown, brokerPath: (value: unknown) => string | null): string | null {
+  const allowed = brokerPath(value)
+  return allowed && safePreviewPath(allowed) === allowed ? allowed : null
+}
+
+/** What the shell can read of its Preview frame, without help from the page inside it. */
+export function readPreviewFrame(frame: HTMLIFrameElement | null): { page: 'app' | 'outside' | 'error' | 'loading'; path: string | null; title: string | null } {
+  if (!frame) return { page: 'loading', path: null, title: null }
+  let here: Location | undefined
+  let path: string | null = null
+  try {
+    here = frame.contentWindow?.location
+    if (!here || here.href === 'about:blank') return { page: 'loading', path: null, title: null }
+    if (here.origin !== location.origin) return { page: 'error', path: null, title: null }
+    path = here.pathname + here.search + here.hash
+  } catch { return { page: 'error', path: null, title: null } }
+  let doc: Document | null = null
+  try { doc = frame.contentDocument } catch { doc = null }
+  if (!doc) return { page: 'error', path, title: null }
+  return { page: doc.querySelector('meta[name="box-app"]') ? 'app' : 'outside', path, title: doc.title || null }
+}

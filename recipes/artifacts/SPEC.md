@@ -180,8 +180,10 @@ was removed can still be made private.
 
 `/artifacts` is the gallery: folder bar (Root and one chip per folder), All/Public scope, kind,
 owner (with Mine), tags (AND), free text; rows with icon, title, badges, description, meta line,
-tags and owner; details, share and remove dialogs; folder dialog. Pages open in a new tab at their
-own URL with the toolbar.
+tags and owner; details, share and remove dialogs; folder dialog. Opening a page shows it inline
+in the main area at `/artifacts?open=<slug>` (crumb back to the gallery, **Open in new tab**,
+Reload, details and share in the top bar; the toolbar's home button returns to the gallery). A
+modified click or **Open in new tab** opens it at its own URL with the toolbar.
 
 ## Mobile module
 

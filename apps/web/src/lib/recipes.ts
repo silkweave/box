@@ -18,7 +18,7 @@
 
 import { parsePowerup, parseRecipe, type PowerupText, type RecipeText } from './recipeFormat.ts'
 
-export { powerupBrief, recipeBrief, RecipeBook } from './recipeFormat.ts'
+export { powerupBrief, powerupBuilderBrief, recipeBrief, recipeBuilderBrief, RecipeBook } from './recipeFormat.ts'
 export type { PowerupState, PowerupText as Powerup, RecipeState, Requirement } from './recipeFormat.ts'
 
 export interface RecipeScreenshot { src: string; alt: string }

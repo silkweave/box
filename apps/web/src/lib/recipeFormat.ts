@@ -160,6 +160,47 @@ export function recipeBrief(recipe: RecipeText, titles: ReadonlyMap<string, stri
   return `Adapt the ${recipe.title} recipe (\`${recipe.id}\`) from Silkweave Stack into this Box.${deps}${optional} Run \`box recipe fetch ${recipe.id}\` first: it downloads the recipe's docs (\`recipes/${recipe.id}/\`) and implementation (\`features/${recipe.id}/\`) from the recipe registry and prints where. Read those docs and \`docs/RECIPES.md\` before changing anything. Follow the adapt skill: record the scope and the fetched version before editing and back up before any migration. Preserve this Box's local decisions and migration history, update registration and dependencies, and run the complete validation chain. Once it passes, record the recipe in the \`recipes\` ledger of \`box.json\` (\`"${recipe.id}": { "powerups": [], "version": "<fetched version>", "sha256": "<fetched sha256>" }\`, plus the ids of any powerups added and verified), then let me review the result before finishing.`
 }
 
+/** The card Builder shows for "Adapt recipe" / "Update recipe", with the full brief as its prompt. */
+export function recipeBuilderBrief(recipe: RecipeText, titles: ReadonlyMap<string, string>, adapted = false, powerups: readonly PowerupText[] = []): { text: string; card: { title: string; summary: string; groups: { label: string; items: string[] }[]; steps: string[] } } {
+  const text = recipeBrief(recipe, titles, adapted, powerups)
+  if (adapted) {
+    return { text, card: { title: `Update ${recipe.title}`, summary: recipe.summary, groups: [], steps: [
+      'Fetch the latest version and the one this Box has',
+      'Compare them with your local changes',
+      'Update the code and the powerups you have',
+      'Back up before any migration, then run every check',
+      'Record the new version and hand over for your review',
+    ] } }
+  }
+  const groups = [
+    ...(recipe.buildsOn.length ? [{ label: 'Builds on', items: recipe.buildsOn.map(id => titles.get(id) ?? id) }] : []),
+    ...(powerups.length ? [{ label: 'Optional powerups (you choose before it starts)', items: powerups.map(p => p.title) }] : []),
+  ]
+  return { text, card: { title: `Adapt ${recipe.title}`, summary: recipe.summary, groups, steps: [
+    'Fetch the recipe and read its docs',
+    ...(powerups.length ? ['Ask you which powerups to add now'] : []),
+    'Record the scope and back up before any migration',
+    `Build it into features/${recipe.id}/ and register it`,
+    'Run every check and show you the result in the Preview',
+    'Record it in box.json and hand over for your review',
+  ] } }
+}
+
+/** The card Builder shows for "Add powerup", with the full brief as its prompt. */
+export function powerupBuilderBrief(powerup: PowerupText, recipeTitle: string): { text: string; card: { title: string; summary: string; groups: { label: string; items: string[] }[]; steps: string[] } } {
+  return { text: powerupBrief(powerup, recipeTitle), card: {
+    title: `Add ${powerup.title} to ${recipeTitle}`,
+    summary: powerup.summary,
+    groups: powerup.needs.length ? [{ label: 'You will need', items: powerup.needs }] : [],
+    steps: [
+      'Read the powerup and check whether this Box has it',
+      'Ask you its decisions and list the steps only you can do',
+      'Build it, then run its checks and every Box check',
+      'Record it in box.json and hand over for your review',
+    ],
+  } }
+}
+
 /** The Builder brief drafted by "Add powerup". The owner edits it before sending. */
 export function powerupBrief(powerup: PowerupText, recipeTitle: string): string {
   return `Add the ${powerup.title} powerup to the ${recipeTitle} recipe (\`${powerup.recipe}\`) in this Box. Read \`${powerupPath(powerup)}\` (POWERUP.md and INSTALL.md) and the Powerups section of \`docs/RECIPES.md\` first, and check whether this Box already has it before changing anything. Ask me the owner decisions INSTALL.md lists, then tell me exactly which owner-only steps I have to do myself and wait for me. Fetch any source it needs with \`box recipe fetch ${powerup.recipe} --version <sha>\` at the version recorded in the \`recipes\` ledger of \`box.json\`. Keep secrets in \`box.local.json\` and never print them. Record the scope in \`_docs/INTEGRATION.md\`, run INSTALL.md's Verify steps and the complete validation chain, then add \`${powerup.id}\` to \`recipes.${powerup.recipe}.powerups\` in \`box.json\` and let me review the result before finishing.`
