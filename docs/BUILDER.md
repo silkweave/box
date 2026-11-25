@@ -246,7 +246,7 @@ every user shares the one application process, so they go live with each applica
 status popover shows the live release. See
 [SERVER.md](SERVER.md#built-mode-one-release-for-everyone-vite-for-the-builder-preview).
 
-## Session tasks and the ready card
+## Session tasks and the ready message
 
 The agent reports to the Builder shell beside the transcript with two host-local commands, accepted
 for the open session only (over the supervisor's local control socket):
@@ -256,12 +256,16 @@ for the open session only (over the supervisor's local control socket):
   with the task now running, progress, time elapsed since the plan arrived and the time the open
   estimates leave; it expands to the list. The agent re-sends the whole plan as tasks start and
   finish; a task keeps the time it started and finished.
-- `box builder ready --session <id> '<JSON>'` says the work is ready for the owner: a summary, what
-  was built, what to try, what is still open and a proposed commit message. Builder shows it as a
-  card with a **Wrap Up** button; **Dismiss** hides it until a newer report arrives.
+- `box builder ready --session <id> '{"commitMessage":"..."}'` proposes the commit message when the
+  work is ready. It appears only in Wrap Up's Commit step.
 
-The report lives in `data/builder/session-report.json` for the current session and is replaced when
-another session reports. The session instructions tell the agent to send both, to address the owner
+The ready message itself is the agent's last transcript message: a sentence on what works, a few
+lines on what to try, and the link `[Wrap Up](#wrap-up)`, which Builder draws as a button that opens
+Wrap Up (the transcript hands link clicks to Builder).
+
+The plan and the commit message live in `data/builder/session-report.json` for the current session
+and are replaced when another session reports. The session instructions tell the agent to send both,
+to end with the short ready message, to address the owner
 by first name at milestones and to navigate the Preview to what already works.
 
 ## Wrap Up
@@ -273,8 +277,8 @@ Wrap Up is a server-backed gate over the current Git state, presented as three s
 2. **Verify** runs the complete validation chain (`box verify`) for that exact state and streams its
    output. When it fails, **Ask Builder to fix** puts the failure into the conversation composer for
    the owner to send. A file changed after a check makes the result stale and asks for a new run.
-3. **Commit** takes a message, drafted by the agent by default: the ready report's commit message
-   fills it, and reaching Commit without one asks the agent once to draft it from the session's
+3. **Commit** takes a message, drafted by the agent by default: the message it proposed with
+   `box builder ready` fills it, and reaching Commit without one asks the agent once to draft it from the session's
    turns and diff (it arrives through `box builder ready`). A message the owner has edited is never
    replaced. **Finish** integrates and ends the session; **Checkpoint only** commits on the Builder
    branch and keeps the session open.

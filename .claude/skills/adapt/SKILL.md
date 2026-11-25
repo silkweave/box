@@ -137,8 +137,9 @@ finishes). At milestones, address the owner by first name in a sentence or two a
 Preview to what already works (the new list page, the welcome page), unless they are using the
 Preview themselves. Keep checks out of their sight: no ad-hoc test records or pages on the owner's
 Box when the recipe's INSTALL.md offers a check that belongs there. When the chain passes and the
-owner should try it, send `box builder ready --session <id> '<JSON>'` with what was built, what to
-try, what is left and a proposed commit message; Builder shows it as a card with Wrap Up.
+owner should try it, propose the commit message with `box builder ready --session <id>
+'{"commitMessage":"..."}'`, then end with a short message (what works, what to try, what is left)
+ending in the link `[Wrap Up](#wrap-up)`, which Builder draws as a button.
 
 If a previous upstream SHA is missing, recover it from adoption records or historical tags where
 possible; otherwise record an unknown baseline and inspect local differences explicitly. Do not

@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import { repoRoot } from './repo.ts'
 
 // `box builder tasks|ready --session <id> <JSON>`: the Builder agent tells the owner's Builder shell
-// its task plan (pinned above the conversation with progress and time) or that the work is ready to
-// wrap up (a card with a Wrap Up button and the proposed commit message). Host-local only: it goes
+// its task plan (pinned above the conversation with progress and time) or, when the work is ready,
+// the commit message it proposes for Wrap Up. Host-local only: it goes
 // over the supervisor's local control socket and is accepted for the open session only.
 
 const HELP = `box builder tasks|ready - report to the owner's Builder shell
@@ -20,14 +20,10 @@ above the conversation with progress, time elapsed and time remaining.
             {"title":"Run box verify","status":"pending","estimateMinutes":8}]}
   status: pending | running | done. estimateMinutes: your estimate at session pace.
 
-ready: the work is done and the owner should try it and wrap up. Builder shows a
-card with a Wrap Up button; commitMessage fills Wrap Up's commit message.
-  {"summary":"Artifacts is adapted and every check passes.",
-   "built":["Artifacts gallery at /artifacts","Welcome page"],
-   "try":["Open Artifacts in the sidebar","Open the welcome page"],
-   "open":["Public sharing needs a Cloudflare account"],
-   "commitMessage":"feat(artifacts): adapt the Artifacts recipe"}
-  summary is required; built, try and open are lists of short lines.
+ready: the work is done; the commit message you propose fills Wrap Up's field
+for the owner to edit or accept. Then end your turn with a short message that
+ends with the link [Wrap Up](#wrap-up): Builder draws it as a button.
+  {"commitMessage":"feat(artifacts): adapt the Artifacts recipe\\n\\nWhy it changed."}
 `
 
 const kinds = new Set(['tasks', 'ready'])
@@ -71,7 +67,7 @@ const req = request({
     let result: { message?: string } = {}
     try { result = JSON.parse(text) as typeof result } catch { fail('Invalid response from the Builder supervisor') }
     if (res.statusCode !== 200) fail(result.message ?? `Builder ${kind} report failed`)
-    console.log(kind === 'tasks' ? 'Task plan shown in Builder.' : 'Ready card shown in Builder.')
+    console.log(kind === 'tasks' ? 'Task plan shown in Builder.' : 'Commit message ready in Wrap Up. End your message with [Wrap Up](#wrap-up).')
   })
 })
 req.setTimeout(10_000, () => req.destroy(new Error('timed out')))

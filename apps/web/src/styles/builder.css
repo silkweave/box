@@ -16,3 +16,22 @@
 [data-slot='builder-session-status']::-webkit-scrollbar {
   display: none;
 }
+
+/* The agent ends its "ready" message with [Wrap Up](#wrap-up); Builder opens Wrap Up on click
+   (BuilderView onLinkClick). Drawn as the primary button so the last message carries the next act. */
+.builder-transcript a[href='#wrap-up'] {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-sans, inherit);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.builder-transcript a[href='#wrap-up']:hover {
+  filter: brightness(1.1);
+}

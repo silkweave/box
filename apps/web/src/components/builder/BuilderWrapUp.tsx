@@ -8,7 +8,7 @@ import { checkpointBuilderReview, finishBuilderReview, loadBuilderReview, verify
  * Review what changed, verify that exact Git state, then commit and integrate. Every step reads
  * the server's review fingerprint, so a file changed after a check sends the owner back to verify.
  *
- * The commit message is the agent's by default: its ready report carries one (`box builder ready`),
+ * The commit message is the agent's by default: it sends one when the work is ready (`box builder ready`),
  * and reaching Commit without one asks the agent to draft it. The owner edits or accepts it.
  */
 type Step = 'review' | 'verify' | 'commit'
@@ -30,7 +30,7 @@ export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onO
   onFinished: () => void
   /** Send a turn to the Builder session. Absent until a session exists. */
   onAskAgent?: (text: string) => Promise<void>
-  /** The agent's proposed commit message, from its latest ready report. */
+  /** The agent's proposed commit message (`box builder ready`). */
   proposedMessage?: string | undefined
 }) {
   const [step, setStep] = useState<Step>('review')
@@ -198,7 +198,7 @@ export function BuilderWrapUp({ open, onOpenChange, cwd, unsaved, onUpdated, onO
   </Dialog>
 }
 
-const DRAFT_PROMPT = 'I am wrapping up. Draft the commit message for this session from its turns and its diff (`git diff` against the base, plus untracked files): a conventional subject line under 72 characters, then a short body on what changed and why. Do not commit. Send it with `box builder ready --session <this session id>` and the ready report fields (summary, built, try, open, commitMessage); it fills the Wrap Up field for me to edit or accept.'
+const DRAFT_PROMPT = 'I am wrapping up. Draft the commit message for this session from its turns and its diff (`git diff` against the base, plus untracked files): a conventional subject line under 72 characters, then a short body on what changed and why. Do not commit. Send it with `box builder ready --session <this session id> \'{"commitMessage":"..."}\'`; it fills the Wrap Up field for me to edit or accept. Reply with one short line only.'
 
 const draftHint = (drafting: 'asked' | 'failed' | undefined, proposed: boolean): string | undefined =>
   proposed ? 'Drafted by the agent. Edit it or accept it.'

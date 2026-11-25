@@ -2,29 +2,28 @@ import type { ReactNode } from 'react'
 import { Disclosure } from '@silkweave/box-ui'
 
 /**
- * A structured message pinned above the Builder conversation: what is about to happen (a brief) or
- * what has happened (the agent's ready-to-wrap-up report). A title and a line of context, named
- * lists, numbered steps, an optional fold with the raw text, and the acts.
+ * A structured card pinned above the Builder conversation: what is about to happen (a brief). A
+ * title and a line of context, named lists, numbered steps, an optional fold with the raw text, and
+ * the acts.
  *
  * Builder-only: it lives with the Builder shell, which ships with core and is not a page of the app.
  */
-export function BuilderCard({ icon, eyebrow, title, summary, groups, steps, stepsLabel, raw, rawLabel, actions, tone = 'accent' }: {
+export function BuilderCard({ icon, eyebrow, title, summary, groups, steps, stepsLabel, raw, rawLabel, actions }: {
   icon: ReactNode
-  /** A short label above the title: "Brief", "Ready to wrap up". */
+  /** A short label above the title: "Brief". */
   eyebrow: string
   title: string
   summary?: string | undefined
   groups?: { label: string; items: string[] }[] | undefined
   steps?: string[] | undefined
   stepsLabel?: string
-  /** The full text behind the card (the prompt sent, the commit message), folded away. */
+  /** The full text behind the card (the prompt sent), folded away. */
   raw?: string | undefined
   rawLabel?: string
   actions: ReactNode
-  tone?: 'accent' | 'success'
 }) {
-  const frame = tone === 'success' ? 'border-success/30 bg-success-bg' : 'border-accent/30 bg-accent-tint'
-  const mark = tone === 'success' ? 'text-success' : 'text-accent'
+  const frame = 'border-accent/30 bg-accent-tint'
+  const mark = 'text-accent'
   return (
     <section aria-label={`${eyebrow}: ${title}`} className={`mx-2 mb-2 flex shrink-0 flex-col rounded-lg border ${frame}`}>
       <div className='p-3'>

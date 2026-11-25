@@ -62,10 +62,8 @@ export interface BuilderControlState {
 export type BuilderTaskStatus = 'pending' | 'running' | 'done'
 export interface BuilderTask { title: string; status: BuilderTaskStatus; estimateMinutes?: number; startedAt?: string; doneAt?: string }
 export interface BuilderTaskPlan { tasks: BuilderTask[]; startedAt: string; updatedAt: string }
-export interface BuilderReadyReport { summary: string; built: string[]; try: string[]; open: string[]; commitMessage?: string; at: string }
+export interface BuilderReadyReport { commitMessage: string; at: string }
 export interface BuilderSessionReport { plan?: BuilderTaskPlan; ready?: BuilderReadyReport }
-
-const textList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item !== '') : []
 
 /** The session report as the supervisor sent it, keeping only well-formed parts. */
 export function parseSessionReport(value: unknown): BuilderSessionReport | null {
@@ -86,11 +84,8 @@ export function parseSessionReport(value: unknown): BuilderSessionReport | null 
     if (tasks.length) report.plan = { tasks, startedAt: plan.startedAt, updatedAt: plan.updatedAt }
   }
   const ready = value.ready
-  if (isRecord(ready) && typeof ready.summary === 'string' && typeof ready.at === 'string') {
-    report.ready = {
-      summary: ready.summary, built: textList(ready.built), try: textList(ready.try), open: textList(ready.open), at: ready.at,
-      ...(typeof ready.commitMessage === 'string' && ready.commitMessage ? { commitMessage: ready.commitMessage } : {}),
-    }
+  if (isRecord(ready) && typeof ready.commitMessage === 'string' && ready.commitMessage && typeof ready.at === 'string') {
+    report.ready = { commitMessage: ready.commitMessage, at: ready.at }
   }
   return report.plan || report.ready ? report : null
 }

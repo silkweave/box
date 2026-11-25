@@ -54,7 +54,7 @@ const HELP = `  box dev [--log-level <level>]              start interactive dev
   box builder browser --session <session-id> <operation> [JSON object]
   box builder export [--session <id>] [--out <file>]  zip of a Builder session for support
   box builder tasks --session <session-id> <JSON>   pin the agent's task plan in Builder
-  box builder ready --session <session-id> <JSON>   show the ready-to-wrap-up card in Builder
+  box builder ready --session <session-id> <JSON>   propose the Wrap Up commit message
   box start                                  start the Box: promoted web release, Vite for Builder Preview
   box service install|uninstall               run the Box in the background (systemd user unit, launchd agent)
   box service start|stop|restart|status|logs  control that background Box; logs -f follows

@@ -28,8 +28,9 @@ describe('Builder session report', () => {
   test('keeps only well-formed parts', () => {
     expect(parseSessionReport(null)).toBeNull()
     expect(parseSessionReport({ plan: { tasks: [{ title: 'A', status: 'odd' }], startedAt: 'x', updatedAt: 'x' } })).toBeNull()
-    expect(parseSessionReport({ ready: { summary: 'Done', at: 't', try: ['Open', 3], commitMessage: '' } }))
-      .toEqual({ ready: { summary: 'Done', built: [], try: ['Open'], open: [], at: 't' } })
+    expect(parseSessionReport({ ready: { at: 't', commitMessage: '' } })).toBeNull()
+    expect(parseSessionReport({ ready: { at: 't', commitMessage: 'feat: x', summary: 'old' } }))
+      .toEqual({ ready: { commitMessage: 'feat: x', at: 't' } })
   })
 
   test('time left counts open estimates less what the running task used', () => {

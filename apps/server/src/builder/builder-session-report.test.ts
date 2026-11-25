@@ -18,10 +18,8 @@ describe('builder session report', () => {
   })
 
   it('validates a ready report', () => {
-    expect(parseReadyReport({ summary: ' Done ', try: ['Open it'], commitMessage: 'feat: x' }))
-      .toEqual({ summary: 'Done', built: [], try: ['Open it'], open: [], commitMessage: 'feat: x' })
-    expect(() => parseReadyReport({ built: ['x'] })).toThrow('summary')
-    expect(() => parseReadyReport({ summary: 'x', try: 'Open it' })).toThrow('array')
+    expect(parseReadyReport({ commitMessage: ' feat: x\n\nWhy. ' })).toEqual({ commitMessage: 'feat: x\n\nWhy.' })
+    expect(() => parseReadyReport({ summary: 'x' })).toThrow('commitMessage')
   })
 
   it('keeps task start and finish times across re-sent plans', () => {
@@ -41,10 +39,10 @@ describe('builder session report', () => {
   it('keeps the plan beside the ready report and forgets both for another session', () => {
     const dir = instance()
     applySessionReport(dir, 's1', 'tasks', { tasks: [{ title: 'A', status: 'done' }] })
-    applySessionReport(dir, 's1', 'ready', { summary: 'Ready' })
-    expect(readSessionReport(dir, 's1')).toMatchObject({ plan: { tasks: [{ title: 'A' }] }, ready: { summary: 'Ready' } })
+    applySessionReport(dir, 's1', 'ready', { commitMessage: 'feat: ready' })
+    expect(readSessionReport(dir, 's1')).toMatchObject({ plan: { tasks: [{ title: 'A' }] }, ready: { commitMessage: 'feat: ready' } })
     expect(readSessionReport(dir, 's2')).toBeNull()
-    applySessionReport(dir, 's2', 'ready', { summary: 'Other' })
+    applySessionReport(dir, 's2', 'ready', { commitMessage: 'feat: other' })
     expect(readSessionReport(dir, 's2')?.plan).toBeUndefined()
     expect(() => applySessionReport(dir, 's2', 'other', {})).toThrow('tasks or ready')
   })

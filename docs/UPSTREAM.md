@@ -11,7 +11,10 @@ The completed core refresh and guided first-run setup are based on Stack commit
 Builder, CLI, provider utilities, UI library and core skills. Feature registration and exports are
 intentionally empty.
 
-Latest core refresh: Stack commit `cbf0d6e9662124e09fea846d07fba1bbbfe6f512` (2026-11-25: a
+Latest core refresh: Stack commit `5bae2d866be1480cd4cd258cfb53fdf49db27ac7` (2026-11-25: the
+Builder agent's ready message is its last transcript message, ending in a Wrap Up button link;
+`box builder ready` carries only the commit message for Wrap Up. Since
+cbf0d6e9662124e09fea846d07fba1bbbfe6f512 the same day: a
 brief from Adapt waits as a card above the Builder conversation with Send, Edit as text and Discard;
 the agent pins its task plan with progress and time left (`box builder tasks`) and sends a ready card
 with Wrap Up and a proposed commit message (`box builder ready`); Wrap Up asks the agent to draft the

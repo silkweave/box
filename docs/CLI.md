@@ -279,8 +279,8 @@ current session, else the latest recorded one) through the same local supervisor
 its files. See [Builder](BUILDER.md#export-a-session-for-support).
 
 `box builder tasks --session <id> '<JSON>'` and `box builder ready --session <id> '<JSON>'` are for
-the Builder agent: its task plan (pinned above the conversation with progress and time left) and its
-ready-to-wrap-up report (a card with Wrap Up and the proposed commit message). They go over the same
+the Builder agent: its task plan (pinned above the conversation with progress and time left) and the
+commit message it proposes for Wrap Up when the work is ready. They go over the same
 local supervisor socket and are accepted for the open session only; `--help` prints the JSON shape.
 See [Builder](BUILDER.md#session-tasks-and-the-ready-card).
 

@@ -2,15 +2,15 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // What the Builder agent tells the owner's Builder shell about the session, beyond the transcript:
-// its task plan (pinned above the conversation with progress and time) and its ready-to-wrap-up
-// report (a card with a Wrap Up button, carrying the proposed commit message). The agent sends them
+// its task plan (pinned above the conversation with progress and time) and, when the work is ready,
+// the commit message it proposes for Wrap Up. The ready message itself is the agent's last transcript
+// message, ending with a [Wrap Up](#wrap-up) link that Builder opens. The agent sends both
 // with `box builder tasks|ready --session <id> <JSON>` over the host-local control socket; the
 // shell reads them with the control state. One file for the current session, replaced when a new
 // session reports.
 
 const MAX_TEXT = 300
 const MAX_MESSAGE = 4000
-const MAX_ITEMS = 12
 const MAX_TASKS = 20
 
 export type BuilderTaskStatus = 'pending' | 'running' | 'done'
@@ -33,11 +33,7 @@ export interface BuilderTaskPlan {
 }
 
 export interface BuilderReadyReport {
-  summary: string
-  built: string[]
-  try: string[]
-  open: string[]
-  commitMessage?: string
+  commitMessage: string
   at: string
 }
 
@@ -56,11 +52,6 @@ const record = (value: unknown, what: string): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : fail(`${what} must be a JSON object`)
 const text = (value: unknown, field: string, max = MAX_TEXT): string =>
   typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : fail(`${field} must be a non-empty string`)
-const list = (value: unknown, field: string): string[] => {
-  if (value === undefined) return []
-  if (!Array.isArray(value)) fail(`${field} must be an array of strings`)
-  return (value as unknown[]).slice(0, MAX_ITEMS).map((item, index) => text(item, `${field}[${index}]`))
-}
 
 /** Validates `box builder tasks` input: `{ "tasks": [{ "title", "status", "estimateMinutes"? }] }`. */
 export function parseTaskPlan(input: unknown): Pick<BuilderTask, 'title' | 'status' | 'estimateMinutes'>[] {
@@ -78,17 +69,10 @@ export function parseTaskPlan(input: unknown): Pick<BuilderTask, 'title' | 'stat
   })
 }
 
-/** Validates `box builder ready` input. */
+/** Validates `box builder ready` input: `{ "commitMessage": "..." }`. */
 export function parseReadyReport(input: unknown): Omit<BuilderReadyReport, 'at'> {
   const raw = record(input, 'The ready report')
-  const commit = raw['commitMessage']
-  return {
-    summary: text(raw['summary'], 'summary'),
-    built: list(raw['built'], 'built'),
-    try: list(raw['try'], 'try'),
-    open: list(raw['open'], 'open'),
-    ...(commit === undefined ? {} : { commitMessage: text(commit, 'commitMessage', MAX_MESSAGE) }),
-  }
+  return { commitMessage: text(raw['commitMessage'], 'commitMessage', MAX_MESSAGE) }
 }
 
 const reportPath = (instance: string): string => join(instance, 'builder', 'session-report.json')

@@ -30,7 +30,6 @@ import {
   type BuilderApplicationStatus,
   type BuilderControlState,
   type BuilderPendingChanges,
-  type BuilderReadyReport,
   loadFreshVerdicts,
   withFreshVerdicts,
 } from '../lib/builderStore.ts'
@@ -215,21 +214,6 @@ function BriefCard({ brief, busy, onSend, onEdit, onDiscard }: { brief: BuilderB
     </>} />
 }
 
-/** The agent's "ready to wrap up" report (`box builder ready`): what was built, what to try, what is open. */
-function ReadyCard({ ready, onWrapUp, onDismiss }: { ready: BuilderReadyReport; onWrapUp: () => void; onDismiss: () => void }) {
-  const groups = [
-    ...(ready.built.length ? [{ label: 'Built', items: ready.built }] : []),
-    ...(ready.open.length ? [{ label: 'Still open', items: ready.open }] : []),
-  ]
-  return <BuilderCard tone='success' icon={<Check className='size-3.5' />} eyebrow='Ready to wrap up' title={ready.summary} groups={groups}
-    steps={ready.try} stepsLabel='Try it'
-    raw={ready.commitMessage} rawLabel='Proposed commit message'
-    actions={<>
-      <Button variant='ghost' size='sm' onClick={onDismiss}>Dismiss</Button>
-      <Button size='sm' onClick={onWrapUp}><Check />Wrap Up</Button>
-    </>} />
-}
-
 const pendingStatusLabel = (status: string): string =>
   status === '??' ? 'New' : status.includes('D') ? 'Deleted' : status.includes('R') ? 'Renamed' : status.includes('A') ? 'Added' : status.includes('U') ? 'Conflict' : 'Modified'
 
@@ -295,8 +279,6 @@ export function BuilderView() {
   const [error, setError] = React.useState<string | null>(null)
   const [view, setView] = React.useState<'preview' | 'files'>('preview')
   const [wrapUp, setWrapUp] = React.useState(false)
-  // The ready report the owner dismissed, by its time: a newer report shows again.
-  const [readyDismissed, setReadyDismissed] = usePersistedState<string | null>(appKey('builder', 'readyDismissed'), null, (v) => v === null || typeof v === 'string')
   const [exporting, setExporting] = React.useState(false)
   const [previewLocation, setPreviewLocation] = React.useState(() => safePreviewPath(new URLSearchParams(location.search).get('preview')))
   const [initialPreview] = React.useState(previewLocation)
@@ -417,6 +399,12 @@ export function BuilderView() {
   const backTarget = previewResetTarget({ path: outside?.path ?? null, usable: !outside }, previewLocation)
   const backToApp = (): void => { if (iframe.current) iframe.current.src = backTarget }
   const revealFile = (path: string): void => { setOpenFile(path); setView('files') }
+  // The agent's ready message ends with [Wrap Up](#wrap-up) (session instructions): open Wrap Up.
+  const openWrapUpLink = React.useCallback((href: string): boolean => {
+    if (href !== '#wrap-up') return false
+    setWrapUp(true)
+    return true
+  }, [])
   const resize = (event: React.PointerEvent<HTMLDivElement>): void => {
     event.currentTarget.setPointerCapture(event.pointerId)
     const start = event.clientX, width = panelWidth
@@ -474,12 +462,11 @@ export function BuilderView() {
       </div>
       {state.session ? <>
         {/* Pinned above the conversation, together never more than 45% of it: the transcript and composer keep the rest. */}
-        {(state.report?.plan || (state.report?.ready && state.report.ready.at !== readyDismissed) || brief) && <div className='flex max-h-[45%] shrink-0 flex-col overflow-y-auto'>
+        {(state.report?.plan || brief) && <div className='flex max-h-[45%] shrink-0 flex-col overflow-y-auto'>
           {state.report?.plan && <BuilderTasks plan={state.report.plan} />}
-          {state.report?.ready && state.report.ready.at !== readyDismissed && <ReadyCard ready={state.report.ready} onWrapUp={() => setWrapUp(true)} onDismiss={() => setReadyDismissed(state.report!.ready!.at)} />}
           {brief && <BriefCard brief={brief} busy={sendingBrief} onSend={() => void sendBrief()} onEdit={editBrief} onDiscard={discardBrief} />}
         </div>}
-        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' statusSurface='external' controlsSurface='external' hideThinking={!showThinking} onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} className='builder-transcript min-h-0 flex-1 bg-transparent' />
+        <SessionPanel key={state.session.id} client={builderClient} sessionId={state.session.id} readOnly={false} peerMentions={false} transcriptVariant='terminal' statusSurface='external' controlsSurface='external' hideThinking={!showThinking} onVitals={setSessionVitals} onControls={setSessionControls} onOpenFile={revealFile} onLinkClick={openWrapUpLink} className='builder-transcript min-h-0 flex-1 bg-transparent' />
         <BuilderSessionBar vitals={sessionVitals} controls={sessionControls} />
       </> : <div className='min-h-0 flex-1 overflow-y-auto'><SessionEmpty state={state} engine={engine} setEngine={setEngine} busy={busy} brief={brief} onDiscardBrief={discardBrief} onStart={() => void start()} onStop={() => void stop()} /></div>}
     </aside>
